@@ -231,3 +231,16 @@ it('removes only this account scoped filter preferences together with deleted hi
   expect(store.values.has(own)).toBe(false)
   expect(store.values.has(other)).toBe(true)
 })
+
+
+it('a normal code upgrade keeps a valid legacy archive above the new-cache reserve readable and unchanged', () => {
+  const store = storage(), key = historyCacheKey('drives', 'owner', 'uid', 'https://api.example.test')
+  const original = { schema: HISTORY_CACHE_SCHEMA, scope: key, savedAt: '2026-10-14T00:00:00Z',
+    items: [{ id: 'retained', address: 'x'.repeat(700 * 1024) }] }
+  store.setStorageSync(key, original)
+  expect(readHistoryCache<{ id: string; address: string }>(store, key)[0].address.length).toBe(700 * 1024)
+  expect(store.values.get(key)).toBe(original)
+  const before = JSON.stringify(original)
+  expect(writeHistoryCache(store, key, [...original.items, { id: 'growth', address: 'new' }])).toBe(false)
+  expect(JSON.stringify(store.values.get(key))).toBe(before)
+})

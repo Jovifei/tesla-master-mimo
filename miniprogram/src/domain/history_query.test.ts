@@ -20,7 +20,10 @@ describe('persisted local calendar history query', () => {
     expect(historyEditorialDate(null)).toBe('暂无日期')
   })
   it('formats detail timestamps compactly like the App', () => {
-    expect(historyDetailDateTime('2026-10-27T18:54:00+08:00')).toBe('10-27 18:54')
+    const local = new Date(2026, 9, 27, 18, 54).toISOString()
+    expect(historyDetailDateTime(local)).toBe('10-27 18:54')
+    expect(historyDetailDateTime('2026-10-27T18:54:00+08:00'))
+      .toBe(historyDetailDateTime('2026-10-27T10:54:00Z'))
     expect(historyDetailDateTime(null)).toBe('暂无日期')
   })
   it('excludes quarantined drive and charge records without hiding legitimate zero or missing-energy summaries', () => {

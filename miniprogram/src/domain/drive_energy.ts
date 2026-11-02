@@ -320,6 +320,31 @@ export function mergeDriveEnergyRecord(prior: Drive, incoming: Drive, admittedBa
     energy, energyReceipt: input, energyConsumedKwh: energy.energyKwh, efficiencyWhKm: energy.efficiencyWhKm }
 }
 
+/** Same App partial-counter proof; this is deliberately not a whole-session energy value. */
+export function partialChargeBatteryInput(raw: Pick<RawCharge, 'source' | 'start_date' | 'end_date' | 'energy_contract'>): number | null {
+  if (raw.source !== 'telemetry_mqtt' || raw.energy_contract == null) return null
+  const proof = contract(raw.energy_contract), m = proof.battery_input
+  if (!validVersion(proof) || !m || (m.unit === undefined ? 'kWh' : m.unit) !== 'kWh' ||
+    m.method !== 'session_counter_delta' || m.measurement_point !== 'battery_input' ||
+    m.source !== raw.source || m.source_field !== 'DCChargingEnergyIn' || m.quality !== 'unknown' ||
+    m.reason !== 'partial_counter_window' || m.value_kwh != null || m.coverage_kind !== 'endpoints' ||
+    m.time_basis !== 'collector_received_at') return null
+  if (![raw.start_date, raw.end_date, m.start_date, m.end_date, m.observed_start_at, m.observed_end_at]
+    .every(value => typeof value === 'string' && /(?:Z|[+-]\d{2}:\d{2})$/i.test(value))) return null
+  const start = instant(raw.start_date), end = instant(raw.end_date)
+  const ms = instant(m.start_date), me = instant(m.end_date)
+  const first = instant(m.observed_start_at), last = instant(m.observed_end_at)
+  if (!start || !end || !ms || !me || !first || !last || compare(end, start) <= 0) return null
+  const sameMicros = (a: Instant, b: Instant) => a.seconds === b.seconds && Math.floor(a.nanos / 1000) === Math.floor(b.nanos / 1000)
+  if (!sameMicros(start, ms) || !sameMicros(end, me) || compare(first, start) < 0 ||
+    compare(last, end) > 0 || compare(last, first) <= 0) return null
+  const ratio = elapsed(first, last) / elapsed(start, end)
+  const declared = m.coverage_ratio == null ? ratio : number(m.coverage_ratio)
+  if (declared == null || declared <= 0 || declared >= 1 || !Number.isFinite(ratio) || Math.abs(ratio - declared) > 1e-6) return null
+  const amount = number(m.covered_energy_kwh)
+  return amount != null && amount >= 0 ? amount : null
+}
+
 export function resolveChargeEnergy(raw: RawCharge): ChargeEnergy {
   const proof = raw.energy_contract != null ? contract(raw.energy_contract) : null
   const value = (m: EnergyMetric | null | undefined, point: string, scalar: unknown): number | null => {

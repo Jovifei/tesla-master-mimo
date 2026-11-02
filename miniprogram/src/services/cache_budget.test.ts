@@ -18,3 +18,35 @@ describe('shared cache admission without data deletion', () => {
     expect(canStoreCache({ getStorageInfoSync: () => { throw Error('quota') } }, 'matelink.events.v1.x', {})).toBe(false)
   })
 })
+
+
+it('reserves capacity for a real manual fee while refusing cache growth without deleting anything', async () => {
+  const { USER_DATA_RESERVE_BYTES, localStorageUsage } = await import('./cache_budget')
+  const { writeChargeCostOverride, readChargeCostOverride } = await import('./charge_cost')
+  const values = new Map<string, unknown>()
+  const s = { values, getStorageSync: (key: string) => values.get(key),
+    getStorageInfoSync: () => ({ keys: [...values.keys()] }),
+    setStorageSync: (key: string, value: unknown) => { values.set(key, JSON.parse(JSON.stringify(value))) },
+    removeStorageSync: (key: string) => { values.delete(key) } }
+  const key = 'matelink.history.v3.synthetic', original = 'x'.repeat(CACHE_BUDGET_BYTES - USER_DATA_RESERVE_BYTES - 100)
+  values.set(key, original)
+  expect(canStoreCache(s, 'matelink.history.v3.next', { data: 'x'.repeat(500) })).toBe(false)
+  const scope = { userId: 'owner', origin: 'https://example.test', stableId: 'v1' }
+  const charge = { id: '1', source: 'teslamate_archive', qualityState: 'observed',
+    startDate: '2026-01-01T00:00:00Z', endDate: '2026-01-01T01:00:00Z' } as import('./types').Charge
+  expect(writeChargeCostOverride(s, scope, charge, 0, 'CNY', () => true)).toBe(true)
+  expect(readChargeCostOverride(s, scope, charge)?.amount).toBe(0)
+  expect(values.get(key)).toBe(original)
+  const usage = localStorageUsage(s)!
+  expect(usage.userBytes).toBeGreaterThan(0)
+  expect(usage.totalBytes).toBeLessThan(CACHE_BUDGET_BYTES)
+  expect(Object.keys(usage).sort()).toEqual(['budgetBytes', 'cacheBytes', 'reservedUserBytes', 'totalBytes', 'userBytes'])
+})
+
+it('retains a legacy over-budget archive and permits a same-size correction but no growth', () => {
+  const s = storage(), key = 'matelink.history.v3.old', value = 'x'.repeat(CACHE_BUDGET_BYTES + 1)
+  s.values.set(key, value)
+  expect(canStoreCache(s, key, value.replace('x', 'y'))).toBe(true)
+  expect(canStoreCache(s, key, value + 'x')).toBe(false)
+  expect(s.values.get(key)).toBe(value)
+})

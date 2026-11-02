@@ -1,14 +1,16 @@
 import type { Charge } from './types'
 import type { WechatStorage } from './session'
 import { cacheBytes, canStoreCache } from './cache_budget'
-import { resolveChargeEnergy, sameEnergyInstant } from '../domain/drive_energy'
+import { partialChargeBatteryInput, resolveChargeEnergy, sameEnergyInstant } from '../domain/drive_energy'
 import { readTariff } from '../domain/tariff'
 
 export type ChargeCostScope = { userId: string; origin: string; stableId: string }
 export type ChargeCostOverride = { identity: string; source: string; sourceInstanceId?: string | null; sourceVehicleId?: string | null; sourceRecordId?: string | null; startDate?: string | null; endDate?: string | null; amount: number; currency: string; updatedAt: string }
 export type ChargeEstimatePrice = { amount: number; currency: string; source: 'app_default' | 'saved_default' }
 export type CostedCharge = Charge & { costProvenance: 'manual' | 'free' | 'actual' | 'estimate' | 'unknown'; reportedCost: number | null; reportedCurrency: string | null; manualCostUpdatedAt: string | null;
-  estimatedUnitPrice: number | null; estimatePriceSource: ChargeEstimatePrice['source'] | null }
+  estimatedUnitPrice: number | null; estimatePriceSource: ChargeEstimatePrice['source'] | null;
+  /** Never part of a whole bill or whole-energy denominator. */
+  partialEstimatedCost?: number | null }
 export const CHARGE_COST_MAX_ROWS = 200, CHARGE_COST_MAX_BYTES = 64 * 1024
 export const APP_DEFAULT_CHARGE_PRICE_CNY = 1.14
 const text = (value: unknown, max = 256): value is string => typeof value === 'string' && value.trim().length > 0 && value.length <= max && !/[\u0000-\u001f\u007f]/.test(value)
@@ -76,6 +78,11 @@ export function chargeEstimatePrice(storage: Pick<WechatStorage, 'getStorageSync
     : { amount: APP_DEFAULT_CHARGE_PRICE_CNY, currency: 'CNY', source: 'app_default' }
 }
 /** The App's default CNY price estimates a missing bill from admitted battery input, never AC input. */
+export function qualifiedPartialChargeInput(charge: Charge): number | null {
+  if (charge.qualityState === 'quarantined' || !charge.energy?.evidence) return null
+  return partialChargeBatteryInput({ source: charge.source, start_date: charge.startDate,
+    end_date: charge.endDate, energy_contract: charge.energy.evidence })
+}
 export function estimateAppDefaultChargeCost(charge: Charge, price = APP_DEFAULT_CHARGE_PRICE_CNY, currency = 'CNY'): number | null {
   const code = currencyCode(currency), reportedCode = currencyCode(charge.currencyCode ?? charge.currency)
   if (charge.qualityState === 'quarantined' || !finite(price) || price < 0 || !code ||
@@ -84,7 +91,9 @@ export function estimateAppDefaultChargeCost(charge: Charge, price = APP_DEFAULT
   const battery = charge.energy?.evidence
     ? resolveChargeEnergy({ source: charge.source, start_date: charge.startDate, end_date: charge.endDate, energy_contract: charge.energy.evidence }).batteryInputKwh
     : charge.source === 'teslamate_archive' && charge.energy?.quality === 'reported' ? charge.energy.batteryInputKwh : null
-  return finite(battery) && battery >= 0 ? battery * price : null
+  const value = battery ?? qualifiedPartialChargeInput(charge)
+  const amount = finite(value) && value >= 0 ? value * price : null
+  return amount != null && Number.isFinite(amount) ? amount : null
 }
 /** Only a bound manual override, a source bill or an explicitly labelled estimate changes the view. */
 export function overlayChargeCosts(storage: Pick<WechatStorage, 'getStorageSync'>, scope: ChargeCostScope, charges: readonly Charge[], estimatePrice: ChargeEstimatePrice | null = null, _freeSupercharging: boolean | null = null): CostedCharge[] {
@@ -96,8 +105,10 @@ export function overlayChargeCosts(storage: Pick<WechatStorage, 'getStorageSync'
     const blankTeslaMatePrice = charge.source === 'teslamate_archive' && reportedCost === 0
     const actualCost = reportedCost !== null && reportedCost >= 0 && !blankTeslaMatePrice ? reportedCost : null
     const estimate = manual || actualCost != null || !estimatePrice ? null : estimateAppDefaultChargeCost(charge, estimatePrice.amount, estimatePrice.currency)
+    const partial = estimate != null && charge.energy?.batteryInputKwh == null && qualifiedPartialChargeInput(charge) != null
     return { ...charge, reportedCost, reportedCurrency, manualCostUpdatedAt: manual?.updatedAt ?? null,
-      cost: manual ? manual.amount : actualCost ?? estimate, currency: manual?.currency ?? (estimate != null ? estimatePrice!.currency : charge.currency), currencyCode: manual?.currency ?? (estimate != null ? estimatePrice!.currency : charge.currencyCode),
+      partialEstimatedCost: partial ? estimate : null,
+      cost: manual ? manual.amount : actualCost ?? (partial ? null : estimate), currency: manual?.currency ?? (estimate != null ? estimatePrice!.currency : charge.currency), currencyCode: manual?.currency ?? (estimate != null ? estimatePrice!.currency : charge.currencyCode),
       costProvenance: manual ? 'manual' : actualCost != null ? 'actual' : estimate != null ? 'estimate' : 'unknown',
       estimatedUnitPrice: estimate != null ? estimatePrice!.amount : null, estimatePriceSource: estimate != null ? estimatePrice!.source : null }
   })

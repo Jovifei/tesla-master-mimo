@@ -1,6 +1,6 @@
 import type { WechatStorage } from './session'
 import { historyRowKey, isHistoryQuarantined, mergeHistoryByKey } from '../domain/history'
-import { canStoreCache } from './cache_budget'
+import { cacheBytes, canStoreCache, USER_DATA_RESERVE_BYTES } from './cache_budget'
 
 export type HistoryKind = 'drives' | 'charges'
 
@@ -79,7 +79,7 @@ function cacheProjection(value: unknown, depth = 0): unknown {
   }
   return result
 }
-function boundedItems<T>(key: string, rows: readonly T[], savedAt: string): T[] {
+function boundedItems<T>(key: string, rows: readonly T[], savedAt: string, byteLimit = HISTORY_CACHE_MAX_BYTES): T[] {
   const result: T[] = []
   let bytes = historyUtf8Bytes(JSON.stringify({ schema: HISTORY_CACHE_SCHEMA, scope: key, items: [], savedAt }))
   const latest = [...rows].sort((a, b) => {
@@ -92,7 +92,7 @@ function boundedItems<T>(key: string, rows: readonly T[], savedAt: string): T[] 
     const serialized = JSON.stringify(projected)
     if (serialized === undefined) continue
     const additional = historyUtf8Bytes(serialized) + (result.length > 0 ? 1 : 0)
-    if (bytes + additional > HISTORY_CACHE_MAX_BYTES) continue
+    if (bytes + additional > byteLimit) continue
     bytes += additional
     result.push(projected)
   }
@@ -131,9 +131,13 @@ export function writeHistoryCache<T>(storage: Pick<WechatStorage, 'setStorageSyn
   try {
     const savedAt = new Date().toISOString()
     let retained = [...items]
+    // New caches share the user reserve; old stored archives retain the original read/write bound.
+    // This never shrinks a user's existing archive solely because this version added a reserve.
+    let newCache = true
     if (storage.getStorageSync) {
       const stored: unknown = storage.getStorageSync(key)
       if (stored != null && stored !== '') {
+        newCache = false
         if (typeof stored !== 'object' || Array.isArray(stored)) return false
         const old = stored as Partial<HistoryCache<T>>
         if (old.schema !== HISTORY_CACHE_SCHEMA || old.scope !== key || !Array.isArray(old.items) || old.items.length > HISTORY_CACHE_MAX_ROWS ||
@@ -144,7 +148,8 @@ export function writeHistoryCache<T>(storage: Pick<WechatStorage, 'setStorageSyn
         }).items
       }
     }
-    const cache: HistoryCache<T> = { schema: HISTORY_CACHE_SCHEMA, scope: key, items: boundedItems(key, retained, savedAt), savedAt }
+    const byteLimit = newCache ? HISTORY_CACHE_MAX_BYTES - USER_DATA_RESERVE_BYTES - cacheBytes(key) : HISTORY_CACHE_MAX_BYTES
+    const cache: HistoryCache<T> = { schema: HISTORY_CACHE_SCHEMA, scope: key, items: boundedItems(key, retained, savedAt, byteLimit), savedAt }
     // Never evict records whose identity is ambiguous during reconciliation.
     const ambiguousCount = (rows: readonly T[]) => rows.filter(row => Boolean(row && typeof row === 'object' && (row as Record<string, unknown>).identityAmbiguous === true)).length
     if (ambiguousCount(cache.items) < ambiguousCount(retained)) return false

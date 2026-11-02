@@ -74,3 +74,21 @@ it.each(['expired-refresh', 'manual-after-logout'])('vehicle waits for an alread
   expect(requests).toHaveLength(1)
   expect(requests[0].header.Authorization).toBe('Bearer restored')
 })
+
+
+it('normal code upgrade reload preserves valid session and user data without Tesla or WeChat relogin', async () => {
+  const session = { apiOrigin: 'https://api.example.test', accessToken: 'synthetic-valid',
+    refreshToken: 'synthetic-refresh', userId: 'synthetic-owner', expiresAt: '2099-01-01T00:00:00Z', linkRequired: false }
+  platform.values.set('matelink.wechat.session.v1', session)
+  platform.values.set('matelink.charge-cost.v1.synthetic', { schema: 1, rows: [{ amount: 0, currency: 'CNY' }] })
+  platform.values.set('matelink.manual-trips.v1.synthetic', { schema: 1, trips: [{ id: 'user-created' }] })
+  platform.values.set('matelink.history.v3.synthetic', { schema: 3, items: [{ id: 'saved-history' }] })
+  const before = JSON.stringify([...platform.values.entries()])
+  await (await import('../services/api')).ensureWechatSession()
+  vi.resetModules()
+  await (await import('../services/api')).ensureWechatSession()
+  expect(JSON.stringify([...platform.values.entries()])).toBe(before)
+  expect(platform.login).not.toHaveBeenCalled()
+  expect(platform.request).not.toHaveBeenCalled()
+  expect((await import('../services/session')).readAppSession({ getStorageSync: key => platform.values.get(key) })?.userId).toBe('synthetic-owner')
+})

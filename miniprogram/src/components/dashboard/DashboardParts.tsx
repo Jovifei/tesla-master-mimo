@@ -1,3 +1,4 @@
+import { APP_DISPLAY_CONTRACT } from '../../domain/app_display_contract'
 import { createElement } from 'react'
 import { Button, Text, View } from '@tarojs/components'
 import type { Car, CarStatus } from '../../services/types'
@@ -52,8 +53,8 @@ export function DashboardHud({ status, dismissed, onDismiss, onExpand, onOpen }:
 }
 
 export function DashboardVehicleArt({ car, imageSrc, imageLoading, imageError, onRetryImage, onManagePhoto, appearanceLabel }: { car: Pick<Car, 'model'>; imageSrc: string | null; imageLoading: boolean; imageError: boolean; onRetryImage: () => void; onManagePhoto?: () => void; appearanceLabel?: string | null }) {
- return <View className="dashboard-vehicle-art">
-      {createElement('vehicle-asset', { id: 'matelink-vehicle-asset', className: 'dashboard-vehicle-image', 'aria-label': `${car.model ? `Model ${car.model}` : '车辆'} 车型外观` })}
+ return <View className="dashboard-vehicle-art" style={{ height: `${APP_DISPLAY_CONTRACT.vehicleHeroHeight}px` }}>
+      {createElement('vehicle-asset', { id: 'matelink-vehicle-asset', className: 'dashboard-vehicle-image', style: `height:${APP_DISPLAY_CONTRACT.vehicleImageHeight}px`, 'aria-label': `${car.model ? `Model ${car.model}` : '车辆'} 车型外观` })}
       {!imageSrc ? <View className="dashboard-vehicle-placeholder dashboard-art-placeholder"><DashboardIcon name="car" tone="muted" /><Text>{imageLoading ? '正在载入车辆外观…' : imageError ? '车辆外观暂时无法载入' : '车型外观尚未识别'}</Text>{imageError ? <Button className="dashboard-text-button" onClick={event => { event.stopPropagation(); onRetryImage() }}>重试车辆图片</Button> : null}</View> : null}
       {appearanceLabel ? <Text className="dashboard-appearance-label">{appearanceLabel}</Text> : null}
       <Button className="dashboard-camera-button" ariaLabel="选择车辆外观" disabled={!onManagePhoto} onClick={event => { event.stopPropagation(); onManagePhoto?.() }}><DashboardIcon name="camera" /></Button>

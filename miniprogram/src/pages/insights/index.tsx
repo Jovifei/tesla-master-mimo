@@ -138,7 +138,12 @@ export default function InsightsPage() {
   const selectedTrip = selectedTripRaw ? { ...selectedTripRaw, legs: selectedTripRaw.legs.map(leg => leg.kind === 'charge' ? { kind: 'charge' as const, charge: displayCharge(leg.charge) } : leg) } : null
   // App analytics excludes incomplete/unverified history; manual long trips retain their saved raw legs.
   const analysisDrives = drives.filter(isAppDriveAnalysisEligible)
-  const displayedCosts = filteredCharges.filter(isAppChargeAnalysisEligible).map(displayCharge), costs = chargeCosts(displayedCosts)
+  const costRows = costScope ? overlayChargeCosts(Taro, costScope, filteredCharges, chargeEstimatePrice(Taro, costScope)) : []
+  const displayedCosts = costRows.filter(row => isAppChargeAnalysisEligible(row) && row.costProvenance !== 'estimate')
+  const costs = chargeCosts(displayedCosts)
+  const fullEstimates = chargeCosts(costRows.filter(row => isAppChargeAnalysisEligible(row) && row.costProvenance === 'estimate' && row.partialEstimatedCost == null))
+  const partialEstimates = chargeCosts(costRows.filter(row => row.partialEstimatedCost != null)
+    .map(row => ({ ...row, cost: row.partialEstimatedCost! })))
   const manualCostCount = displayedCosts.filter(charge => 'costProvenance' in charge && charge.costProvenance === 'manual').length
   const estimateIn = (currency: string, month?: string, address?: string) => displayedCosts.some(row => {
     if (!('costProvenance' in row) || row.costProvenance !== 'estimate' || (row.currencyCode ?? row.currency) !== currency) return false
@@ -170,7 +175,7 @@ export default function InsightsPage() {
     if (!current || owner?.userId !== current.userId || getApiOrigin() !== current.origin) { setError('会话已改变，请重新加载'); return }
     const result = makeManualTrip(editTrip?.id ?? `trip-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`, name, selectedLegs, editTrip?.createdAt)
     if (!result) { setError('请输入名称并选择至少一条有效行驶记录，每次最多50段'); return }
-    if (!writeManualTrip(Taro, current, result)) { setError('本机长途旅程未保存：最多20条、64KiB且受共享缓存预算限制；已有记录已保留'); return }
+    if (!writeManualTrip(Taro, current, result)) { setError('本机长途旅程未保存：最多20条、64KiB且受本机容量限制；已有记录和当前编辑已保留'); return }
     setTrips(readManualTrips(Taro, current)); setSelectedTrip(result); resetDraft(); setError(null)
   }
   const removeTrip = async (trip: ManualTrip) => {
@@ -237,11 +242,21 @@ export default function InsightsPage() {
       {!comparisons.length ? <Text className="muted">已加载记录尚缺额定续航起止端点，不能从SOC或当前续航补算历史偏差。</Text> : null}
     </> : null}
     {car && kind === 'cost' ? <>
-      {!costs.groups.length ? <View className="card"><Text className="section-title">暂无可合计的费用</Text><Text className="muted">费用与币种同时明确才参与合计；真实0会保留。</Text></View> : null}
+      {fullEstimates.groups.map(group => <View className="card" key={`full-estimate-${group.currency}`}>
+        <SectionHeading icon="money" title="完整记录估算" />
+        <MetricValue label="完整记录估算" value={group.cost == null ? null : `≈${displayNumber(group.cost, 2)}`} unit={group.currency} />
+        <Text className="muted">{group.known} 次无账单充电的电价估算；不计入已确认账单或账单均价。</Text>
+      </View>)}
+      {partialEstimates.groups.map(group => <View className="card" key={`partial-estimate-${group.currency}`}>
+        <SectionHeading icon="money" title="已采集部分估算" />
+        <MetricValue label="已采集部分估算" value={group.cost == null ? null : `≈${displayNumber(group.cost, 2)}`} unit={group.currency} />
+        <Text className="muted">{group.known} 次充电的已采集部分；不是整次账单，不计入完整电量或账单均价。</Text>
+      </View>)}
+      {!costs.groups.length && !fullEstimates.groups.length && !partialEstimates.groups.length ? <View className="card"><Text className="section-title">暂无可合计的费用</Text><Text className="muted">费用与币种同时明确才参与合计；真实0会保留。</Text></View> : null}
       <Text className="muted">已加载 {costs.total} 次；缺费用 {costs.missingCost} 次；币种未知 {costs.unknownCurrency} 次。不同币种分别统计。</Text>
       {manualCostCount ? <Text className="muted">含 {manualCostCount} 条本机手动费用；这是本机展示金额，服务端原账单保留。</Text> : null}
       {costs.groups.map(group => <View className="card" key={group.currency}><SectionHeading icon="money" title={`${group.currency} 费用`} /><View className="metric-grid">
-        <MetricValue label="总费用" value={costAmount(group.cost, estimateIn(group.currency))} unit={group.currency} /><MetricValue label="平均每次" value={costAmount(group.average, estimateIn(group.currency))} unit={group.currency} />
+        <MetricValue label="已记录／手动费用" value={costAmount(group.cost, estimateIn(group.currency))} unit={group.currency} /><MetricValue label="平均每次" value={costAmount(group.average, estimateIn(group.currency))} unit={group.currency} />
         <MetricValue label="配对电池充入量" value={group.energyKwh} unit="kWh" /><MetricValue label="平均每度" value={costAmount(group.perKwh, estimateIn(group.currency))} unit={`${group.currency}/kWh`} /></View>
         <Text className="muted">费用已知 {group.known}/{group.total} 条；单位电量费用只用同次充电的费用与合格电池充入量。</Text>
         {estimateIn(group.currency) ? <Text className="muted">≈ 包含按默认电价估算的费用。</Text> : null}

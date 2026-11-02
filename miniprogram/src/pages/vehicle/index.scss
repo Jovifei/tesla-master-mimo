@@ -143,13 +143,13 @@
     justify-content:center;
     align-items:center
   }
-  .dashboard-hero .dashboard-vehicle-art { height:470rpx }
+  // Hero height is the App logical-pixel contract, supplied at runtime.
   .dashboard-vehicle-image {
     display:block;
     height:310rpx;
     width:96%
   }
-  .dashboard-hero .dashboard-vehicle-image { height:450rpx }
+  // Native asset height is the App logical-pixel contract, supplied at runtime.
   .dashboard-vehicle-placeholder {
     display:flex;
     flex-direction:column;

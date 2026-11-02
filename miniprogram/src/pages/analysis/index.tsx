@@ -110,6 +110,8 @@ function GroupBars({ title, groups, metric = 'distance' }: { title: string; grou
 
 export default function AnalysisPage() {
   const params = useRouter().params, kind = analysisKind(params.kind)
+  const needsDrives = kind !== 'chargeCurves'
+  const needsCharges = !['efficiency', 'curves'].includes(kind)
   const targetDay = normalizeHistoryQuery({ startDate: params.day }).startDate
   const [cars, setCars] = useState<Car[]>([]), [car, setCar] = useState<Car | null>(null)
   const [drives, setDrives] = useState<Drive[]>([]), [charges, setCharges] = useState<Charge[]>([])
@@ -148,10 +150,11 @@ export default function AnalysisPage() {
     const active = () => requestEpoch.current === epoch && current()
     setLoading(true)
     const restore = (vehicle: Car) => {
-      const driveRows = readHistoryCache<Drive>(Taro, historyCacheKey('drives', session.userId!, vehicle.stableId, origin))
-      const chargeRows = readHistoryCache<Charge>(Taro, historyCacheKey('charges', session.userId!, vehicle.stableId, origin))
+      const driveRows = needsDrives ? readHistoryCache<Drive>(Taro, historyCacheKey('drives', session.userId!, vehicle.stableId, origin)) : []
+      const chargeRows = needsCharges ? readHistoryCache<Charge>(Taro, historyCacheKey('charges', session.userId!, vehicle.stableId, origin)) : []
       drivesRef.current = driveRows; chargesRef.current = chargeRows; setDrives(driveRows); setCharges(chargeRows)
       setStatus({ ...initialStatus, offline: true, cached: true, reason: 'cached' })
+      if (driveRows.length || chargeRows.length) setLoading(false)
     }
     try {
       const vehicles = await matelinkApi.getCars()
@@ -163,25 +166,34 @@ export default function AnalysisPage() {
       setCar(selected); selectedStable.current = selected.stableId
       parkingVerifier.current = createParkedProofVerifier(selected, active)
       try { Taro.setStorageSync(carSelectionStorageKey(session.userId), selected.stableId) } catch { /* online use remains available */ }
+      restore(selected)
       const results = await Promise.allSettled([
-        analysisApi.getHistory(selected, 'drives', { isCurrent: active }),
-        analysisApi.getHistory(selected, 'charges', { isCurrent: active }),
+        needsDrives ? analysisApi.getHistory(selected, 'drives', { isCurrent: active }) : Promise.resolve(null),
+        needsCharges ? analysisApi.getHistory(selected, 'charges', { isCurrent: active }) : Promise.resolve(null),
       ])
       if (!active()) return
       const remoteDrives = results[0], remoteCharges = results[1]
       const dkey = historyCacheKey('drives', session.userId, selected.stableId, origin), ckey = historyCacheKey('charges', session.userId, selected.stableId, origin)
-      const oldDrives = readHistoryCache<Drive>(Taro, dkey), oldCharges = readHistoryCache<Charge>(Taro, ckey)
-      const dr = remoteDrives.status === 'fulfilled' ? remoteDrives.value.items.map(row => mergeHistoryByKey(oldDrives.filter(old => sameHistoryIdentity(old, row)), [row], historyRowKey).items[0]) : oldDrives
-      const ch = remoteCharges.status === 'fulfilled' ? remoteCharges.value.items.map(row => mergeHistoryByKey(oldCharges.filter(old => sameHistoryIdentity(old, row)), [row], historyRowKey).items[0]) : oldCharges
+      const oldDrives = needsDrives ? readHistoryCache<Drive>(Taro, dkey) : []
+      const oldCharges = needsCharges ? readHistoryCache<Charge>(Taro, ckey) : []
+      const remoteD = remoteDrives.status === 'fulfilled' ? remoteDrives.value : null
+      const remoteC = remoteCharges.status === 'fulfilled' ? remoteCharges.value : null
+      const currentDrives = oldDrives.filter(old => !remoteD?.items.some(row => row.id === old.id && !sameHistoryIdentity(old, row)))
+      const dr = remoteD ? mergeHistoryByKey(currentDrives, remoteD.items, historyRowKey).items : oldDrives
+      const currentCharges = oldCharges.filter(old => !remoteC?.items.some(row => row.id === old.id && !sameHistoryIdentity(old, row)))
+      const ch = remoteC ? mergeHistoryByKey(currentCharges, remoteC.items, historyRowKey).items : oldCharges
+      const retainedD = oldDrives.some(old => !remoteD?.items.some(row => sameHistoryIdentity(old, row)))
+      const retainedC = oldCharges.some(old => !remoteC?.items.some(row => sameHistoryIdentity(old, row)))
       drivesRef.current = dr; chargesRef.current = ch; setDrives(dr); setCharges(ch)
-      setParkingDrives(remoteDrives.status === 'fulfilled' && remoteDrives.value.complete ? remoteDrives.value.items : [])
+      setParkingDrives(remoteD?.complete ? remoteD.items : [])
       let saved = true
-      if (remoteDrives.status === 'fulfilled') saved = writeHistoryCache(Taro, dkey, mergeHistoryByKey(oldDrives, dr, historyRowKey).items) && saved
-      if (remoteCharges.status === 'fulfilled') saved = writeHistoryCache(Taro, ckey, mergeHistoryByKey(oldCharges, ch, historyRowKey).items) && saved
-      setStatus({ drivesComplete: remoteDrives.status === 'fulfilled' && remoteDrives.value.complete,
-        chargesComplete: remoteCharges.status === 'fulfilled' && remoteCharges.value.complete,
-        offline: false, cached: remoteDrives.status === 'rejected' || remoteCharges.status === 'rejected',
-        reason: remoteDrives.status === 'fulfilled' ? remoteDrives.value.reason ?? (remoteCharges.status === 'fulfilled' ? remoteCharges.value.reason : 'request_failed') : 'request_failed' })
+      if (remoteD) saved = writeHistoryCache(Taro, dkey, dr) && saved
+      if (remoteC) saved = writeHistoryCache(Taro, ckey, ch) && saved
+      setStatus({ drivesComplete: !needsDrives || Boolean(remoteD?.complete && !retainedD),
+        chargesComplete: !needsCharges || Boolean(remoteC?.complete && !retainedC),
+        offline: false, cached: retainedD || retainedC || remoteDrives.status === 'rejected' || remoteCharges.status === 'rejected',
+        reason: remoteDrives.status === 'rejected' || remoteCharges.status === 'rejected' ? 'request_failed'
+          : retainedD || retainedC ? 'cached' : remoteD?.reason ?? remoteC?.reason ?? null })
       if (!saved) setError('在线数据可读，但本次结果未完整保存到本机。')
       if (kind === 'curves' && params.id) {
         setDetailLoading(true)
@@ -215,8 +227,8 @@ export default function AnalysisPage() {
         finally { if (active()) setDetailLoading(false) }
       }
       if (kind === 'parked' && params.olderId && params.newerId) {
-        const candidate = remoteDrives.status === 'fulfilled' && remoteDrives.value.complete
-          ? buildParkedWindows(remoteDrives.value.items, ch, remoteCharges.status === 'fulfilled' && remoteCharges.value.complete)
+        const candidate = remoteD?.complete
+          ? buildParkedWindows(remoteD.items, ch, Boolean(remoteC?.complete && !retainedC))
             .find(row => row.olderId === params.olderId && row.newerId === params.newerId) : undefined
         const verifier = parkingVerifier.current
         if (candidate && verifier) {

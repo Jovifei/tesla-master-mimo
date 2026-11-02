@@ -63,6 +63,9 @@ function displayAddress(address: string | null): string {
   return chineseParts.length ? chineseParts.join(' ') : original
 }
 function costLabel(charge: CostedCharge): { value: string | number | null; unit?: string } {
+  if (charge.partialEstimatedCost != null) return charge.currencyCode === 'CNY'
+    ? { value: `≈¥${charge.partialEstimatedCost.toFixed(2)}` }
+    : { value: `≈${charge.partialEstimatedCost.toFixed(2)}`, unit: charge.currencyCode || '币种未知' }
   if (charge.costProvenance === 'free') return { value: '免费' }
   if (charge.costProvenance === 'estimate' && charge.cost != null) return charge.currencyCode === 'CNY'
     ? { value: `≈¥${charge.cost.toFixed(2)}` } : { value: `≈${charge.cost.toFixed(2)}`, unit: charge.currencyCode || '币种未知' }
@@ -731,7 +734,7 @@ export default function ChargesPage() {
               </View>
               {(item.costProvenance === 'estimate' || inputNumber(item) != null) ? (
                 <Text className="history-source">
-                  {item.costProvenance === 'estimate' ? `费用按 ${estimateBasis(item)} 估算` : ''}
+                  {item.costProvenance === 'estimate' ? `费用按 ${estimateBasis(item)} 估算${item.partialEstimatedCost != null ? " · 仅已采集部分，不是整次账单" : ""}` : ''}
                   {item.costProvenance === 'estimate' && inputNumber(item) != null ? ' · ' : ''}
                   {inputNumber(item) != null ? `${inputLabel(item)}：${inputNumber(item)} kWh` : ''}
                 </Text>
@@ -750,7 +753,7 @@ export default function ChargesPage() {
           <View className="card charge-detail-intro"><Text className="section-title">位置与费用</Text><Text className="charge-detail-address">{displayAddress(selected.address)}</Text>
             <Text className="muted">开始 {historyDetailDateTime(selected.startDate)} · 结束 {historyDetailDateTime(selected.endDate)} · {modeLabel(selected)}</Text>
             <MetricValue label="充电费用" {...costLabel(selectedView)} icon="account" />
-            <Text className="muted">费用来源：{costState?.costProvenance === 'manual' ? '本机手动设置' : costState?.costProvenance === 'free' ? '免费（免费超级充电 · DC）' : costState?.costProvenance === 'actual' ? selectedView.cost === 0 ? '服务端报告0费用' : '服务端账单报告' : costState?.costProvenance === 'estimate' ? `按 ${estimateBasis(costState)} 与合格电池充入量估算` : costState?.reportedCost === 0 && selected.source === 'teslamate_archive' ? 'TeslaMate 原始0表示未填，当前无合格估算' : '未知'}</Text>
+            <Text className="muted">费用来源：{costState?.costProvenance === 'manual' ? '本机手动设置' : costState?.costProvenance === 'free' ? '免费（免费超级充电 · DC）' : costState?.costProvenance === 'actual' ? selectedView.cost === 0 ? '服务端报告0费用' : '服务端账单报告' : costState?.costProvenance === 'estimate' ? `按 ${estimateBasis(costState)} 与${costState.partialEstimatedCost != null ? "已采集部分电量" : "合格电池充入量"}估算，不是实际账单` : costState?.reportedCost === 0 && selected.source === 'teslamate_archive' ? 'TeslaMate 原始0表示未填，当前无合格估算' : '未知'}</Text>
           </View>
           {detailCoordinate ? <View className="card charge-detail-map-card"><Text className="section-title">充电地点</Text>
             {mapFailed ? <Text className="muted">地图暂时无法载入</Text> : <TaroMap className="charge-detail-map" latitude={detailCoordinate.latitude} longitude={detailCoordinate.longitude} scale={15} showLocation={false} markers={[{ id: 1, ...detailCoordinate, iconPath: '/assets/tabs/energy-selected.png', width: 24, height: 24 }]} onError={() => setMapFailed(true)} />}
