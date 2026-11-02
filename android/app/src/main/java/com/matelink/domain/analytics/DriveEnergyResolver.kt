@@ -71,7 +71,9 @@ object DriveEnergyResolver {
         endSoc: Int? = null,
         batteryCapacityKwh: Double? = null,
         model: String? = null,
-        trimBadging: String? = null
+        trimBadging: String? = null,
+        startRatedRangeKm: Double? = null,
+        endRatedRangeKm: Double? = null
     ): DriveEnergyEstimate {
         // Zero and negative net recovery are legitimate reported values.
         apiEnergyKwh?.takeIf(Double::isFinite)?.let { energy ->
@@ -132,6 +134,28 @@ object DriveEnergyResolver {
                         observedEnergyKwh = calculated.energyKwh,
                         qualityReason = "power_integral_short_trip"
                     )
+                }
+                if (startRatedRangeKm != null && endRatedRangeKm != null &&
+                    startRatedRangeKm.isFinite() && endRatedRangeKm.isFinite()) {
+                    val deltaRange = startRatedRangeKm - endRatedRangeKm
+                    if (deltaRange > 0.0 && deltaRange <= 30.0) {
+                        val capacity = batteryCapacityKwh?.takeIf { it > 0.0 && it.isFinite() }
+                            ?: resolveBatteryCapacity(model, trimBadging)
+                        val ratedKwhPerKm = capacity / 420.0
+                        val estimateKwh = deltaRange * ratedKwhPerKm
+                        if (estimateKwh.isFinite() && estimateKwh > 0.0) {
+                            return DriveEnergyEstimate(
+                                energyKwh = estimateKwh,
+                                efficiencyWhKm = efficiency(estimateKwh, distanceKm),
+                                source = DriveEnergySource.SOC_CAPACITY_ESTIMATE,
+                                coverageSeconds = calculated.coverageSeconds,
+                                coverageSecondsExact = calculated.coverageSecondsExact,
+                                coverageRatio = coverage,
+                                observedEnergyKwh = calculated.energyKwh,
+                                qualityReason = "rated_range_delta_estimate"
+                            )
+                        }
+                    }
                 }
                 // SOC did not change across this window; integer 1% quantization cannot resolve short trips.
                 // Do not falsely report as 0.0 kWh (zero consumption).

@@ -228,7 +228,9 @@ internal fun DriveData.historyEnergy(
         endSoc = endBatteryLevel,
         batteryCapacityKwh = batteryCapacityKwh,
         model = model,
-        trimBadging = trimBadging
+        trimBadging = trimBadging,
+        startRatedRangeKm = startRatedRangeKm,
+        endRatedRangeKm = endRatedRangeKm
     )
     if (resolved.energyKwh != null) {
         return DriveDetailEnergyPresentation(

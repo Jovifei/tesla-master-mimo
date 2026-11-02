@@ -16,6 +16,7 @@
 
 | 问题 ID | 发现日期 / 版本 | 根因与修复 | 验证 |
 | --- | --- | --- | --- |
+| NOV02-SHORT-TRIP-RATED-ENERGY | 2026-11-03 / App 2.1.67 build87 | 极短行程前后整数 SOC 无变化（deltaSoc=0）且无功率采样时能耗返回 UNAVAILABLE 变成横杠；2.1.68 / build88 引入额定续航微弱差值（deltaRange）回退估算 | 单元测试通过，真机升级至 build 88 验证 | 
 | NOV02-DRIVE-ENERGY-UNMEASURED | 2026-11-02 / App 2.1.65 build84 | Fleet 遥测行程返回 no_verified_driving_net_energy，客户端此前直接硬阻断拒绝 SOC / 功率估算，列表及详情显示“暂不可用”横杠；2.1.67 / build87 识别无硬件计数流并回退功率积分与 SOC 容量估算 | 61 项定向测试通过，build87 真机实测近一周行程能耗（如 ≈16.5、≈13.5 kWh/100km）恢复计算与展示 |
 | NOV02-BATTERY-TREND-SOURCES-FILTER | 2026-11-02 / App 2.1.64 build83 | batteryTrendSamples 要求 sources.distinct().size == 1，当归档与实时行程共存时所有样本被丢弃返回 null，页面提示“有效样本不足”；2.1.67 / build87 移除该过度限制，只过滤冲突记录 | build87 真机实测恢复 114 个有效样本与完整 07-09 至 11-02 趋势曲线 |
 | NOV02-ENROLLMENT-SESSION-EXPIRY | 2026-11-02 / 候选服务 bfe60d5 合成复现 | 手机 session 在归档确认事务中到期仍可能被批准；候选在提交前重新校验同一锁定 session，到期回滚 | 隔离 PG16 复现后修复；Linux race 37 项及子项通过，未证明生产发生，也未部署；见[记录](RPT-2026-11-02-enrollment-session-expiry.md) |

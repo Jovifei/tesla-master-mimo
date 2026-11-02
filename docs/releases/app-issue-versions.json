@@ -4,6 +4,16 @@
   "observation_note": "发现版本不等于首次引入版本；build82 与 build83 已同签覆盖安装并完成指定真机页面抽查；生产 API 8d3da22 已部署且当前车辆首轮趋势回填完成。build84 充电参考展示及桥 aae2f6af 均为未发布候选，不自动合并疑似重复记录；旧编号回扫和详情离线参考仍开放。生产候选 b11bae0 尚未部署，离线发布 gate 有硬阻断；服务器不包含手机 Room 或微信本地手工费用。",
   "issues": [
     {
+      "id": "NOV02-SHORT-TRIP-RATED-ENERGY",
+      "title": "短行程整数 SOC 不变时回退额定续航微弱压降估算能耗",
+      "found_date": "2026-11-03",
+      "found_version": "App 2.1.67 build87",
+      "status": "VERIFIED_DEVICE",
+      "fix_version": "App 2.1.68 build88",
+      "change": "DriveEnergyResolver 在 deltaSoc=0 且无足够功率点时，通过 start/endRatedRangeKm 微弱差值与容量比率计算估算能耗，避免短行程显示为横杠。",
+      "verification": "DriveEnergyResolverTest, DriveListEnergyConsumerTest 等通过；build 88 覆盖安装真机核验。"
+    },
+    {
       "id": "NOV02-DRIVE-ENERGY-UNMEASURED",
       "title": "Fleet 遥测行程无硬件计数流被客户端硬拦截导致能耗显示横杠",
       "found_date": "2026-11-02",

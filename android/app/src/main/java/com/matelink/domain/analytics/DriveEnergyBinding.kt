@@ -58,7 +58,9 @@ fun DriveDetail.resolveDriveEnergy(
         endSoc = endBatteryLevel,
         batteryCapacityKwh = batteryCapacityKwh,
         model = model,
-        trimBadging = trimBadging
+        trimBadging = trimBadging,
+        startRatedRangeKm = startRatedRangeKm,
+        endRatedRangeKm = endRatedRangeKm
     )
     val power = estimate.source == DriveEnergySource.POWER_SAMPLES
     val partialPower = estimate.source == DriveEnergySource.UNAVAILABLE && estimate.observedEnergyKwh != null
