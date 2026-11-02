@@ -118,13 +118,20 @@ func (b *bridge) sendPending(ctx context.Context, state trendState) error {
 	if err != nil || endpoint.Scheme != "https" || endpoint.Host == "" || endpoint.User != nil {
 		return errors.New("invalid archive URL")
 	}
-	endpoint.Path = strings.TrimRight(endpoint.Path, "/") + "/api/v1/cars/" + b.config.ArchiveVehicleID + "/history/archive/battery-trend/import"
+	route := "import"
+	if state.Version == 2 {
+		route = "import-v2"
+	}
+	endpoint.Path = strings.TrimRight(endpoint.Path, "/") + "/api/v1/cars/" + b.config.ArchiveVehicleID + "/history/archive/battery-trend/" + route
 	endpoint.RawPath, endpoint.RawQuery, endpoint.Fragment = "", "", ""
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint.String(), bytes.NewReader(state.Pending.Body))
 	if err != nil {
 		return errors.New("request creation failed")
 	}
 	req.Header.Set("X-MateLink-Archive-Binding", b.config.ArchiveToken)
+	if state.Version == 2 {
+		req.Header.Set("X-MateLink-Binding-Identity", state.BindingIdentity)
+	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 	if b.client == nil {
@@ -150,12 +157,13 @@ func (b *bridge) sendPending(ctx context.Context, state trendState) error {
 	}
 	var receipt struct {
 		Data struct {
-			SchemaVersion *int    `json:"schema_version"`
-			BatchID       *string `json:"batch_id"`
-			PayloadSHA256 *string `json:"payload_sha256"`
-			Inserted      *int    `json:"inserted"`
-			Unchanged     *int    `json:"unchanged"`
-			Conflicted    *int    `json:"conflicted"`
+			SchemaVersion   *int    `json:"schema_version"`
+			BatchID         *string `json:"batch_id"`
+			PayloadSHA256   *string `json:"payload_sha256"`
+			Inserted        *int    `json:"inserted"`
+			Unchanged       *int    `json:"unchanged"`
+			Conflicted      *int    `json:"conflicted"`
+			BindingIdentity *string `json:"binding_identity"`
 		} `json:"data"`
 	}
 	if json.Unmarshal(body, &receipt) != nil || receipt.Data.SchemaVersion == nil || *receipt.Data.SchemaVersion != 1 ||
@@ -166,6 +174,10 @@ func (b *bridge) sendPending(ctx context.Context, state trendState) error {
 		*receipt.Data.Inserted > len(request.Observations) ||
 		*receipt.Data.Unchanged != len(request.Observations)-*receipt.Data.Inserted {
 		return errors.New("trend receipt mismatch")
+	}
+	if state.Version == 2 && (receipt.Data.BindingIdentity == nil ||
+		*receipt.Data.BindingIdentity != state.BindingIdentity) {
+		return errors.New("trend receipt identity mismatch")
 	}
 	state.LastDriveID = state.Pending.LastDriveID
 	state.Pending = nil

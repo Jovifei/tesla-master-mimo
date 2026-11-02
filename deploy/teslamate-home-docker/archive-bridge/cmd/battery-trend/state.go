@@ -18,11 +18,12 @@ type pendingBatch struct {
 }
 
 type trendState struct {
-	Version     int           `json:"version"`
-	ScopeHash   string        `json:"scope_hash"`
-	LastDriveID int64         `json:"last_drive_id"`
-	HighWaterID int64         `json:"high_water_id"`
-	Pending     *pendingBatch `json:"pending"`
+	Version         int           `json:"version"`
+	ScopeHash       string        `json:"scope_hash"`
+	BindingIdentity string        `json:"binding_identity,omitempty"`
+	LastDriveID     int64         `json:"last_drive_id"`
+	HighWaterID     int64         `json:"high_water_id"`
+	Pending         *pendingBatch `json:"pending"`
 }
 
 func loadState(c config) (trendState, error) {
@@ -57,9 +58,12 @@ func loadState(c config) (trendState, error) {
 }
 
 func validateState(c config, state trendState) error {
-	if state.Version != 1 || state.ScopeHash != c.ScopeHash || state.LastDriveID < 0 || state.HighWaterID < 0 ||
+	if (state.Version != 1 && state.Version != 2) || state.ScopeHash != c.ScopeHash || state.LastDriveID < 0 || state.HighWaterID < 0 ||
 		(state.HighWaterID != 0 && state.HighWaterID < state.LastDriveID) {
 		return errors.New("trend state scope or cursor invalid")
+	}
+	if state.Version == 2 && !validBindingIdentity(state.BindingIdentity) {
+		return errors.New("trend state binding identity invalid")
 	}
 	if state.Pending == nil {
 		return nil

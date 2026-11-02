@@ -415,6 +415,14 @@ func (s *store) archiveEnrollmentAction(ctx context.Context, handle, action, acc
 		if err != nil {
 			return nil, 0, err
 		}
+		// The locked session may expire while the decision write is waiting.
+		err = tx.QueryRow(ctx, `SELECT user_id=$2 AND revoked_at IS NULL AND access_expires_at>clock_timestamp() FROM jourvolt_sessions WHERE access_hash=$1`, hashToken(access), owner).Scan(&valid)
+		if errors.Is(err, pgx.ErrNoRows) || (err == nil && !valid) {
+			return nil, 0, errEnrollmentSession
+		}
+		if err != nil {
+			return nil, 0, err
+		}
 		if err = tx.Commit(ctx); err != nil {
 			return nil, 0, err
 		}

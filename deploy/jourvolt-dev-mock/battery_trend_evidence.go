@@ -191,8 +191,27 @@ func batteryTrendImportPath(path string) bool {
 		parts[4] == "history" && parts[5] == "archive" && parts[6] == "battery-trend" && parts[7] == "import"
 }
 
+func batteryTrendImportV2Path(path string) bool {
+	parts := strings.Split(path, "/")
+	return len(parts) == 9 && parts[0] == "" && parts[1] == "api" && parts[2] == "v1" && parts[3] == "cars" &&
+		parts[5] == "history" && parts[6] == "archive" && parts[7] == "battery-trend" && parts[8] == "import-v2"
+}
+
 func (a *app) batteryTrendArchiveImport(w http.ResponseWriter, r *http.Request) {
-	if !batteryTrendImportPath(r.URL.Path) {
+	a.batteryTrendArchiveImportVersion(w, r, false)
+}
+
+func (a *app) batteryTrendArchiveImportV2(w http.ResponseWriter, r *http.Request) {
+	a.batteryTrendArchiveImportVersion(w, r, true)
+}
+
+func (a *app) batteryTrendArchiveImportVersion(w http.ResponseWriter, r *http.Request, v2 bool) {
+	if v2 {
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Pragma", "no-cache")
+	}
+	if (v2 && (!batteryTrendImportV2Path(r.URL.Path) || r.URL.RawQuery != "" || r.URL.EscapedPath() != r.URL.Path)) ||
+		(!v2 && !batteryTrendImportPath(r.URL.Path)) {
 		a.json(w, http.StatusNotFound, map[string]string{"error": "not_found"})
 		return
 	}
@@ -206,18 +225,36 @@ func (a *app) batteryTrendArchiveImport(w http.ResponseWriter, r *http.Request) 
 		a.json(w, http.StatusNotFound, map[string]string{"error": "vehicle_not_found"})
 		return
 	}
-	if strings.TrimSpace(r.Header.Get(archiveBindingHeader)) == "" {
+	token := r.Header.Get(archiveBindingHeader)
+	var expectedIdentity []byte
+	var expectedIdentityHex string
+	if v2 {
+		var ok bool
+		if token, ok = singleV2Header(r, archiveBindingHeader); !ok {
+			a.archiveBindingError(w, errArchiveBindingRequired)
+			return
+		}
+		if expectedIdentityHex, ok = singleV2Header(r, archiveBindingIdentityHeader); !ok {
+			a.json(w, http.StatusBadRequest, map[string]string{"error": "archive_binding_identity_required"})
+			return
+		}
+		expectedIdentity, _ = hex.DecodeString(expectedIdentityHex)
+	} else if strings.TrimSpace(token) == "" {
 		a.archiveBindingError(w, errArchiveBindingRequired)
 		return
 	}
 	repository := a.archiveBindingRepository()
-	if repository == nil {
+	if repository == nil || (v2 && (a.store == nil || a.store.pool == nil || (a.telemetry != nil && a.telemetry.memory != nil))) {
 		a.json(w, http.StatusServiceUnavailable, map[string]string{"error": "archive_binding_unavailable"})
 		return
 	}
-	binding, err := repository.resolveArchiveBinding(r.Context(), r.Header.Get(archiveBindingHeader))
+	binding, err := repository.resolveArchiveBinding(r.Context(), token)
 	if err != nil {
-		a.archiveBindingError(w, err)
+		if v2 {
+			a.archiveBindingIdentityError(w, err)
+		} else {
+			a.archiveBindingError(w, err)
+		}
 		return
 	}
 	if binding.VehicleID != vehicleID {
@@ -260,7 +297,11 @@ func (a *app) batteryTrendArchiveImport(w http.ResponseWriter, r *http.Request) 
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
-	inserted, unchanged, err := storeBatteryTrendBatch(ctx, a.store, binding, request, archiveBindingTokenHash(r.Header.Get(archiveBindingHeader)))
+	inserted, unchanged, err := storeBatteryTrendBatchWithIdentity(ctx, a.store, binding, request, archiveBindingTokenHash(token), expectedIdentity)
+	if errors.Is(err, errArchiveBindingIdentityMismatch) {
+		a.json(w, http.StatusForbidden, map[string]string{"error": errArchiveBindingIdentityMismatch.Error()})
+		return
+	}
 	if errors.Is(err, errBatteryTrendArchivePending) {
 		w.Header().Set("Retry-After", "60")
 		a.json(w, http.StatusServiceUnavailable, map[string]string{"error": errBatteryTrendArchivePending.Error()})
@@ -278,8 +319,12 @@ func (a *app) batteryTrendArchiveImport(w http.ResponseWriter, r *http.Request) 
 		a.json(w, http.StatusServiceUnavailable, map[string]string{"error": "battery_trend_unavailable"})
 		return
 	}
-	a.json(w, http.StatusOK, map[string]any{"data": map[string]any{"schema_version": 1, "batch_id": request.BatchID,
-		"payload_sha256": request.PayloadSHA256, "inserted": inserted, "unchanged": unchanged, "conflicted": 0}})
+	data := map[string]any{"schema_version": 1, "batch_id": request.BatchID,
+		"payload_sha256": request.PayloadSHA256, "inserted": inserted, "unchanged": unchanged, "conflicted": 0}
+	if v2 {
+		data["binding_identity"] = expectedIdentityHex
+	}
+	a.json(w, http.StatusOK, map[string]any{"data": data})
 }
 
 func lockBatteryTrendBinding(ctx context.Context, tx pgx.Tx, binding archiveBinding, tokenHash string) (time.Time, error) {
@@ -375,11 +420,23 @@ func requireStoredBatteryTrendEvidence(ctx context.Context, tx pgx.Tx, binding a
 }
 
 func storeBatteryTrendBatch(ctx context.Context, store *store, binding archiveBinding, request batteryTrendImportRequest, tokenHash string) (int, int, error) {
+	return storeBatteryTrendBatchWithIdentity(ctx, store, binding, request, tokenHash, nil)
+}
+
+func storeBatteryTrendBatchWithIdentity(ctx context.Context, store *store, binding archiveBinding, request batteryTrendImportRequest, tokenHash string, expectedIdentity []byte) (int, int, error) {
 	tx, err := store.pool.Begin(ctx)
 	if err != nil {
 		return 0, 0, err
 	}
-	defer tx.Rollback(ctx)
+	if expectedIdentity == nil {
+		defer tx.Rollback(ctx)
+	} else {
+		defer func() {
+			rollbackCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = tx.Rollback(rollbackCtx)
+		}()
+	}
 	// Serialize a vehicle's commits so a paged snapshot cannot miss a late lower sequence.
 	lock := scopedSessionID("battery-trend", binding.UserID, binding.VehicleID, "scope", "")
 	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, lock); err != nil {
@@ -396,6 +453,11 @@ func storeBatteryTrendBatch(ctx context.Context, store *store, binding archiveBi
 	expires, err := lockBatteryTrendBinding(ctx, tx, binding, tokenHash)
 	if err != nil {
 		return 0, 0, err
+	}
+	if expectedIdentity != nil {
+		if err = verifyLockedArchiveBindingIdentity(ctx, tx, binding, tokenHash, expectedIdentity); err != nil {
+			return 0, 0, err
+		}
 	}
 	var existingHash string
 	var inserted, unchanged int
@@ -424,6 +486,11 @@ func storeBatteryTrendBatch(ctx context.Context, store *store, binding archiveBi
 		}
 		if err = requireBatteryTrendBindingNotExpired(ctx, tx, expires); err != nil {
 			return 0, 0, err
+		}
+		if expectedIdentity != nil {
+			if err = verifyLockedArchiveBindingIdentity(ctx, tx, binding, tokenHash, expectedIdentity); err != nil {
+				return 0, 0, err
+			}
 		}
 		return inserted, unchanged, nil
 	}
@@ -494,6 +561,11 @@ func storeBatteryTrendBatch(ctx context.Context, store *store, binding archiveBi
 	}
 	if err = requireBatteryTrendBindingNotExpired(ctx, tx, expires); err != nil {
 		return 0, 0, err
+	}
+	if expectedIdentity != nil {
+		if err = verifyLockedArchiveBindingIdentity(ctx, tx, binding, tokenHash, expectedIdentity); err != nil {
+			return 0, 0, err
+		}
 	}
 	if err = tx.Commit(ctx); err != nil {
 		return 0, 0, err

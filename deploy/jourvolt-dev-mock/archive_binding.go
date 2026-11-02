@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -436,12 +437,37 @@ func archiveImportPath(path string) bool {
 		parts[4] == "history" && parts[5] == "archive" && parts[6] == "import"
 }
 
+func archiveImportV2Path(path string) bool {
+	parts := strings.Split(path, "/")
+	return len(parts) == 8 && parts[0] == "" && parts[1] == "api" && parts[2] == "v1" && parts[3] == "cars" &&
+		parts[5] == "history" && parts[6] == "archive" && parts[7] == "import-v2"
+}
+
 func archiveImportParts(parts []string) bool {
 	return len(parts) == 4 && parts[1] == "history" && parts[2] == "archive" && parts[3] == "import"
 }
 
 func (a *app) archiveBindingResource(w http.ResponseWriter, r *http.Request, expectedUserID string) {
+	a.archiveBindingResourceVersion(w, r, expectedUserID, false)
+}
+
+func (a *app) archiveBindingResourceV2(w http.ResponseWriter, r *http.Request) {
+	a.archiveBindingResourceVersion(w, r, "", true)
+}
+
+func (a *app) archiveBindingResourceVersion(w http.ResponseWriter, r *http.Request, expectedUserID string, v2 bool) {
+	if v2 {
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Pragma", "no-cache")
+		if !archiveImportV2Path(r.URL.Path) || r.URL.RawQuery != "" || r.URL.EscapedPath() != r.URL.Path {
+			a.json(w, http.StatusNotFound, map[string]string{"error": "not_found"})
+			return
+		}
+	}
 	parts := strings.Split(strings.TrimPrefix(strings.TrimSuffix(r.URL.Path, "/"), "/api/v1/cars/"), "/")
+	if v2 && len(parts) == 4 && parts[3] == "import-v2" {
+		parts[3] = "import"
+	}
 	if !archiveImportParts(parts) {
 		a.json(w, http.StatusNotFound, map[string]string{"error": "not_found"})
 		return
@@ -451,7 +477,25 @@ func (a *app) archiveBindingResource(w http.ResponseWriter, r *http.Request, exp
 		a.json(w, http.StatusNotFound, map[string]string{"error": "vehicle_not_found"})
 		return
 	}
-	if strings.TrimSpace(r.Header.Get(archiveBindingHeader)) == "" {
+	token := r.Header.Get(archiveBindingHeader)
+	var expectedIdentity []byte
+	var expectedIdentityHex string
+	if v2 {
+		var ok bool
+		if token, ok = singleV2Header(r, archiveBindingHeader); !ok {
+			a.archiveBindingError(w, errArchiveBindingRequired)
+			return
+		}
+		if expectedIdentityHex, ok = singleV2Header(r, archiveBindingIdentityHeader); !ok {
+			a.json(w, http.StatusBadRequest, map[string]string{"error": "archive_binding_identity_required"})
+			return
+		}
+		expectedIdentity, _ = hex.DecodeString(expectedIdentityHex)
+		if a.store == nil || a.store.pool == nil || a.telemetry == nil || a.telemetry.memory != nil || a.telemetry.store != a.store {
+			a.json(w, http.StatusServiceUnavailable, map[string]string{"error": "archive_binding_unavailable"})
+			return
+		}
+	} else if strings.TrimSpace(token) == "" {
 		a.json(w, http.StatusUnauthorized, map[string]string{"error": errArchiveBindingRequired.Error()})
 		return
 	}
@@ -460,19 +504,23 @@ func (a *app) archiveBindingResource(w http.ResponseWriter, r *http.Request, exp
 		a.json(w, http.StatusServiceUnavailable, map[string]string{"error": "archive_binding_unavailable"})
 		return
 	}
-	binding, err := repository.resolveArchiveBinding(r.Context(), r.Header.Get(archiveBindingHeader))
+	binding, err := repository.resolveArchiveBinding(r.Context(), token)
 	if err != nil {
-		a.archiveBindingError(w, err)
+		if v2 {
+			a.archiveBindingIdentityError(w, err)
+		} else {
+			a.archiveBindingError(w, err)
+		}
 		return
 	}
 	if binding.VehicleID != vehicleID || (expectedUserID != "" && binding.UserID != expectedUserID) {
 		a.archiveBindingError(w, errArchiveBindingScopeMismatch)
 		return
 	}
-	a.historyArchiveImportForBinding(w, r, binding)
+	a.historyArchiveImportForBinding(w, r, binding, token, expectedIdentity, expectedIdentityHex)
 }
 
-func (a *app) historyArchiveImportForBinding(w http.ResponseWriter, r *http.Request, binding archiveBinding) {
+func (a *app) historyArchiveImportForBinding(w http.ResponseWriter, r *http.Request, binding archiveBinding, token string, expectedIdentity []byte, expectedIdentityHex string) {
 	if r.Method != http.MethodPost {
 		a.json(w, http.StatusNotFound, map[string]string{"error": "not_found"})
 		return
@@ -501,15 +549,25 @@ func (a *app) historyArchiveImportForBinding(w http.ResponseWriter, r *http.Requ
 		a.json(w, http.StatusServiceUnavailable, map[string]string{"error": "history_archive_import_failed"})
 		return
 	}
-	guard := archiveImportGuard{binding: binding, tokenHash: archiveBindingTokenHash(r.Header.Get(archiveBindingHeader))}
+	guard := archiveImportGuard{binding: binding, tokenHash: archiveBindingTokenHash(token), expectedIdentity: expectedIdentity}
 	result, err := a.telemetry.importBoundHistory(r.Context(), guard, request)
 	if err != nil {
-		if errors.Is(err, errArchiveBindingInvalid) || errors.Is(err, errArchiveBindingRevoked) ||
+		if errors.Is(err, errArchiveBindingIdentityMismatch) {
+			a.json(w, http.StatusForbidden, map[string]string{"error": errArchiveBindingIdentityMismatch.Error()})
+		} else if errors.Is(err, errArchiveBindingInvalid) || errors.Is(err, errArchiveBindingRevoked) ||
 			errors.Is(err, errArchiveBindingExpired) || errors.Is(err, errArchiveBindingScopeMismatch) {
 			a.archiveBindingError(w, err)
 		} else {
 			a.json(w, http.StatusServiceUnavailable, map[string]string{"error": "history_archive_import_failed"})
 		}
+		return
+	}
+	if expectedIdentity != nil {
+		a.json(w, http.StatusOK, map[string]any{"data": map[string]any{
+			"imported_drives": result.ImportedDrives, "imported_charges": result.ImportedCharges,
+			"retained_days": result.RetainedDays, "quarantined_count": result.QuarantinedCount,
+			"binding_identity": expectedIdentityHex,
+		}})
 		return
 	}
 	a.json(w, http.StatusOK, map[string]any{"data": result})

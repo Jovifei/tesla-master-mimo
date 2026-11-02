@@ -132,6 +132,7 @@ type config struct {
 	DatabaseURL, ArchiveURL, ArchiveToken, ArchiveVehicleID         string
 	SourceInstanceID, SourceVehicleID, StateFile, OriginalStateFile string
 	SourceTimezone                                                  string
+	BindingIdentity                                                 string
 	SourceCarID                                                     int64
 	BatchSize                                                       int
 	PollInterval                                                    time.Duration

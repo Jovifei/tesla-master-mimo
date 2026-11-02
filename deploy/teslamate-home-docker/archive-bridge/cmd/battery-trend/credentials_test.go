@@ -45,8 +45,9 @@ func TestCredentialsStdinActualEntrypointDoesNotLogSecrets(t *testing.T) {
 	cmd := exec.Command(os.Args[0], "-test.run=^TestCredentialsStdinActualEntrypointDoesNotLogSecrets$")
 	cmd.Env, cmd.Stdin = env, strings.NewReader(input)
 	output, err := cmd.CombinedOutput()
-	if err == nil || !strings.Contains(string(output), "battery trend database unavailable") {
-		t.Fatal("stdin did not reach the actual database connection stage")
+	if err == nil || (!strings.Contains(string(output), "battery trend requires verified owner") &&
+		!strings.Contains(string(output), "battery trend owner identity unavailable")) {
+		t.Fatal("stdin did not stop before unverified archive sending")
 	}
 	if strings.Contains(string(output), database) || strings.Contains(string(output), token) || strings.Contains(string(output), "synthetic-secret-password") {
 		t.Fatal("credentials appeared in process output")

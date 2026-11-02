@@ -463,8 +463,20 @@ func (a *app) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		a.deleteAccount(w, r)
 		return
 	}
+	if archiveBindingIdentityPath(r.URL.Path) {
+		a.archiveBindingIdentity(w, r)
+		return
+	}
+	if batteryTrendImportV2Path(r.URL.Path) {
+		a.batteryTrendArchiveImportV2(w, r)
+		return
+	}
 	if batteryTrendImportPath(r.URL.Path) {
 		a.batteryTrendArchiveImport(w, r)
+		return
+	}
+	if archiveImportV2Path(r.URL.Path) {
+		a.archiveBindingResourceV2(w, r)
 		return
 	}
 	if archiveImportPath(r.URL.Path) {

@@ -17,13 +17,35 @@ import (
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	socketMode := len(os.Args) == 2 && os.Args[1] == "--credentials-socket"
+	socketMode := false
+	migrationMode := false
+	for _, arg := range os.Args[1:] {
+		switch arg {
+		case "--credentials-socket":
+			socketMode = true
+		case "--migrate-v1-binding":
+			migrationMode = true
+		}
+	}
 	var c config
 	var err error
 	if socketMode {
+		if len(os.Args) != 2 && !(migrationMode && len(os.Args) == 3) {
+			socketMode = false
+		}
 		c, err = waitForSocketConfig(ctx)
 	} else {
-		c, err = loadRunConfig(os.Args[1:], os.Stdin, os.LookupEnv)
+		args := os.Args[1:]
+		if migrationMode {
+			if len(args) != 1 || args[0] != "--migrate-v1-binding" {
+				err = errors.New("invalid migration mode")
+			} else {
+				args = nil
+			}
+		}
+		if err == nil {
+			c, err = loadRunConfig(args, os.Stdin, os.LookupEnv)
+		}
 	}
 	if err != nil {
 		log.Print("battery trend configuration rejected")
@@ -55,6 +77,52 @@ func main() {
 			<-ctx.Done()
 			return
 		}
+	}
+	if !migrationMode {
+		if err = requireLocallySafeRestartState(c); err != nil {
+			log.Print("battery trend requires verified owner")
+			if socketMode {
+				<-ctx.Done()
+				return
+			}
+			os.Exit(1)
+		}
+	}
+	client := &http.Client{Timeout: 30 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	var identity string
+	for {
+		identity, err = fetchBindingIdentity(ctx, c, client)
+		if err == nil {
+			break
+		}
+		log.Print("battery trend owner identity unavailable")
+		if !socketMode || !waitRetry(ctx, 10*time.Second) {
+			if socketMode {
+				return
+			}
+			os.Exit(1)
+		}
+	}
+	c.BindingIdentity = identity
+	if migrationMode {
+		if os.Getenv("BATTERY_TREND_CONFIRM_LEGACY_STATE_OWNER") != "I_CONFIRM_THIS_LOCAL_STATE_BELONGS_TO_CURRENT_BINDING" {
+			log.Print("battery trend migration confirmation required")
+			os.Exit(1)
+		}
+		if err = migrateLegacyState(c, identity); err != nil {
+			log.Print("battery trend legacy state migration rejected")
+			os.Exit(1)
+		}
+		log.Print("battery trend legacy state migrated")
+		return
+	}
+	if _, err = verifyOwnerState(c, identity); err != nil {
+		log.Print("battery trend requires verified owner")
+		if socketMode {
+			<-ctx.Done()
+			return
+		}
+		os.Exit(1)
 	}
 	pg, err := pgxpool.ParseConfig(c.DatabaseURL)
 	if err != nil {
@@ -88,7 +156,6 @@ func main() {
 		}
 	}
 	defer pool.Close()
-	client := &http.Client{Timeout: 30 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	b := bridge{config: c, source: postgresSource{pool: pool, carID: c.SourceCarID}, client: client}
 	if socketMode {
 		err = runManaged(ctx, c, b.run)

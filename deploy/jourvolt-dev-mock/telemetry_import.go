@@ -292,8 +292,9 @@ func importChargePoints(points []historyImportChargePoint, start time.Time) []te
 
 // importHistory persists locally-collected history into the cloud store.
 type archiveImportGuard struct {
-	binding   archiveBinding
-	tokenHash string
+	binding          archiveBinding
+	tokenHash        string
+	expectedIdentity []byte
 }
 
 func (s *telemetryService) importHistory(ctx context.Context, userID string, vehicleID int, request historyImportRequest) (historyImportResult, error) {
@@ -356,6 +357,9 @@ func (s *telemetryMemoryStore) importBoundSessions(ctx context.Context, guard ar
 	defer s.mu.Unlock()
 	if err := ctx.Err(); err != nil {
 		return err
+	}
+	if guard.expectedIdentity != nil {
+		return errArchiveBindingIdentityUnavailable
 	}
 	current, ok := s.archiveBindings[guard.tokenHash]
 	if !ok {
@@ -456,6 +460,11 @@ func (s *telemetryService) importHistoryPostgres(ctx context.Context, userID str
 		if expires, err = lockArchiveImportBinding(ctx, tx, *guard); err != nil {
 			return historyImportResult{}, err
 		}
+		if guard.expectedIdentity != nil {
+			if err = verifyLockedArchiveBindingIdentity(ctx, tx, guard.binding, guard.tokenHash, guard.expectedIdentity); err != nil {
+				return historyImportResult{}, err
+			}
+		}
 	}
 	importedDrives := 0
 	for _, session := range drives {
@@ -474,6 +483,11 @@ func (s *telemetryService) importHistoryPostgres(ctx context.Context, userID str
 	if guard != nil {
 		if err = requireArchiveImportNotExpired(ctx, tx, expires); err != nil {
 			return historyImportResult{}, err
+		}
+		if guard.expectedIdentity != nil {
+			if err = verifyLockedArchiveBindingIdentity(ctx, tx, guard.binding, guard.tokenHash, guard.expectedIdentity); err != nil {
+				return historyImportResult{}, err
+			}
 		}
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -518,20 +532,20 @@ func upsertImportedSessionPostgres(ctx context.Context, tx pgx.Tx, userID string
 			return errors.New("history_session_identity_mismatch")
 		}
 		if old.Source == "teslamate_archive" {
+			if session.Source != old.Source || old.SourceInstanceID != session.SourceInstanceID ||
+				old.SourceVehicleID != session.SourceVehicleID || old.SourceRecordID != session.SourceRecordID {
+				return errors.New("history_session_identity_mismatch")
+			}
 			if err = json.Unmarshal(oldRoute, &old.ArchiveRoute); err != nil {
 				return err
 			}
-			for _, point := range old.ArchiveRoute {
-				if point.Latitude == nil || point.Longitude == nil || point.Date == "" {
-					continue
-				}
-				observedAt, parseErr := time.Parse(time.RFC3339, point.Date)
-				if parseErr != nil {
-					continue
-				}
-				old.Route = append(old.Route, telemetryRoutePoint{ObservedAt: observedAt, Latitude: *point.Latitude, Longitude: *point.Longitude, Speed: point.Speed, Power: point.Power, Heading: point.Heading, BatteryLevel: cloneInt(observedRouteBatteryLevel(point.BatteryLevel))})
+			if err = json.Unmarshal(oldChargePoints, &old.ChargePoints); err != nil {
+				return err
 			}
-		} else if err = json.Unmarshal(oldRoute, &old.Route); err != nil {
+			// Existing archive records are authoritative; avoid re-encoding their evidence.
+			return nil
+		}
+		if err = json.Unmarshal(oldRoute, &old.Route); err != nil {
 			return err
 		}
 		if err = json.Unmarshal(oldChargePoints, &old.ChargePoints); err != nil {
