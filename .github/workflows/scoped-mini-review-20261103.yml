@@ -44,6 +44,18 @@ jobs:
           test "$(git ls-remote origin "refs/heads/$TARGET_BRANCH" | cut -f1)" = "$GITHUB_SHA"
           python3 tools/remote-review/mini-20261103-prepare.py
           python3 tools/remote-review/mini-20261103-tests.py
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('miniprogram/src/pages/analysis/index.tsx'); s=p.read_text()
+          a="const candidate = remoteDrives.status === 'fulfilled' && remoteDrives.value.complete\n          ? buildParkedWindows(remoteDrives.value.items, ch, remoteCharges.status === 'fulfilled' && remoteCharges.value.complete)"
+          b="const candidate = remoteD?.complete\n          ? buildParkedWindows(remoteD.items, ch, Boolean(remoteC?.complete && !retainedC))"
+          assert s.count(a)==1
+          p.write_text(s.replace(a,b))
+          p=Path('miniprogram/src/components/dashboard/AppGeometryContract.test.tsx'); s=p.read_text()
+          a="tree.root.findByType('vehicle-asset')"
+          assert s.count(a)==1
+          p.write_text(s.replace(a,"tree.root.findByProps({ className: 'dashboard-vehicle-image' })"))
+          PY
           cp tools/remote-review/mini-ci-template.yml .github/workflows/mini-review-timezones.yml
           git diff --check
           git add miniprogram docs/REMOTE-AUDIT-MINI-20261103.md .github/workflows/mini-review-timezones.yml
