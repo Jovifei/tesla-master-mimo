@@ -2,7 +2,7 @@
 
 更新：2026-11-02。发现版本是审查/复现时的源码候选，不等于首次引入版本；提交、APK、安装与生产分别记录。完整逐次事件见[JSON账本](releases/app-issue-versions.json)。
 
-共 150 条：保留此前记录，新增电池趋势、用户数据保留与候选行程补全问题。恢复工作在 App 分支 `codex/app-collection-recovery-20261029`；原84条仍保留各自build73证据，基线导入 `e53a2d01`。
+共 152 条：保留此前记录，新增电池趋势、用户数据保留与候选行程补全问题。恢复工作在 App 分支 `codex/app-collection-recovery-20261029`；原84条仍保留各自build73证据，基线导入 `e53a2d01`。
 
 每条记录修复方向及实际验证状态，尚未修复或未回归的项目明确保留；raw receipt/旧记录保留，source gates与发布门不混称已验收。
 
@@ -16,11 +16,13 @@
 
 | 问题 ID | 发现日期 / 版本 | 根因与修复 | 验证 |
 | --- | --- | --- | --- |
+| NOV02-TREND-RESTART | 2026-11-02 / 独立趋势桥 8d3da22 | 原桥以一次性标准输入领取凭据，重启后无法自动重连；早期候选增加私有 socket 和独立状态，但旧状态缺可信账号归属，换授权时有串号风险 | `aae2f6af` 的隔离容器测试未覆盖该风险，禁止部署；正在补全入口停发与双账号测试，见[记录](RPT-2026-11-02-archive-restart-candidate.md) |
+| NOV02-COST-TOMBSTONE-REAPPEARS | 2026-11-02 / build83 源码审查 | 精确删除标记存在时旧手工费用可能重新显示；build84 候选在列表及详情按同车、记录和币种抑制旧展示，不删除原记录 | 双变体各 1879 项及隔离模拟器 34 项通过；用户反馈已修改的价格仍保留；build84 尚未安装，见[记录](RPT-2026-11-02-charge-import-duplicates.md) |
 | NOV02-ARCHIVE-REVOCATION-RACE | 2026-11-02 / 生产 API 8d3da22（仅隔离复现） | 同事务重验并锁定归档授权，撤权先完成时不写入；候选尚未部署 | 最终合成 PG16 服务端 716 项；生产候选 Linux race 服务端 118 项及子项通过；线上未部署、发布 gate 阻断，见[记录](RPT-2026-11-02-archive-revocation-race.md) |
 | NOV02-BATTERY-ARCHIVE-PENDING | 2026-11-02 / 生产 API 8d3da22 | 仅缺少对应归档且整批无冲突时允许旧桥重试；真实冲突继续拦截 | 最终合成 PG16 服务端 716 项、桥 59 项；生产候选 Linux race 服务端 118 项及子项、桥 2 项通过；线上未部署、发布 gate 阻断，见[记录](RPT-2026-11-02-battery-trend-pending.md) |
 | NOV02-CI-POSTGRES-OPTIN | 2026-11-02 / App 分支 cf9b488 | 临时库启用隔离开关并对齐专用库名前缀，不降低测试门禁 | 本地 568 项通过、远端 eab3af4 verify 通过；最新分支完整检查待确认，见[记录](RPT-2026-11-02-ci-postgres-opt-in.md) |
 | NOV02-BATTERY-UNSUPPORTED-MSG | 2026-11-02 / App 2.1.63 build82 | 明确标记 unsupported 的空容量被误报为网络失败；2.1.64 / build83 提交 `7bd9ecf136f1e4f92d17f1cfa54cf7710d467893` 区分未提供实测容量与真实网络错误 | 72 项定向、双变体各 1862 项单测、双 lint 和模拟器 36 项通过；build83 真机此次显示“当前数据源未提供实测电池容量”，未见错误连接提示，范围仅限本次抽查，见[记录](RPT-2026-11-01-battery-trend-retention.md) |
-| NOV02-CHARGE-UNLINKED-IMPORT | 2026-11-02 / App 2.1.63 build82 | 同分钟出现空卡与 11.1 kWh 卡；云端 local_import 与 archive 尚无可验证来源映射 | 未修复；build82 手机及源、云只读核查，不能仅凭时间或能量合并，也不能丢弃手工费用；见[记录](RPT-2026-11-02-charge-import-duplicates.md) |
+| NOV02-CHARGE-UNLINKED-IMPORT | 2026-11-02 / App 2.1.63 build82 | 候选防止 archive 记录重复回传；对同记录原始值只展示带标识的参考电量/费用，不自动合并或计入正式统计 | build83 手机复现；9 组云公开 ID 派生关联仅为线索；双变体各 1879 项、双 lint 和模拟器 34 项通过；build84 真机待验，详情冷开仍保守未知；见[记录](RPT-2026-11-02-charge-import-duplicates.md) |
 | NOV01-BATTERY-ARCHIVE-EVIDENCE | 2026-11-01 / App build81、API 403aa6c | 云端归档没有提供行程额定续航及合格温标；独立趋势证据链已按绑定作用域部署并首轮回填 | 生产 `8d3da22` 已部署；478 条 / 10 批，SQL 112 合格含旧 110；build82 手机显示 112 样本和曲线。长期重启与源后补回扫仍开放，见[记录](RPT-2026-11-01-battery-trend-retention.md) |
 | NOV01-RESYNC-HISTORY-RETENTION | 2026-11-01 / App build81 源码审查 | 设置重新同步原先先删除历史摘要和聚合；候选改为保留记录并重新检查 | 相关真实 Room/VM 定向和 build82 双变体全量单测通过；未证实用户触发过原操作，真机验收待完成，见[记录](RPT-2026-11-01-battery-trend-retention.md) |
 | NOV01-LEGACY-COST-RETENTION | 2026-11-01 / App build81 源码审查 | 旧手工总价迁移遇异常可能删除原 JSON；候选保留原文并安全重试 | 真实 DataStore/Room 合成回归通过，未证实用户发生该问题，见[记录](RPT-2026-11-01-battery-trend-retention.md) |

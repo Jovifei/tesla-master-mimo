@@ -12,9 +12,18 @@ data class ChargeTariffEstimate(val amount: Double?, val reason: String)
 
 /** App-local tariff estimate; a known provider/manual bill always has priority. */
 internal fun estimateChargeTariff(charge: ChargeData, settings: AppSettings,
-    zone: ZoneId = ZoneId.systemDefault()): ChargeTariffEstimate {
-    val partial = charge.partialBatteryInputKwh
-    val energy = charge.batteryInputKwh ?: partial
+    zone: ZoneId = ZoneId.systemDefault()): ChargeTariffEstimate =
+    estimateChargeTariffForEnergy(charge, settings, zone, null)
+
+/** Calculate a display-only reference using the same tariff schedule, without qualifying the raw energy. */
+internal fun estimateReferenceChargeTariff(charge: ChargeData, settings: AppSettings,
+    referenceEnergyKwh: Double, zone: ZoneId): ChargeTariffEstimate =
+    estimateChargeTariffForEnergy(charge, settings, zone, referenceEnergyKwh)
+
+private fun estimateChargeTariffForEnergy(charge: ChargeData, settings: AppSettings,
+    zone: ZoneId, referenceEnergyKwh: Double?): ChargeTariffEstimate {
+    val partial = if (referenceEnergyKwh == null) charge.partialBatteryInputKwh else null
+    val energy = referenceEnergyKwh ?: charge.batteryInputKwh ?: partial
     if (!settings.tariffEnabled) return ChargeTariffEstimate(
         manualChargeAmount(settings.defaultChargePrice, energy),
         if (charge.batteryInputKwh == null && partial != null) "estimate_partial_counter" else "estimate")

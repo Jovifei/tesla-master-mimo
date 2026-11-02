@@ -1,8 +1,34 @@
 {
   "schema_version": 1,
   "branch": "codex/app-collection-recovery-20261029",
-  "observation_note": "发现版本不等于首次引入版本；build77 安装及 CI 属历史记录；build82 已同签覆盖安装并完成指定页面抽查，生产 API 8d3da22 已部署且当前车辆首轮趋势回填完成；build83 已同签名覆盖安装并完成指定真机页面抽查，未代表全部页面或历史均已验收；充电疑似重复导入仍未修复；独立桥重启凭据、源后补回扫及费用跨页口径仍开放；生产候选 b11bae0 的 Linux 合成 race 已过，App cherry-pick 37955cf 仅七个相关文件一致，App 提交 067607f 的 18 项远端检查已全部通过；生产未部署，离线发布 gate 有硬阻断",
+  "observation_note": "发现版本不等于首次引入版本；build82 与 build83 已同签覆盖安装并完成指定真机页面抽查；生产 API 8d3da22 已部署且当前车辆首轮趋势回填完成。build84 充电参考展示及桥 aae2f6af 均为未发布候选，不自动合并疑似重复记录；旧编号回扫和详情离线参考仍开放。生产候选 b11bae0 尚未部署，离线发布 gate 有硬阻断；服务器不包含手机 Room 或微信本地手工费用。",
   "issues": [
+    {
+      "id": "NOV02-TREND-RESTART",
+      "title": "独立趋势桥重启后无法安全取得凭据续传",
+      "found_date": "2026-11-02",
+      "found_version": "独立趋势桥 8d3da22 / 生产 API 8d3da22",
+      "source_ref": "../RPT-2026-11-02-archive-restart-candidate.md",
+      "status": "IN_PROGRESS",
+      "fix_version": "候选桥 aae2f6af；API 候选 b11bae0；均未上线",
+      "change": "早期候选使用受限 socket 和独立游标；后续发现旧状态没有可信账号归属，正在增加各入口停发保护及安全续期设计。",
+      "verification": "Windows go test/vet、Linux race 和隔离容器重启曾通过，但未覆盖停机期间换授权后旧状态跨账号风险；aae2f6af 禁止部署，修复和真实重启验收未完成。",
+      "commit": "aae2f6af",
+      "history": [{"date":"2026-11-02","version":"候选桥 aae2f6af / 生产 API 8d3da22","action":"LOCAL_CANDIDATE_TESTED","detail":"隔离测试通过后发现换授权跨账号风险，候选禁止部署；修复需保留旧 pending 和游标。","evidence":"../RPT-2026-11-02-archive-restart-candidate.md","commit":"aae2f6af"}]
+    },
+    {
+      "id": "NOV02-COST-TOMBSTONE-REAPPEARS",
+      "title": "清除充电手工费用后旧金额可能重新显示",
+      "found_date": "2026-11-02",
+      "found_version": "App 2.1.64 build83 源码审查",
+      "source_ref": "../RPT-2026-11-02-charge-import-duplicates.md",
+      "status": "IN_PROGRESS",
+      "fix_version": "App 2.1.65 build84 候选",
+      "change": "仅对同车、同记录、同币种的精确删除标记抑制旧遗留费用；不删除用户费用或其他币种记录。",
+      "verification": "真实 Room/VM 定向回归、Debug/Release 各 1879 项、双 lint 和隔离模拟器 34 项通过；尚未安装 build84。用户另确认已修改的价格仍保留。",
+      "commit": null,
+      "history": [{"date":"2026-11-02","version":"build83 源码 / build84 候选","action":"SOURCE_REVIEW_AND_TARGETED_TEST","detail":"仅修正展示投影，未发现或声称用户的已存费用被删除。","evidence":"../RPT-2026-11-02-charge-import-duplicates.md","commit":null}]
+    },
     {
       "id": "NOV02-ARCHIVE-REVOCATION-RACE",
       "title": "普通归档请求通过初次认证后仍可能在撤权后写入",
@@ -91,10 +117,10 @@
       "found_date": "2026-11-02",
       "found_version": "App 2.1.63 build82",
       "source_ref": "../RPT-2026-11-02-charge-import-duplicates.md",
-      "status": "OPEN_UNDER_INVESTIGATION",
-      "fix_version": null,
-      "change": "待以账号、车辆、来源及原始记录凭据核验 local_import 与 archive 的对应；不得仅因时间或电量接近自动合并、删除或迁移费用。",
-      "verification": "build82 真机同分钟出现空卡与 11.1 kWh 卡；源和云只读核查发现相近记录，但未取得手机卡原始 ID/回执与来源的直接映射。问题未修复，保留原始数据及费用。",
+      "status": "IN_PROGRESS",
+      "fix_version": "App 2.1.65 build84 候选；尚未安装",
+      "change": "防止 archive 充电回传成本地导入；仅将来源未完全核实的该条原始电量及估价作为列表参考展示，不并入正式统计或合并记录。",
+      "verification": "build83 真机复现；源和云只读核查发现 9 组云公开 ID 派生关联线索，但不构成可自动合并的凭证。Debug/Release 各 1879 项、双 lint 和隔离模拟器 34 项通过；build84 真机待验。",
       "commit": null,
       "history": [
         {
@@ -104,7 +130,8 @@
           "detail": "空卡与 11.1 kWh 卡已真机复现，云端 local_import 与 archive 无直接来源映射；未修复，不按相近时间盲目合并。",
           "evidence": "../RPT-2026-11-02-charge-import-duplicates.md",
           "commit": null
-        }
+        },
+        {"date":"2026-11-02","version":"App build83 / build84 候选","action":"REFERENCE_ONLY_LOCAL_FIX","detail":"以该卡自身原始值显示参考电量和参考费用，保留全部记录及手工费用；详情冷开未实现猜测性回退。","evidence":"../RPT-2026-11-02-charge-import-duplicates.md","commit":null}
       ]
     },
     {

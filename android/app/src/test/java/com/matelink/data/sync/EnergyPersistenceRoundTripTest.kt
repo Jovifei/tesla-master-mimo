@@ -58,4 +58,16 @@ class EnergyPersistenceRoundTripTest {
         val row = drive().toSyncSummary(90)!!
         assertNull(row.toImportSession("drive")!!.energyAdded)
     }
+    @Test fun cloudArchiveChargeIsNotReuploadedAsLocalHistory() {
+        val archivedCharge = ChargeData(9, startDate = start, endDate = end,
+            source = "teslamate_archive", chargeEnergyAdded = 2.1).toSyncSummary(90)!!
+        assertNull(archivedCharge.toImportSession("charge"))
+    }
+    @Test fun eligibleLegacyLocalChargeStillUploadsItsObservedEnergy() {
+        val localCharge = ChargeData(10, startDate = start, endDate = end,
+            chargeEnergyAdded = 2.1).toSyncSummary(90)!!
+        val uploaded = localCharge.toImportSession("charge")!!
+        assertEquals("local-charge-10", uploaded.sessionId)
+        assertEquals(2.1, uploaded.energyAdded!!, 0.0)
+    }
 }
