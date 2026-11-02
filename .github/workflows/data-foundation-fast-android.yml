@@ -46,6 +46,10 @@ jobs:
           PY
           export TZ=Asia/Shanghai
           bash ./gradlew :app:testDebugUnitTest \
+            --tests '*HistoryFamilyReadTest' \
+            --tests '*CostRoomFirstViewModelTest' \
+            --tests '*PartialCostTotalsTest' \
+            --tests '*BatteryRoomRetentionConsumerTest' \
             --tests '*VehicleStatusStoreScopeTest' \
             --tests '*VehiclePhotoStoreScopeTest' \
             --tests '*HistorySourceConflictArchiveRoomTest' \
