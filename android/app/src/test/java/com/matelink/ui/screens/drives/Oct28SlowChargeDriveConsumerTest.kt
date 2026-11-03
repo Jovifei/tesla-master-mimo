@@ -17,6 +17,7 @@ import java.time.ZoneId
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.first
@@ -45,6 +46,7 @@ class Oct28SlowChargeDriveConsumerTest {
         val fixture = Oct28IndependentHistoryFixture(File(temp.root, "independent-pending-consumer.db"))
         Dispatchers.setMain(UnconfinedTestDispatcher())
         var page: DrivesViewModel? = null
+        var independentChargeRead: Job? = null
         try {
             fixture.initialize()
             fixture.resources.status = { 503 }
@@ -54,9 +56,10 @@ class Oct28SlowChargeDriveConsumerTest {
                 Clock.fixed(Instant.parse("2026-10-28T14:00:00Z"), ZoneId.of("Asia/Shanghai")),
                 SavedStateHandle())
             page = viewModel
+            // A separate real charge consumer may be pending/failing. The drive VM must not join it.
+            independentChargeRead = launch { fixture.repository().loadCharges(Oct28IndependentHistoryFixture.REMOTE_CAR) }
             viewModel.setCarId(Oct28IndependentHistoryFixture.REMOTE_CAR)
             withTimeout(10_000) { fixture.chargeEntered.await() }
-            fixture.assertOct28DrivesPersistedInTheVerifiedCar()
 
             val expected = fixture.newDrives.map { it.driveId }.toSet() + fixture.oldDrive.driveId
             // Allow Room invalidation delivery without advancing the VM's virtual 20s timeout.
@@ -64,6 +67,7 @@ class Oct28SlowChargeDriveConsumerTest {
             val state = withTimeoutOrNull(10_000) {
                 viewModel.uiState.first { it.drives.map { drive -> drive.driveId }.toSet() == expected }
             } ?: viewModel.uiState.value
+            fixture.assertOct28DrivesPersistedInTheVerifiedCar()
             assertEquals(1, fixture.driveCalls)
             assertEquals(1, fixture.chargeCalls)
             assertFalse("Charge must still be pending when the new drive list publishes",
@@ -71,7 +75,8 @@ class Oct28SlowChargeDriveConsumerTest {
             assertEquals("Persisted successful drives must publish while this same charge read is pending",
                 expected, state.drives.map { it.driveId }.toSet())
         } finally {
-            page?.viewModelScope?.cancel()
+            page?.viewModelScope?.coroutineContext?.get(Job)?.cancelAndJoin()
+            independentChargeRead?.cancelAndJoin()
             if (fixture.chargeEntered.isCompleted) withTimeout(10_000) { fixture.chargeCancelled.await() }
             fixture.close()
             Dispatchers.resetMain()
@@ -122,6 +127,7 @@ class Oct28SlowChargeDriveConsumerTest {
         val fixture = Oct28IndependentHistoryFixture(File(temp.root, "pending-charge-cached-address.db"))
         Dispatchers.setMain(UnconfinedTestDispatcher())
         var page: DrivesViewModel? = null
+        var independentChargeRead: Job? = null
         try {
             fixture.initialize()
             fixture.resources.status = { 503 }
@@ -137,6 +143,8 @@ class Oct28SlowChargeDriveConsumerTest {
                 fixture.resources.db.driveSummaryDao(), fixture.resources.vehicleContexts,
                 Clock.fixed(Instant.parse("2026-10-28T14:00:00Z"), ZoneId.of("Asia/Shanghai")), SavedStateHandle())
             page = vm
+            // A separate real charge consumer may be pending/failing. The drive VM must not join it.
+            independentChargeRead = launch { fixture.repository().loadCharges(Oct28IndependentHistoryFixture.REMOTE_CAR) }
             vm.setCarId(Oct28IndependentHistoryFixture.REMOTE_CAR)
             withTimeout(10_000) { fixture.chargeEntered.await() }
             val state = withTimeout(10_000) {
@@ -146,6 +154,7 @@ class Oct28SlowChargeDriveConsumerTest {
             assertFalse(fixture.chargeCancelled.isCompleted)
         } finally {
             page?.viewModelScope?.coroutineContext?.get(Job)?.cancelAndJoin()
+            independentChargeRead?.cancelAndJoin()
             if (fixture.chargeEntered.isCompleted) withTimeout(10_000) { fixture.chargeCancelled.await() }
             Oct28GatedAmapReverseShadow.lookup = { _, _ -> null }
             fixture.close()
@@ -159,6 +168,7 @@ class Oct28SlowChargeDriveConsumerTest {
         val fixture = Oct28IndependentHistoryFixture(File(temp.root, "failed-charge-cached-address.db"))
         Dispatchers.setMain(UnconfinedTestDispatcher())
         var page: DrivesViewModel? = null
+        var independentChargeRead: Job? = null
         try {
             fixture.initialize()
             fixture.holdCharges = false
@@ -176,6 +186,8 @@ class Oct28SlowChargeDriveConsumerTest {
                 fixture.resources.db.driveSummaryDao(), fixture.resources.vehicleContexts,
                 Clock.fixed(Instant.parse("2026-10-28T14:00:00Z"), ZoneId.of("Asia/Shanghai")), SavedStateHandle())
             page = vm
+            // A separate real charge consumer may be pending/failing. The drive VM must not join it.
+            independentChargeRead = launch { fixture.repository().loadCharges(Oct28IndependentHistoryFixture.REMOTE_CAR) }
             vm.setCarId(Oct28IndependentHistoryFixture.REMOTE_CAR)
             withTimeout(10_000) { fixture.chargeEntered.await() }
             withTimeout(10_000) {
@@ -184,6 +196,7 @@ class Oct28SlowChargeDriveConsumerTest {
             assertEquals(1, fixture.chargeCalls)
         } finally {
             page?.viewModelScope?.coroutineContext?.get(Job)?.cancelAndJoin()
+            independentChargeRead?.cancelAndJoin()
             Oct28GatedAmapReverseShadow.lookup = { _, _ -> null }
             fixture.close()
             Dispatchers.resetMain()
@@ -196,6 +209,7 @@ class Oct28SlowChargeDriveConsumerTest {
         val fixture = Oct28IndependentHistoryFixture(File(temp.root, "new-drive-before-charge.db"))
         Dispatchers.setMain(UnconfinedTestDispatcher())
         var page: DrivesViewModel? = null
+        var independentChargeRead: Job? = null
         try {
             fixture.initialize()
             val id = 3001
@@ -227,6 +241,8 @@ class Oct28SlowChargeDriveConsumerTest {
                 Clock.fixed(Instant.parse("2026-10-28T14:00:00Z"), ZoneId.of("Asia/Shanghai")),
                 SavedStateHandle(), fixture.resources.db, HistoryDetailRepository(fixture.resources.db.historyDetailDao()))
             page = vm
+            // A separate real charge consumer may be pending/failing. The drive VM must not join it.
+            independentChargeRead = launch { fixture.repository().loadCharges(Oct28IndependentHistoryFixture.REMOTE_CAR) }
             vm.setCarId(Oct28IndependentHistoryFixture.REMOTE_CAR)
             withTimeout(10_000) { fixture.chargeEntered.await() }
             fixture.resources.db.driveSummaryDao().upsert(incoming.toSyncSummary(fixture.originalContext.localHistoryCarId)!!)
@@ -241,6 +257,7 @@ class Oct28SlowChargeDriveConsumerTest {
             assertFalse("The unrelated charge request must still be pending", fixture.chargeCancelled.isCompleted)
         } finally {
             page?.viewModelScope?.coroutineContext?.get(Job)?.cancelAndJoin()
+            independentChargeRead?.cancelAndJoin()
             if (fixture.chargeEntered.isCompleted) withTimeout(10_000) { fixture.chargeCancelled.await() }
             Oct28GatedAmapReverseShadow.lookup = { _, _ -> null }
             fixture.close()
@@ -252,6 +269,7 @@ class Oct28SlowChargeDriveConsumerTest {
         val fixture = Oct28IndependentHistoryFixture(File(temp.root, "cached-drive-energy-before-charge.db"))
         Dispatchers.setMain(UnconfinedTestDispatcher())
         var page: DrivesViewModel? = null
+        var independentChargeRead: Job? = null
         try {
             fixture.initialize()
             val id = fixture.oldDrive.driveId
@@ -278,6 +296,8 @@ class Oct28SlowChargeDriveConsumerTest {
                 Clock.fixed(Instant.parse("2026-10-28T14:00:00Z"), ZoneId.of("Asia/Shanghai")),
                 SavedStateHandle(), fixture.resources.db, detailStore)
             page = vm
+            // A separate real charge consumer may be pending/failing. The drive VM must not join it.
+            independentChargeRead = launch { fixture.repository().loadCharges(Oct28IndependentHistoryFixture.REMOTE_CAR) }
             vm.setCarId(Oct28IndependentHistoryFixture.REMOTE_CAR)
             withTimeout(10_000) { fixture.chargeEntered.await() }
             val state = withTimeout(20_000) { vm.uiState.first { it.driveMetrics[id]?.energyKwh != null } }
@@ -286,6 +306,7 @@ class Oct28SlowChargeDriveConsumerTest {
             assertEquals(1, fixture.resources.calls.count { it.endsWith("/drives/$id") })
         } finally {
             page?.viewModelScope?.coroutineContext?.get(Job)?.cancelAndJoin()
+            independentChargeRead?.cancelAndJoin()
             if (fixture.chargeEntered.isCompleted) withTimeout(10_000) { fixture.chargeCancelled.await() }
             fixture.close()
             Dispatchers.resetMain()

@@ -210,7 +210,7 @@ class CostRoomFirstViewModelTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         val f = fixture("cost-partial-observed")
         f.settings.saveDefaultChargePrice(1.5)
-        f.settings.saveTariffConfig(false, 1.0, 0.7, 0.3, "[[10,14],[18,20]]", "[[7,9],[15,17],[21,22]]", "[[23,23],[0,6]]")
+        f.settings.saveTariffConfig(false, 1.5, 1.5, 1.5, "", "", "")
         val start = "2026-10-20T12:00:00Z"
         val end = "2026-10-20T13:00:00Z"
         val row = ChargeData(65, startDate = start, endDate = end, source = "telemetry_mqtt",

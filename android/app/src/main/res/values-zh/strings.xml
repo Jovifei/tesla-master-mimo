@@ -1213,7 +1213,7 @@
     <string name="settings_release_notes_close">知道了</string>
     <string name="settings_switch_to_cloud">切换到 MateLink 云端</string>
     <string name="settings_switch_to_self_hosted">切换到本地 TeslaMate</string>
-<string name="settings_release_notes_body" formatted="false">• 优化弱网冷启动，已有历史可自动先显示缓存，刷新失败时保留。\n• 修正充电费用、行程能耗、温标和曲线时间；分时电价用于明确的估算，不覆盖已有账单。\n• 区分未知、真实零和已采样数据，不补造缺失历史。\n• 切换账号或车辆时隔离旧数据，告警按实际观测防重。\n• 修正汇总、报告年份和导出一致性，保留原有页面布局。</string>
+<string name="settings_release_notes_body" formatted="false">• 优化弱网冷启动，已有历史可自动先显示缓存，刷新失败时保留。\n• 修正充电费用、行程能耗、温标和曲线时间；分时电价用于明确的估算，不覆盖已有账单。\n• 区分未知、真实零和已采样数据，不补造缺失历史。\n• 切换账号或车辆时隔离旧数据，告警按实际观测防重。\n• 修正汇总、报告年份和导出一致性，保留原有页面布局。\n• 已采集部分估算与账单分开；行程和充电独立读取，手工费用自动更新，同车冷缓存到在线分析正常刷新，不清空已有资料。</string>
     <string name="settings_resync_button">重新同步</string>
     <string name="settings_resync_confirm">确认重新同步</string>
     <string name="settings_resync_dialog_text_delete">保留已有数据</string>
