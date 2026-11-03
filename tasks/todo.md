@@ -4373,3 +4373,11 @@ Review: 小程序开发本阶段收口，后续改动应另开阶段。所有代
 - [x] 微调 `pages/vehicle/index.scss` 中 `.dashboard-hero` 容器高度至 340rpx、图片高度至 320rpx，精确对齐 Android App 170dp/160dp（1:1 比例）。
 - [x] 升版至 0.6.4，更新 `package.json`、`package-lock.json`、`CHANGELOG.md` 及关于页更新文案。
 - [x] 全量测试 954/954 PASS（含 UTC 与 Asia/Shanghai 双环境复测）、资源测试 6/6 PASS、typecheck PASS、生产构建 197 文件 PASS（哈希 `92ede8d9…`）。
+
+## 2026-11-04 依赖安全与版本发布（v0.6.5）
+
+- [x] 复核依赖安全：确认 `test-tooling` 中 2 项中危漏洞（`vitest@4.1.11` via `@vitest/mocker`），平滑升级至 `vitest@4.1.12`，`test-tooling` 审计告警归零；确认 `miniprogram` 中 `decompress@4.2.1` 属于 Taro CLI 开发期 `fetchTemplate` 模板下载依赖，在小程序打包及微信客户端运行时 0 触发、0 风险，不执行破坏性 `npm audit fix --force`。
+- [x] 版本升至 0.6.5，更新 `package.json`、`package-lock.json`、`test-tooling/package.json`、`test-tooling/package-lock.json`、`CHANGELOG.md` 与关于页更新文案。
+- [x] 验证全套回归：75 测试文件 967/967 项测试 PASS、原生资源测试 6/6 PASS、四时区（UTC / Asia/Shanghai / Asia/Tokyo / America/Los_Angeles）全部 PASS、TypeScript 0 错误、生产构建 197 文件 PASS（哈希 `db865814…`）。
+- [x] 提交并推送到 `codex/miniprogram-e-migration-20261029` 分支；不触碰 Android/iOS 目录。
+- [x] 通过微信开发者工具 CLI 上传 0.6.5 构建至后台开发版本。
