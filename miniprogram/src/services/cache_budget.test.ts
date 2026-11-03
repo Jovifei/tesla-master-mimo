@@ -50,3 +50,38 @@ it('retains a legacy over-budget archive and permits a same-size correction but 
   expect(canStoreCache(s, key, value + 'x')).toBe(false)
   expect(s.values.get(key)).toBe(value)
 })
+
+
+it('allows real non-growing manual fee corrections over an inherited budget without deleting history', async () => {
+  const { chargeCostKey, writeChargeCostOverride, readChargeCostOverride, clearChargeCostOverride } = await import('./charge_cost')
+  const values = new Map<string, unknown>()
+  const s = { getStorageSync: (key: string) => values.get(key),
+    getStorageInfoSync: () => ({ keys: [...values.keys()] }),
+    setStorageSync: (key: string, value: unknown) => { values.set(key, JSON.parse(JSON.stringify(value))) },
+    removeStorageSync: (key: string) => { values.delete(key) } }
+  const scope = { userId: 'owner', origin: 'https://example.test', stableId: 'v1' }
+  const charge = { id: 'retained', source: 'teslamate_archive', qualityState: 'observed',
+    startDate: '2026-01-01T00:00:00Z', endDate: '2026-01-01T01:00:00Z' } as import('./types').Charge
+  const now = Date.parse('2026-01-02T00:00:00Z')
+  expect(writeChargeCostOverride(s, scope, charge, 9, 'CNY', () => true, now)).toBe(true)
+  const archiveKey = 'matelink.history.v3.older-owner'
+  const archive = 'x'.repeat(CACHE_BUDGET_BYTES + 200)
+  values.set(archiveKey, archive)
+  const keys = [...values.keys()]
+  // A confirmed zero uses exactly the same bytes, is not missing, and survives reopening.
+  expect(writeChargeCostOverride(s, scope, charge, 0, 'CNY', () => true, now + 1000)).toBe(true)
+  expect(readChargeCostOverride(s, scope, charge)?.amount).toBe(0)
+  expect(values.get(archiveKey)).toBe(archive)
+  expect([...values.keys()]).toEqual(keys)
+  const beforeGrowth = JSON.stringify([...values.entries()])
+  expect(writeChargeCostOverride(s, scope, charge, 100, 'CNY', () => true, now + 2000)).toBe(false)
+  expect(writeChargeCostOverride(s, scope, { ...charge, id: 'new' }, 0, 'CNY', () => true, now + 2000)).toBe(false)
+  expect(writeChargeCostOverride(s, { ...scope, userId: 'other' }, charge, 0, 'CNY', () => true, now + 2000)).toBe(false)
+  expect(writeChargeCostOverride(s, scope, charge, 5, 'CNY', () => false, now + 2000)).toBe(false)
+  expect(JSON.stringify([...values.entries()])).toBe(beforeGrowth)
+  expect(clearChargeCostOverride(s, scope, charge, () => true)).toBe(true)
+  expect(readChargeCostOverride(s, scope, charge)).toBeNull()
+  expect(values.has(chargeCostKey(scope)!)).toBe(true)
+  expect(values.get(archiveKey)).toBe(archive)
+  expect([...values.keys()]).toEqual(keys)
+})

@@ -52,8 +52,10 @@ export function canStoreCache(storage: BudgetStorage, key: string, value: unknow
     const userWrite = isProtectedLocalKey(key)
     const users = usage.userBytes + (userWrite ? after - before : 0)
     const caches = total - users
-    // Existing full archives are retained. Equal-sized corrections/shrinks never evict another key.
-    if (!userWrite && before > 0 && after <= before) return true
+    // Existing over-budget archives are retained. A correction that does not
+    // grow an existing key is safe for user records too (including a true-zero
+    // fee edit or explicit removal). Never evict another archive to admit it.
+    if (before > 0 && after <= before) return true
     return total <= CACHE_BUDGET_BYTES &&
       (userWrite || caches <= CACHE_BUDGET_BYTES - Math.max(USER_DATA_RESERVE_BYTES, users))
   } catch { return false }
