@@ -74,19 +74,28 @@ jobs:
           PY
           export TZ=Asia/Shanghai
           tests=(--tests '*Oct28*' --tests '*ChargeHistoryNoticeIdentityTest' --tests '*ChargesRoomCostConsumerTest' --tests '*SettingsExperienceContractTest' --tests '*LatestHistoryLoadTest' --tests '*HistoryFamilyReadTest' --tests '*AnalysisCloudPublicationRoomTest' --tests '*CostRoomFirstViewModelTest')
+          # Same explicit public release configuration as tools/energy-stage/android-ci.sh.
+          # Compile-time values only: this step uses synthetic tests, no provider login.
           bash ./gradlew :app:testDebugUnitTest "${tests[@]}" :app:testReleaseUnitTest "${tests[@]}" :app:assembleDebugAndroidTest \
             --no-daemon --max-workers=1 \
             -Dorg.gradle.jvmargs='-Xmx5g -XX:MaxMetaspaceSize=1g -XX:+UseSerialGC -Dfile.encoding=UTF-8' \
             -Pkotlin.compiler.execution.strategy=in-process \
+            -PJOURVOLT_API_BASE_URL=https://api.teslalink.joviluma.com/ \
+            -PJOURVOLT_AUTH_HOST=auth.teslalink.joviluma.com \
+            -PMATELINK_PUBLIC_INFO_BASE_URL=https://auth.teslalink.joviluma.com \
             > ../correction-evidence/gradle.log 2>&1
           python3 - <<'PY'
           from pathlib import Path
+          import json
           import xml.etree.ElementTree as E
+          results={}
           for variant in ['Debug','Release']:
               suites=[E.parse(p).getroot() for p in Path('app/build/test-results/test'+variant+'UnitTest').glob('TEST-*.xml')]
               counts={k:sum(int(s.attrib.get(k,0)) for s in suites) for k in ['tests','failures','errors','skipped']}
+              results[variant]=counts
               print(variant,counts)
               assert counts['tests']>=40 and counts['failures']==counts['errors']==0
+          Path('../correction-evidence/counts.json').write_text(json.dumps(results,indent=2)+'\n')
           PY
       - name: Normal source push after both variants pass
         shell: bash
