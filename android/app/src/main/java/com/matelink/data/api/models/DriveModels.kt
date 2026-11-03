@@ -166,6 +166,8 @@ data class DriveDetail(
     val speedAvgKmh: Double? get() = driveDistanceKm(speedAvg, lengthUnit)
     val startBatteryLevel: Int? get() = batteryDetails?.startBatteryLevel
     val endBatteryLevel: Int? get() = batteryDetails?.endBatteryLevel
+    val startRatedRangeKm: Double? get() = driveDistanceKm(rangeRated?.startRange, lengthUnit)
+    val endRatedRangeKm: Double? get() = driveDistanceKm(rangeRated?.endRange, lengthUnit)
     val outsideTempC: Double? get() = driveTemperatureC(outsideTempAvg, temperatureUnit, source)
     val insideTempC: Double? get() = driveTemperatureC(insideTempAvg, temperatureUnit, source)
     val netEnergyKwh: Double? get() = if (sourceRecordIdentity.conflicted) null else if (energyContract != null)

@@ -45,6 +45,8 @@
     <string name="default_charge_price">Default charging rate</string>
     <string name="default_charge_price_hint">Used to estimate costs without a bill. Individual amounts take priority.</string>
     <string name="charge_partial_energy">Recorded energy</string>
+    <string name="charge_reference_energy">Reference energy</string>
+    <string name="charge_reference_cost">Reference cost</string>
     <string name="charge_estimate_once_notice">Without an entered amount, cost is estimated from energy and your rate. Partial energy covers recorded intervals only. Tap the amount to edit it.</string>
     <string name="charge_cost_estimate">Estimated cost</string>
     <string name="amap_settings_section">Map services</string>

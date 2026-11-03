@@ -236,8 +236,8 @@ class ChargeDetailViewModel @Inject constructor(
             presentation = effective.toDetailCostPresentation(),
             manualTotal = bound?.manualTotalAmount?.takeIf { !bound.deleted && effective.source == ChargeCostSource.MANUAL },
             version = bound?.version ?: 0L,
-            pendingLegacy = legacy?.manualTotalAmount,
-            pendingBound = pending?.takeIf { effective.source != ChargeCostSource.MANUAL }
+            pendingLegacy = legacy?.manualTotalAmount?.takeUnless { bound?.deleted == true },
+            pendingBound = pending?.takeIf { !it.deleted && effective.source != ChargeCostSource.MANUAL }
                 ?.let { it.currencyCode to it.manualTotalAmount },
             otherCurrency = other?.currencyCode?.let { it to other.manualTotalAmount },
             sourceUnconfirmed = detail.cost?.takeIf { it.isFinite() && it >= 0.0 &&

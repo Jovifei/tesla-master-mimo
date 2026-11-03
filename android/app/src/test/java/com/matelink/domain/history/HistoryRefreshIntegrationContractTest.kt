@@ -32,7 +32,8 @@ class HistoryRefreshIntegrationContractTest {
             assertTrue(source.contains("private const val HISTORY_LOAD_TIMEOUT_MS = 20_000L"))
             val request = source.substringAfter("withTimeoutOrNull(HISTORY_LOAD_TIMEOUT_MS) {", "")
                 .substringBefore("if (result == null)")
-            assertTrue(request.contains("historyRepository.load(id, startDateStr, endDateStr)"))
+            val family = if (kind.startsWith("drives")) "loadDrives" else "loadCharges"
+            assertTrue(request.contains("historyRepository.$family(id, startDateStr, endDateStr)"))
             assertTrue(request.contains("ensureCurrent()"))
             if (kind.startsWith("charges")) {
                 assertTrue(Regex("catch \\(e: CancellationException\\)\\s*\\{\\s*throw e\\s*}")
@@ -63,7 +64,8 @@ class HistoryRefreshIntegrationContractTest {
         assertTrue(repository.contains("reads.getHistoryContext(remoteApiCarId)"))
         assertTrue(repository.contains("result.data.isValidFor(remoteApiCarId)"))
         assertTrue(repository.contains("if (result.code == 404) discoverCars() else result"))
-        assertTrue(repository.contains("if (canReadHistory)"))
+        assertTrue(repository.contains("if (canReadHistory && families.drives)"))
+        assertTrue(repository.contains("if (canReadHistory && families.charges)"))
         assertFalse(repository.contains("val remoteDrives = if (car != null)"))
         assertTrue(repository.contains("if (!scopeUnchanged()) return@loadHistoryPages historyIdentityUnavailableError()\n                response"))
         assertTrue(repository.contains("val canReadHistory = resolved.remoteAuthorized"))

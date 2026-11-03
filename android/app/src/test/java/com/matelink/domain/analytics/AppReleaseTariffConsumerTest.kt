@@ -22,6 +22,14 @@ class AppReleaseTariffConsumerTest {
         assertEquals(ChargeCostSource.ESTIMATE, result.source)
         assertEquals("tariff_time_weighted_app_zone", result.qualificationReason)
     }
+    @Test fun referenceUsesTheSameHourlyScheduleWithoutQualifyingTheRawImport() {
+        val imported = charge().copy(source = "local_import", qualityState = "incomplete",
+            qualityReason = "local_import_summary_only")
+        assertNull(imported.batteryInputKwh)
+        assertEquals(15.0, estimateReferenceChargeTariff(imported, settings, 10.0, zone).amount!!, 1e-9)
+        assertNull(imported.batteryInputKwh)
+        assertNull(estimateReferenceChargeTariff(imported, settings.copy(tariffPeakRanges = "[[0,23]]"), 10.0, zone).amount)
+    }
     @Test fun overnightRangeAndObservedZeroRemainCalculable() {
         assertEquals(5.0, estimateChargeTariff(charge("2026-10-27T15:30:00Z", "2026-10-27T16:30:00Z"), settings, zone).amount!!, 1e-9)
         assertEquals(0.0, estimateChargeTariff(charge(energy = 0.0), settings, zone).amount!!, 0.0)

@@ -163,10 +163,7 @@ class AnnualReportViewModel @Inject constructor(
         reportLoader.load(
             proof = { suspend { isCurrent(id, epoch, proof) && _uiState.value.year == year } },
             fetch = { request ->
-                val annual = statsRepository.getAnnualSnapshot(id, year)
-                request.requireCurrent()
-                val currency = Currency.findByCode(annual.currencyCode).symbol
-                var freshness = HistoryFreshness.FRESH
+                var freshness = HistoryFreshness.STALE
                 val standby = try {
                     when (val history = historyRepository.load(id)) {
                         is ApiResult.Success -> {
@@ -178,6 +175,10 @@ class AnnualReportViewModel @Inject constructor(
                 } catch (e: CancellationException) { throw e }
                 catch (_: Exception) { null }
                 request.requireCurrent()
+                // Read all annual aggregates from the same Room transaction AFTER refresh.
+                val annual = statsRepository.getAnnualSnapshot(id, year)
+                request.requireCurrent()
+                val currency = Currency.findByCode(annual.currencyCode).symbol
                 AnnualReportResult(annual.stats, annual.monthlyDrives, annual.monthlyCharges,
                     standby, freshness, currency)
             },

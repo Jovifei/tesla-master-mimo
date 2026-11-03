@@ -42,19 +42,31 @@ internal fun DriveSummary.canEnrichPower(proof: VerifiedHistoryReadContext): Boo
     if (!isAnalysisEligible(qualityState, qualityReason) ||
         qualified.netEnergyKwh != null || qualified.efficiencyWhKm != null) return false
     val raw = toRawAnalysisDriveData()
-    return raw.energyContract == null &&
-        (raw.source == "teslamate_archive" ||
-            (raw.source == null && proof.context.connectionSource == HistoryConnectionSource.SELF_HOSTED))
+    val endpoints = qualified.startBatteryLevel != null && qualified.endBatteryLevel != null
+    val scalar = raw.energyConsumedNet
+    val hasScalar = scalar != null && scalar.isFinite() && scalar > 0.0
+    return raw.energyContract == null && (
+        raw.source == "teslamate_archive" ||
+            (raw.source == null && proof.context.connectionSource == HistoryConnectionSource.SELF_HOSTED) ||
+            ((raw.source == "telemetry_mqtt" || raw.source == "fleet_api") && (endpoints || hasScalar))
+        )
 }
 
-/** Only full observed power windows may be automatically published as an estimate. */
+/** Power integrals require full coverage; SOC/capacity and energy deltas require observed endpoints. */
 private suspend fun fullPowerEstimate(detail: DriveDetail) = withContext(Dispatchers.Default) {
-    if (detail.energyContract != null || detail.energyConsumedNet != null || detail.positions == null)
-        return@withContext null
-    val coverage = DriveEnergyCalculator.calculate(
-        detail.positions.map { DrivePowerSample(it.date, it.power) }, detail.startDate, detail.endDate)
-    if (!coverage.complete) return@withContext null
-    detail.resolveDriveEnergy().takeIf { it.estimate.source == DriveEnergySource.POWER_SAMPLES }
+    val cleanDetail = if (detail.energyContract?.netEnergy?.quality == "unknown" &&
+        detail.energyContract?.netEnergy?.reason in setOf("no_verified_driving_net_energy", "local_detail_scope_or_window_mismatch"))
+        detail.copy(energyContract = null) else detail
+    if (cleanDetail.energyContract != null) return@withContext null
+    val resolved = cleanDetail.resolveDriveEnergy()
+    val powerComplete = if (resolved.estimate.source == DriveEnergySource.POWER_SAMPLES) {
+        val positions = detail.positions ?: return@withContext null
+        DriveEnergyCalculator.calculate(
+            positions.map { DrivePowerSample(it.date, it.power) }, detail.startDate, detail.endDate).complete
+    } else true
+    resolved.takeIf {
+        powerComplete && it.estimate.energyKwh != null && it.estimate.source != DriveEnergySource.UNAVAILABLE
+    }
 }
 
 /** One frozen window, no automatic continuation, and no more than 20 network requests. */
@@ -108,6 +120,13 @@ internal suspend fun enrichDriveHistoryEnergy(
             }
 
         ensureCandidate()
+        val summaryDetail = row.toAnalysisDriveData().asCachedDetail()
+        val summaryEnergy = fullPowerEstimate(summaryDetail)
+        ensureCandidate()
+        if (summaryEnergy != null && mergeEnergySummary(summaryDetail, summaryEnergy)) {
+            synchronized(attempted) { attempted[key] = Any() }
+            continue
+        }
         val cached = pointStore.readDrive(identity)
         ensureCandidate()
         val detail = cached.detail?.takeIf {

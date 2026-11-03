@@ -45,6 +45,8 @@
     <string name="default_charge_price">默认充电电价</string>
     <string name="default_charge_price_hint">无账单时按充电量估算，单次修改的费用优先。</string>
     <string name="charge_partial_energy">已记录电量</string>
+    <string name="charge_reference_energy">参考电量</string>
+    <string name="charge_reference_cost">参考费用</string>
     <string name="charge_estimate_once_notice">未录入金额时，费用按电量和电价估算；部分电量只包含已记录的时段。点击金额可修改总价。</string>
     <string name="charge_cost_estimate">估算费用</string>
     <string name="amap_settings_section">地图服务</string>

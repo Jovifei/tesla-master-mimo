@@ -199,6 +199,8 @@ fun ChargesScreen(
                 pendingLegacyAmounts = uiState.pendingLegacyAmounts,
                 pendingBoundAmounts = uiState.pendingBoundAmounts,
                 otherCurrencyAmounts = uiState.otherCurrencyAmounts,
+                referenceEnergyKwh = uiState.referenceEnergyKwh,
+                referenceEstimates = uiState.referenceEstimates,
                 customStartDate = uiState.customStartDate,
                 customEndDate = uiState.customEndDate,
                 initialScrollPosition = uiState.scrollPosition,
@@ -270,6 +272,8 @@ private fun ChargesContent(
     pendingLegacyAmounts: Map<Int, Double>,
     pendingBoundAmounts: Map<Int, Pair<String?, Double>>,
     otherCurrencyAmounts: Map<Int, Pair<String, Double>>,
+    referenceEnergyKwh: Map<Int, Double>,
+    referenceEstimates: Map<Int, Double>,
     customStartDate: LocalDate?,
     customEndDate: LocalDate?,
     availableLocations: List<String>,
@@ -416,6 +420,8 @@ private fun ChargesContent(
                     pendingLegacyAmount = pendingLegacyAmounts[charge.chargeId],
                     pendingBoundAmount = pendingBoundAmounts[charge.chargeId],
                     otherCurrencyAmount = otherCurrencyAmounts[charge.chargeId],
+                    referenceEnergyKwh = referenceEnergyKwh[charge.chargeId],
+                    referenceEstimate = referenceEstimates[charge.chargeId],
                     palette = palette,
                     onEditCost = { onEditCost(charge) },
                     onClick = {
@@ -712,7 +718,9 @@ internal fun ChargeItem(
     otherCurrencyAmount: Pair<String, Double>?,
     palette: CarColorPalette,
     onEditCost: (() -> Unit)? = null,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    referenceEnergyKwh: Double? = null,
+    referenceEstimate: Double? = null
 ) {
     val unknownLocation = stringResource(R.string.unknown_location)
     val freeLabel = stringResource(R.string.charge_free)
@@ -723,6 +731,9 @@ internal fun ChargeItem(
         null -> MaterialTheme.colorScheme.primary
     }
     val energy = presentChargeEnergy(charge.batteryInputKwh ?: charge.partialBatteryInputKwh)
+    val referenceEnergy = presentChargeEnergy(referenceEnergyKwh).energyKwh
+    val isReferenceEnergy = energy.energyKwh == null && referenceEnergy != null
+    val displayedEnergy = energy.energyKwh ?: referenceEnergy
     val isPartialEnergy = charge.batteryInputKwh == null && charge.partialBatteryInputKwh != null
     val start = charge.startBatteryLevel
     val end = charge.endBatteryLevel
@@ -731,7 +742,8 @@ internal fun ChargeItem(
         effectiveCost.source == ChargeCostSource.MANUAL && effectiveCost.cost != null,
         pendingBoundAmount, pendingLegacyAmount)
     val isFree = pending == null && effectiveCost.source == ChargeCostSource.FREE
-    val displayCost = pending?.amount ?: effectiveCost.cost
+    val isReferenceCost = pending == null && effectiveCost.cost == null && referenceEstimate != null
+    val displayCost = pending?.amount ?: effectiveCost.cost ?: referenceEstimate
     val costUnit = when {
         pending != null -> pending.currencySymbol ?: stringResource(R.string.charge_cost_currency_pending_short)
         displayCost != null && !isFree -> currencySymbol
@@ -811,16 +823,24 @@ internal fun ChargeItem(
                         ),
                         TelemetryMetricSpec(
                             icon = Icons.Default.ElectricBolt,
-                            label = stringResource(if (isPartialEnergy) R.string.charge_partial_energy else R.string.energy),
-                            value = energy.energyKwh?.let { (if (isPartialEnergy) "≈" else "") + "%.1f kWh".format(it) } ?: notAvailableLabel,
+                            label = stringResource(when {
+                                isReferenceEnergy -> R.string.charge_reference_energy
+                                isPartialEnergy -> R.string.charge_partial_energy
+                                else -> R.string.energy
+                            }),
+                            value = displayedEnergy?.let { (if (isPartialEnergy || isReferenceEnergy) "≈" else "") + "%.1f kWh".format(it) } ?: notAvailableLabel,
                             tint = accent
                         ),
                         TelemetryMetricSpec(
                             icon = Icons.Default.Paid,
-                            label = stringResource(if (pending != null) R.string.charge_cost_pending_short else R.string.trip_charge_cost),
+                            label = stringResource(when {
+                                pending != null -> R.string.charge_cost_pending_short
+                                isReferenceCost -> R.string.charge_reference_cost
+                                else -> R.string.trip_charge_cost
+                            }),
                             value = when {
                                 displayCost != null && !isFree ->
-                                    (if (pending == null && effectiveCost.source == ChargeCostSource.ESTIMATE) "≈" else "") + "%.2f".format(displayCost)
+                                    (if (isReferenceCost || (pending == null && effectiveCost.source == ChargeCostSource.ESTIMATE)) "≈" else "") + "%.2f".format(displayCost)
                                 isFree -> freeLabel
                                 else -> notAvailableLabel
                             },

@@ -417,7 +417,7 @@ class BatteryViewModel @Inject constructor(
                         } catch (e: CancellationException) { throw e } catch (_: Exception) { }
                     }
                 }
-                val cachedHistory = try { historyRepository.loadCached(id) }
+                val cachedHistory = try { historyRepository.loadCachedDrives(id) }
                     catch (e: CancellationException) { throw e }
                     catch (_: Exception) { null }
                 requireVehicle()
@@ -447,8 +447,18 @@ class BatteryViewModel @Inject constructor(
                 requireVehicle()
                 val statusResult = repository.getCarStatus(id)
                 requireVehicle()
+                // Status/health are independent observations. Do not hold the first usable
+                // frame hostage to a history provider or an optional readiness request.
+                synchronized(evidencePublicationLock) {
+                    if (isBoundNow()) _uiState.update { previous ->
+                        val live = (statusResult as? ApiResult.Success)?.data
+                        previous.withHealthStatus(healthResult,
+                            live?.status ?: previous.carStatus, live?.units ?: previous.units, null)
+                            .copy(isCachedStatus = live == null && previous.carStatus != null)
+                    }
+                }
                 val historyResult = try {
-                    historyRepository.load(id)
+                    historyRepository.loadDrives(id)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (_: Exception) {
@@ -607,13 +617,12 @@ internal fun DriveData.toBatteryTrendSample(): BatteryTrendSample? {
 private fun List<DriveData>.batteryTrendSamples(cloud: Boolean): List<BatteryTrendSample>? {
     val usable = mapNotNull { drive -> drive.toBatteryTrendSample()?.let { drive to it } }
     if (cloud && usable.isNotEmpty()) {
-        val sources = usable.map { (drive, _) ->
-            val source = drive.source?.takeIf { it in setOf("teslamate_archive", "telemetry_mqtt", "fleet_api") }
-            val instance = drive.sourceInstanceId?.takeIf { it.isNotBlank() }
-            if (source == null || instance == null || drive.sourceRecordIdentity.conflicted) return null
-            source to instance
+        val nonConflicted = usable.filter { (drive, _) ->
+            val source = drive.source
+            !drive.sourceRecordIdentity.conflicted &&
+                (source == null || source in setOf("teslamate_archive", "telemetry_mqtt", "fleet_api"))
         }
-        if (sources.distinct().size != 1) return null
+        if (nonConflicted.isNotEmpty()) return nonConflicted.map { it.second }
     }
     return usable.map { it.second }
 }

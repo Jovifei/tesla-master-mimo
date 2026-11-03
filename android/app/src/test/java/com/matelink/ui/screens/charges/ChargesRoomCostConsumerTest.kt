@@ -183,7 +183,7 @@ class ChargesRoomCostConsumerTest {
         repeat(100) {
             advanceUntilIdle()
             if (vm.uiState.value.charges.map { charge -> charge.chargeId }.sorted() == ids.sorted() &&
-                !vm.uiState.value.isLoading && !vm.uiState.value.isFilterLoading) return
+                !vm.uiState.value.isLoading && !vm.uiState.value.isFilterLoading && !vm.uiState.value.isLoadingMore) return
             Thread.sleep(20)
         }
         throw AssertionError("Expected charge IDs $ids; actual ${vm.uiState.value.charges.map { it.chargeId }}")
@@ -258,6 +258,115 @@ class ChargesRoomCostConsumerTest {
         }
     }
 
+    @Test fun importedReferenceStaysOutOfSummaryAndNeverReplacesManualPrice() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val f = HistoryResourceFixture(File(temp.root, "charge-reference-room.db"))
+        f.initialize(cloud = true)
+        f.settings.saveCurrency("CNY")
+        f.settings.saveDefaultChargePrice(0.7)
+        f.settings.saveTariffConfig(false, 1.0, 0.7, 0.3, "[[10,14],[18,20]]", "[[7,9],[15,17],[21,22]]", "[[23,23],[0,6]]")
+        val localId = f.localId(1)
+        val charge = ChargeData(25, startDate = "2026-10-20T10:00:00Z", endDate = "2026-10-20T11:00:00Z",
+            source = "local_import", qualityState = "incomplete", qualityReason = "local_import_summary_only",
+            chargeEnergyAdded = 11.1)
+        val row = requireNotNull(charge.toSyncSummary(localId))
+        val originalEvidence = row.apiEvidence
+        f.db.chargeSummaryDao().upsert(row)
+        f.reopen()
+        f.status = { 503 }
+        val store = ChargeCostOverrideStore(f.db.chargeCostOverrideDao(), f.settings)
+        val vm = viewModel(f)
+        try {
+            vm.setCarId(1)
+            awaitCharges(vm, listOf(25))
+            for (attempt in 0 until 100) {
+                advanceUntilIdle()
+                if (vm.uiState.value.referenceEstimates[25] != null) break
+                Thread.sleep(20)
+            }
+            var state = vm.uiState.value
+            assertEquals(11.1, state.referenceEnergyKwh[25] ?: Double.NaN, 0.0)
+            assertEquals(7.77, state.referenceEstimates[25] ?: Double.NaN, 1e-9)
+            assertEquals(0, state.summary.totalCharges)
+            assertNull(state.summary.totalEnergyAdded)
+            assertNull(state.summary.totalCost)
+            val revoked = charge.copy(energyContract = EnergyContract(
+                batteryInput = EnergyMetric(quality = "unknown", reason = "source_revoked")))
+            f.db.chargeSummaryDao().upsert(requireNotNull(revoked.toSyncSummary(localId)))
+            for (attempt in 0 until 100) {
+                advanceUntilIdle()
+                if (vm.uiState.value.referenceEnergyKwh[25] == null) break
+                Thread.sleep(20)
+            }
+            assertNull(vm.uiState.value.referenceEnergyKwh[25])
+            assertNull(vm.uiState.value.referenceEstimates[25])
+            f.db.chargeSummaryDao().upsert(row)
+            for (attempt in 0 until 100) {
+                advanceUntilIdle()
+                if (vm.uiState.value.referenceEnergyKwh[25] == 11.1) break
+                Thread.sleep(20)
+            }
+            assertEquals(11.1, vm.uiState.value.referenceEnergyKwh[25] ?: Double.NaN, 0.0)
+            assertTrue(store.saveBound(localId, charge, 20.0, "CNY", 0L))
+            for (attempt in 0 until 100) {
+                advanceUntilIdle()
+                if (vm.uiState.value.effectiveCosts[25]?.cost == 20.0) break
+                Thread.sleep(20)
+            }
+            state = vm.uiState.value
+            assertEquals(20.0, state.effectiveCosts[25]?.cost ?: Double.NaN, 0.0)
+            assertNull(state.referenceEstimates[25])
+            assertEquals(originalEvidence, f.db.chargeSummaryDao().get(localId, 25)?.apiEvidence)
+            val scope = f.vehicleContexts.captureReadScope()
+            f.vehicleContexts.resolveVerifiedHistoryCar(
+                com.matelink.data.api.models.CarData(1, vehicleUid = "synthetic-remapped"), scope)
+            f.vehicleContexts.resolveVerifiedHistoryCar(
+                com.matelink.data.api.models.CarData(1, vehicleUid = "synthetic-vehicle-1"), scope)
+            advanceUntilIdle()
+            assertTrue(vm.uiState.value.referenceEnergyKwh.isEmpty())
+            assertTrue(vm.uiState.value.referenceEstimates.isEmpty())
+        } finally {
+            vm.viewModelScope.cancel()
+            advanceUntilIdle()
+            f.close()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test fun importedReferenceEstimateUsesConfiguredTimeOfUseRate() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val f = HistoryResourceFixture(File(temp.root, "charge-reference-tariff.db"))
+        f.initialize(cloud = true)
+        f.settings.saveCurrency("CNY")
+        f.settings.saveDefaultChargePrice(1.14)
+        f.settings.saveTariffConfig(true, 1.0, 0.7, 0.3, "[[10,14],[18,20]]", "[[7,9],[15,17],[21,22]]", "[[23,23],[0,6]]")
+        val localId = f.localId(1)
+        val charge = ChargeData(25, startDate = "2026-10-20T13:00:00Z", endDate = "2026-10-20T14:00:00Z",
+            source = "local_import", qualityState = "incomplete", qualityReason = "local_import_summary_only",
+            chargeEnergyAdded = 11.1)
+        f.db.chargeSummaryDao().upsert(requireNotNull(charge.toSyncSummary(localId)))
+        f.reopen()
+        f.status = { 503 }
+        val vm = viewModel(f)
+        try {
+            vm.setCarId(1)
+            awaitCharges(vm, listOf(25))
+            for (attempt in 0 until 100) {
+                advanceUntilIdle()
+                if (vm.uiState.value.referenceEstimates[25] != null) break
+                Thread.sleep(20)
+            }
+            assertEquals(7.77, vm.uiState.value.referenceEstimates[25] ?: Double.NaN, 1e-9)
+            assertEquals(0, vm.uiState.value.summary.totalCharges)
+            assertNull(vm.uiState.value.summary.totalCost)
+        } finally {
+            vm.viewModelScope.cancel()
+            advanceUntilIdle()
+            f.close()
+            Dispatchers.resetMain()
+        }
+    }
+
     @Test fun changingFromRecentToAnOldDayReadsScopedRoomAgainWithoutNetwork() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         val f = HistoryResourceFixture(File(temp.root, "charges-old-day-reopen.db"))
@@ -301,10 +410,11 @@ class ChargesRoomCostConsumerTest {
             assertEquals(listOf(71), vm.uiState.value.charges.map { it.chargeId })
             val recentStart = vm.uiState.value.startDate
             vm.loadMore()
-            awaitCharges(vm, listOf(71))
+            awaitCharges(vm, listOf(71, 72))
             assertEquals(DateFilter.CUSTOM, vm.uiState.value.selectedFilter)
             assertEquals(recentStart?.minusDays(30), vm.uiState.value.customStartDate)
             assertEquals(vm.uiState.value.endDate, vm.uiState.value.customEndDate)
+            assertEquals(2, vm.uiState.value.summary.totalCharges)
         } finally {
             vm.viewModelScope.cancel()
             advanceUntilIdle()

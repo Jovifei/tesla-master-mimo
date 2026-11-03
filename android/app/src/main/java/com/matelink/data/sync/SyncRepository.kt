@@ -480,7 +480,7 @@ internal fun DriveSummary.toImportSession(kind: String): com.matelink.data.api.m
 internal fun ChargeSummary.toImportSession(kind: String): com.matelink.data.api.models.HistoryImportSession? {
     if (qualityState != "observed" && qualityState != "derived") return null
     val evidence = apiEvidence?.let(HistorySummaryEvidenceCodec::decodeCharge) ?: return null
-    if (evidence.source in setOf("telemetry_mqtt", "local_import")) return null
+    if (evidence.source in setOf("telemetry_mqtt", "local_import", "teslamate_archive")) return null
     val started = normalizeImportTimestamp(startDate) ?: return null
     val ended = normalizeImportTimestamp(endDate) ?: return null
     return com.matelink.data.api.models.HistoryImportSession(

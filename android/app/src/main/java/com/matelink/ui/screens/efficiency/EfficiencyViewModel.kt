@@ -83,8 +83,8 @@ class EfficiencyViewModel internal constructor(private val source: EfficiencyPag
     @Inject constructor(historyRepository: AnalysisHistoryRepository, contexts: VehicleContextRepository) : this(object : EfficiencyPageSource {
         override val scopeChanges = contexts.historyScopeChanges.map { Unit }
         override suspend fun identity(carId: Int) = contexts.captureAnalysisPageIdentity(carId)
-        override suspend fun load(carId: Int) = historyRepository.load(carId)
-        override suspend fun loadCached(carId: Int) = historyRepository.loadCached(carId)
+        override suspend fun load(carId: Int) = historyRepository.loadDrives(carId)
+        override suspend fun loadCached(carId: Int) = historyRepository.loadCachedDrives(carId)
     })
     private val _uiState = MutableStateFlow(EfficiencyUiState())
     val uiState = _uiState.asStateFlow()

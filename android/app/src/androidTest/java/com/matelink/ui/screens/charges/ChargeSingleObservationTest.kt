@@ -188,6 +188,34 @@ class ChargeSingleObservationTest {
         compose.runOnIdle { assertTrue(edited) }
     }
 
+    @Test fun referenceEnergyAndEstimateStayVisibleEditableAndDoNotOverlap() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val energyLabel = context.getString(R.string.charge_reference_energy)
+        val costLabel = context.getString(R.string.charge_reference_cost)
+        var edited = false
+        compose.setContent {
+            MateLinkTheme {
+                Box(Modifier.width(320.dp)) {
+                    ChargeItem(ChargeData(7), isDcCharge = null, currencySymbol = "¥",
+                        effectiveCost = EffectiveChargeCost(null, ChargeCostSource.UNAVAILABLE),
+                        pendingLegacyAmount = null, pendingBoundAmount = null,
+                        otherCurrencyAmount = null, palette = telemetryPalette(),
+                        onEditCost = { edited = true }, onClick = {},
+                        referenceEnergyKwh = 11.1, referenceEstimate = 7.77)
+                }
+            }
+        }
+        compose.onNodeWithText(energyLabel, useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithText(costLabel, useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithText("≈11.1 kWh", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithText("≈7.77", useUnmergedTree = true).assertIsDisplayed()
+        val bounds = (0..3).map { compose.onNodeWithTag("history-metric-value-$it", useUnmergedTree = true)
+            .getUnclippedBoundsInRoot() }
+        bounds.zipWithNext().forEach { (left, right) -> assertTrue(left.right <= right.left) }
+        compose.onNodeWithContentDescription("$costLabel: ≈7.77 ¥").performClick()
+        compose.runOnIdle { assertTrue(edited) }
+    }
+
     @Test fun partialEstimatedUnitCostUsesOnlyTheObservedEnergy() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val start = "2026-10-20T10:00:00Z"

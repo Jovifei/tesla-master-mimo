@@ -40,6 +40,11 @@ import android.util.Log
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/** A page reads only its declared data family; the combined entry remains available. */
+internal enum class HistoryFamilies(val drives: Boolean, val charges: Boolean) {
+    ALL(true, true), DRIVES(true, false), CHARGES(false, true)
+}
+
 data class UnifiedHistory(
     val context: VehicleContext,
     val drives: List<DriveData>,
@@ -49,7 +54,10 @@ data class UnifiedHistory(
     val fetchedAt: Instant = Instant.now(),
     val drivesSyncError: String? = null,
     val chargesSyncError: String? = null,
-    val localArchiveLinkPending: Boolean = false
+    val localArchiveLinkPending: Boolean = false,
+    /** Request success does not prove that every retained local receipt was refreshed. */
+    val drivesIncludeCachedEvidence: Boolean = false,
+    val chargesIncludeCachedEvidence: Boolean = false
 ) {
     /** Original proof/generation captured by load; used locally without a second discovery request. */
     internal var verifiedReadContext: VerifiedHistoryReadContext? = null
@@ -206,7 +214,10 @@ class UnifiedHistoryRepository internal constructor(private val reads: HistoryRe
      * calls provider discovery, upgrades a legacy namespace, or writes evidence.
      * A verified account/origin/vehicle mapping must exist from a prior read.
      */
-    suspend fun loadCached(remoteApiCarId: Int): ApiResult<UnifiedHistory> {
+    suspend fun loadCached(remoteApiCarId: Int): ApiResult<UnifiedHistory> =
+        loadCached(remoteApiCarId, HistoryFamilies.ALL)
+
+    internal suspend fun loadCached(remoteApiCarId: Int, families: HistoryFamilies): ApiResult<UnifiedHistory> {
         if (remoteApiCarId <= 0) return historyIdentityUnavailableError()
         val scope = try { reads.captureScope() }
             catch (_: HistoryIdentityUnavailableException) { return historyIdentityUnavailableError() }
@@ -216,8 +227,8 @@ class UnifiedHistoryRepository internal constructor(private val reads: HistoryRe
             context.connectionSource != scope.source || context.serverIdentity != scope.serverIdentity ||
             context.stableIdentity.isBlank()) return historyIdentityUnavailableError()
 
-        val drives = reads.localDrives(context.localHistoryCarId)
-        val charges = reads.localCharges(context.localHistoryCarId)
+        val drives = if (families.drives) reads.localDrives(context.localHistoryCarId) else emptyList()
+        val charges = if (families.charges) reads.localCharges(context.localHistoryCarId) else emptyList()
         currentCoroutineContext().ensureActive()
         val stillBound = try {
             reads.captureScope() == scope && reads.cachedContext(remoteApiCarId, scope) == context
@@ -236,7 +247,10 @@ class UnifiedHistoryRepository internal constructor(private val reads: HistoryRe
             // Room has no complete last-fetch receipt: do not pretend this read
             // observed history at the current instant.
             fetchedAt = Instant.EPOCH,
-            drivesSyncError = "cached_only", chargesSyncError = "cached_only"
+            drivesSyncError = if (families.drives) "cached_only" else null,
+            chargesSyncError = if (families.charges) "cached_only" else null,
+            drivesIncludeCachedEvidence = drives.isNotEmpty(),
+            chargesIncludeCachedEvidence = charges.isNotEmpty()
         ).also { it.verifiedReadContext = proof })
     }
 
@@ -246,11 +260,22 @@ class UnifiedHistoryRepository internal constructor(private val reads: HistoryRe
         endDate: String? = null
     ): ApiResult<UnifiedHistory> = load(remoteApiCarId, startDate, endDate) {}
 
+    internal suspend fun loadDrives(
+        remoteApiCarId: Int, startDate: String? = null, endDate: String? = null,
+        onResolvedContext: suspend (VerifiedHistoryReadContext) -> Unit = {}
+    ): ApiResult<UnifiedHistory> = load(remoteApiCarId, startDate, endDate,
+        HistoryFamilies.DRIVES, onResolvedContext)
+
+    internal suspend fun loadCharges(
+        remoteApiCarId: Int, startDate: String? = null, endDate: String? = null
+    ): ApiResult<UnifiedHistory> = load(remoteApiCarId, startDate, endDate, HistoryFamilies.CHARGES) {}
+
     /** Live consumers adopt this read's identity before any history endpoint can stall. */
     internal suspend fun load(
         remoteApiCarId: Int,
         startDate: String?,
         endDate: String?,
+        families: HistoryFamilies = HistoryFamilies.ALL,
         onResolvedContext: suspend (VerifiedHistoryReadContext) -> Unit
     ): ApiResult<UnifiedHistory> {
         val resolved = when (val result = resolveContext(remoteApiCarId)) {
@@ -267,16 +292,16 @@ class UnifiedHistoryRepository internal constructor(private val reads: HistoryRe
         }
         // History lists include incomplete legacy summaries. Analytics-only DAO
         // range queries must not silently hide those records on an offline phone.
-        val localDrives = reads.localDrives(context.localHistoryCarId)
-            .filter { historyInRange(it.startDate, startDate, endDate) }
-        val localCharges = reads.localCharges(context.localHistoryCarId)
-            .filter { historyInRange(it.startDate, startDate, endDate) }
+        val localDrives = if (families.drives) reads.localDrives(context.localHistoryCarId)
+            .filter { historyInRange(it.startDate, startDate, endDate) } else emptyList()
+        val localCharges = if (families.charges) reads.localCharges(context.localHistoryCarId)
+            .filter { historyInRange(it.startDate, startDate, endDate) } else emptyList()
         // Only a vehicle identity verified in this read authorizes remote history. Cached contexts
         // are origin-scoped and may preserve offline display, never authorize a numeric-ID fallback.
         val canReadHistory = resolved.remoteAuthorized
         val unavailable = resolved.identityError
             ?: ApiResult.Error("vehicle_discovery_unavailable", code = 404, kind = ApiErrorKind.CONFIGURATION)
-        val remoteDrives = if (canReadHistory) {
+        val remoteDrives = if (canReadHistory && families.drives) {
             loadHistoryPages(id = DriveData::driveId) { page ->
                 if (!scopeUnchanged()) return@loadHistoryPages historyIdentityUnavailableError()
                 val requestedAt = Instant.now()
@@ -285,7 +310,7 @@ class UnifiedHistoryRepository internal constructor(private val reads: HistoryRe
                 if (!scopeUnchanged()) return@loadHistoryPages historyIdentityUnavailableError()
                 response
             }
-        } else HistoryPageLoad<DriveData>(emptyList(), unavailable)
+        } else HistoryPageLoad<DriveData>(emptyList(), if (families.drives) unavailable else null)
         if (!scopeUnchanged()) return historyIdentityUnavailableError()
         // Keep the wire/Room archive raw while the displayed projection hides
         // unqualified energy. Re-encoding a projected value destroys the only
@@ -312,7 +337,7 @@ class UnifiedHistoryRepository internal constructor(private val reads: HistoryRe
         // charge endpoint later stalls or the caller cancels its remaining read budget.
         if (!scopeUnchanged()) return historyIdentityUnavailableError()
         val driveArchiveBlocked = try {
-            reads.persistDrives(driveRows)
+            if (families.drives) reads.persistDrives(driveRows)
             false
         } catch (_: HistorySourceArchiveException) {
             // The DAO transaction kept all prior receipts; charges can still refresh.
@@ -321,7 +346,7 @@ class UnifiedHistoryRepository internal constructor(private val reads: HistoryRe
         }
         if (!scopeUnchanged()) return historyIdentityUnavailableError()
 
-        val remoteCharges = if (canReadHistory) {
+        val remoteCharges = if (canReadHistory && families.charges) {
             loadHistoryPages(id = ChargeData::chargeId) { page ->
                 if (!scopeUnchanged()) return@loadHistoryPages historyIdentityUnavailableError()
                 val requestedAt = Instant.now()
@@ -330,7 +355,7 @@ class UnifiedHistoryRepository internal constructor(private val reads: HistoryRe
                 if (!scopeUnchanged()) return@loadHistoryPages historyIdentityUnavailableError()
                 response
             }
-        } else HistoryPageLoad<ChargeData>(emptyList(), unavailable)
+        } else HistoryPageLoad<ChargeData>(emptyList(), if (families.charges) unavailable else null)
         if (!scopeUnchanged()) return historyIdentityUnavailableError()
         val rawCharges = mergeChargesRaw(remoteCharges.items.map { it.withLegacyRemoteQuality() },
             localCharges.map { it.toRawAnalysisChargeData() })
@@ -348,7 +373,7 @@ class UnifiedHistoryRepository internal constructor(private val reads: HistoryRe
         }
         if (!scopeUnchanged()) return historyIdentityUnavailableError()
         val chargeArchiveBlocked = try {
-            reads.persistCharges(chargeRows)
+            if (families.charges) reads.persistCharges(chargeRows)
             false
         } catch (_: HistorySourceArchiveException) {
             Log.w("HistorySync", "event=charge_source_archive_blocked")
@@ -384,8 +409,14 @@ class UnifiedHistoryRepository internal constructor(private val reads: HistoryRe
                 context = context,
                 drives = drives,
                 charges = charges,
-                drivesFromRemote = !driveArchiveBlocked && remoteDrives.error == null,
-                chargesFromRemote = !chargeArchiveBlocked && remoteCharges.error == null,
+                drivesFromRemote = families.drives && !driveArchiveBlocked && canReadHistory && remoteDrives.error == null,
+                chargesFromRemote = families.charges && !chargeArchiveBlocked && canReadHistory && remoteCharges.error == null,
+                drivesIncludeCachedEvidence = driveArchiveBlocked || rawDrives.any {
+                    remoteDriveCandidates[it.driveId]?.withLegacyRemoteQuality() != it
+                },
+                chargesIncludeCachedEvidence = chargeArchiveBlocked || rawCharges.any {
+                    remoteChargeCandidates[it.chargeId]?.withLegacyRemoteQuality() != it
+                },
                 drivesSyncError = if (driveArchiveBlocked) "history_cached" else
                     remoteDrives.error?.let { if (remoteDrives.items.isEmpty()) "history_cached" else "history_partial" },
                 chargesSyncError = if (chargeArchiveBlocked) "history_cached" else

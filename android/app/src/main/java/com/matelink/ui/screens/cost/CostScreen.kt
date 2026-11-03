@@ -170,9 +170,10 @@ fun CostScreen(
 }
 
 @Composable
-private fun SummarySection(uiState: CostUiState, currencySymbol: String) {
+internal fun SummarySection(uiState: CostUiState, currencySymbol: String) {
     val hasCost = uiState.costCoverage > 0 && uiState.totalCost != null
     val hasEstimate = uiState.estimatedCoverage > 0 && uiState.estimatedCost != null
+    val hasPartial = uiState.partialEstimatedCoverage > 0 && uiState.partialEstimatedCost != null
     val hasEnergy = uiState.energyCoverage > 0 && uiState.totalEnergy != null
     val hasPair = uiState.pairedCoverage > 0 && uiState.pairedUnitCost != null
     if (hasCost || hasEstimate) Row(
@@ -187,9 +188,14 @@ private fun SummarySection(uiState: CostUiState, currencySymbol: String) {
         }
         uiState.estimatedCost?.takeIf { hasEstimate }?.let { estimate ->
             SummaryCard(Modifier.weight(1f), stringResource(R.string.cost_default_rate_estimate),
-                formatMoney(currencySymbol, estimate, 2),
+                "≈" + formatMoney(currencySymbol, estimate, 2),
                 stringResource(R.string.cost_estimate_coverage, uiState.estimatedCoverage))
         }
+    }
+    if (hasPartial) {
+        SummaryCard(Modifier.fillMaxWidth(), stringResource(R.string.cost_partial_observation_estimate),
+            "≈" + formatMoney(currencySymbol, uiState.partialEstimatedCost!!, 2),
+            stringResource(R.string.cost_partial_observation_coverage, uiState.partialEstimatedCoverage))
     }
     if (hasEnergy || hasPair) Row(
         modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -203,7 +209,7 @@ private fun SummarySection(uiState: CostUiState, currencySymbol: String) {
                 formatMoney(currencySymbol, paired, 2) + "/kWh", "")
         }
     }
-    if (!hasCost && !hasEstimate && !hasEnergy) {
+    if (!hasCost && !hasEstimate && !hasPartial && !hasEnergy) {
         Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))) {
             Text(stringResource(R.string.cost_no_paired_values), Modifier.padding(16.dp),
@@ -218,7 +224,7 @@ private fun SummarySection(uiState: CostUiState, currencySymbol: String) {
         uiState.totalCharges, uiState.energyCoverage, uiState.pairedCoverage),
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant)
-    if (hasCost || hasEstimate) Text(stringResource(R.string.cost_current_currency_assumption),
+    if (hasCost || hasEstimate || hasPartial) Text(stringResource(R.string.cost_current_currency_assumption),
         style = MaterialTheme.typography.labelSmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
