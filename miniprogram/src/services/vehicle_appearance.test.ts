@@ -85,7 +85,7 @@ it('refuses quota failures and shared-budget excess without evicting old data', 
   expect(writeVehicleAppearance(fail, scope, { ...config, modelYear: 2026 })).toBe(false)
   expect(JSON.stringify([...store.values])).toBe(before)
   store.values.set('matelink.owner.archive', 'x'.repeat(800 * 1024))
-  expect(writeVehicleAppearance(store, scope, config)).toBe(false)
+  expect(writeVehicleAppearance(store, { ...scope, stableId: 'uid.two' }, config)).toBe(false)
   expect(store.values.has('matelink.owner.archive')).toBe(true)
 })
 

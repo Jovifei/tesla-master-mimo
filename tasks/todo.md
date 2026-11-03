@@ -4365,3 +4365,11 @@ Review: 推送成功（需走本机 7890 代理，公司网络直连 GitHub 443 
 - [ ] 在微信公众平台「版本管理 → 开发版本 0.6.3 → 设为体验版」由 Jovi 手动点击（网页登录态无法由 CLI 代操作）。
 
 Review: 小程序开发本阶段收口，后续改动应另开阶段。所有代码提交均落在 `codex/miniprogram-e-migration-20261029`（E 盘原目录，未使用 worktree）；Android/iOS 原有脏改动与父仓库 `app_mimo` 指针未动。审核中的 0.6.2 不受影响。
+
+## 2026-11-03 审查项复核与 0.6.4 修复闭环
+
+- [x] 复核外部审查报告：确认 CI 时区断言脆弱性（F01）与车图尺寸漂移（F08）属实；确认费用口径（F03）与统一历史强耦合（F04）实属 Android 架构问题而在小程序中不成立；确认手工费用（F06）早于 0.6.1 移除前台编辑；确认电池趋势（F07）属未部署后端演进阶段；确认 800KiB 存储预算（F10）与微信绑定（F12）具备健全保护和合规边界。
+- [x] 修复 `history_query.test.ts` 中 `historyDetailDateTime` 测试对 UTC+8 本地时区的硬编码断言依赖，保证 UTC 远程 CI runner 与任何时区均稳定通过。
+- [x] 微调 `pages/vehicle/index.scss` 中 `.dashboard-hero` 容器高度至 340rpx、图片高度至 320rpx，精确对齐 Android App 170dp/160dp（1:1 比例）。
+- [x] 升版至 0.6.4，更新 `package.json`、`package-lock.json`、`CHANGELOG.md` 及关于页更新文案。
+- [x] 全量测试 954/954 PASS（含 UTC 与 Asia/Shanghai 双环境复测）、资源测试 6/6 PASS、typecheck PASS、生产构建 197 文件 PASS（哈希 `92ede8d9…`）。
