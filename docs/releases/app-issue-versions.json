@@ -4,6 +4,26 @@
   "observation_note": "发现版本不等于首次引入版本；build82 与 build83 已同签覆盖安装并完成指定真机页面抽查；生产 API 8d3da22 已部署且当前车辆首轮趋势回填完成。build84 充电参考展示及桥 aae2f6af 均为未发布候选，不自动合并疑似重复记录；旧编号回扫和详情离线参考仍开放。生产候选 b11bae0 尚未部署，离线发布 gate 有硬阻断；服务器不包含手机 Room 或微信本地手工费用。",
   "issues": [
     {
+      "id": "NOV03-COST-PARTIAL-TOTALS",
+      "title": "成本分析页独立拆分已采集部分估算并响应手工电费实时重投影",
+      "found_date": "2026-11-03",
+      "found_version": "App 2.1.68 build88",
+      "status": "VERIFIED_DEVICE",
+      "fix_version": "App 2.1.69 build89",
+      "change": "ChargeCostTotals 独立统计 partialEstimatedTotal 与 partialEstimatedCount，并在 CostScreen 独立渲染卡片；监听 Room 手工费用变动实时触发页面重算。",
+      "verification": "PartialCostTotalsTest, CostRoomFirstViewModelTest 等通过；build 89 真机实测显示“已采集部分估算 ≈¥22.57”。"
+    },
+    {
+      "id": "NOV03-HISTORY-FAMILIES-DECOUPLING",
+      "title": "按数据族解耦行程与充电历史加载",
+      "found_date": "2026-11-03",
+      "found_version": "App 2.1.68 build88",
+      "status": "VERIFIED_DEVICE",
+      "fix_version": "App 2.1.69 build89",
+      "change": "UnifiedHistoryRepository 与 AnalysisHistoryRepository 支持 HistoryFamilies.DRIVES / CHARGES 分离加载，行程和充电页面互不等待。",
+      "verification": "HistoryFamilyReadTest 6 项通过，真机多页面流畅切换验证。"
+    },
+    {
       "id": "NOV02-SHORT-TRIP-RATED-ENERGY",
       "title": "短行程整数 SOC 不变时回退额定续航微弱压降估算能耗",
       "found_date": "2026-11-03",

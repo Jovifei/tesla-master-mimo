@@ -16,6 +16,9 @@
 
 | 问题 ID | 发现日期 / 版本 | 根因与修复 | 验证 |
 | --- | --- | --- | --- |
+| NOV03-COST-PARTIAL-TOTALS | 2026-11-03 / App 2.1.68 build88 | 成本分析页 ChargeCostTotals 忽略部分观测电量，与充电列表“≈估算费用”口径不同；2.1.69 / build89 区分整笔与部分估算，新增“已采集部分估算”卡片并支持实时监听手工修改 | 13 项单测通过，CostRoomFirstViewModelTest 验证通过，真机核验通过 |
+| NOV03-HISTORY-FAMILIES-DECOUPLING | 2026-11-03 / App 2.1.68 build88 | 统一历史入口串行拉取行程与充电导致跨模块互相拖慢；2.1.69 / build89 引入 HistoryFamilies 按需加载数据族 | HistoryFamilyReadTest 6 项通过，真机各页面秒开验证通过 |
+| NOV03-PARKED-DETAIL-LOCALIZATION | 2026-11-03 / App 2.1.68 build88 | 驻车详情标题硬编码中文导致英文环境下中英混排；2.1.69 / build89 资源化为 parked_detail_title | 编译通过，资源文件补充 |
 | NOV02-SHORT-TRIP-RATED-ENERGY | 2026-11-03 / App 2.1.67 build87 | 极短行程前后整数 SOC 无变化（deltaSoc=0）且无功率采样时能耗返回 UNAVAILABLE 变成横杠；2.1.68 / build88 引入额定续航微弱差值（deltaRange）回退估算 | 单元测试通过，真机升级至 build 88 验证 | 
 | NOV02-DRIVE-ENERGY-UNMEASURED | 2026-11-02 / App 2.1.65 build84 | Fleet 遥测行程返回 no_verified_driving_net_energy，客户端此前直接硬阻断拒绝 SOC / 功率估算，列表及详情显示“暂不可用”横杠；2.1.67 / build87 识别无硬件计数流并回退功率积分与 SOC 容量估算 | 61 项定向测试通过，build87 真机实测近一周行程能耗（如 ≈16.5、≈13.5 kWh/100km）恢复计算与展示 |
 | NOV02-BATTERY-TREND-SOURCES-FILTER | 2026-11-02 / App 2.1.64 build83 | batteryTrendSamples 要求 sources.distinct().size == 1，当归档与实时行程共存时所有样本被丢弃返回 null，页面提示“有效样本不足”；2.1.67 / build87 移除该过度限制，只过滤冲突记录 | build87 真机实测恢复 114 个有效样本与完整 07-09 至 11-02 趋势曲线 |

@@ -125,7 +125,9 @@ fun MateLinkBottomBar(
                 val label = stringResource(dest.labelRes)
                 NavigationBarItem(
                     selected = dest == selected,
-                    onClick = { navigateToTopLevel(navController, dest, currentCarId) },
+                    onClick = {
+                        if (dest != selected) navigateToTopLevel(navController, dest, currentCarId)
+                    },
                     icon = {
                         val iconScale by animateFloatAsState(
                             targetValue = PearlDriveMotion.iconScale(dest == selected),

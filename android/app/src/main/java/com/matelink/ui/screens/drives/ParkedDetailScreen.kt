@@ -91,7 +91,7 @@ fun ParkedDetailScreen(
             TopAppBar(
                 title = {
                     Text(
-                        "驻车详情",
+                        stringResource(R.string.parked_detail_title),
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold
                     )
