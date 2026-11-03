@@ -20,6 +20,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -131,6 +133,13 @@ class ChargeHistoryNoticeIdentityTest {
             val page = page(f, captureAllowed = allowed, observeScope = false).also { vm = it }
             page.setCarId(1)
             withTimeout(10_000) { page.uiState.first { it.localArchiveLinkPending && it.historyNoticeLocalCarId == oldId } }
+            val loader = ChargesViewModel::class.java.getDeclaredField("latestLoad")
+                .apply { isAccessible = true }.get(page)
+            val jobField = loader.javaClass.getDeclaredField("job").apply { isAccessible = true }
+            withTimeout(10_000) {
+                while (jobField.get(loader) == null) delay(10)
+                (jobField.get(loader) as Job).join()
+            }
             allowed.set(false)
             page.refresh()
             val state = withTimeout(10_000) { page.uiState.first { it.error == HISTORY_IDENTITY_UNAVAILABLE } }

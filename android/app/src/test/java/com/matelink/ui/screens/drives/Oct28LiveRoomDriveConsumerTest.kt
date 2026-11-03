@@ -241,7 +241,7 @@ class Oct28LiveRoomDriveConsumerTest {
         }
     }
 
-    @Test fun freshIdentityDiscoveryPublishesDrivesWhileChargesWaitAndAfterTheirTimeout() = runBlocking {
+    @Test fun freshIdentityDiscoveryPublishesWithoutUnrelatedChargesOrFalseTimeout() = runBlocking {
         val scheduler = TestCoroutineScheduler()
         Dispatchers.setMain(UnconfinedTestDispatcher(scheduler))
         val fixture = HistoryResourceFixture(File(temp.root, "oct28-genuinely-unmapped.db"))
@@ -274,7 +274,8 @@ class Oct28LiveRoomDriveConsumerTest {
             assertTrue(vm.uiState.value.drives.isEmpty())
             assertFalse(fixture.calls.any { it.endsWith("/drives") })
             identityGate.complete(Unit)
-            withTimeout(10_000) { chargesEntered.await() }
+            awaitInitialLoad(vm)
+            assertFalse(chargesEntered.isCompleted)
             val context = requireNotNull(fixture.vehicleContexts.cachedContextForRemote(1))
             assertTrue(context.localHistoryCarId < 0)
             assertEquals(listOf(701), fixture.db.driveSummaryDao()
@@ -289,17 +290,18 @@ class Oct28LiveRoomDriveConsumerTest {
             assertEquals(3.0, requireNotNull(displayed.summary.totalDistanceKm), 0.0001)
             assertFalse(displayed.drives.any { it.driveId == 999 })
 
-            // Exercise the real VM timeout without spending twenty seconds of wall time.
+            // An unrelated endpoint is no longer requested and cannot manufacture a later timeout.
             scheduler.advanceTimeBy(20_001)
             scheduler.runCurrent()
-            val timedOut = withTimeout(3_000) { vm.uiState.first { it.historySyncWarning != null } }
+            val completed = vm.uiState.value
             assertFalse(chargeGate.isCompleted)
-            assertEquals(listOf(701), timedOut.drives.map { it.driveId })
-            assertEquals(1, timedOut.summary.totalDrives)
-            assertEquals(3.0, requireNotNull(timedOut.summary.totalDistanceKm), 0.0001)
-            assertEquals("history_sync_timeout", timedOut.historySyncWarning)
-            assertEquals(R.string.history_sync_timeout,
-                historyReadWarningMessageRes(requireNotNull(timedOut.historySyncWarning)))
+            assertEquals(listOf(701), completed.drives.map { it.driveId })
+            assertEquals(1, completed.summary.totalDrives)
+            assertEquals(3.0, requireNotNull(completed.summary.totalDistanceKm), 0.0001)
+            assertNull(completed.historySyncWarning)
+            assertFalse(completed.isLoading)
+            assertFalse(completed.isRefreshing)
+            assertFalse(fixture.calls.any { it.endsWith("/charges") })
         } finally {
             identityGate.complete(Unit)
             chargeGate.complete(Unit)
@@ -406,7 +408,7 @@ class Oct28LiveRoomDriveConsumerTest {
         }
     }
 
-    @Test fun uidRemappingAdoptsEmptyAndNonEmptyVehicleBeforeSlowChargesComplete() = runBlocking {
+    @Test fun uidRemappingAdoptsEmptyAndNonEmptyVehicleWithoutUnrelatedCharges() = runBlocking {
         val failures = mutableListOf<Throwable>()
         for (hasRemoteDrive in listOf(false, true)) {
             Dispatchers.setMain(UnconfinedTestDispatcher())
@@ -449,7 +451,8 @@ class Oct28LiveRoomDriveConsumerTest {
                 assertEquals(setOf(BASE_ID, CONTROL_ID), vehicleA.drives.map { it.driveId }.toSet())
                 assertEquals(originalLocalId, fixture.localId(1))
                 contextGate.complete(Unit)
-                withTimeout(10_000) { chargesEntered.await() }
+                awaitInitialLoad(vm)
+                assertFalse("UID rebinding must not request unrelated charges", chargesEntered.isCompleted)
                 val reboundLocalId = fixture.localId(1)
                 assertTrue(originalLocalId != reboundLocalId)
                 val expectedIds = if (hasRemoteDrive) listOf(BASE_ID) else emptyList()
@@ -506,8 +509,8 @@ class Oct28LiveRoomDriveConsumerTest {
             val scheduler = TestCoroutineScheduler()
             Dispatchers.setMain(UnconfinedTestDispatcher(scheduler))
             val fixture = HistoryResourceFixture(File(temp.root, "oct28-refresh-progress-$timesOut.db"))
-            val chargesEntered = CompletableDeferred<Unit>()
-            val chargeGate = CompletableDeferred<Unit>()
+            val historyEntered = CompletableDeferred<Unit>()
+            val historyGate = CompletableDeferred<Unit>()
             var page: DrivesViewModel? = null
             try {
                 fixture.initialize()
@@ -522,10 +525,10 @@ class Oct28LiveRoomDriveConsumerTest {
                 fixture.db.driveSummaryDao().upsertAll(listOf(requireNotNull(control(3.0).toSyncSummary(localCarId))))
                 awaitControl(vm, 3.0)
                 fixture.onRequest = { path ->
-                    if (path.endsWith("/charges")) { chargesEntered.complete(Unit); chargeGate.await() }
+                    if (path.endsWith("/drives")) { historyEntered.complete(Unit); historyGate.await() }
                 }
                 vm.refresh()
-                withTimeout(10_000) { chargesEntered.await() }
+                withTimeout(10_000) { historyEntered.await() }
                 fixture.db.driveSummaryDao().upsertAll(listOf(
                     requireNotNull(control(4.0).toSyncSummary(localCarId)),
                     requireNotNull(drive(701, "2026-10-28", 21, 5.0).toSyncSummary(localCarId))
@@ -534,14 +537,14 @@ class Oct28LiveRoomDriveConsumerTest {
                 assertEquals(listOf(701, CONTROL_ID, BASE_ID), updated.drives.map { it.driveId })
                 assertEquals(3, updated.summary.totalDrives)
                 assertEquals(11.0, requireNotNull(updated.summary.totalDistanceKm), 0.0001)
-                assertFalse(chargeGate.isCompleted)
+                assertFalse(historyGate.isCompleted)
                 assertTrue("Room publication must not finish the pending refresh; timeout=$timesOut", updated.isRefreshing)
                 val finished = if (timesOut) {
                     scheduler.advanceTimeBy(20_001)
                     scheduler.runCurrent()
                     withTimeout(3_000) { vm.uiState.first { it.historySyncWarning == "history_sync_timeout" } }
                 } else {
-                    chargeGate.complete(Unit)
+                    historyGate.complete(Unit)
                     awaitInitialLoad(vm)
                     vm.uiState.value
                 }
@@ -550,12 +553,12 @@ class Oct28LiveRoomDriveConsumerTest {
                 assertFalse(finished.isFilterLoading)
                 assertFalse(finished.isLoadingMore)
                 assertEquals(listOf(701, CONTROL_ID, BASE_ID), finished.drives.map { it.driveId })
-                if (timesOut) assertFalse(chargeGate.isCompleted)
+                if (timesOut) assertFalse(historyGate.isCompleted)
                 else assertNull(finished.historySyncWarning)
             } catch (failure: AssertionError) {
                 failures += failure
             } finally {
-                chargeGate.complete(Unit)
+                historyGate.complete(Unit)
                 page?.viewModelScope?.coroutineContext?.get(Job)?.cancelAndJoin()
                 fixture.close()
                 Dispatchers.resetMain()
@@ -757,11 +760,11 @@ class Oct28LiveRoomDriveConsumerTest {
 
     @Test
     @Config(shadows = [Oct28GatedAmapReverseShadow::class])
-    fun cachedAddressCannotCrossCarWhileChargeReadIsPending() = runBlocking {
+    fun cachedAddressCannotCrossCarWhileOwnHistoryReadIsPending() = runBlocking {
         Dispatchers.setMain(UnconfinedTestDispatcher())
         val fixture = HistoryResourceFixture(File(temp.root, "oct28-cache-address-car-switch.db"))
-        val chargeEntered = CompletableDeferred<Unit>()
-        val chargeRelease = CompletableDeferred<Unit>()
+        val historyEntered = CompletableDeferred<Unit>()
+        val historyRelease = CompletableDeferred<Unit>()
         val addressEntered = CompletableDeferred<Unit>()
         val addressRelease = CompletableDeferred<Unit>()
         var page: DrivesViewModel? = null
@@ -773,7 +776,7 @@ class Oct28LiveRoomDriveConsumerTest {
             fixture.db.driveSummaryDao().upsert(original.toSyncSummary(fixture.localId(1))!!)
             fixture.db.driveSummaryDao().upsert(replacement.toSyncSummary(fixture.localId(2))!!)
             fixture.onRequest = { path ->
-                if (path.endsWith("/cars/1/charges")) { chargeEntered.complete(Unit); chargeRelease.await() }
+                if (path.endsWith("/cars/1/drives")) { historyEntered.complete(Unit); historyRelease.await() }
             }
             Oct28GatedAmapReverseShadow.lookup = { _, _ ->
                 addressEntered.complete(Unit)
@@ -783,17 +786,17 @@ class Oct28LiveRoomDriveConsumerTest {
             val vm = createPage(fixture)
             page = vm
             vm.setCarId(1)
-            withTimeout(10_000) { addressEntered.await(); chargeEntered.await() }
+            withTimeout(10_000) { addressEntered.await(); historyEntered.await() }
             val previous = currentAddressJob(vm)
             vm.setCarId(2)
             addressRelease.complete(Unit)
-            chargeRelease.complete(Unit)
+            historyRelease.complete(Unit)
             withTimeout(10_000) { previous.join() }
             val state = withTimeout(10_000) { vm.uiState.first { it.drives.singleOrNull()?.startAddress == "车辆B起点" } }
             assertEquals("车辆B终点", state.drives.single().endAddress)
         } finally {
             addressRelease.complete(Unit)
-            chargeRelease.complete(Unit)
+            historyRelease.complete(Unit)
             page?.viewModelScope?.coroutineContext?.get(Job)?.cancelAndJoin()
             Oct28GatedAmapReverseShadow.lookup = { _, _ -> null }
             fixture.close()
@@ -1065,7 +1068,7 @@ class Oct28LiveRoomDriveConsumerTest {
             assertEquals(5.0, requireNotNull(ready.summary.totalDistanceKm), 0.0001)
             assertNotNull(ready.driveMetrics[BASE_ID])
             assertTrue(fixture.calls.any { it.endsWith("/drives") })
-            assertTrue(fixture.calls.any { it.endsWith("/charges") })
+            assertFalse("Drive-only publication must not request charging history", fixture.calls.any { it.endsWith("/charges") })
             body(fixture, vm, localCarId)
         } finally {
             page?.viewModelScope?.coroutineContext?.get(Job)?.cancelAndJoin()

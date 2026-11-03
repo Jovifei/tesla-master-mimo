@@ -183,7 +183,7 @@ class ChargesRoomCostConsumerTest {
         repeat(100) {
             advanceUntilIdle()
             if (vm.uiState.value.charges.map { charge -> charge.chargeId }.sorted() == ids.sorted() &&
-                !vm.uiState.value.isLoading && !vm.uiState.value.isFilterLoading) return
+                !vm.uiState.value.isLoading && !vm.uiState.value.isFilterLoading && !vm.uiState.value.isLoadingMore) return
             Thread.sleep(20)
         }
         throw AssertionError("Expected charge IDs $ids; actual ${vm.uiState.value.charges.map { it.chargeId }}")
@@ -301,7 +301,12 @@ class ChargesRoomCostConsumerTest {
             assertEquals(listOf(71), vm.uiState.value.charges.map { it.chargeId })
             val recentStart = vm.uiState.value.startDate
             vm.loadMore()
-            awaitCharges(vm, listOf(71))
+            // Oct 19 minus 30 days is Sep 19: the Sep 20 receipt now belongs to the window.
+            // Wait for the completed wider-window projection, not the transient old list.
+            awaitCharges(vm, listOf(71, 72))
+            assertEquals(setOf(71, 72), vm.uiState.value.charges.map { it.chargeId }.toSet())
+            assertEquals(2, vm.uiState.value.summary.totalCharges)
+            assertEquals(5.70, vm.uiState.value.summary.totalCost ?: Double.NaN, 0.0001)
             assertEquals(DateFilter.CUSTOM, vm.uiState.value.selectedFilter)
             assertEquals(recentStart?.minusDays(30), vm.uiState.value.customStartDate)
             assertEquals(vm.uiState.value.endDate, vm.uiState.value.customEndDate)

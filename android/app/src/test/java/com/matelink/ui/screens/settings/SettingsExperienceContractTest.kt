@@ -54,8 +54,8 @@ class SettingsExperienceContractTest {
             ?.groupValues?.get(1)?.toInt()
         val version = Regex("versionName\\s*=\\s*\"([^\"]+)\"").find(gradle)
             ?.groupValues?.get(1)
-        assertEquals(83, code)
-        assertEquals("2.1.64", version)
+        assertEquals(84, code)
+        assertEquals("2.1.65", version)
         assertEquals(version, com.matelink.BuildConfig.VERSION_NAME)
         val settings = File("src/main/java/com/matelink/ui/screens/settings/SettingsScreen.kt").readText()
         assertEquals(2, Regex("stringResource\\(R\\.string\\.settings_release_notes_version,\\s*com\\.matelink\\.BuildConfig\\.VERSION_NAME\\)")
@@ -74,6 +74,8 @@ class SettingsExperienceContractTest {
         assertTrue(en.contains("charging", ignoreCase = true))
         assertTrue(en.contains("unknown", ignoreCase = true))
         assertTrue(en.contains("estimated", ignoreCase = true))
+        assertTrue(zh.contains("部分估算") && zh.contains("独立"))
+        assertTrue(en.contains("partial estimates", ignoreCase = true) && en.contains("independent", ignoreCase = true))
     }
 
     private fun stringValue(directory: String, name: String): String {
