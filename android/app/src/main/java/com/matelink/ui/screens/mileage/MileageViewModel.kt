@@ -245,7 +245,7 @@ class MileageViewModel internal constructor(
     }
 
     fun setCarId(id: Int) {
-        if (carId != id || activeIdentity?.stillCurrent() == false ||
+        if (carId != id || activeIdentity?.stillCurrent() != true ||
             historyProof?.let { !source.isContextCurrentNow(it) } == true ||
             (activeIdentity == null && activationJob?.isActive != true)) activate(id)
     }
@@ -294,11 +294,11 @@ class MileageViewModel internal constructor(
 
     fun refresh() {
         carId?.let { id ->
-            if (activeIdentity?.stillCurrent() == false || historyProof?.let { !source.isContextCurrentNow(it) } == true) {
+            if (activeIdentity?.stillCurrent() != true || historyProof?.let { !source.isContextCurrentNow(it) } == true) {
                 activate(id)
             } else {
                 _uiState.update { it.copy(isRefreshing = true) }
-                if (activeIdentity != null) loadAllDrives()
+                loadAllDrives()
             }
         }
     }
