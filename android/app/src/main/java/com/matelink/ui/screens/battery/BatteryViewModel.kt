@@ -345,10 +345,17 @@ class BatteryViewModel @Inject constructor(
                     vehicleContextRepository.cachedVerifiedStatusIdentityDigest(id, scope, context)
                 else null
                 val savedReceipt = readCachedBatteryReceipt(scope, context, digest, vehicleStatusStore)
+                val savedHealth = vehicleStatusStore.getCachedBatteryHealth(id)
                 requireVehicle()
-                if (savedReceipt != null) _uiState.update {
-                    it.copy(isLoading = false, carStatus = savedReceipt.displayStatus,
-                        units = savedReceipt.units, isCachedStatus = true)
+                if (savedReceipt != null || savedHealth != null) _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        carStatus = savedReceipt?.displayStatus ?: it.carStatus,
+                        units = savedReceipt?.units ?: it.units,
+                        batteryHealth = savedHealth ?: it.batteryHealth,
+                        batteryHealthAvailability = if (savedHealth != null) classifyBatteryHealth(ApiResult.Success(savedHealth), null) else it.batteryHealthAvailability,
+                        isCachedStatus = savedReceipt != null
+                    )
                 }
                 val evidencePriority = AtomicBoolean(false)
                 val evidenceUnavailable = AtomicBoolean(false)
@@ -444,6 +451,9 @@ class BatteryViewModel @Inject constructor(
                 }
 
                 val healthResult = repository.getBatteryHealth(id)
+                if (healthResult is ApiResult.Success && healthResult.data != null) {
+                    vehicleStatusStore.saveBatteryHealth(id, healthResult.data)
+                }
                 requireVehicle()
                 val statusResult = repository.getCarStatus(id)
                 requireVehicle()

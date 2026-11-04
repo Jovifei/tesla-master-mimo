@@ -224,9 +224,12 @@ private fun BatteryHealthContent(
             title = stringResource(R.string.metric_state_cached_title),
             body = stringResource(R.string.battery_cached_scope_notice)
         )
-        if (healthAvailability != BatteryHealthAvailability.AVAILABLE) {
-            BatteryHealthAvailabilityCard(healthAvailability)
-        }
+
+        val trend = stats.batteryTrend?.takeIf { it.source != BatteryTrendSource.UNAVAILABLE }
+        val trendDegradation = trend?.degradationPercent
+        val trendEstimatedHealth = trendDegradation?.let { (100.0 - it).coerceIn(0.0, 100.0) }
+
+        // 1. TOP: Battery Health Card
         if (stats.hasCapacityEstimate) {
             val healthColor = when {
                 stats.healthPercent >= 90.0 -> StatusSuccess
@@ -291,18 +294,100 @@ private fun BatteryHealthContent(
                     }
                 }
             }
+        } else if (trend != null && trendEstimatedHealth != null) {
+            val healthColor = when {
+                trendEstimatedHealth >= 90.0 -> StatusSuccess
+                trendEstimatedHealth >= 80.0 -> MaterialTheme.colorScheme.primary
+                else -> Color(0xFFF59E0B)
+            }
+            TelemetryPanel(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onCardClick),
+                accent = healthColor
+            ) {
+                Column(
+                    modifier = Modifier.padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    TelemetrySectionHeader(
+                        icon = Icons.Default.BatteryChargingFull,
+                        title = stringResource(R.string.battery_health_title),
+                        accent = healthColor
+                    )
+                    Text(
+                        text = "基于额定续航历史样本估算 (${trend.sampleCount} 个有效样本 · ${trend.coverageDays} 天)",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(18.dp)
+                    ) {
+                        TelemetryGauge(
+                            progress = (trendEstimatedHealth / 100.0).toFloat(),
+                            headline = "%.1f%%".format(trendEstimatedHealth),
+                            supporting = stringResource(R.string.battery_health),
+                            contentDescription = "${stringResource(R.string.battery_health)} ${"%.1f%%".format(trendEstimatedHealth)}",
+                            color = healthColor,
+                            modifier = Modifier.width(138.dp)
+                        )
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(14.dp)
+                        ) {
+                            trendDegradation?.let { degradation ->
+                                BatteryHeroValue(
+                                    label = stringResource(R.string.battery_trend_degradation),
+                                    value = "%.1f%%".format(degradation),
+                                    tint = healthColor
+                                )
+                            }
+                            trend.normalizedCurrentRangeKm?.let { currentRange ->
+                                BatteryHeroValue(
+                                    label = stringResource(R.string.battery_trend_current_range),
+                                    value = formatBatteryTrendRangeKm(currentRange, units),
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                            trend.baselineRangeKm?.let { baselineRange ->
+                                BatteryHeroValue(
+                                    label = stringResource(R.string.battery_trend_baseline_range),
+                                    value = formatBatteryTrendRangeKm(baselineRange, units),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            stats.rangeAt100?.let { rangeAtFull ->
+                                BatteryHeroValue(
+                                    label = stringResource(R.string.range_at_100),
+                                    value = UnitFormatter.formatDistance(rangeAtFull, units),
+                                    tint = RangeBlue
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        } else if (healthAvailability != BatteryHealthAvailability.AVAILABLE) {
+            BatteryHealthAvailabilityCard(healthAvailability)
+        }
+
+        // 2. BELOW IT: Battery Trend Card (Curve) is ALWAYS placed directly below the battery health panel
+        stats.batteryTrend?.let { trendData ->
+            BatteryTrendCard(trend = trendData, units = units, palette = palette)
+        }
+
+        // 3. BELOW THE CURVE: Detailed breakdown cards
+        if (stats.hasCapacityEstimate) {
             CapacityCard(stats = stats, units = units, palette = palette, onClick = onCardClick)
             DegradationCard(stats = stats, palette = palette, onClick = onCardClick)
-        } else {
-            stats.batteryTrend?.let { trend ->
-                BatteryTrendCard(trend = trend, units = units, palette = palette)
-            }
-            if (stats.hasBatteryStatus) {
-                BatteryStatusCard(stats = stats)
-            }
-            if (stats.hasRangeStatus) {
-                RangeInformationCard(stats = stats, units = units)
-            }
+        }
+        if (stats.hasBatteryStatus) {
+            BatteryStatusCard(stats = stats)
+        }
+        if (stats.hasRangeStatus) {
+            RangeInformationCard(stats = stats, units = units)
         }
         if (stats.hasRangeEstimate) {
             RangeCard(stats = stats, units = units, palette = palette, onClick = onCardClick)
@@ -334,9 +419,14 @@ private fun BatteryHealthContent(
                         fontWeight = FontWeight.Bold
                     )
                 }
+                val effectiveHealthPercent = when {
+                    stats.hasCapacityEstimate -> stats.healthPercent
+                    trendEstimatedHealth != null -> trendEstimatedHealth
+                    else -> null
+                }
                 Text(
-                    text = if (stats.hasCapacityEstimate) {
-                        stringResource(R.string.battery_service_mode_desc, stats.healthPercent)
+                    text = if (effectiveHealthPercent != null) {
+                        stringResource(R.string.battery_service_mode_desc, effectiveHealthPercent)
                     } else {
                         stringResource(R.string.battery_health_unsupported)
                     },

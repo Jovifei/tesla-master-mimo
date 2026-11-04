@@ -54,6 +54,7 @@ class VehicleStatusStore @Inject constructor(
     )
     private val adapter = moshi.adapter(CarStatus::class.java)
     private val receiptAdapter = moshi.adapter(CachedVehicleStatusReceipt::class.java)
+    private val healthAdapter = moshi.adapter(BatteryHealth::class.java)
     private val _updates = MutableSharedFlow<Int>(extraBufferCapacity = 8)
     val updates: SharedFlow<Int> = _updates
 
@@ -85,6 +86,16 @@ class VehicleStatusStore @Inject constructor(
 
     internal fun getCachedObservedAt(scope: HistoryReadScope, vehicle: VehicleContext): String? =
         getCachedReceipt(scope, vehicle)?.observedAt
+
+    internal fun getCachedBatteryHealth(carId: Int): BatteryHealth? {
+        val json = prefs.getString("battery_health_$carId", null) ?: return null
+        return runCatching { healthAdapter.fromJson(json) }.getOrNull()
+    }
+
+    internal fun saveBatteryHealth(carId: Int, health: BatteryHealth) {
+        val json = healthAdapter.toJson(health)
+        prefs.edit().putString("battery_health_$carId", json).apply()
+    }
 
     internal fun getCachedReceipt(scope: HistoryReadScope, vehicle: VehicleContext): CachedVehicleStatusReceipt? =
         key(scope, vehicle)?.let { readReceipt(it, 2) }
