@@ -14,6 +14,51 @@ export type DiagnosticInput = {
   now?: number
 }
 
+export type PairingPhase =
+  | 'pairing_required' | 'permission_required' | 'configuring'
+  | 'awaiting_first_event' | 'ready' | 'blocked' | 'error'
+
+const KNOWN_PAIRING_PHASES: ReadonlySet<string> = new Set([
+  'pairing_required', 'permission_required', 'configuring',
+  'awaiting_first_event', 'ready', 'blocked', 'error',
+])
+
+/**
+ * Graded onboarding phase (design 2026-11-05 §8), mirroring the backend
+ * grading in telemetry_onboarding.go and the Android presentation. The
+ * server-sent phase wins; with an older backend the same grading is
+ * derived from status + config_synced (data presence is not visible
+ * client-side, so a synced legacy status maps to awaiting_first_event).
+ */
+export function pairingPhase(pairing?: TelemetryPairing | null): PairingPhase | null {
+  if (!pairing) return null
+  const phase = pairing.phase?.trim().toLowerCase()
+  if (phase && KNOWN_PAIRING_PHASES.has(phase)) return phase as PairingPhase
+  switch (pairing.status?.trim().toLowerCase()) {
+    case 'pairing_required': return 'pairing_required'
+    case 'permission_required': return 'permission_required'
+    case 'billing_blocked': return 'blocked'
+    case 'telemetry_error': return 'error'
+    case 'collecting':
+    case 'available': return 'ready'
+    default: return pairing.config_synced === true ? 'awaiting_first_event' : 'configuring'
+  }
+}
+
+/** User-facing copy for the graded phase; evidence wording stays server-scoped. */
+export function pairingPhaseDetail(phase: PairingPhase | null): string {
+  switch (phase) {
+    case 'pairing_required': return '接入进度：等待在 Tesla 官方页面确认虚拟钥匙。'
+    case 'permission_required': return '接入进度：需要重新授权以补齐权限范围。'
+    case 'configuring': return '接入进度：钥匙已确认，服务端正在同步车辆配置，完成后自动进入下一步。'
+    case 'awaiting_first_event': return '接入进度：配置已同步，正在等待车辆首次数据，通常在下一次行程或充电时到达。'
+    case 'ready': return '接入进度：车辆数据已到达，接入完成。'
+    case 'blocked': return '接入进度：被计费状态阻断，需要在 Tesla 开发者侧处理后恢复。'
+    case 'error': return '接入进度：遥测接入异常，等待服务端恢复或重新配置。'
+    default: return ''
+  }
+}
+
 /** Every step is independent. A server readiness flag cannot qualify or persist client data. */
 export function diagnosticSteps(input: DiagnosticInput = {}): DiagnosticStep[] {
   const readiness = readinessViewFor(input.items ?? [])
@@ -45,7 +90,7 @@ export function diagnosticSteps(input: DiagnosticInput = {}): DiagnosticStep[] {
       summary: received ? cache ? '读取到缓存快照，在线状态尚未确认' : stale ? '当前响应含状态，报告时间较早或存在时钟偏差' : observed ? '当前响应含状态与报告时间' : '当前响应含状态，报告时间未知' : liveReadiness.status === 'waiting_vehicle' ? '服务端报告等待车辆，尚无观测证据' : '尚无可展示的状态观测',
       source: received ? cache ? '本机状态缓存' : '当前状态响应' : '无状态证据', time,
       action: input.onlineError ? '检查连接后手动刷新车辆' : liveReadiness.status === 'waiting_vehicle' ? '等待车辆下次正常上线' : '查看状态报告时间',
-      detail: `${input.onlineError ? '本次在线读取失败；缓存不代表本次在线成功。' : ''}收到状态不证明逐字段新鲜度、质量合格或历史落库。服务端遥测状态：${readiness.label}；实时状态准备：${liveReadiness.label}。` },
+      detail: `${input.onlineError ? '本次在线读取失败；缓存不代表本次在线成功。' : ''}收到状态不证明逐字段新鲜度、质量合格或历史落库。服务端遥测状态：${readiness.label}；实时状态准备：${liveReadiness.label}。${pairingPhaseDetail(pairingPhase(input.pairing))}` },
     { key: 'qualification', label: '4 · 质量合格', state: identity && history?.qualified ? 'PASS' : identity && history?.quarantined ? 'WARNING' : 'UNKNOWN',
       summary: identity && history?.qualified ? `本机历史摘要含 ${history.qualified} 条带质量标记的记录` : '当前状态缺少独立质量合格证据',
       source: identity && history?.rows ? '本机历史缓存质量标记' : '未提供独立质量证据', time: identity ? history?.savedAt ?? null : null,
