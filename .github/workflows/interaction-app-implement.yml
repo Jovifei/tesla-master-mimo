@@ -21,7 +21,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Apply reviewed exact-source patch only on the new owned branch
+      - name: Apply reviewed source only on the owned branch
         shell: bash
         run: |
           set -euo pipefail
@@ -36,19 +36,24 @@ jobs:
           assert all(p.startswith('tools/interaction-execution/') or p in {'.github/workflows/interaction-app-implement.yml','.github/workflows/interaction-source-review.yml'} for p in paths), paths
           PY
           python3 tools/interaction-execution/app_apply.py
+          # GITHUB_TOKEN has contents permission, not workflows permission. Publish
+          # application changes here; authorized connector edits own CI registration.
+          git restore --source=HEAD --staged --worktree .github/workflows
           git diff --check --cached
           python3 tools/interaction-stage/verify-visual-contract.py
           mkdir -p interaction-evidence
-          cp /tmp/interaction-source.patch interaction-evidence/source.patch
+          git diff --cached --binary > interaction-evidence/source.patch
           git diff --cached --stat > interaction-evidence/diffstat.txt
           git diff --cached --name-only > interaction-evidence/paths.txt
           python3 - <<'PY'
           from pathlib import Path
           paths=Path('interaction-evidence/paths.txt').read_text().splitlines()
           assert len(paths)>=20
-          assert all(p.startswith(('android/','docs/','tools/interaction-stage/')) or p in {'tools/energy-stage/android-instrumentation-ci.sh','.github/workflows/history-memory-review.yml','.github/workflows/data-foundation-emulator.yml','.github/workflows/data-foundation-fast-android.yml'} for p in paths), paths
+          assert all(p.startswith(('android/','docs/','tools/interaction-stage/')) or p=='tools/energy-stage/android-instrumentation-ci.sh' for p in paths), paths
+          assert not any(p.startswith('.github/') for p in paths)
           PY
           git write-tree > interaction-evidence/TESTED_TREE.txt
+          git archive --format=zip --output=interaction-evidence/reviewed-source.zip "$(git write-tree)"
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -82,13 +87,14 @@ jobs:
             -PMATELINK_PUBLIC_INFO_BASE_URL=https://auth.teslalink.joviluma.com \
             -PJOURVOLT_AUTH_HOST=auth.teslalink.joviluma.com \
             2>&1 | tee ../interaction-evidence/focused-gradle.log
-      - name: Normally commit and push the tested source, never force
+      - name: Normally commit and push tested application source, never force
         shell: bash
         run: |
           set -euo pipefail
           git diff --exit-code
           test "$(git write-tree)" = "$(cat interaction-evidence/TESTED_TREE.txt)"
           test "$(git ls-remote origin "refs/heads/$TARGET_BRANCH" | cut -f1)" = "$GITHUB_SHA"
+          test -z "$(git diff --cached --name-only -- .github)"
           git config user.name 'Jovifei'
           git config user.email '110970864+Jovifei@users.noreply.github.com'
           git commit -m 'feat(android): wire scoped interaction visuals without changing data or authorization flows'
