@@ -327,7 +327,7 @@ class DashboardViewModel @Inject constructor(
                             generation == requestGeneration && captureTpmsScope() == tpmsScope
                         }
                     }
-                    is ApiResult.Error -> null
+                    is ApiResult.Error -> _uiState.value.car
                 }
 
                 carId = car?.carId ?: carId
