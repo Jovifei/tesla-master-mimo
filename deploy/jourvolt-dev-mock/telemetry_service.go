@@ -54,6 +54,8 @@ type telemetryService struct {
 	finalizerMu              sync.Mutex
 	finalizerCancel          context.CancelFunc
 	finalizerDone            chan struct{}
+	grayMu                   sync.Mutex
+	grayCounts               map[string]map[string]*telemetryFieldAvailability
 	authorizationFollowup    sync.Map
 }
 
@@ -257,10 +259,17 @@ func (s *telemetryService) ingest(ctx context.Context, record telemetryRecord) (
 	if s == nil {
 		return 0, nil
 	}
+	var accepted int
+	var err error
 	if s.memory != nil {
-		return s.memory.ingest(record, s.stopDebounceOrDefault())
+		accepted, err = s.memory.ingest(record, s.stopDebounceOrDefault())
+	} else {
+		accepted, err = s.ingestPostgres(ctx, record)
 	}
-	return s.ingestPostgres(ctx, record)
+	if err == nil && accepted > 0 {
+		s.countGrayDelivery(record)
+	}
+	return accepted, err
 }
 
 func (s *telemetryService) stopDebounceOrDefault() time.Duration {
@@ -725,7 +734,15 @@ type telemetryFieldConfiguration struct {
 	MinimumDelta    *float64 `json:"minimum_delta,omitempty"`
 }
 
+// desiredTelemetryConfiguration is the production desired set. Gray
+// candidate fields are never part of it (design 2026-11-05 §7).
 func desiredTelemetryConfiguration() telemetryDesiredConfiguration {
+	return desiredTelemetryConfigurationFor(false)
+}
+
+// desiredTelemetryConfigurationFor builds the desired set, optionally
+// including gray-release candidate fields for allowlisted vehicles.
+func desiredTelemetryConfigurationFor(includeGray bool) telemetryDesiredConfiguration {
 	fields := make(map[string]telemetryFieldConfiguration, len(telemetryFieldSpecs))
 	for name := range telemetryFieldSpecs {
 		spec := telemetryFieldSpecs[name]
@@ -738,6 +755,17 @@ func desiredTelemetryConfiguration() telemetryDesiredConfiguration {
 			field.MinimumDelta = &delta
 		}
 		fields[name] = field
+	}
+	if includeGray {
+		for name := range grayTelemetryFieldSpecs {
+			spec := grayTelemetryFieldSpecs[name]
+			field := telemetryFieldConfiguration{IntervalSeconds: int(spec.Interval.Seconds())}
+			if spec.Kind == "number" {
+				delta := 0.1
+				field.MinimumDelta = &delta
+			}
+			fields[name] = field
+		}
 	}
 	return telemetryDesiredConfiguration{
 		Fields: fields, VehicleSpeedIntervalSeconds: 10, LocationIntervalSeconds: 10,
@@ -819,7 +847,7 @@ func (s *telemetryService) configure(ctx context.Context, userID string, vehicle
 		_ = s.setPairingDiagnostic(ctx, userID, vehicleID, "telemetry_error", "ca_unavailable", "telemetry_ca", 0, correlationID)
 		return errTelemetryCommand
 	}
-	desired := desiredTelemetryConfiguration()
+	desired := desiredTelemetryConfigurationFor(s.grayVehicle(vehicleID))
 	official := officialFleetTelemetryConfiguration{
 		Hostname: s.config.PublicHost, Port: s.config.PublicPort, CA: string(ca),
 		Fields: desired.Fields, AlertTypes: []string{"service"},
