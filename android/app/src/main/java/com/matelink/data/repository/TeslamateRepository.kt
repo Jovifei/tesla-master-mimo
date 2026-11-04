@@ -23,6 +23,12 @@ import com.matelink.data.api.models.DataReadinessResponse
 import com.matelink.data.api.models.FleetTelemetryDiagnostics
 import com.matelink.data.api.models.FleetTelemetryDiagnosticsResponse
 import com.matelink.data.api.models.GlobalSettingsData
+import com.matelink.data.api.models.NearbyChargingData
+import com.matelink.data.api.models.VehicleCommandRequest
+import com.matelink.data.api.models.VehicleCommandResponse
+import com.matelink.data.api.models.VehicleCommandResult
+import com.matelink.data.api.models.VehiclePlace
+import com.matelink.data.api.models.VehiclePlaceRequest
 import com.matelink.data.api.models.Units
 import com.matelink.data.api.models.AdapterSnapshot
 import com.matelink.data.api.models.ParkedDetailData
@@ -183,6 +189,57 @@ internal fun telemetryPairingResultForResponse(
         code = response.code(),
         details = telemetryErrorCodeForBody(response.errorBody()?.string()) ?: "telemetry_error"
     )
+}
+
+/** Error taxonomy of POST /commands/{command} (design 2026-11-05 §6.3). */
+internal val vehicleCommandErrorCodes = setOf(
+    "commands_disabled",
+    "unknown_command",
+    "scope_missing",
+    "confirmation_required",
+    "invalid_params",
+    "rate_limited",
+    "vehicle_moving",
+    "not_plugged_in",
+    "vehicle_not_found",
+    "key_not_paired",
+    "tesla_error",
+    "command_failed"
+)
+
+internal fun vehicleCommandErrorCodeForBody(body: String?): String? {
+    val code = Regex("\\\"error\\\"\\s*:\\s*\\\"([a-z_]+)\\\"")
+        .find(body.orEmpty())
+        ?.groupValues
+        ?.getOrNull(1)
+    return code?.takeIf(vehicleCommandErrorCodes::contains)
+}
+
+internal fun vehicleCommandResultForResponse(
+    response: Response<VehicleCommandResponse>
+): ApiResult<VehicleCommandResult> = when {
+    response.isSuccessful -> response.body()?.data?.let { ApiResult.Success(it) }
+        ?: ApiResult.Error("Vehicle command returned no result", response.code(), details = "command_failed")
+    else -> ApiResult.Error(
+        message = "Vehicle command failed",
+        code = response.code(),
+        details = vehicleCommandErrorCodeForBody(response.errorBody()?.string()) ?: "command_failed"
+    )
+}
+
+internal fun nearbyChargingResultForResponse(
+    response: Response<com.matelink.data.api.models.NearbyChargingResponse>
+): ApiResult<NearbyChargingData> = when {
+    response.isSuccessful -> response.body()?.data?.let { ApiResult.Success(it) }
+        ?: ApiResult.Error("Nearby charging returned no data", response.code())
+    else -> ApiResult.Error("Nearby charging unavailable", response.code())
+}
+
+internal fun vehiclePlacesResultForResponse(
+    response: Response<com.matelink.data.api.models.VehiclePlacesResponse>
+): ApiResult<List<VehiclePlace>> = when {
+    response.isSuccessful -> ApiResult.Success(response.body()?.data?.places ?: emptyList())
+    else -> ApiResult.Error("Vehicle places unavailable", response.code())
 }
 
 internal const val STANDBY_ENDPOINT_UNAVAILABLE = "standby_endpoint_unavailable"
@@ -784,6 +841,64 @@ class TeslamateRepository @Inject constructor(
         }
         return executeWithFallback { api ->
             telemetryConfigureResultForResponse(api.configureTelemetry(carId))
+        }
+    }
+
+    /**
+     * Executes one vehicle command (design 2026-11-05 §6). The backend is
+     * the authority for gating; the error class lands in
+     * [ApiResult.Error.details] for the UI to localize.
+     */
+    suspend fun executeVehicleCommand(
+        carId: Int,
+        command: String,
+        params: Map<String, Any?>? = null,
+        confirm: Boolean = false
+    ): ApiResult<VehicleCommandResult> {
+        if (isMockMode()) {
+            return ApiResult.Error("Vehicle commands require a real vehicle connection", details = "command_failed")
+        }
+        return executeWithFallback { api ->
+            vehicleCommandResultForResponse(
+                api.executeVehicleCommand(carId, command, VehicleCommandRequest(params, confirm))
+            )
+        }
+    }
+
+    suspend fun getNearbyChargingSites(carId: Int): ApiResult<NearbyChargingData> {
+        if (isMockMode()) return ApiResult.Error("Nearby charging requires real data")
+        return executeWithFallback { api ->
+            nearbyChargingResultForResponse(api.getNearbyChargingSites(carId))
+        }
+    }
+
+    suspend fun getVehiclePlaces(carId: Int): ApiResult<List<VehiclePlace>> {
+        if (isMockMode()) return ApiResult.Error("Vehicle places require real data")
+        return executeWithFallback { api ->
+            vehiclePlacesResultForResponse(api.getVehiclePlaces(carId))
+        }
+    }
+
+    suspend fun createVehiclePlace(carId: Int, request: VehiclePlaceRequest): ApiResult<VehiclePlace> {
+        if (isMockMode()) return ApiResult.Error("Vehicle places require a real vehicle connection")
+        return executeWithFallback { api ->
+            val response = api.createVehiclePlace(carId, request)
+            when {
+                response.isSuccessful -> response.body()?.data?.let { ApiResult.Success(it) }
+                    ?: ApiResult.Error("Place was not created", response.code())
+                else -> ApiResult.Error("Place was not created", response.code())
+            }
+        }
+    }
+
+    suspend fun deleteVehiclePlace(carId: Int, placeId: Long): ApiResult<Boolean> {
+        if (isMockMode()) return ApiResult.Error("Vehicle places require a real vehicle connection")
+        return executeWithFallback { api ->
+            val response = api.deleteVehiclePlace(carId, placeId)
+            when {
+                response.isSuccessful -> ApiResult.Success(response.body()?.data?.deleted ?: true)
+                else -> ApiResult.Error("Place was not deleted", response.code())
+            }
         }
     }
 
