@@ -15,6 +15,7 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -431,6 +432,9 @@ type app struct {
 	mockHistoryEnabled bool
 	mode               string
 	telemetry          *telemetryService
+	// Nearby-charging response cache (design 2026-11-05 §5), 10-minute TTL.
+	nearbyMu    sync.Mutex
+	nearbyCache map[string]nearbyCacheEntry
 }
 
 func (a *app) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -765,6 +769,12 @@ func (a *app) carResource(w http.ResponseWriter, r *http.Request, userID, path s
 			return
 		}
 		a.status(w, r, userID, carID, false)
+	case "nearby-charging-sites":
+		if r.Method != http.MethodGet {
+			a.json(w, http.StatusNotFound, map[string]string{"error": "not_found"})
+			return
+		}
+		a.nearbyChargingSites(w, r, userID, carID)
 	case "data-readiness":
 		if r.Method != http.MethodGet {
 			a.json(w, http.StatusNotFound, map[string]string{"error": "not_found"})
