@@ -6,6 +6,10 @@ import com.matelink.data.api.models.CarStatusResponse
 import com.matelink.data.api.models.NearbyChargingResponse
 import com.matelink.data.api.models.VehicleCommandRequest
 import com.matelink.data.api.models.VehicleCommandResponse
+import com.matelink.data.api.models.VehiclePlaceDeleteResponse
+import com.matelink.data.api.models.VehiclePlaceRequest
+import com.matelink.data.api.models.VehiclePlaceResponse
+import com.matelink.data.api.models.VehiclePlacesResponse
 import com.matelink.data.api.models.ChargeDetailResponse
 import com.matelink.data.api.models.ChargesResponse
 import com.matelink.data.api.models.DataReadinessResponse
@@ -25,6 +29,7 @@ import com.matelink.data.api.models.HistoryImportRequest
 import com.matelink.data.api.models.HistoryImportResponse
 import retrofit2.Response
 import retrofit2.http.Body
+import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.Path
 import retrofit2.http.POST
@@ -105,6 +110,23 @@ interface TeslamateApi {
         @Path("command") command: String,
         @Body request: VehicleCommandRequest
     ): Response<VehicleCommandResponse>
+
+    @GET("api/v1/cars/{carId}/places")
+    suspend fun getVehiclePlaces(
+        @Path("carId") carId: Int
+    ): Response<VehiclePlacesResponse>
+
+    @POST("api/v1/cars/{carId}/places")
+    suspend fun createVehiclePlace(
+        @Path("carId") carId: Int,
+        @Body request: VehiclePlaceRequest
+    ): Response<VehiclePlaceResponse>
+
+    @DELETE("api/v1/cars/{carId}/places/{placeId}")
+    suspend fun deleteVehiclePlace(
+        @Path("carId") carId: Int,
+        @Path("placeId") placeId: Long
+    ): Response<VehiclePlaceDeleteResponse>
 
     @GET("api/v1/cars/{carId}/charges")
     suspend fun getCharges(

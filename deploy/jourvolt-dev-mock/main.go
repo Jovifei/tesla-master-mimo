@@ -135,6 +135,10 @@ ALTER TABLE jourvolt_auth_transactions ADD COLUMN IF NOT EXISTS privacy_version 
 		pool.Close()
 		return nil, err
 	}
+	if err := ensurePlaceSchema(ctx, pool); err != nil {
+		pool.Close()
+		return nil, err
+	}
 	return &store{pool: pool}, nil
 }
 
@@ -450,6 +454,8 @@ type app struct {
 	commandsGrayUsers map[string]bool
 	commandLimiter    *commandRateLimiter
 	commandExecutor   vehicleCommandExecutor
+	// Named places (geofence-lite, design §7); nil means use a.store.
+	places vehiclePlacesStore
 }
 
 func (a *app) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -796,6 +802,8 @@ func (a *app) carResource(w http.ResponseWriter, r *http.Request, userID, path s
 			return
 		}
 		a.executeVehicleCommand(w, r, userID, carID, parts[2])
+	case "places":
+		a.vehiclePlacesResource(w, r, userID, carID, parts)
 	case "data-readiness":
 		if r.Method != http.MethodGet {
 			a.json(w, http.StatusNotFound, map[string]string{"error": "not_found"})
@@ -938,6 +946,15 @@ func (a *app) status(w http.ResponseWriter, r *http.Request, userID string, carI
 		a.providerError(w, err)
 		return
 	}
+	// Geofence-lite (design §7): the name of the user's place the
+	// vehicle is currently inside, when named places exist and the
+	// vehicle reports a position.
+	var geofence any
+	if providerStatus.Latitude != nil && providerStatus.Longitude != nil {
+		if name := a.matchedPlaceName(r.Context(), userID, carID, *providerStatus.Latitude, *providerStatus.Longitude); name != "" {
+			geofence = name
+		}
+	}
 	status := map[string]any{
 		"display_name": providerStatus.DisplayName,
 		"state":        providerStatus.State,
@@ -960,7 +977,7 @@ func (a *app) status(w http.ResponseWriter, r *http.Request, userID string, carI
 			},
 		},
 		"car_geodata": map[string]any{
-			"geofence": nil, "latitude": providerStatus.Latitude, "longitude": providerStatus.Longitude,
+			"geofence": geofence, "latitude": providerStatus.Latitude, "longitude": providerStatus.Longitude,
 		},
 		"car_versions": map[string]any{
 			"version": providerStatus.Version, "update_available": nil, "update_version": nil,
