@@ -444,6 +444,12 @@ type app struct {
 	// Nearby-charging response cache (design 2026-11-05 §5), 10-minute TTL.
 	nearbyMu    sync.Mutex
 	nearbyCache map[string]nearbyCacheEntry
+	// Vehicle commands (design 2026-11-05 §6): kill switch + gray list are
+	// operator-controlled via env; both default to fully disabled.
+	commandsEnabled   bool
+	commandsGrayUsers map[string]bool
+	commandLimiter    *commandRateLimiter
+	commandExecutor   vehicleCommandExecutor
 }
 
 func (a *app) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -784,6 +790,12 @@ func (a *app) carResource(w http.ResponseWriter, r *http.Request, userID, path s
 			return
 		}
 		a.nearbyChargingSites(w, r, userID, carID)
+	case "commands":
+		if r.Method != http.MethodPost || len(parts) != 3 {
+			a.json(w, http.StatusNotFound, map[string]string{"error": "not_found"})
+			return
+		}
+		a.executeVehicleCommand(w, r, userID, carID, parts[2])
 	case "data-readiness":
 		if r.Method != http.MethodGet {
 			a.json(w, http.StatusNotFound, map[string]string{"error": "not_found"})
@@ -1221,6 +1233,15 @@ func main() {
 	a := &app{
 		store: store, mock: mock, provider: dataProvider, oauth: oauth,
 		mockEnabled: enableMock, mockHistoryEnabled: enableMockHistory, mode: mode, telemetry: telemetry,
+		// Vehicle commands stay off until the operator enables them
+		// (design §6.5 kill switch + gray release). The gray list, when
+		// non-empty, restricts commands to the listed user IDs.
+		commandsEnabled:   os.Getenv("JOURVOLT_COMMANDS_ENABLED") == "true",
+		commandsGrayUsers: parseUserIDSet(os.Getenv("JOURVOLT_COMMANDS_GRAY_USERS")),
+		commandLimiter:    newCommandRateLimiter(),
+	}
+	if telemetry != nil {
+		a.commandExecutor = telemetry
 	}
 	if telemetry != nil {
 		telemetry.startFinalizer(ctx)

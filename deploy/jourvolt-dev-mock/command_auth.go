@@ -56,6 +56,19 @@ func parseGrantedScopes(accessToken string) []string {
 	return nil
 }
 
+// parseUserIDSet parses a comma-separated user ID list (the commands gray
+// list) into a lookup set. An empty input yields an empty set, which the
+// caller treats as "no restriction".
+func parseUserIDSet(raw string) map[string]bool {
+	set := map[string]bool{}
+	for _, part := range strings.Split(raw, ",") {
+		if id := strings.TrimSpace(part); id != "" {
+			set[id] = true
+		}
+	}
+	return set
+}
+
 // missingCommandScopes returns the command scopes absent from a granted
 // list, in canonical order. A nil granted list means "unknown" and is
 // reported as missing everything so callers fail closed.
