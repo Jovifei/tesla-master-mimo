@@ -179,12 +179,16 @@ fun wheelVisualLabel(wheel: TirePosition): String = stringResource(when (wheel) 
 fun TpmsVehicleVisual(readings: Map<TirePosition, VisualWheelReading>, selected: TirePosition?,
     onSelect: (TirePosition?) -> Unit, modifier: Modifier = Modifier) {
     Column(modifier.fillMaxWidth().testTag("interaction-tpms")) {
-        Box(Modifier.fillMaxWidth().heightIn(min = 216.dp), contentAlignment = Alignment.Center) {
-            VehiclePositionSchematic(Modifier.height(204.dp).width(108.dp))
-            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(72.dp)) {
-                listOf(listOf(TirePosition.FL, TirePosition.FR), listOf(TirePosition.RL, TirePosition.RR)).forEach { pair ->
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        pair.forEach { wheel ->
+        // Independent side columns never overlap the car, even at large font scale.
+        Row(Modifier.fillMaxWidth().heightIn(min = 216.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(listOf(TirePosition.FL, TirePosition.RL), listOf(TirePosition.FR, TirePosition.RR))
+                .forEachIndexed { side, wheels ->
+                    if (side == 1) VehiclePositionSchematic(Modifier.height(204.dp).width(108.dp)
+                        .testTag("interaction-tpms-car"))
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(32.dp)) {
+                        wheels.forEach { wheel ->
                             val reading = readings[wheel]
                             val value = reading?.pressureBar?.let { String.format(Locale.getDefault(), "%.2f bar", it) }
                                 ?: stringResource(R.string.not_available)
@@ -199,11 +203,11 @@ fun TpmsVehicleVisual(readings: Map<TirePosition, VisualWheelReading>, selected:
                             val accent = if (reading?.state == VisualWheelState.WARNING) MaterialTheme.colorScheme.error
                                 else if (reading?.state == VisualWheelState.RECORDED) MaterialTheme.colorScheme.primary
                                 else MaterialTheme.colorScheme.onSurfaceVariant
-                            Column(Modifier.widthIn(max = 112.dp).heightIn(min = 56.dp)
+                            Column(Modifier.fillMaxWidth().heightIn(min = 56.dp)
                                 .testTag("interaction-wheel-${wheel.name}")
                                 .selectable(isSelected, role = Role.Button, onClick = { onSelect(if (isSelected) null else wheel) })
                                 .background(if (isSelected) MaterialTheme.colorScheme.primaryContainer
-                                    else MaterialTheme.colorScheme.surface, RoundedCornerShape(12.dp)).padding(8.dp)) {
+                                    else MaterialTheme.colorScheme.surface, RoundedCornerShape(12.dp)).padding(horizontal = 4.dp, vertical = 8.dp)) {
                                 Text(label, style = MaterialTheme.typography.labelSmall)
                                 Text(value, style = MaterialTheme.typography.titleSmall, color = accent)
                                 Text(stateLabel, style = MaterialTheme.typography.labelSmall, color = accent)
@@ -211,7 +215,6 @@ fun TpmsVehicleVisual(readings: Map<TirePosition, VisualWheelReading>, selected:
                         }
                     }
                 }
-            }
         }
         val reading = selected?.let { readings[it] }
         Text(if (selected == null) stringResource(R.string.interaction_wheel_select)

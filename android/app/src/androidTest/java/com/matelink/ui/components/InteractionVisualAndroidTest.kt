@@ -8,6 +8,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -50,6 +52,29 @@ class InteractionVisualAndroidTest {
         compose.runOnIdle { readings.value = emptyMap() }
         compose.onNodeWithText("0.00 bar").assertDoesNotExist()
         compose.onNodeWithText("2.60 bar").assertDoesNotExist()
+    }
+
+    @Test fun narrowLargeTextWheelControlsNeverOverlapVehicleOrEachOther() {
+        val scale = mutableStateOf(1f)
+        compose.setContent { MateLinkTheme {
+            val density = LocalDensity.current.density
+            CompositionLocalProvider(LocalDensity provides Density(density, scale.value)) {
+                Column(Modifier.width(320.dp).padding(16.dp)) {
+                    TpmsVehicleVisual(emptyMap(), null, {})
+                }
+            }
+        } }
+        for (fontScale in listOf(1f, 1.8f)) {
+            compose.runOnIdle { scale.value = fontScale }
+            compose.waitForIdle()
+            val car = compose.onNodeWithTag("interaction-tpms-car").fetchSemanticsNode().boundsInRoot
+            fun wheel(name: String) = compose.onNodeWithTag("interaction-wheel-$name")
+                .assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+            val fl = wheel("FL"); val fr = wheel("FR"); val rl = wheel("RL"); val rr = wheel("RR")
+            assertTrue("left controls overlap car at scale=$fontScale", fl.right <= car.left && rl.right <= car.left)
+            assertTrue("right controls overlap car at scale=$fontScale", fr.left >= car.right && rr.left >= car.right)
+            assertTrue("front/rear controls overlap at scale=$fontScale", fl.bottom < rl.top && fr.bottom < rr.top)
+        }
     }
 
     @Test fun allVisualGroupsRenderAtPhoneWidthsAndInBothThemes() {
