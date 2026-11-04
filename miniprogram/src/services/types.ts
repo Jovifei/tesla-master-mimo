@@ -73,9 +73,75 @@ export type RawCar = {
   car_settings?: { free_supercharging?: boolean | null } | null
 }
 
+/** Speed-limit mode as reported by the backend (limit already in km/h). */
+export type SpeedLimitState = {
+  active: boolean | null
+  currentLimitKmh: number | null
+  pinCodeRequired: boolean | null
+}
+
+/** Now-playing media as reported by the backend. */
+export type MediaState = {
+  state: string | null
+  title: string | null
+  artist: string | null
+  album: string | null
+}
+
+/** Pending software update as reported by the backend. */
+export type SoftwareUpdateState = {
+  status: string | null
+  downloadPercent: number | null
+  installPercent: number | null
+  expectedDurationSec: number | null
+}
+
+/**
+ * Command authorization evaluated by the backend from the user's Tesla
+ * token (design 2026-11-05 §6). Absent/null means "not evaluated" and
+ * must never be treated as "needs re-authorization".
+ */
+export type CommandAuthorization = {
+  ready: boolean
+  missingScopes: string[]
+}
+
 export type CarStatus = {
   idealRange?: number | null
   estimatedRange?: number | null
+  /** Extended Fleet display fields (design 2026-11-05 §4); absent = not reported. */
+  valetMode?: boolean | null
+  speedLimit?: SpeedLimitState | null
+  media?: MediaState | null
+  softwareVersion?: string | null
+  softwareUpdate?: SoftwareUpdateState | null
+  driverTempSetting?: number | null
+  passengerTempSetting?: number | null
+  fanStatus?: number | null
+  frontDefrosterOn?: boolean | null
+  rearDefrosterOn?: boolean | null
+  seatHeaterLeft?: number | null
+  seatHeaterRight?: number | null
+  seatHeaterRearLeft?: number | null
+  seatHeaterRearCenter?: number | null
+  seatHeaterRearRight?: number | null
+  steeringWheelHeater?: boolean | null
+  defrostMode?: number | null
+  climateKeeperMode?: string | null
+  cabinOverheatProtection?: string | null
+  cabinOverheatProtectionCooling?: boolean | null
+  sideMirrorHeaters?: boolean | null
+  chargeCable?: string | null
+  fastChargerBrand?: string | null
+  fastChargerType?: string | null
+  chargePortLatch?: string | null
+  batteryHeaterOn?: boolean | null
+  scheduledChargingStartTime?: string | null
+  scheduledDepartureTime?: string | null
+  minutesToFullCharge?: number | null
+  chargeRangeAddedRated?: number | null
+  chargeRangeAddedIdeal?: number | null
+  commandAuthorization?: CommandAuthorization | null
   chargerVoltage?: number | null
   chargerActualCurrent?: number | null
   /** Tesla's time_to_full_charge is hours, not minutes. */
@@ -139,7 +205,32 @@ export type RawCarStatus = {
     doors_open?: boolean | null
     trunk_open?: boolean | null
     frunk_open?: boolean | null
+    valet_mode?: boolean | null
+    speed_limit_mode?: {
+      active?: boolean | null
+      current_limit_kmh?: number | null
+      pin_code_required?: boolean | null
+    } | null
+    media_info?: {
+      media_state?: string | null
+      title?: string | null
+      artist?: string | null
+      album?: string | null
+    } | null
   }
+  car_versions?: {
+    version?: string | null
+    software_update?: {
+      status?: string | null
+      download_percent?: number | null
+      install_percent?: number | null
+      expected_duration_sec?: number | null
+    } | null
+  }
+  command_authorization?: {
+    ready?: boolean | null
+    missing_scopes?: string[] | null
+  } | null
   battery_details?: {
     battery_level?: number | null
     rated_battery_range?: number | null
@@ -162,6 +253,22 @@ export type RawCarStatus = {
     is_preconditioning?: boolean | null
     inside_temp?: number | null
     outside_temp?: number | null
+    driver_temp_setting?: number | null
+    passenger_temp_setting?: number | null
+    fan_status?: number | null
+    is_front_defroster_on?: boolean | null
+    is_rear_defroster_on?: boolean | null
+    seat_heater_left?: number | null
+    seat_heater_right?: number | null
+    seat_heater_rear_left?: number | null
+    seat_heater_rear_center?: number | null
+    seat_heater_rear_right?: number | null
+    steering_wheel_heater?: boolean | null
+    defrost_mode?: number | null
+    climate_keeper_mode?: string | null
+    cabin_overheat_protection?: string | null
+    cabin_overheat_protection_actively_cooling?: boolean | null
+    side_mirror_heaters?: boolean | null
   }
   charging_details?: {
     plugged_in?: boolean | null
@@ -176,7 +283,52 @@ export type RawCarStatus = {
     charge_current_request?: number | null
     charge_current_request_max?: number | null
     charge_port_door_open?: boolean | null
+    conn_charge_cable?: string | null
+    fast_charger_brand?: string | null
+    fast_charger_type?: string | null
+    charge_port_latch?: string | null
+    battery_heater_on?: boolean | null
+    scheduled_charging_start_time?: string | null
+    scheduled_departure_time?: string | null
+    minutes_to_full_charge?: number | null
+    charge_range_added_rated?: number | null
+    charge_range_added_ideal?: number | null
   }
+}
+
+/** One site from GET /api/v1/cars/{carId}/nearby-charging-sites (§5). */
+export type NearbyChargingSite = {
+  name: string | null
+  type: string | null
+  latitude: number | null
+  longitude: number | null
+  distanceKm: number | null
+  availableStalls: number | null
+  totalStalls: number | null
+  siteClosed: boolean | null
+}
+
+export type NearbyCharging = {
+  sites: NearbyChargingSite[]
+  /** "fleet_api" | "cache" | "unsupported" */
+  source: string | null
+}
+
+/** Outcome of POST /api/v1/cars/{carId}/commands/{command} (§6). */
+export type VehicleCommandOutcome = {
+  command: string | null
+  /** "accepted" | "unverified" */
+  result: string | null
+  verified: boolean | null
+}
+
+/** One named place from /api/v1/cars/{carId}/places (geofence-lite, §7). */
+export type VehiclePlace = {
+  id: number
+  name: string | null
+  latitude: number | null
+  longitude: number | null
+  radiusM: number | null
 }
 
 export type RawStatusPayload = { status?: RawCarStatus | null; observed_at?: string | null; source?: string | null; units?: unknown; field_sources?: unknown }

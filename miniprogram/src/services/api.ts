@@ -17,6 +17,7 @@ import type {
   DataReadiness,
   Drive,
   HistoryPage,
+  NearbyCharging,
   PageMeta,
   RawCar,
   RawCarStatus,
@@ -25,6 +26,8 @@ import type {
   TeslaAuthorization,
   TelemetryPairing,
   TeslaAuthorizationStatus,
+  VehicleCommandOutcome,
+  VehiclePlace,
 } from './types'
 import {
   clearAppSession,
@@ -500,6 +503,74 @@ function normalizeCarStatus(raw: RawCarStatus, observedAt: string | null, source
   const phases = finite(raw.charging_details?.charger_phases, 0, 3)
   const limitSoc = finite(raw.charging_details?.charge_limit_soc, 0, 100)
   const originalText = (value: unknown) => typeof value === 'string' && value.trim() && value.length <= 128 && !/[\u0000-\u001f\u007f]/.test(value) ? value : null
+  const intIn = (value: unknown, min: number, max: number): number | null => {
+    const parsed = finite(value, min, max)
+    return parsed !== null && Number.isInteger(parsed) ? parsed : null
+  }
+  // Extended Fleet display fields (design 2026-11-05 §4/§6) are only
+  // projected when the backend actually reported a value, so payloads
+  // without them keep the exact legacy normalized shape.
+  const extended: Partial<CarStatus> = {}
+  const put = <K extends keyof CarStatus>(key: K, value: CarStatus[K]) => {
+    if (value !== null && value !== undefined) extended[key] = value
+  }
+  put('valetMode', bool(raw.car_status?.valet_mode))
+  const speedLimitRaw = raw.car_status?.speed_limit_mode
+  if (speedLimitRaw) extended.speedLimit = {
+    active: bool(speedLimitRaw.active),
+    currentLimitKmh: finite(speedLimitRaw.current_limit_kmh, 0),
+    pinCodeRequired: bool(speedLimitRaw.pin_code_required),
+  }
+  const mediaRaw = raw.car_status?.media_info
+  if (mediaRaw) extended.media = {
+    state: stringValue(mediaRaw.media_state),
+    title: stringValue(mediaRaw.title),
+    artist: stringValue(mediaRaw.artist),
+    album: stringValue(mediaRaw.album),
+  }
+  put('softwareVersion', stringValue(raw.car_versions?.version))
+  const updateRaw = raw.car_versions?.software_update
+  if (updateRaw) extended.softwareUpdate = {
+    status: stringValue(updateRaw.status),
+    downloadPercent: intIn(updateRaw.download_percent, 0, 100),
+    installPercent: intIn(updateRaw.install_percent, 0, 100),
+    expectedDurationSec: finite(updateRaw.expected_duration_sec, 0),
+  }
+  put('driverTempSetting', celsius(raw.climate_details?.driver_temp_setting))
+  put('passengerTempSetting', celsius(raw.climate_details?.passenger_temp_setting))
+  put('fanStatus', intIn(raw.climate_details?.fan_status, 0, 100))
+  put('frontDefrosterOn', bool(raw.climate_details?.is_front_defroster_on))
+  put('rearDefrosterOn', bool(raw.climate_details?.is_rear_defroster_on))
+  put('seatHeaterLeft', intIn(raw.climate_details?.seat_heater_left, 0, 3))
+  put('seatHeaterRight', intIn(raw.climate_details?.seat_heater_right, 0, 3))
+  put('seatHeaterRearLeft', intIn(raw.climate_details?.seat_heater_rear_left, 0, 3))
+  put('seatHeaterRearCenter', intIn(raw.climate_details?.seat_heater_rear_center, 0, 3))
+  put('seatHeaterRearRight', intIn(raw.climate_details?.seat_heater_rear_right, 0, 3))
+  put('steeringWheelHeater', bool(raw.climate_details?.steering_wheel_heater))
+  put('defrostMode', intIn(raw.climate_details?.defrost_mode, 0, 100))
+  put('climateKeeperMode', stringValue(raw.climate_details?.climate_keeper_mode))
+  put('cabinOverheatProtection', stringValue(raw.climate_details?.cabin_overheat_protection))
+  put('cabinOverheatProtectionCooling', bool(raw.climate_details?.cabin_overheat_protection_actively_cooling))
+  put('sideMirrorHeaters', bool(raw.climate_details?.side_mirror_heaters))
+  put('chargeCable', stringValue(raw.charging_details?.conn_charge_cable))
+  put('fastChargerBrand', stringValue(raw.charging_details?.fast_charger_brand))
+  put('fastChargerType', stringValue(raw.charging_details?.fast_charger_type))
+  put('chargePortLatch', stringValue(raw.charging_details?.charge_port_latch))
+  put('batteryHeaterOn', bool(raw.charging_details?.battery_heater_on))
+  put('scheduledChargingStartTime', originalText(raw.charging_details?.scheduled_charging_start_time))
+  put('scheduledDepartureTime', originalText(raw.charging_details?.scheduled_departure_time))
+  put('minutesToFullCharge', intIn(raw.charging_details?.minutes_to_full_charge, 0, 100000))
+  // The backend already converts these to kilometres (design §4).
+  put('chargeRangeAddedRated', finite(raw.charging_details?.charge_range_added_rated, 0))
+  put('chargeRangeAddedIdeal', finite(raw.charging_details?.charge_range_added_ideal, 0))
+  const commandAuthRaw = raw.command_authorization
+  if (isRecord(commandAuthRaw)) extended.commandAuthorization = {
+    ready: commandAuthRaw.ready === true,
+    missingScopes: Array.isArray(commandAuthRaw.missing_scopes)
+      ? commandAuthRaw.missing_scopes.filter((scope): scope is string =>
+          typeof scope === 'string' && /^[a-z][a-z0-9_]*$/.test(scope))
+      : [],
+  }
   return {
     ...(raw.tpms_details !== undefined ? { tpms: parseTpmsDetails(raw.tpms_details),
       tpmsReport: parseTpmsReport(raw.tpms_details, isRecord(units) ? stringValue(units.unit_of_pressure) : null) } : {}),
@@ -541,10 +612,65 @@ function normalizeCarStatus(raw: RawCarStatus, observedAt: string | null, source
     chargeCurrentRequest: finite(raw.charging_details?.charge_current_request, 0),
     chargeCurrentRequestMax: finite(raw.charging_details?.charge_current_request_max, 0),
     chargePortDoorOpen: bool(raw.charging_details?.charge_port_door_open),
+    ...extended,
     observedAt: originalText(observedAt),
     source: originalText(source),
     fieldSources: statusFieldSources(fieldSources),
   }
+}
+
+type RawVehicleCommandOutcome = {
+  command?: unknown
+  result?: unknown
+  verified?: unknown
+}
+
+export function normalizeVehicleCommandOutcome(raw: RawVehicleCommandOutcome | null | undefined): VehicleCommandOutcome {
+  return {
+    command: stringValue(raw?.command),
+    result: stringValue(raw?.result),
+    verified: typeof raw?.verified === 'boolean' ? raw.verified : null,
+  }
+}
+
+function intOrNull(value: unknown): number | null {
+  const parsed = finite(value, 0)
+  return parsed !== null && Number.isInteger(parsed) ? parsed : null
+}
+
+export function normalizeNearbyCharging(raw: unknown): NearbyCharging {
+  const root = isRecord(raw) ? raw : {}
+  const meta = isRecord(root.meta) ? root.meta : {}
+  const sites = Array.isArray(root.sites) ? root.sites.filter(isRecord).map(site => ({
+    name: stringValue(site.name),
+    type: stringValue(site.type),
+    latitude: finite(site.latitude, -90, 90),
+    longitude: finite(site.longitude, -180, 180),
+    distanceKm: finite(site.distance_km, 0),
+    availableStalls: intOrNull(site.available_stalls),
+    totalStalls: intOrNull(site.total_stalls),
+    siteClosed: bool(site.site_closed),
+  })) : []
+  return { sites, source: stringValue(meta.source) }
+}
+
+export function normalizeVehiclePlace(raw: unknown): VehiclePlace | null {
+  if (!isRecord(raw)) return null
+  const id = raw.id
+  if (typeof id !== 'number' || !Number.isSafeInteger(id) || id <= 0) return null
+  return {
+    id,
+    name: stringValue(raw.name),
+    latitude: finite(raw.latitude, -90, 90),
+    longitude: finite(raw.longitude, -180, 180),
+    radiusM: intOrNull(raw.radius_m),
+  }
+}
+
+export function normalizeVehiclePlaces(raw: unknown): VehiclePlace[] {
+  const root = isRecord(raw) ? raw : {}
+  if (!Array.isArray(root.places)) return []
+  return root.places.map(normalizeVehiclePlace).filter((place): place is VehiclePlace => place !== null)
 }
 
 function pageMeta(meta: PageMeta | undefined, page: number, show: number, length: number): HistoryPage<never>['meta'] {
@@ -1127,6 +1253,68 @@ export const matelinkApi = {
     })
     const data = unwrap(response)
     return { status: data.status ?? null }
+  },
+
+  /**
+   * Vehicle command (design 2026-11-05 §6). Backend rejections surface
+   * as ApiError with code set to the backend error class
+   * (commands_disabled, scope_missing, vehicle_moving, ...).
+   */
+  async executeVehicleCommand(
+    carId: number,
+    command: string,
+    options: { params?: Record<string, unknown>; confirm?: boolean } = {},
+    car?: Car,
+  ): Promise<VehicleCommandOutcome> {
+    assertVehicle(null, carId, car)
+    const data: Record<string, unknown> = {}
+    if (options.params) data.params = options.params
+    if (options.confirm) data.confirm = true
+    const response = await requestJson<ApiEnvelope<RawVehicleCommandOutcome> | RawVehicleCommandOutcome>(
+      `/api/v1/cars/${carId}/commands/${encodeURIComponent(command)}`, {
+        method: 'POST',
+        header: { 'Content-Type': 'application/json' },
+        data,
+      })
+    return normalizeVehicleCommandOutcome(unwrap(response))
+  },
+
+  async getNearbyChargingSites(carId: number, car?: Car): Promise<NearbyCharging> {
+    assertVehicle(null, carId, car)
+    const response = await requestJson<ApiEnvelope<{ sites?: unknown; meta?: unknown }> | { sites?: unknown; meta?: unknown }>(`/api/v1/cars/${carId}/nearby-charging-sites`)
+    return normalizeNearbyCharging(unwrap(response))
+  },
+
+  async getVehiclePlaces(carId: number, car?: Car): Promise<VehiclePlace[]> {
+    assertVehicle(null, carId, car)
+    const response = await requestJson<ApiEnvelope<{ places?: unknown }> | { places?: unknown }>(`/api/v1/cars/${carId}/places`)
+    return normalizeVehiclePlaces(unwrap(response))
+  },
+
+  async createVehiclePlace(
+    carId: number,
+    place: { name: string; latitude: number; longitude: number; radiusM?: number },
+    car?: Car,
+  ): Promise<VehiclePlace | null> {
+    assertVehicle(null, carId, car)
+    const response = await requestJson<ApiEnvelope<{ id?: unknown }> | { id?: unknown }>(`/api/v1/cars/${carId}/places`, {
+      method: 'POST',
+      header: { 'Content-Type': 'application/json' },
+      data: {
+        name: place.name,
+        latitude: place.latitude,
+        longitude: place.longitude,
+        ...(place.radiusM !== undefined ? { radius_m: place.radiusM } : {}),
+      },
+    })
+    return normalizeVehiclePlace(unwrap(response))
+  },
+
+  async deleteVehiclePlace(carId: number, placeId: number, car?: Car): Promise<boolean> {
+    assertVehicle(null, carId, car)
+    const response = await requestJson<ApiEnvelope<{ deleted?: unknown }> | { deleted?: unknown }>(
+      `/api/v1/cars/${carId}/places/${placeId}`, { method: 'DELETE' })
+    return unwrap(response).deleted === true
   },
 
   async startTeslaAuthorization(consent: AuthConsent): Promise<TeslaAuthorization> {
