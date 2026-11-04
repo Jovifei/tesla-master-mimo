@@ -95,7 +95,11 @@ data class CarStatus(
     @Json(name = "climate_details") val climateDetails: ClimateDetails? = null,
     @Json(name = "battery_details") val batteryDetails: BatteryDetails? = null,
     @Json(name = "charging_details") val chargingDetails: ChargingDetails? = null,
-    @Json(name = "tpms_details") val tpmsDetails: TpmsDetails? = null
+    @Json(name = "tpms_details") val tpmsDetails: TpmsDetails? = null,
+    // Present only when the backend evaluated the user's Tesla token scopes
+    // (design 2026-11-05 §6 P3). Null = not evaluated; the app must not
+    // prompt for re-authorization on null.
+    @Json(name = "command_authorization") val commandAuthorization: CommandAuthorization? = null
 ) {
     // Convenience accessors that flatten the nested structure
     val batteryLevel: Int? get() = batteryDetails?.batteryLevel
@@ -181,6 +185,12 @@ data class CarStatus(
     val heading: Int? get() = drivingDetails?.heading
     val elevation: Int? get() = drivingDetails?.elevation
 }
+
+@JsonClass(generateAdapter = true)
+data class CommandAuthorization(
+    @Json(name = "ready") val ready: Boolean? = null,
+    @Json(name = "missing_scopes") val missingScopes: List<String>? = null
+)
 
 @JsonClass(generateAdapter = true)
 data class CarStatusDetails(

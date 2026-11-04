@@ -56,6 +56,21 @@ class CarStatusExtendedFieldsTest {
     }
 
     @Test
+    fun commandAuthorizationParsesAndStaysNullWhenNotEvaluated() {
+        val ready = adapter.fromJson(
+            """{"data":{"status":{"state":"online",
+              "command_authorization":{"ready":false,"missing_scopes":["vehicle_cmds"]}}}}"""
+        )?.data?.status ?: error("status missing")
+        assertEquals(false, ready.commandAuthorization?.ready)
+        assertEquals(listOf("vehicle_cmds"), ready.commandAuthorization?.missingScopes)
+
+        val unknown = adapter.fromJson(
+            """{"data":{"status":{"state":"online"}}}"""
+        )?.data?.status ?: error("status missing")
+        assertNull(unknown.commandAuthorization)
+    }
+
+    @Test
     fun extendedFieldsStayNullWhenBackendOmitsThem() {
         val parsed = adapter.fromJson(
             """{"data":{"status":{"state":"asleep","car_status":{"locked":true},
