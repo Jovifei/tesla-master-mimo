@@ -96,6 +96,18 @@ type teslaChargeState struct {
 	ChargeCurrentRequest    *int     `json:"charge_current_request"`
 	ChargeCurrentRequestMax *int     `json:"charge_current_request_max"`
 	TimeToFullCharge        *float64 `json:"time_to_full_charge"`
+	// Extended display fields (design 2026-11-05 §4.1). All optional: vehicles
+	// or firmware that do not report them must stay nil end to end.
+	ConnChargeCable        *string  `json:"conn_charge_cable"`
+	FastChargerBrand       *string  `json:"fast_charger_brand"`
+	FastChargerType        *string  `json:"fast_charger_type"`
+	ChargePortLatch        *string  `json:"charge_port_latch"`
+	BatteryHeaterOn        *bool    `json:"battery_heater_on"`
+	ScheduledChargingStart *int64   `json:"scheduled_charging_start_time"`
+	ScheduledDeparture     *int64   `json:"scheduled_departure_time"`
+	MinutesToFullCharge    *int     `json:"minutes_to_full_charge"`
+	ChargeMilesAddedRated  *float64 `json:"charge_miles_added_rated"`
+	ChargeMilesAddedIdeal  *float64 `json:"charge_miles_added_ideal"`
 }
 
 type teslaClimateState struct {
@@ -103,6 +115,23 @@ type teslaClimateState struct {
 	InsideTemp        *float64 `json:"inside_temp"`
 	OutsideTemp       *float64 `json:"outside_temp"`
 	IsPreconditioning *bool    `json:"is_preconditioning"`
+	// Extended display fields (design 2026-11-05 §4.1).
+	DriverTempSetting    *float64 `json:"driver_temp_setting"`
+	PassengerTempSetting *float64 `json:"passenger_temp_setting"`
+	FanStatus            *int     `json:"fan_status"`
+	IsFrontDefrosterOn   *bool    `json:"is_front_defroster_on"`
+	IsRearDefrosterOn    *bool    `json:"is_rear_defroster_on"`
+	SeatHeaterLeft       *int     `json:"seat_heater_left"`
+	SeatHeaterRight      *int     `json:"seat_heater_right"`
+	SeatHeaterRearLeft   *int     `json:"seat_heater_rear_left"`
+	SeatHeaterRearCenter *int     `json:"seat_heater_rear_center"`
+	SeatHeaterRearRight  *int     `json:"seat_heater_rear_right"`
+	SteeringWheelHeater  *bool    `json:"steering_wheel_heater"`
+	DefrostMode          *int     `json:"defrost_mode"`
+	ClimateKeeperMode    *string  `json:"climate_keeper_mode"`
+	CabinOverheatProtect *string  `json:"cabin_overheat_protection"`
+	CabinOverheatCooling *bool    `json:"cabin_overheat_protection_actively_cooling"`
+	SideMirrorHeaters    *bool    `json:"side_mirror_heaters"`
 }
 
 type teslaDriveState struct {
@@ -147,6 +176,37 @@ type teslaVehicleState struct {
 	TPMSSoftWarningFR  *bool    `json:"tpms_soft_warning_fr"`
 	TPMSSoftWarningRL  *bool    `json:"tpms_soft_warning_rl"`
 	TPMSSoftWarningRR  *bool    `json:"tpms_soft_warning_rr"`
+	// Extended display fields (design 2026-11-05 §4.1).
+	FrontLeftWindow  *int              `json:"fd_window"`
+	FrontRightWindow *int              `json:"fp_window"`
+	RearLeftWindow   *int              `json:"rd_window"`
+	RearRightWindow  *int              `json:"rp_window"`
+	ValetMode        *bool             `json:"valet_mode"`
+	SoftwareUpdate   *teslaSoftwareUpd `json:"software_update"`
+	SpeedLimitMode   *teslaSpeedLimit  `json:"speed_limit_mode"`
+	MediaInfo        *teslaMediaInfo   `json:"media_info"`
+}
+
+type teslaSoftwareUpd struct {
+	Status              *string `json:"status"`
+	DownloadPercent     *int    `json:"download_percent"`
+	InstallPercent      *int    `json:"install_percent"`
+	ExpectedDurationSec *int    `json:"expected_duration_sec"`
+}
+
+type teslaSpeedLimit struct {
+	Active          *bool    `json:"active"`
+	CurrentLimitMPH *float64 `json:"current_limit_mph"`
+	MaxLimitMPH     *float64 `json:"max_limit_mph"`
+	MinLimitMPH     *float64 `json:"min_limit_mph"`
+	PinCodeRequired *bool    `json:"pin_code_required"`
+}
+
+type teslaMediaInfo struct {
+	MediaState       *string `json:"media_state"`
+	NowPlayingTitle  *string `json:"now_playing_title"`
+	NowPlayingArtist *string `json:"now_playing_artist"`
+	NowPlayingAlbum  *string `json:"now_playing_album"`
 }
 
 func (p *fleetProvider) Vehicles(ctx context.Context, userID string) ([]vehicle, error) {
@@ -365,7 +425,78 @@ func mapTeslaVehicleStatus(data teslaVehicleData, displayName, state string) veh
 		value := strconv.Itoa(*data.VehicleState.CenterDisplayState)
 		status.CenterDisplayState = &value
 	}
+	applyExtendedDisplayFields(&status, data)
 	return status
+}
+
+// applyExtendedDisplayFields maps the optional Fleet display fields added by
+// design 2026-11-05 §4.1 into the internal status. Every source field is a
+// pointer: an absent Fleet value leaves the status field nil so the API keeps
+// reporting "unknown" instead of inventing a zero.
+func applyExtendedDisplayFields(status *vehicleStatus, data teslaVehicleData) {
+	charge := data.ChargeState
+	status.ConnChargeCable = charge.ConnChargeCable
+	status.FastChargerBrand = charge.FastChargerBrand
+	status.FastChargerType = charge.FastChargerType
+	status.ChargePortLatch = charge.ChargePortLatch
+	status.BatteryHeaterOn = charge.BatteryHeaterOn
+	status.MinutesToFullCharge = charge.MinutesToFullCharge
+	status.ChargeRangeAddedRated = milesPointerToKilometres(charge.ChargeMilesAddedRated)
+	status.ChargeRangeAddedIdeal = milesPointerToKilometres(charge.ChargeMilesAddedIdeal)
+	status.ScheduledChargingStartTime = epochMillisPointer(charge.ScheduledChargingStart)
+	status.ScheduledDepartureTime = epochMillisPointer(charge.ScheduledDeparture)
+
+	climate := data.ClimateState
+	status.DriverTempSetting = climate.DriverTempSetting
+	status.PassengerTempSetting = climate.PassengerTempSetting
+	status.FanStatus = climate.FanStatus
+	status.FrontDefrosterOn = climate.IsFrontDefrosterOn
+	status.RearDefrosterOn = climate.IsRearDefrosterOn
+	status.SeatHeaterLeft = climate.SeatHeaterLeft
+	status.SeatHeaterRight = climate.SeatHeaterRight
+	status.SeatHeaterRearLeft = climate.SeatHeaterRearLeft
+	status.SeatHeaterRearCenter = climate.SeatHeaterRearCenter
+	status.SeatHeaterRearRight = climate.SeatHeaterRearRight
+	status.SteeringWheelHeater = climate.SteeringWheelHeater
+	status.DefrostMode = climate.DefrostMode
+	status.ClimateKeeperMode = climate.ClimateKeeperMode
+	status.CabinOverheatProtection = climate.CabinOverheatProtect
+	status.CabinOverheatProtectionCooling = climate.CabinOverheatCooling
+	status.SideMirrorHeaters = climate.SideMirrorHeaters
+
+	vehicle := data.VehicleState
+	status.WindowsOpen = anyOpen(vehicle.FrontLeftWindow, vehicle.FrontRightWindow, vehicle.RearLeftWindow, vehicle.RearRightWindow)
+	status.ValetMode = vehicle.ValetMode
+	if update := vehicle.SoftwareUpdate; update != nil {
+		status.SoftwareUpdateStatus = update.Status
+		status.SoftwareDownloadPercent = update.DownloadPercent
+		status.SoftwareInstallPercent = update.InstallPercent
+		status.SoftwareUpdateExpectedSec = update.ExpectedDurationSec
+	}
+	if limit := vehicle.SpeedLimitMode; limit != nil {
+		status.SpeedLimitActive = limit.Active
+		status.SpeedLimitPinRequired = limit.PinCodeRequired
+		if limit.CurrentLimitMPH != nil {
+			kmh := int(math.Round(*limit.CurrentLimitMPH * milesToKilometres))
+			status.SpeedLimitCurrentKMH = &kmh
+		}
+	}
+	if media := vehicle.MediaInfo; media != nil {
+		status.MediaState = media.MediaState
+		status.MediaTitle = media.NowPlayingTitle
+		status.MediaArtist = media.NowPlayingArtist
+		status.MediaAlbum = media.NowPlayingAlbum
+	}
+}
+
+// epochMillisPointer converts a Fleet epoch-milliseconds value to a UTC time.
+// Zero or negative values mean "not scheduled" at Tesla and stay nil.
+func epochMillisPointer(value *int64) *time.Time {
+	if value == nil || *value <= 0 {
+		return nil
+	}
+	converted := time.UnixMilli(*value).UTC()
+	return &converted
 }
 
 func (p *fleetProvider) storedProviderIdentity(ctx context.Context, userID string, vehicleID int) (string, error) {
