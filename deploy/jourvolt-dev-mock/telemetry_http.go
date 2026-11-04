@@ -317,9 +317,18 @@ func (a *app) currentVehicleStatus(ctx context.Context, userID string, vehicleID
 			snapshot, exists, err := a.telemetry.latest(ctx, userID, vehicleID)
 			if err == nil && exists {
 				if providerErr != nil {
-					base = vehicleStatus{DisplayName: ref.DisplayName, State: "unknown", Source: "telemetry_mqtt", ProviderIdentity: ref.ProviderVehicleID}
+					base = vehicleStatus{DisplayName: ref.DisplayName, State: "asleep", Source: "telemetry_mqtt", ProviderIdentity: ref.ProviderVehicleID}
 				}
 				merged := mergeFreshTelemetryStatus(base, snapshot, time.Now().UTC())
+				if providerErr != nil {
+					if merged.ChargingState != nil && strings.EqualFold(*merged.ChargingState, "charging") {
+						merged.State = "charging"
+					} else if merged.Speed != nil && *merged.Speed > 0 {
+						merged.State = "driving"
+					} else {
+						merged.State = "asleep"
+					}
+				}
 				if !merged.ObservedAt.IsZero() {
 					merged.FieldSources = mergeStringMaps(base.FieldSources, snapshot.FieldSources)
 					return merged, nil

@@ -452,6 +452,14 @@ type telemetrySessionMachineSnapshot struct {
 	CurrentGearAt     time.Time
 	ChargeEnergyStart *float64
 	ChargeEnergyField string
+	LastSoc           *int
+	LastSocAt         time.Time
+	LastVoltage       *float64
+	LastVoltageAt     time.Time
+	LastCurrent       *float64
+	LastCurrentAt     time.Time
+	LastDrivingPower  *float64
+	LastDrivingPowerAt time.Time
 	Completed         []telemetrySession
 }
 
@@ -472,6 +480,14 @@ type telemetrySessionMachine struct {
 	currentGearAt     time.Time
 	chargeEnergyStart *float64
 	chargeEnergyField string
+	lastSoc           *int
+	lastSocAt         time.Time
+	lastVoltage       *float64
+	lastVoltageAt     time.Time
+	lastCurrent       *float64
+	lastCurrentAt     time.Time
+	lastDrivingPower  *float64
+	lastDrivingPowerAt time.Time
 	completed         []telemetrySession
 }
 
@@ -505,6 +521,14 @@ func newTelemetrySessionMachineFromSnapshot(debounce time.Duration, snapshot tel
 	machine.currentGearAt = snapshot.CurrentGearAt
 	machine.chargeEnergyStart = cloneFloat(snapshot.ChargeEnergyStart)
 	machine.chargeEnergyField = snapshot.ChargeEnergyField
+	machine.lastSoc = cloneInt(snapshot.LastSoc)
+	machine.lastSocAt = snapshot.LastSocAt
+	machine.lastVoltage = cloneFloat(snapshot.LastVoltage)
+	machine.lastVoltageAt = snapshot.LastVoltageAt
+	machine.lastCurrent = cloneFloat(snapshot.LastCurrent)
+	machine.lastCurrentAt = snapshot.LastCurrentAt
+	machine.lastDrivingPower = cloneFloat(snapshot.LastDrivingPower)
+	machine.lastDrivingPowerAt = snapshot.LastDrivingPowerAt
 	machine.completed = append(machine.completed, cloneTelemetrySessions(snapshot.Completed)...)
 	return machine
 }
@@ -529,7 +553,12 @@ func (m *telemetrySessionMachine) snapshot() telemetrySessionMachineSnapshot {
 		LastPower: cloneFloat(m.lastPower), LastPowerAt: m.lastPowerAt, LastHeading: cloneFloat(m.lastHeading), LastHeadingAt: m.lastHeadingAt,
 		CurrentGear: m.currentGear, CurrentGearAt: m.currentGearAt,
 		ChargeEnergyStart: cloneFloat(m.chargeEnergyStart),
-		ChargeEnergyField: m.chargeEnergyField, Completed: cloneTelemetrySessions(m.completed),
+		ChargeEnergyField: m.chargeEnergyField,
+		LastSoc: cloneInt(m.lastSoc), LastSocAt: m.lastSocAt,
+		LastVoltage: cloneFloat(m.lastVoltage), LastVoltageAt: m.lastVoltageAt,
+		LastCurrent: cloneFloat(m.lastCurrent), LastCurrentAt: m.lastCurrentAt,
+		LastDrivingPower: cloneFloat(m.lastDrivingPower), LastDrivingPowerAt: m.lastDrivingPowerAt,
+		Completed: cloneTelemetrySessions(m.completed),
 	}
 }
 
@@ -555,6 +584,27 @@ func (m *telemetrySessionMachine) apply(event telemetrySessionEvent) {
 		m.applyChargeModeEvidence(event)
 	case "Soc":
 		m.applyChargeBatteryLevel(event)
+		if soc, ok := numberFromJSONValue(event.Value); ok {
+			socInt := int(soc)
+			m.lastSoc = &socInt
+			m.lastSocAt = event.ObservedAt
+			if m.drive != nil && len(m.drive.Route) > 0 {
+				lastIdx := len(m.drive.Route) - 1
+				m.drive.Route[lastIdx].BatteryLevel = &socInt
+			}
+		}
+	case "PackVoltage":
+		if v, ok := numberFromJSONValue(event.Value); ok {
+			m.lastVoltage = &v
+			m.lastVoltageAt = event.ObservedAt
+			m.updateDrivingPower(event.ObservedAt)
+		}
+	case "PackCurrent":
+		if i, ok := numberFromJSONValue(event.Value); ok {
+			m.lastCurrent = &i
+			m.lastCurrentAt = event.ObservedAt
+			m.updateDrivingPower(event.ObservedAt)
+		}
 	case "GpsHeading":
 		if heading, ok := numberFromJSONValue(event.Value); ok {
 			m.lastHeading = &heading
@@ -575,10 +625,15 @@ func (m *telemetrySessionMachine) apply(event telemetrySessionEvent) {
 			}
 		}
 	case "Location":
+		power := m.recentObservation(m.lastDrivingPower, m.lastDrivingPowerAt, event.ObservedAt)
 		if point, ok := routePointFromLocationWithDefaults(event,
 			m.recentObservation(m.lastSpeed, m.lastSpeedAt, event.ObservedAt),
-			nil,
+			power,
 			m.recentObservation(m.lastHeading, m.lastHeadingAt, event.ObservedAt)); ok && m.drive != nil {
+			if m.lastSoc != nil && !m.lastSocAt.IsZero() && event.ObservedAt.Sub(m.lastSocAt) <= 10*time.Minute {
+				soc := *m.lastSoc
+				point.BatteryLevel = &soc
+			}
 			m.drive.Route = append(m.drive.Route, point)
 		} else if point, ok := routePointFromLocation(event); ok && m.charge != nil && !event.ObservedAt.Before(m.charge.StartAt) {
 			latitude, longitude := point.Latitude, point.Longitude
@@ -613,6 +668,16 @@ func (m *telemetrySessionMachine) updateDrivingObservation(event telemetrySessio
 		if speed, ok := numberFromJSONValue(event.Value); ok {
 			m.lastSpeed = &speed
 			m.lastSpeedAt = event.ObservedAt
+		}
+	}
+}
+
+func (m *telemetrySessionMachine) updateDrivingPower(at time.Time) {
+	if m.lastVoltage != nil && m.lastCurrent != nil && !m.lastVoltageAt.IsZero() && !m.lastCurrentAt.IsZero() {
+		if at.Sub(m.lastVoltageAt) <= 5*time.Second && at.Sub(m.lastCurrentAt) <= 5*time.Second {
+			p := (*m.lastVoltage * *m.lastCurrent) / 1000.0
+			m.lastDrivingPower = &p
+			m.lastDrivingPowerAt = at
 		}
 	}
 }
