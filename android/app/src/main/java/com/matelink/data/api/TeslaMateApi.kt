@@ -4,6 +4,8 @@ import com.matelink.data.api.models.BatteryHealthResponse
 import com.matelink.data.api.models.CarsResponse
 import com.matelink.data.api.models.CarStatusResponse
 import com.matelink.data.api.models.NearbyChargingResponse
+import com.matelink.data.api.models.VehicleCommandRequest
+import com.matelink.data.api.models.VehicleCommandResponse
 import com.matelink.data.api.models.ChargeDetailResponse
 import com.matelink.data.api.models.ChargesResponse
 import com.matelink.data.api.models.DataReadinessResponse
@@ -96,6 +98,13 @@ interface TeslamateApi {
     suspend fun getNearbyChargingSites(
         @Path("carId") carId: Int
     ): Response<NearbyChargingResponse>
+
+    @POST("api/v1/cars/{carId}/commands/{command}")
+    suspend fun executeVehicleCommand(
+        @Path("carId") carId: Int,
+        @Path("command") command: String,
+        @Body request: VehicleCommandRequest
+    ): Response<VehicleCommandResponse>
 
     @GET("api/v1/cars/{carId}/charges")
     suspend fun getCharges(
