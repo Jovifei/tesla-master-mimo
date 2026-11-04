@@ -600,6 +600,7 @@ type telemetryPairing struct {
 
 type telemetryPairingResponse struct {
 	Status         string `json:"status"`
+	Phase          string `json:"phase,omitempty"`
 	VirtualKeyURL  string `json:"virtual_key_url"`
 	UpdatedAt      string `json:"updated_at,omitempty"`
 	ConfigSynced   *bool  `json:"config_synced"`
@@ -655,8 +656,15 @@ func (s *telemetryService) pairing(ctx context.Context, userID string, vehicleID
 		}
 	}
 	status = s.refreshConfirmedVehicleKey(ctx, userID, vehicleID, status)
+	hasData := false
+	if onboardingPhaseNeedsData(status.Status) {
+		if _, ok, err := s.latest(ctx, userID, vehicleID); err == nil && ok {
+			hasData = true
+		}
+	}
 	response := telemetryPairingResponse{
 		Status:         status.Status,
+		Phase:          onboardingPhase(status.Status, status.ConfigSynced, hasData),
 		VirtualKeyURL:  "https://tesla.com/_ak/" + s.config.PartnerDomain,
 		ConfigSynced:   status.ConfigSynced,
 		ErrorClass:     status.ErrorClass,

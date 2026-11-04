@@ -1642,6 +1642,10 @@
     <string name="distance_profile">行程距离曲线</string>
     <string name="telemetry_setup_pending_title">车辆正在自动接入</string>
     <string name="telemetry_setup_pending_body">系统正在检查并完成数据配置。车辆休眠或服务暂时不可用时，会自动恢复；只有 Tesla 明确要求车主确认时才会提示。已有历史可以继续查看，新记录将在实际收到后显示。</string>
+    <string name="telemetry_setup_configuring_title">正在同步车辆配置</string>
+    <string name="telemetry_setup_configuring_body">Tesla 钥匙已确认，MateLink 正在把数据配置同步到车辆。车辆响应后会自动完成，无需你再操作，已有历史可以继续查看。</string>
+    <string name="telemetry_setup_awaiting_title">等待车辆首次数据</string>
+    <string name="telemetry_setup_awaiting_body">配置已经完成。车辆发出第一批数据后（通常是下一次行程或充电），新记录就会出现；在此之前已有历史可以继续查看。</string>
     <string name="telemetry_recheck">重新检查配置</string>
     <string name="vehicle_model_pending">车型待识别</string>
     <string name="history_sync_cached">云端历史暂未同步成功，当前显示本机保存的记录；下拉刷新可重试。</string>
