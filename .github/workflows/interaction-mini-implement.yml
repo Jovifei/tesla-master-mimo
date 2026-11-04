@@ -1,0 +1,106 @@
+name: Mini interaction visuals implementation and consumer verification
+on:
+  push:
+    branches: [codex/miniprogram-interaction-visuals-20261104]
+    paths:
+      - tools/interaction-execution/**
+      - .github/workflows/interaction-mini-implement.yml
+permissions:
+  contents: write
+concurrency:
+  group: interaction-mini-implementation
+  cancel-in-progress: false
+jobs:
+  implement:
+    if: github.repository == 'Jovifei/tesla-master-mimo'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      TARGET_BRANCH: codex/miniprogram-interaction-visuals-20261104
+      BASE_SHA: 55d49b921f541c5c1d793c88e64dfaac51ee32b2
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply exact reviewed source only to the new owned branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/$TARGET_BRANCH"
+          git merge-base --is-ancestor "$BASE_SHA" HEAD
+          test "$(git ls-remote origin "refs/heads/$TARGET_BRANCH" | cut -f1)" = "$GITHUB_SHA"
+          git diff --name-only "$BASE_SHA" HEAD > /tmp/bootstrap-paths
+          python3 - <<'PY'
+          from pathlib import Path
+          paths=Path('/tmp/bootstrap-paths').read_text().splitlines()
+          assert all(p.startswith('tools/interaction-execution/') or p=='.github/workflows/interaction-mini-implement.yml' for p in paths), paths
+          PY
+          python3 tools/interaction-execution/mini_apply.py
+          git diff --check --cached
+          mkdir -p interaction-evidence
+          git diff --cached --binary > interaction-evidence/source.patch
+          git diff --cached --stat > interaction-evidence/diffstat.txt
+          git diff --cached --name-only > interaction-evidence/paths.txt
+          git write-tree > interaction-evidence/TESTED_TREE.txt
+          git archive --format=zip --output=interaction-evidence/reviewed-source.zip "$(git write-tree)"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: |
+            miniprogram/package-lock.json
+            miniprogram/test-tooling/package-lock.json
+      - name: Locked install, actual page tests and WeChat bundle
+        working-directory: miniprogram
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence/timezones
+          npm ci --ignore-scripts --no-fund
+          npm ci --prefix test-tooling --ignore-scripts --no-fund
+          npm run typecheck 2>&1 | tee evidence/typecheck.log
+          npm test -- --reporter=default --reporter=junit --outputFile.junit=evidence/tests.xml 2>&1 | tee evidence/tests.log
+          npm run build:weapp 2>&1 | tee evidence/build.log
+          node -e "const p=require('./dist/project.config.json'); if(p.setting.urlCheck !== true) throw Error('domain check disabled')"
+          for zone in UTC Asia/Shanghai Asia/Tokyo America/Los_Angeles; do
+            name="${zone//\//_}"
+            TZ="$zone" node test-tooling/node_modules/vitest/vitest.mjs run --config test-tooling/vitest.config.mts \
+              src/domain/history_query.test.ts src/domain/partial_charge_cost.test.ts \
+              src/pages/wechat_startup.test.tsx src/pages/charge_cost_consistency.test.tsx \
+              src/services/cache_budget.test.ts src/domain/parked_interaction.test.ts \
+              src/components/interaction/InteractionVisuals.test.tsx \
+              --reporter=default --reporter=junit --outputFile.junit="evidence/timezones/$name.xml" \
+              2>&1 | tee "evidence/timezones/$name.log"
+          done
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as E
+          files=list(Path('evidence/timezones').glob('*.xml'))
+          assert len(files)==4
+          for file in [Path('evidence/tests.xml'),*files]:
+              root=E.parse(file).getroot(); cases=root.findall('.//testcase')
+              assert len(cases)>20 and not root.findall('.//failure') and not root.findall('.//error'), str(file)
+              print(file.name,'real_cases',len(cases))
+          PY
+      - name: Normally push the tested source only after all consumers pass
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --exit-code
+          test "$(git write-tree)" = "$(cat interaction-evidence/TESTED_TREE.txt)"
+          test "$(git ls-remote origin "refs/heads/$TARGET_BRANCH" | cut -f1)" = "$GITHUB_SHA"
+          test -z "$(git diff --cached --name-only -- .github)"
+          git config user.name 'Jovifei'
+          git config user.email '110970864+Jovifei@users.noreply.github.com'
+          git commit -m 'feat(mini): wire scoped interaction visuals and real consumer regressions'
+          git push origin "HEAD:refs/heads/$TARGET_BRANCH"
+          git show -s --format='%H%n%T%n%P' HEAD > interaction-evidence/PUSHED_SOURCE.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mini-interaction-source-tests
+          retention-days: 14
+          path: |
+            interaction-evidence/
+            miniprogram/evidence/
+            miniprogram/dist/
