@@ -82,6 +82,11 @@ jobs:
               assert len(cases)>20 and not root.findall('.//failure') and not root.findall('.//error'), str(file)
               print(file.name,'real_cases',len(cases))
           PY
+      - name: Render actual React consumers and verify real interactions in isolated Chromium
+        run: |
+          set -euo pipefail
+          node tools/interaction-stage/browser/build.mjs
+          node tools/interaction-stage/browser/capture.mjs
       - name: Normally push the tested source only after all consumers pass
         shell: bash
         run: |
@@ -104,3 +109,5 @@ jobs:
             interaction-evidence/
             miniprogram/evidence/
             miniprogram/dist/
+            visual-browser/
+            visual-browser-evidence/
