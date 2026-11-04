@@ -251,6 +251,7 @@ class MileageViewModel internal constructor(
     }
 
     private fun activate(id: Int) {
+        val sameVehicle = (carId == id && _uiState.value.yearlyData.isNotEmpty())
         carId = id
         val generation = ++identityGeneration
         loadGeneration++
@@ -258,7 +259,9 @@ class MileageViewModel internal constructor(
         unitsJob?.cancel()
         historyJob?.cancel()
         activeIdentity = null
-        clearProjection()
+        if (!sameVehicle) {
+            clearProjection()
+        }
         activationJob = viewModelScope.launch {
             val execution = currentCoroutineContext()
             try {
@@ -484,7 +487,7 @@ class MileageViewModel internal constructor(
             try {
                 ensureCurrent()
                 requireIdentity()
-                if (!_uiState.value.isRefreshing) _uiState.update { it.copy(isLoading = true) }
+                if (!_uiState.value.isRefreshing && _uiState.value.yearlyData.isEmpty()) _uiState.update { it.copy(isLoading = true) }
                 var cachedPublished = false
                 // Prefer already persisted Room history while the network is slow or offline. A
                 // corrupt/unreadable Room read must never suppress a valid remote load.

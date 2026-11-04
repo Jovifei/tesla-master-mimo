@@ -107,6 +107,9 @@ data class EnergyMetric(
         val last = endSoc?.takeIf { it in 0..100 } ?: return false
         if (calculationVersion != 1 || capacityBasis !in setOf("default_assumption", "model_assumption",
                 "model_trim_assumption", "provided_capacity", "api_reported_current_capacity")) return false
+        if (reason in setOf("rated_range_delta_estimate", "rated_range_nominal_short_trip")) {
+            return value.isFinite() && value > 0.0 && value <= 30.0
+        }
         val expected = (first - last) / 100.0 * capacity
         return first != last && kotlin.math.abs(value - expected) <= 1e-9 * maxOf(1.0, kotlin.math.abs(expected))
     }

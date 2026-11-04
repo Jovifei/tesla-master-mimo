@@ -43,7 +43,7 @@ fun DriveDetail.resolveDriveEnergy(
     }
     // A legacy bb09 Fleet scalar lacks its entire counter/window evidence;
     // archived observed power samples remain a separately labeled estimate.
-    val scalar = energyConsumedNet.takeIf { legacyScalarEnergyAllowed(source) || source == "telemetry_mqtt" || source == "fleet_api" }
+    val scalar = energyConsumedNet.takeIf { legacyScalarEnergyAllowed(source) }
     val samples = if (source in setOf("local_import", "local_history")) emptyList() else positions.orEmpty()
     val estimate = DriveEnergyResolver.resolve(
         apiEnergyKwh = scalar,
@@ -175,11 +175,14 @@ fun DriveSummary.withResolvedDriveEnergy(detail: DriveDetail, resolved: Resolved
                 (detail.endBatteryLevel == null || detail.endBatteryLevel == priorMetric?.endSoc))) &&
         (detail.source == null || detail.source == rawPrevious.source)
     }
+    val verifiedDetailContract = detail.energyContract?.takeIf {
+        it.netValueForWindow(nextStart, nextEnd) != null
+    }
     val proof = when {
-        detail.energyContract != null -> detail.energyContract
+        verifiedDetailContract != null -> verifiedDetailContract
         estimate.energyKwh != null -> EnergyContract(netEnergy = chosen.evidence)
         carried != null && oldProof != null -> oldProof
-        else -> EnergyContract(netEnergy = chosen.evidence)
+        else -> detail.energyContract ?: EnergyContract(netEnergy = chosen.evidence)
     }
     // Current metadata is a separate scoped display snapshot, never a raw
     // Tesla receipt. Explicit nulls retain genuinely unknown SOC.

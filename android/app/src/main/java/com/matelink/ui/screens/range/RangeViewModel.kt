@@ -230,7 +230,7 @@ class RangeViewModel internal constructor(private val source: RangePageSource) :
                 _uiState.update { it.copy(isLoading = false, isRefreshing = false, error = null) }
             }
             try {
-                if (!_uiState.value.isRefreshing) _uiState.update { it.copy(isLoading = true) }
+                if (!_uiState.value.isRefreshing && _uiState.value.trips.isEmpty()) _uiState.update { it.copy(isLoading = true) }
                 val proof = source.identity(id)
                 identity = proof
                 requireCurrent()

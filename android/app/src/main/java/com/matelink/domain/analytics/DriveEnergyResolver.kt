@@ -138,11 +138,14 @@ object DriveEnergyResolver {
                 if (startRatedRangeKm != null && endRatedRangeKm != null &&
                     startRatedRangeKm.isFinite() && endRatedRangeKm.isFinite()) {
                     val deltaRange = startRatedRangeKm - endRatedRangeKm
-                    if (deltaRange > 0.0 && deltaRange <= 30.0) {
+                    val effectiveDelta = if (deltaRange > 0.0) deltaRange else {
+                        if (distanceKm != null && distanceKm > 0.0 && distanceKm <= 2.0) distanceKm else deltaRange
+                    }
+                    if (effectiveDelta > 0.0 && effectiveDelta <= 30.0) {
                         val capacity = batteryCapacityKwh?.takeIf { it > 0.0 && it.isFinite() }
                             ?: resolveBatteryCapacity(model, trimBadging)
                         val ratedKwhPerKm = capacity / 420.0
-                        val estimateKwh = deltaRange * ratedKwhPerKm
+                        val estimateKwh = effectiveDelta * ratedKwhPerKm
                         if (estimateKwh.isFinite() && estimateKwh > 0.0) {
                             return DriveEnergyEstimate(
                                 energyKwh = estimateKwh,
@@ -152,7 +155,7 @@ object DriveEnergyResolver {
                                 coverageSecondsExact = calculated.coverageSecondsExact,
                                 coverageRatio = coverage,
                                 observedEnergyKwh = calculated.energyKwh,
-                                qualityReason = "rated_range_delta_estimate"
+                                qualityReason = if (deltaRange > 0.0) "rated_range_delta_estimate" else "rated_range_nominal_short_trip"
                             )
                         }
                     }
