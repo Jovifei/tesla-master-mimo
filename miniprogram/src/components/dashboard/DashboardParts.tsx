@@ -1,3 +1,4 @@
+import { VehicleOpeningsVisual } from '../interaction/InteractionVisuals'
 import { APP_DISPLAY_CONTRACT } from '../../domain/app_display_contract'
 import { createElement } from 'react'
 import { Button, Text, View } from '@tarojs/components'
@@ -80,7 +81,7 @@ export function DashboardHero({ car, status, imageSrc, imageLoading, imageError,
     {status.batteryLevel != null ? <View className="dashboard-battery-track"><View style={{ width: `${Math.max(0, Math.min(100, status.batteryLevel))}%` }} /></View> : null}
     {status.chargeLimitSoc != null ? <Text className="dashboard-charge-target">{status.batteryLevel != null ? `当前 ${dashboardNumber(status.batteryLevel, 0)}% · 充电目标 ${dashboardNumber(status.chargeLimitSoc, 0)}%` : `限制: ${dashboardNumber(status.chargeLimitSoc, 0)}%`}</Text> : null}
     <View className="dashboard-state-row"><DashboardStatusChip icon={status.locked === false ? 'unlock' : 'lock'} value={status.locked} yes="已锁" no="未锁" /><DashboardStatusChip icon="bolt" value={status.pluggedIn} yes="已插枪" no="未插枪" /><DashboardStatusChip icon="climate" value={status.isClimateOn} yes="空调开启" no="空调关闭" /><DashboardStatusChip icon="security" value={status.sentryMode} yes="哨兵已开启" no="哨兵关闭" /></View>
-    {openings.length ? <View className="dashboard-opening-alert"><View><DashboardIcon name="warning" tone="warning" /><Text>车门与开口提醒</Text></View><View className="dashboard-opening-grid">{openings.map(opening => <View key={opening.text}><DashboardIcon name="warning" tone="warning" /><Text>{opening.text}</Text></View>)}</View></View> : null}
+    {openings.length ? <View className="dashboard-opening-alert"><View><DashboardIcon name="warning" tone="warning" /><Text>车门与开口提醒</Text></View><View className="dashboard-opening-grid">{openings.map(opening => <View key={opening.text}><DashboardIcon name="warning" tone="warning" /><Text>{opening.text}</Text></View>)}</View><VehicleOpeningsVisual doors={status.doorsOpen} windows={status.windowsOpen} frunk={status.frunkOpen} trunk={status.trunkOpen} /></View> : null}
   </View>
 }
 

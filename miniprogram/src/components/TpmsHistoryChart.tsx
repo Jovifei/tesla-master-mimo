@@ -35,10 +35,11 @@ export function tpmsChartData(input: readonly unknown[], window: Window, now: nu
   return { source, groups, plotted: groups.reduce((sum, group) => sum + group.points.length, 0), thinned: groups.some(group => group.points.length < group.sourceCount) }
 }
 let nextCanvas = 0
-export default function TpmsHistoryChart({ history, now = Date.now() }: { history?: TpmsHistory | null; now?: number }) {
+export default function TpmsHistoryChart({ history, now = Date.now(), selectedWheel = null }: { history?: TpmsHistory | null; now?: number; selectedWheel?: TpmsWheel | null }) {
   const [window, setWindow] = useState<Window>('24h'), [cursorIndex, setCursorIndex] = useState(Number.MAX_SAFE_INTEGER)
   const [canvasId] = useState(() => `tpms-history-${++nextCanvas}`)
-  const plot = useMemo(() => tpmsChartData(history?.points ?? [], window, now), [history?.points, window, now])
+  const plot = useMemo(() => tpmsChartData((history?.points ?? []).filter(point => selectedWheel == null || point.wheel === selectedWheel), window, now), [history?.points, window, now, selectedWheel])
+  useEffect(() => { setCursorIndex(Number.MAX_SAFE_INTEGER) }, [selectedWheel])
   const native = typeof Taro.createCanvasContext === 'function' && typeof Taro.createSelectorQuery === 'function'
   const index = Math.max(0, Math.min(cursorIndex, plot.source.length - 1)), point = plot.source[index]
   useEffect(() => {

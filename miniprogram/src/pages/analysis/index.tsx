@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import MetricValue, { displayNumber, peakSpeedKmh } from '../../components/MetricValue'
 import HistoryDateChips from '../../components/HistoryDateChips'
 import LoadingIndicator from '../../components/LoadingIndicator'
+import { ParkedChargeTimeline } from '../../components/interaction/InteractionVisuals'
 import SectionHeading from '../../components/SectionHeading'
 import SubpageHeader from '../../components/SubpageHeader'
 import { analysisDay, analysisGroups, analysisKind, analysisTitles, buildParkedWindows, calendarCells, distanceCurveEstimates, efficiencyDistribution, efficiencySpeedGroups, selectCurveSamples } from '../../domain/analysis'
@@ -472,6 +473,7 @@ export default function AnalysisPage() {
         {parked?.linkedChargeId || selectedWindow?.chargeOverlap ? <Text className="muted">该驻车窗口与充电记录重叠，不作为纯驻车损耗。</Text> : null}
         {parked?.linkedChargeId ? <Button className="button-secondary" onClick={() => { void Taro.navigateTo({ url: `/pages/analysis/index?kind=timeline&chargeId=${encodeURIComponent(parked.linkedChargeId!)}` }) }}>查看关联充电</Button> : null}
       </View>
+      <ParkedChargeTimeline key={`${parked?.startDate}:${parked?.endDate}`} sessions={parked?.linkedCharges} complete={parked?.chargeSessionsComplete} />
       <View className="card"><SectionHeading icon="battery" title="驻车时间与电量" /><View className="metric-grid"><MetricValue label="开始电量" value={parked ? parked.startBatteryLevel : selectedWindow?.startSoc} unit="%" /><MetricValue label="结束电量" value={parked ? parked.endBatteryLevel : selectedWindow?.endSoc} unit="%" /><MetricValue label="电量变化" value={parked ? parkedDelta(parked) : selectedWindow?.socDelta} unit="%" /><MetricValue label="合格储能变化" value={parked?.energyKwh} unit="kWh" /><MetricValue label="平均功率" value={parked?.averagePowerW} unit="W" /><MetricValue label="峰值功率" value={parked?.peakPowerW != null ? parked.peakPowerW / 1000 : null} unit="kW" /></View></View>
       <View className="card"><SectionHeading icon="cloud" title="环境与数据" /><View className="metric-grid"><MetricValue label="车内温度" value={parked?.insideTempC} unit="°C" /><MetricValue label="车外温度" value={parked?.outsideTempC} unit="°C" /><MetricValue label="采样数" value={parked?.sampleCount} unit="个" /><MetricValue label="覆盖率" value={parked?.coverageRatio != null ? parked.coverageRatio * 100 : null} unit="%" /></View><Text className="muted">数据来源：{sourceLabel(parked?.source ?? selectedWindow?.source)}。{parked?.energyKwh == null ? '缺少合格储能证据；不由SOC变化猜容量或能量。' : '储能变化只适用于已验证采样窗口。'}</Text></View>
     </> : null}

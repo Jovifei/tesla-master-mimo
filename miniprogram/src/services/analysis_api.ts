@@ -3,6 +3,7 @@ import { ApiError, assertVehicle, getApiOrigin, getApiSessionGeneration, matelin
 import { readAppSession } from './session'
 import { collectHistoryInterval } from '../domain/history_controller'
 import { sameEnergyInstant } from '../domain/drive_energy'
+import { recordedChargeIntervals } from '../domain/parked_interaction'
 import type { Car, Charge, Drive, RawCharge, RawDrive } from './types'
 import type { AnalysisHistory, AnalysisMeta, AnalysisOptions, BatteryHealth, ChargeEvidence, ChargeEvidenceSummary, DriveEvidence, ParkedDetail, SoftwareUpdate } from './analysis_types'
 
@@ -69,7 +70,7 @@ function qualifyParked(raw: Row, units: Row): ParkedDetail {
     m.activity_evidence === 'no_driving_or_charging_during_window' && sameEnergyInstant(startDate, m.start_date) && sameEnergyInstant(endDate, m.end_date) &&
     sameEnergyInstant(startDate, m.observed_start_at) && sameEnergyInstant(endDate, m.observed_end_at) && Number.isFinite(seconds) && seconds > 0
   const energyKwh = valid ? value : null
-  return { olderDriveId: id(raw.older_drive_id), newerDriveId: id(raw.newer_drive_id), startDate, endDate, address: text(raw.address),
+  return { linkedCharges: recordedChargeIntervals(raw), olderDriveId: id(raw.older_drive_id), newerDriveId: id(raw.newer_drive_id), startDate, endDate, address: text(raw.address),
     startBatteryLevel: num(raw.start_battery_level, 0, 100), endBatteryLevel: num(raw.end_battery_level, 0, 100), batteryDelta: num(raw.battery_delta, -100, 100),
     energyKwh, averagePowerW: energyKwh === null ? null : num(energyKwh * 3_600_000 / seconds), peakPowerW: null,
     insideTempC: temperature(raw.inside_temp_average, unit(units, 'unit_of_temperature')), outsideTempC: temperature(raw.outside_temp_average, unit(units, 'unit_of_temperature')),

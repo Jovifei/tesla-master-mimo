@@ -1,0 +1,10 @@
+/* Test wrapper only; component styling is imported unchanged from production source. */
+* { box-sizing:border-box; }
+body { margin:0; background:#f5f7f9; color:#1f2937; font:14px/1.5 system-ui,"Noto Sans CJK SC",sans-serif; }
+.fixture { width:100%; max-width:430px; margin:0 auto; padding:16px; }
+.fixture-controls { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; }
+.fixture-controls select { font:inherit; min-height:40px; max-width:100%; border:1px solid #cbd5e1; border-radius:8px; padding:6px; background:#fff; color:inherit; }
+.fixture-evidence { color:#6b7280; font-size:12px; margin:12px 0; }
+.fixture-surface { padding:12px; border-radius:16px; background:#fff; }
+.fixture-surface h1 { font-size:20px; line-height:1.35; margin:0 0 18px; }
+@media(prefers-color-scheme:dark) { body{background:#111315;color:#f5f6f7} .fixture-surface,.fixture-controls select{background:#15181c} .fixture-evidence{color:#b7bdc6} }

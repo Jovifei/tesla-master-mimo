@@ -12,7 +12,8 @@ export type ChargeEvidenceSummary = { chargerPowerKw: number | null; chargerVolt
   currentRequestA: number | null; currentRequestMaxA: number | null; timeToFullHours: number | null; currentBatteryLevel: number | null;
   outsideTempC: number | null; startRatedRangeKm: number | null; endRatedRangeKm: number | null; odometerKm: number | null; isCharging: boolean | null }
 export type ChargeEvidence = { charge: Charge | null; points: ChargeEvidencePoint[]; summary: ChargeEvidenceSummary; source: string | null; qualityState: string | null; pointsComplete: boolean; reason: string | null }
-export type ParkedDetail = { olderDriveId: string | null; newerDriveId: string | null; startDate: string | null; endDate: string | null; address: string | null;
+export type RecordedChargeInterval = { id: string; startDate: string; endDate: string | null; energyKwh: number | null }
+export type ParkedDetail = { linkedCharges?: RecordedChargeInterval[]; olderDriveId: string | null; newerDriveId: string | null; startDate: string | null; endDate: string | null; address: string | null;
   startBatteryLevel: number | null; endBatteryLevel: number | null; batteryDelta: number | null;
   energyKwh: number | null; averagePowerW: number | null; peakPowerW: number | null;
   insideTempC: number | null; outsideTempC: number | null; sampleCount: number | null;

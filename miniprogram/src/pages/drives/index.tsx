@@ -21,6 +21,7 @@ import { readAppSession } from '../../services/session'
 import { useSessionRecoveryReload } from '../../services/use_session_recovery'
 import { historyCacheKey, readHistoryCache, writeHistoryCache } from '../../services/history_cache'
 import LoadingIndicator from '../../components/LoadingIndicator'
+import { EmptyHistoryVisual, RouteInteractionVisual, ParkedChargeTimeline } from '../../components/interaction/InteractionVisuals'
 import HistoryIntervalSummary from '../../components/HistoryIntervalSummary'
 import HistoryDateChips from '../../components/HistoryDateChips'
 import { inspectForegroundEvents, observeForegroundEvents, type ForegroundNotice } from '../../services/foreground_events'
@@ -591,7 +592,7 @@ export default function DrivesPage() {
       {!readAppSession(Taro) && loading ? <LoadingIndicator label="正在恢复会话…" /> : !readAppSession(Taro) ? (
         <View className="card empty-state"><VisualIcon name="account" /><Text className="section-title">等待特斯拉账号登录</Text><Text className="muted">请先在“更多”中建立会话。</Text></View>
       ) : trustedItems.length === 0 && !loading ? (
-        <View className="card empty-state"><VisualIcon name="route" /><Text className="section-title">暂无可展示的行程</Text><Text className="muted">当前没有可展示的行程记录，空响应不会生成示例数据。</Text>
+        <View className="card empty-state"><EmptyHistoryVisual kind="drive" failed={Boolean(error)} /><Text className="section-title">暂无可展示的行程</Text><Text className="muted">当前没有可展示的行程记录，空响应不会生成示例数据。</Text>
           {!offline && meta?.hasMore ? <Button className="button" loading={loadingMore} onClick={loadMore}>{copy('common.loadMore')}</Button> : null}
         </View>
       ) : (
@@ -697,17 +698,7 @@ export default function DrivesPage() {
               <VisualIcon name="route" />
               <Text>路线</Text>
             </View>
-            <View className="history-route">
-              <View className="route-indicator-dots">
-                <View className="dot-start" />
-                <View className="line-connector" />
-                <View className="dot-end" />
-              </View>
-              <View className="history-route-stops">
-                <Text className="history-route-start">{value(toChineseDisplayAddress(selected.startAddress))}</Text>
-                <Text className="history-route-end">{value(toChineseDisplayAddress(selected.endAddress))}</Text>
-              </View>
-            </View>
+            <RouteInteractionVisual key={`${selected.id}:${selected.startDate}:${selected.endDate}`} start={toChineseDisplayAddress(selected.startAddress)} end={toChineseDisplayAddress(selected.endAddress)} />
             <View className="route-time-row">
               <View className="route-time-col"><Text className="time-label">开始时间</Text><Text className="time-val">{historyDetailDateTime(selected.startDate)}</Text></View>
               <View className="route-time-col"><Text className="time-label">结束时间</Text><Text className="time-val">{historyDetailDateTime(selected.endDate)}</Text></View>
@@ -829,6 +820,7 @@ export default function DrivesPage() {
                   ? <Text className="parked-detail-badge charge">电量 +{delta}%</Text>
                   : <Text className="parked-detail-badge drain">{delta === 0 ? '电量未变化' : `电量 −${Math.abs(delta)}%`}</Text>) : null}</Text>
               </View>
+              <ParkedChargeTimeline key={`${parkedOpen.startDate}:${parkedOpen.endDate}`} sessions={parkedCloud?.linkedCharges} complete={parkedCloud?.chargeSessionsComplete} />
               <View className="section-card">
                 <View className="section-card-header">
                   <View className="section-card-title"><VisualIcon name="battery" /><Text>起止电量</Text></View>

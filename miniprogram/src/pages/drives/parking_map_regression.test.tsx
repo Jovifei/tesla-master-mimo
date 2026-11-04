@@ -321,3 +321,45 @@ it('does not show route evidence returned for a different source instance with t
   await act(async () => { view.root.findByProps({ className: 'history-record' }).props.onClick() }); await flush(); await flush()
   expect(view.root.findAllByType('map' as React.ElementType)).toHaveLength(0)
 })
+
+
+it('real drive detail endpoint selection changes only visual focus and keeps requests/storage unchanged', async () => {
+  const record = { ...drive(5, 0, 2), start_address: 'Synthetic origin', end_address: 'Synthetic destination' }
+  platform.request.mockImplementation(async ({ url }: { url: string }) => {
+    if (url.endsWith('/cars')) return response({ cars: [car] })
+    if (url.endsWith('/drives/5')) return response({ drive: { ...record, drive_details: [] } })
+    return response({ drives: [record], meta: { page: 1, show: 20, total_pages: 1 } })
+  })
+  const view = await mount()
+  await act(async () => { view.root.findByProps({ className: 'history-record' }).props.onClick() }); await flush(); await flush()
+  expect(view.root.findByProps({ ariaLabel: '行程详情' })).toBeDefined()
+  const beforeRequests = platform.request.mock.calls.length, beforeStorage = JSON.stringify([...platform.values])
+  await act(async () => view.root.findByProps({ 'data-endpoint': 'B' }).props.onClick())
+  expect(view.root.findByProps({ 'data-endpoint': 'B' }).props.className).toContain('route-endpoint-selected')
+  expect(JSON.stringify(view.toJSON())).toContain('非实际轨迹')
+  expect(platform.request.mock.calls.length).toBe(beforeRequests)
+  expect(JSON.stringify([...platform.values])).toBe(beforeStorage)
+})
+
+it('real verified parked overlay renders two recorded charging intervals without extra requests or invented stop time', async () => {
+  const records = [drive(3, 120, 2), drive(1, 0, 2)]
+  platform.request.mockImplementation(async ({ url }: { url: string }) => {
+    if (url.endsWith('/cars')) return response({ cars: [car] })
+    if (url.endsWith('/parked/1/3')) return response({ older_drive_id: 1, newer_drive_id: 3,
+      start_date: records[1].end_date, end_date: records[0].start_date, source: 'teslamate_archive',
+      linked_charges: [
+        { charge_id: 51, source: 'teslamate_archive', quality_state: 'observed', start_date: at(20), end_date: at(40), energy_added_kwh: 0 },
+        { charge_id: 52, source: 'teslamate_archive', quality_state: 'incomplete', start_date: at(80), end_date: null },
+      ], charge_sessions_complete: false })
+    return response({ drives: records, meta: { page: 1, show: 20, total_pages: 1 } })
+  })
+  const view = await mount()
+  await act(async () => { view.root.findByProps({ className: 'history-record history-parked' }).props.onClick() }); await flush()
+  expect(view.root.findAllByProps({ className: 'recorded-charge-row' })).toHaveLength(2)
+  const text = JSON.stringify(view.toJSON())
+  expect(text).toContain('0.00 kWh'); expect(text).toContain('结束未记录')
+  expect(text).toContain('不据空白区间推断停充或耗电')
+  const before = platform.request.mock.calls.length
+  await act(async () => view.root.findAllByProps({ className: 'recorded-charge-select' })[0].props.onClick())
+  expect(platform.request.mock.calls.length).toBe(before)
+})

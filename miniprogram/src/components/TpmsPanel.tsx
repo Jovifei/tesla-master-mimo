@@ -4,20 +4,24 @@ import { restoreTpmsSnapshot, tpmsMissingLabel, TPMS_WHEELS, type TpmsReport, ty
 import type { TpmsHistory } from '../services/tpms_cache'
 import MetricValue from './MetricValue'
 import TpmsHistoryChart from './TpmsHistoryChart'
+import { TpmsVehicleVisual } from './interaction/InteractionVisuals'
+import type { TpmsWheel } from '../domain/tpms'
 
 const wheelNames = { fl: '左前轮', fr: '右前轮', rl: '左后轮', rr: '右后轮' }
 type Props = { snapshot?: TpmsSnapshot | null; report?: TpmsReport | null; history?: TpmsHistory | null; cacheReason?: string | null; now?: number }
 
 export default function TpmsPanel({ snapshot, report, history, cacheReason, now = Date.now() }: Props) {
+  const [selectedWheel, setSelectedWheel] = useState<TpmsWheel | null>(null)
   const [evidenceExpanded, setEvidenceExpanded] = useState(false)
   const [expanded, setExpanded] = useState(false)
   const [historyPage, setHistoryPage] = useState(0)
   const current = restoreTpmsSnapshot(snapshot, now)
-  const points = [...(history?.points ?? [])].sort((a, b) => Date.parse(b.observedAt) - Date.parse(a.observedAt))
+  const points = [...(history?.points ?? [])].filter(point => selectedWheel == null || point.wheel === selectedWheel).sort((a, b) => Date.parse(b.observedAt) - Date.parse(a.observedAt))
   const pages = Math.ceil(points.length / 20)
   const page = Math.max(0, Math.min(historyPage, pages - 1))
   return <View className="tpms-section">
     <View className="tpms-heading"><Text className="section-title">胎压</Text></View>
+    <TpmsVehicleVisual snapshot={snapshot} now={now} selected={selectedWheel} onSelect={wheel => { setSelectedWheel(wheel); setEvidenceExpanded(true); setHistoryPage(0) }} />
     <View className="tpms-grid">{TPMS_WHEELS.map(wheel => {
       const row = current.wheels[wheel]
       return <View className="tpms-wheel-card" key={wheel}>
@@ -41,7 +45,7 @@ export default function TpmsPanel({ snapshot, report, history, cacheReason, now 
     <Text className="muted">本机前台观测历史 · 最多30天、每轮500点；退出微信后不保证连续采集，不能代替 App 的已保存历史。</Text>
     {history?.points.length ? <Text className="metric-source">本机覆盖：{history.oldestAt} 至 {history.latestAt} · {history.points.length} 点{history.limited ? ' · 已按保留上限截取' : ''}</Text>
       : <Text className="muted">暂无合格的本机前台历史；缺少逐轮值、bar单位、来源或独立时间时不生成样本。</Text>}
-    <TpmsHistoryChart history={history} now={now} />
+    <TpmsHistoryChart history={history} now={now} selectedWheel={selectedWheel} />
     {points.length ? <Button className="button-secondary" onClick={() => { setExpanded(!expanded); setHistoryPage(0) }}>{expanded ? '收起本机记录' : '查看本机记录'}</Button> : null}
     {expanded ? <View>
       {points.slice(page * 20, (page + 1) * 20).map(point => <View className="readiness-item" key={`${point.wheel}-${point.observedAt}`}>
