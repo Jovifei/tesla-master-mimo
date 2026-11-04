@@ -99,3 +99,27 @@ Path("../emulator-evidence/native-counts.json").write_text(json.dumps(totals,sor
 if totals["tests"] < 1 or totals["failures"] or totals["errors"]:
     raise SystemExit("Native tests missing or failed")
 PY
+
+# New interaction fixtures come from the exact native Compose consumers; never a phone screencap.
+mkdir -p ../emulator-evidence/interaction-visuals
+for theme in light dark; do
+  for scene in $(seq 0 10); do
+    shot="matelink_visual_${theme}_${scene}"
+    adb pull "/sdcard/Download/${shot}.png" "../emulator-evidence/interaction-visuals/${shot}.png"
+    adb pull "/sdcard/Download/${shot}.proof" "../emulator-evidence/interaction-visuals/${shot}.proof"
+  done
+done
+python3 - <<'PYVISUAL'
+from pathlib import Path
+import hashlib,struct
+p=Path('../emulator-evidence/interaction-visuals')
+shots=list(p.glob('*.png'))
+assert len(shots)==22, len(shots)
+for shot in shots:
+    data=shot.read_bytes(); proof=shot.with_suffix('.proof').read_text().split()
+    assert data[:8]==b'\x89PNG\r\n\x1a\n' and len(data)>1000
+    width,height=struct.unpack('>II',data[16:24])
+    assert proof==[hashlib.sha256(data).hexdigest(),str(width),str(height),'synthetic']
+    assert width>=300 and height>=300
+print('ACTUAL_COMPOSE_INTERACTION_FIXTURES', len(shots))
+PYVISUAL

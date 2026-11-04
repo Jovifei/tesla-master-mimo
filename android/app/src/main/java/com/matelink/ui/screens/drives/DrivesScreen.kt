@@ -1,5 +1,6 @@
 package com.matelink.ui.screens.drives
 
+import com.matelink.ui.components.EmptyHistoryVisual
 import com.matelink.ui.components.historyReadWarningMessageRes
 import com.matelink.ui.components.historyReadErrorMessageRes
 import com.matelink.ui.components.showHistoryReadFailure
@@ -333,12 +334,7 @@ private fun DrivesContent(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.DirectionsCar,
-                            contentDescription = null,
-                            tint = palette.accent,
-                            modifier = Modifier.size(36.dp)
-                        )
+                        EmptyHistoryVisual(charging = false, failed = readError != null)
                         Text(
                             text = stringResource(readError?.let(::historyReadErrorMessageRes) ?: R.string.no_drives_found),
                             style = MaterialTheme.typography.bodyLarge,

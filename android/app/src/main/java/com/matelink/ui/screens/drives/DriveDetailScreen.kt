@@ -1,5 +1,6 @@
 package com.matelink.ui.screens.drives
 
+import com.matelink.ui.components.RouteInteractionVisual
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -442,10 +443,9 @@ private fun UnifiedTripCard(
             val unknownLocation = stringResource(R.string.unknown_location)
             val defaultStart = detail.startAddress?.takeIf { it.isNotBlank() && !it.contains("°N") && it != "30.27°N, 120.15°E" }?.toChineseDisplayAddress()
             val defaultEnd = detail.endAddress?.takeIf { it.isNotBlank() && !it.contains("°N") && it != "30.27°N, 120.15°E" }?.toChineseDisplayAddress()
-            RouteIndicator(
-                start = defaultStart ?: unknownLocation,
-                end = defaultEnd ?: unknownLocation
-            )
+            androidx.compose.runtime.key(detail.driveId, detail.startDate, detail.endDate) {
+                RouteInteractionVisual(start = defaultStart, end = defaultEnd)
+            }
 
             HorizontalDivider(
                 color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)

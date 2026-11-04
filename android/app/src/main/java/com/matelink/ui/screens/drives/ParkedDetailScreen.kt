@@ -1,5 +1,6 @@
 package com.matelink.ui.screens.drives
 
+import com.matelink.ui.components.RecordedChargeRail
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -502,6 +503,8 @@ private fun ParkedChargeSessionsCard(
                 Text(stringResource(R.string.parked_recorded_charge_count, breakdown.sessions.size),
                     style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             }
+            Text(stringResource(R.string.interaction_recorded_interval),
+                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             sessions.forEachIndexed { index, session ->
                 if (index > 0) HorizontalDivider()
                 val start = session.start.atZone(zone)
@@ -516,8 +519,10 @@ private fun ParkedChargeSessionsCard(
                     "%.2f %s".format(it, stringResource(R.string.parked_energy_per_hour_unit))
                 }
                 val detail = listOfNotNull(duration, energy, rate).joinToString(" · ")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                RecordedChargeRail(hasRecordedEnd = session.end != null)
                 Column(
-                    modifier = Modifier.fillMaxWidth().sizeIn(minHeight = 48.dp)
+                    modifier = Modifier.weight(1f).sizeIn(minHeight = 48.dp)
                         .clickable { onNavigateToChargeDetail(session.chargeId) }
                         .padding(vertical = 5.dp),
                     verticalArrangement = Arrangement.spacedBy(2.dp)
@@ -538,6 +543,7 @@ private fun ParkedChargeSessionsCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1, softWrap = false)
                 }
+            }
             }
             if (breakdown.sessions.size > 3) {
                 TextButton(onClick = { expanded = !expanded }) {

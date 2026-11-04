@@ -1,5 +1,9 @@
 package com.matelink.ui.screens.tpms
 
+import com.matelink.ui.components.TpmsVehicleVisual
+import com.matelink.domain.model.visualWheelReading
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -76,6 +80,7 @@ fun TpmsTrendScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     LaunchedEffect(carId) { viewModel.load(carId) }
+    var focusedWheel by remember(carId, state.selectedWindow) { mutableStateOf<TirePosition?>(null) }
 
     Scaffold(
         topBar = {
@@ -163,7 +168,13 @@ fun TpmsTrendScreen(
                     }
                 }
             } else {
-                TpmsTrendChart(state.series)
+                val now = System.currentTimeMillis()
+                val readings = TirePosition.entries.associateWith { wheel ->
+                    val point = state.series[wheel]?.lastOrNull { it.pressureBar != null }
+                    visualWheelReading(point?.pressureBar, point?.observedAt, now, verified = point != null)
+                }
+                TpmsVehicleVisual(readings, focusedWheel, onSelect = { focusedWheel = it })
+                TpmsTrendChart(if (focusedWheel == null) state.series else state.series.filterKeys { it == focusedWheel })
                 TpmsSummary(state)
             }
 
