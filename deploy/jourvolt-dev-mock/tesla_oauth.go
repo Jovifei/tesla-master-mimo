@@ -52,7 +52,7 @@ func newTeslaOAuth(config *teslaConfig, store *store, cipher *tokenCipher, clien
 			ClientID:     config.ClientID,
 			ClientSecret: config.ClientSecret,
 			RedirectURL:  config.RedirectURI,
-			Scopes:       []string{"openid", "offline_access", "vehicle_device_data", "vehicle_location"},
+			Scopes:       []string{"openid", "offline_access", "vehicle_device_data", "vehicle_location", "vehicle_cmds", "vehicle_charging_cmds"},
 			Endpoint: oauth2.Endpoint{
 				AuthURL:   config.Authorization,
 				TokenURL:  config.TokenEndpoint,

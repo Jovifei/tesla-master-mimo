@@ -131,6 +131,10 @@ ALTER TABLE jourvolt_auth_transactions ADD COLUMN IF NOT EXISTS privacy_version 
 		pool.Close()
 		return nil, err
 	}
+	if err := ensureCommandSchema(ctx, pool); err != nil {
+		pool.Close()
+		return nil, err
+	}
 	return &store{pool: pool}, nil
 }
 
@@ -359,9 +363,14 @@ type vehicleStatus struct {
 	MinutesToFullCharge            *int
 	ChargeRangeAddedRated          *float64
 	ChargeRangeAddedIdeal          *float64
-	ProviderIdentity               string
-	Source                         string
-	FieldSources                   map[string]string
+	// CommandScopesMissing lists which command scopes the user's current
+	// Tesla token lacks (design 2026-11-05 §6 P3). Nil means "not evaluated"
+	// (non-Fleet provider or token unavailable) and the serializer omits the
+	// block; an empty slice means all command scopes are granted.
+	CommandScopesMissing []string
+	ProviderIdentity     string
+	Source               string
+	FieldSources         map[string]string
 }
 
 type mockProvider struct{}
@@ -1000,6 +1009,12 @@ func (a *app) status(w http.ResponseWriter, r *http.Request, userID string, carI
 			"tpms_soft_warning_fl": providerStatus.TPMSSoftWarningFL, "tpms_soft_warning_fr": providerStatus.TPMSSoftWarningFR,
 			"tpms_soft_warning_rl": providerStatus.TPMSSoftWarningRL, "tpms_soft_warning_rr": providerStatus.TPMSSoftWarningRR,
 		},
+	}
+	if providerStatus.CommandScopesMissing != nil {
+		status["command_authorization"] = map[string]any{
+			"ready":          len(providerStatus.CommandScopesMissing) == 0,
+			"missing_scopes": providerStatus.CommandScopesMissing,
+		}
 	}
 	for key, value := range tpmsPressureEvidence(providerStatus) {
 		status["tpms_details"].(map[string]any)[key] = value

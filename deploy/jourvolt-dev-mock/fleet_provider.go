@@ -350,6 +350,15 @@ func (p *fleetProvider) Status(ctx context.Context, userID string, vehicleID int
 	}
 
 	status := mapTeslaVehicleStatus(data, displayName, state)
+	// Best-effort command-scope detection (design §6 P3): parse the granted
+	// scopes out of the user's current access token so the app can prompt a
+	// one-tap incremental authorization before commands are offered. Any
+	// failure leaves the field nil (unknown) rather than blocking status.
+	if accessToken, tokenErr := p.tokens.accessToken(ctx, userID, ""); tokenErr == nil {
+		if granted := parseGrantedScopes(accessToken); granted != nil {
+			status.CommandScopesMissing = missingCommandScopes(granted)
+		}
+	}
 	status.LocationPermissionRequired = locationPermissionRequired
 	providerIdentity, err := p.storedProviderIdentity(ctx, userID, vehicleID)
 	if err != nil {
