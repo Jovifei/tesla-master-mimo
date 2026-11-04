@@ -165,6 +165,16 @@ data class CarStatus(
     val version: String? get() = carVersions?.version
     val updateAvailable: Boolean? get() = carVersions?.updateAvailable
 
+    // Extended Fleet display fields (design 2026-11-05 §4)
+    val valetMode: Boolean? get() = carStatus?.valetMode
+    val speedLimitMode: SpeedLimitMode? get() = carStatus?.speedLimitMode
+    val mediaInfo: MediaInfo? get() = carStatus?.mediaInfo
+    val softwareUpdate: SoftwareUpdate? get() = carVersions?.softwareUpdate
+    val driverTempSetting: Double? get() = climateDetails?.driverTempSetting
+    val passengerTempSetting: Double? get() = climateDetails?.passengerTempSetting
+    val scheduledDepartureTime: String? get() = chargingDetails?.scheduledDepartureTime
+    val minutesToFullCharge: Int? get() = chargingDetails?.minutesToFullCharge
+
     val speed: Double? get() = drivingDetails?.speed
     val shiftState: String? get() = drivingDetails?.shiftState
     val power: Double? get() = drivingDetails?.power
@@ -182,7 +192,34 @@ data class CarStatusDetails(
     @Json(name = "trunk_open") val trunkOpen: Boolean? = null,
     @Json(name = "frunk_open") val frunkOpen: Boolean? = null,
     @Json(name = "is_user_present") val isUserPresent: Boolean? = null,
-    @Json(name = "center_display_state") val centerDisplayState: String? = null
+    @Json(name = "center_display_state") val centerDisplayState: String? = null,
+    // Extended Fleet display fields (design 2026-11-05 §4). Null = not reported.
+    @Json(name = "valet_mode") val valetMode: Boolean? = null,
+    @Json(name = "speed_limit_mode") val speedLimitMode: SpeedLimitMode? = null,
+    @Json(name = "media_info") val mediaInfo: MediaInfo? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class SpeedLimitMode(
+    @Json(name = "active") val active: Boolean? = null,
+    @Json(name = "current_limit_kmh") val currentLimitKmh: Int? = null,
+    @Json(name = "pin_code_required") val pinCodeRequired: Boolean? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class MediaInfo(
+    @Json(name = "media_state") val mediaState: String? = null,
+    @Json(name = "title") val title: String? = null,
+    @Json(name = "artist") val artist: String? = null,
+    @Json(name = "album") val album: String? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class SoftwareUpdate(
+    @Json(name = "status") val status: String? = null,
+    @Json(name = "download_percent") val downloadPercent: Int? = null,
+    @Json(name = "install_percent") val installPercent: Int? = null,
+    @Json(name = "expected_duration_sec") val expectedDurationSec: Int? = null
 )
 
 @JsonClass(generateAdapter = true)
@@ -196,7 +233,8 @@ data class CarGeodata(
 data class CarVersions(
     @Json(name = "version") val version: String? = null,
     @Json(name = "update_available") val updateAvailable: Boolean? = null,
-    @Json(name = "update_version") val updateVersion: String? = null
+    @Json(name = "update_version") val updateVersion: String? = null,
+    @Json(name = "software_update") val softwareUpdate: SoftwareUpdate? = null
 )
 
 @JsonClass(generateAdapter = true)
@@ -213,7 +251,24 @@ data class ClimateDetails(
     @Json(name = "is_climate_on") val isClimateOn: Boolean? = null,
     @Json(name = "inside_temp") val insideTemp: Double? = null,
     @Json(name = "outside_temp") val outsideTemp: Double? = null,
-    @Json(name = "is_preconditioning") val isPreconditioning: Boolean? = null
+    @Json(name = "is_preconditioning") val isPreconditioning: Boolean? = null,
+    // Extended Fleet display fields (design 2026-11-05 §4). Null = not reported.
+    @Json(name = "driver_temp_setting") val driverTempSetting: Double? = null,
+    @Json(name = "passenger_temp_setting") val passengerTempSetting: Double? = null,
+    @Json(name = "fan_status") val fanStatus: Int? = null,
+    @Json(name = "is_front_defroster_on") val isFrontDefrosterOn: Boolean? = null,
+    @Json(name = "is_rear_defroster_on") val isRearDefrosterOn: Boolean? = null,
+    @Json(name = "seat_heater_left") val seatHeaterLeft: Int? = null,
+    @Json(name = "seat_heater_right") val seatHeaterRight: Int? = null,
+    @Json(name = "seat_heater_rear_left") val seatHeaterRearLeft: Int? = null,
+    @Json(name = "seat_heater_rear_center") val seatHeaterRearCenter: Int? = null,
+    @Json(name = "seat_heater_rear_right") val seatHeaterRearRight: Int? = null,
+    @Json(name = "steering_wheel_heater") val steeringWheelHeater: Boolean? = null,
+    @Json(name = "defrost_mode") val defrostMode: Int? = null,
+    @Json(name = "climate_keeper_mode") val climateKeeperMode: String? = null,
+    @Json(name = "cabin_overheat_protection") val cabinOverheatProtection: String? = null,
+    @Json(name = "cabin_overheat_protection_actively_cooling") val cabinOverheatProtectionCooling: Boolean? = null,
+    @Json(name = "side_mirror_heaters") val sideMirrorHeaters: Boolean? = null
 )
 
 @JsonClass(generateAdapter = true)
@@ -239,7 +294,17 @@ data class ChargingDetails(
     @Json(name = "charge_current_request") val chargeCurrentRequest: Double? = null,
     @Json(name = "charge_current_request_max") val chargeCurrentRequestMax: Double? = null,
     @Json(name = "scheduled_charging_start_time") val scheduledChargingStartTime: String? = null,
-    @Json(name = "time_to_full_charge") val timeToFullCharge: Double? = null
+    @Json(name = "time_to_full_charge") val timeToFullCharge: Double? = null,
+    // Extended Fleet display fields (design 2026-11-05 §4). Null = not reported.
+    @Json(name = "conn_charge_cable") val connChargeCable: String? = null,
+    @Json(name = "fast_charger_brand") val fastChargerBrand: String? = null,
+    @Json(name = "fast_charger_type") val fastChargerType: String? = null,
+    @Json(name = "charge_port_latch") val chargePortLatch: String? = null,
+    @Json(name = "battery_heater_on") val batteryHeaterOn: Boolean? = null,
+    @Json(name = "scheduled_departure_time") val scheduledDepartureTime: String? = null,
+    @Json(name = "minutes_to_full_charge") val minutesToFullCharge: Int? = null,
+    @Json(name = "charge_range_added_rated") val chargeRangeAddedRated: Double? = null,
+    @Json(name = "charge_range_added_ideal") val chargeRangeAddedIdeal: Double? = null
 ) {
     /**
      * True only while *actively* DC charging. The TeslaMate API reports

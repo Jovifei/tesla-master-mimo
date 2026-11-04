@@ -208,6 +208,15 @@
     <string name="climate_off">Climate OFF</string>
     <string name="sentry_armed">Sentry ARMED</string>
     <string name="sentry_off">Sentry OFF</string>
+    <string name="media_now_playing">Now playing: %s</string>
+    <string name="software_update_downloading">Downloading update · %d%%</string>
+    <string name="software_update_installing">Installing update · %d%%</string>
+    <string name="software_update_in_progress">Software update in progress</string>
+    <string name="scheduled_charging_start">Scheduled charging at %s</string>
+    <string name="scheduled_departure">Scheduled departure at %s</string>
+    <string name="valet_mode_on">Valet mode is on</string>
+    <string name="speed_limit_on">Speed limit %d km/h</string>
+    <string name="climate_target">Climate target %s°</string>
     <string name="high_soc_warning" formatted="false">High charge level – consider reducing to 80–90% for daily use</string>
     <string name="tire_pressure">Tire Pressure</string>
     <string name="battery_trend">7-Day Battery Trend</string>

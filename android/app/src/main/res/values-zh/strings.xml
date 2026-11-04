@@ -208,6 +208,15 @@
     <string name="climate_off">空调关闭</string>
     <string name="sentry_armed">哨兵已开启</string>
     <string name="sentry_off">哨兵关闭</string>
+    <string name="media_now_playing">正在播放：%s</string>
+    <string name="software_update_downloading">正在下载更新 · %d%%</string>
+    <string name="software_update_installing">正在安装更新 · %d%%</string>
+    <string name="software_update_in_progress">软件更新进行中</string>
+    <string name="scheduled_charging_start">预约充电 %s 开始</string>
+    <string name="scheduled_departure">预约出发 %s</string>
+    <string name="valet_mode_on">代客模式已开启</string>
+    <string name="speed_limit_on">限速 %d km/h</string>
+    <string name="climate_target">空调目标 %s°</string>
     <string name="high_soc_warning" formatted="false">电量过高 – 日常使用建议充至 80–90%</string>
     <string name="tire_pressure">胎压</string>
     <string name="battery_trend">7天电量趋势</string>
