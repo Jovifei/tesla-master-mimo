@@ -98,8 +98,10 @@ fun DashboardScreen(
     onNavigateToTemperatureTrend: (carId: Int, exteriorColor: String?) -> Unit = { _, _ -> },
     onNavigateToTrips: (carId: Int, exteriorColor: String?) -> Unit = { _, _ -> },
     onNavigateToReadiness: (carId: Int) -> Unit = {},
+    onNavigateToTeslaLogin: () -> Unit = {},
     viewModel: DashboardViewModel = hiltViewModel()
 ) {
+    val remoteViewModel: VehicleRemoteViewModel = hiltViewModel()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val refreshRotation = remember { Animatable(0f) }
@@ -644,6 +646,19 @@ fun DashboardScreen(
                 }
             }
         }
+
+        // Fleet expansion sections (design 2026-11-05 §5–§7): vehicle
+        // controls (hidden until the backend reports command scopes
+        // ready), nearby charging (loaded on demand to save Fleet API
+        // quota) and named places.
+        VehicleControlsSection(
+            carId = carId,
+            status = status,
+            onReauthorize = onNavigateToTeslaLogin,
+            viewModel = remoteViewModel
+        )
+        NearbyChargingSection(carId = carId, viewModel = remoteViewModel)
+        VehiclePlacesSection(carId = carId, status = status, viewModel = remoteViewModel)
 
         // Info cards row
         Row(
