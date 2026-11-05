@@ -67,7 +67,7 @@ fun CostScreen(
             )
         }
     ) { padding ->
-        if (uiState.loading) {
+        if (uiState.loading && uiState.totalCost == null && uiState.totalCharges == 0) {
             MateLinkLoadingPlaceholder(modifier = Modifier.padding(padding))
             return@Scaffold
         }

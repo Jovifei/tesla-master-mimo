@@ -63,7 +63,7 @@ fun EfficiencyScreen(
             )
         }
     ) { innerPadding ->
-        if (uiState.isLoading) {
+        if (uiState.isLoading && uiState.avgEfficiencyWhKm == null && uiState.driveCount == 0) {
             MateLinkLoadingPlaceholder(modifier = Modifier.padding(innerPadding))
             return@Scaffold
         }
