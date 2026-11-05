@@ -1,6 +1,6 @@
 import { Button, Image, Text, View } from '@tarojs/components'
 import { useState } from 'react'
-import vehicle from '../../assets/vehicle/model-y.png'
+import vehicle from '../../assets/interaction/vehicle-connection.png'
 import vehicleTop from '../../assets/interaction/vehicle-position.png'
 import { hasVisualRouteEndpoints, VISUAL_WHEEL_NAMES, type ConnectionPhase } from '../../domain/interaction_visuals'
 import { restoreTpmsSnapshot, TPMS_WHEELS, type TpmsSnapshot, type TpmsWheel } from '../../domain/tpms'
