@@ -55,7 +55,7 @@ internal fun DriveSummary.canEnrichPower(proof: VerifiedHistoryReadContext): Boo
 /** Power integrals require full coverage; SOC/capacity and energy deltas require observed endpoints. */
 private suspend fun fullPowerEstimate(detail: DriveDetail) = withContext(Dispatchers.Default) {
     val cleanDetail = if (detail.energyContract?.netEnergy?.quality == "unknown" &&
-        detail.energyContract?.netEnergy?.reason in setOf("no_verified_driving_net_energy", "local_detail_scope_or_window_mismatch"))
+        detail.energyContract?.netEnergy?.reason == "no_verified_driving_net_energy")
         detail.copy(energyContract = null) else detail
     if (cleanDetail.energyContract != null) return@withContext null
     val resolved = cleanDetail.resolveDriveEnergy()

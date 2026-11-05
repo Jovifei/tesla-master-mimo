@@ -198,6 +198,8 @@ internal fun DriveData.historyEnergy(
     model: String? = null,
     trimBadging: String? = null
 ): DriveDetailEnergyPresentation {
+    if (sourceRecordIdentity.conflicted)
+        return presentDriveDetailEnergy(null, null, null, null, null, energyContract?.netEnergy)
     val matching = metrics?.takeIf {
         (it.historySource == null || source == null || it.historySource == source) &&
         parseIsoInstant(startDate) != null && parseIsoInstant(it.startDate) == parseIsoInstant(startDate) &&
@@ -218,7 +220,7 @@ internal fun DriveData.historyEnergy(
         return presentDriveDetailEnergy(null, null, null, null, null, evidence)
     }
     val resolved = DriveEnergyResolver.resolve(
-        apiEnergyKwh = energyConsumedNet?.takeIf { it.isFinite() && (legacyScalarEnergyAllowed(source) || source == "telemetry_mqtt" || source == "fleet_api") },
+        apiEnergyKwh = energyConsumedNet?.takeIf { it.isFinite() && (legacyScalarEnergyAllowed(source)) },
         distanceKm = distanceKm,
         samples = emptyList(),
         durationSeconds = durationMin?.toLong()?.times(60),
