@@ -67,6 +67,7 @@ import com.matelink.ui.components.TelemetryPanel
 import com.matelink.ui.theme.StatusWarning
 import com.matelink.ui.theme.telemetryPalette
 import com.matelink.util.formatDuration
+import com.matelink.util.formatParkedAddress
 import com.matelink.util.parseIsoInstant
 import java.time.Duration
 import java.time.ZoneId
@@ -80,6 +81,7 @@ fun ParkedDetailScreen(
     newerDriveId: Int,
     onNavigateBack: () -> Unit,
     onNavigateToChargeDetail: (Int) -> Unit = {},
+    initialLocation: String? = null,
     viewModel: ParkedDetailViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsState()
@@ -123,6 +125,7 @@ fun ParkedDetailScreen(
                     data = state.data!!,
                     chargeBreakdown = state.chargeBreakdown,
                     modifier = Modifier,
+                    initialLocation = initialLocation,
                     onNavigateToChargeDetail = onNavigateToChargeDetail
                 )
             }
@@ -152,6 +155,7 @@ private fun ParkedDetailContent(
     data: ParkedDetailData,
     chargeBreakdown: ParkedChargeBreakdown?,
     modifier: Modifier = Modifier,
+    initialLocation: String? = null,
     onNavigateToChargeDetail: (Int) -> Unit
 ) {
     val unavailable = stringResource(R.string.not_available)
@@ -225,8 +229,9 @@ private fun ParkedDetailContent(
                             modifier = Modifier.size(20.dp)
                         )
                     }
+                    val displayAddress = data.address?.takeIf(String::isNotBlank) ?: initialLocation
                     Text(
-                        text = parkedAddressLabel(data.address) ?: stringResource(R.string.unknown_location),
+                        text = formatParkedAddress(parkedAddressLabel(displayAddress) ?: displayAddress, stringResource(R.string.unknown_location)),
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface,
@@ -408,21 +413,30 @@ private fun ParkedDetailContent(
                     Text(stringResource(R.string.parked_cloud_section_title),
                         style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 }
+                val displayEnergy = telemetry.energyKwh?.let { "%.2f".format(it) }
+                    ?: batteryDeltaVal?.let { "≈%.2f".format(kotlin.math.abs(it) * 0.60) }
+                val displayRate = telemetry.rate?.let { "%.2f".format(it) }
+                    ?: if (batteryDeltaVal != null && durationMin != null && durationMin > 0L) {
+                        val hours = durationMin.toDouble() / 60.0
+                        "≈%.2f".format((kotlin.math.abs(batteryDeltaVal) * 0.60) / hours)
+                    } else null
                 ParkedTelemetryRow(Icons.Default.Eco, stringResource(R.string.parked_estimated_energy),
-                    telemetry.energyKwh?.let { "%.2f".format(it) }, "kWh", Color(0xFF0D9488))
+                    displayEnergy, "kWh", Color(0xFF0D9488))
                 ParkedTelemetryRow(Icons.Default.Power, stringResource(when {
                     telemetry.rate != null && !telemetry.rateFromTotal -> R.string.parked_power_sample_average
                     telemetry.rate != null && telemetry.rate > 0.0 && !hasRecordedCharge ->
                         R.string.parked_drain_energy_per_hour
                     else -> R.string.parked_energy_per_hour
-                }), telemetry.rate?.let { "%.2f".format(it) },
-                    if (telemetry.rateFromTotal) stringResource(R.string.parked_energy_per_hour_unit) else "kW",
+                }), displayRate,
+                    if (telemetry.rateFromTotal || telemetry.rate == null) stringResource(R.string.parked_energy_per_hour_unit) else "kW",
                     Color(0xFF0284C7))
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                val inside = telemetry.insideTemp ?: data.insideTempAverage
+                val outside = telemetry.outsideTemp ?: data.outsideTempAverage
                 ParkedTelemetryRow(Icons.Default.Thermostat, stringResource(R.string.parked_inside_temp),
-                    telemetry.insideTemp?.let { "%.1f".format(it) }, "°C", Color(0xFF0D9488))
+                    inside?.let { "%.1f".format(it) }, "°C", Color(0xFF0D9488))
                 ParkedTelemetryRow(Icons.Default.Thermostat, stringResource(R.string.parked_outside_temp),
-                    telemetry.outsideTemp?.let { "%.1f".format(it) }, "°C", Color(0xFF0284C7))
+                    outside?.let { "%.1f".format(it) }, "°C", Color(0xFF0284C7))
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 ParkedTelemetryRow(Icons.Default.Schedule, stringResource(R.string.parked_coverage),
                     telemetry.coveragePercent?.let { "%.0f".format(it) }, "%", Color(0xFF64748B))

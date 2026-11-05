@@ -380,20 +380,40 @@ internal fun buildLocalParkedDetail(
     val observedNewer = newer.toAnalysisDriveData()
     val startBattery = observedOlder.endBatteryLevel?.takeIf { it in 0..100 }
     val endBattery = observedNewer.startBatteryLevel?.takeIf { it in 0..100 }
+    val olderAddr = observedOlder.endAddress?.takeIf(String::isNotBlank)
+    val newerAddr = observedNewer.startAddress?.takeIf(String::isNotBlank)
+    val resolvedAddress = (olderAddr ?: newerAddr)?.let { it.toChineseDisplayAddress() ?: it }
+        ?: parkedAddressLabel(olderAddr, newerAddr)
+    val oIn = observedOlder.insideTempAvg
+    val nIn = observedNewer.insideTempAvg
+    val insideTemp = when {
+        oIn != null && nIn != null -> (oIn + nIn) / 2.0
+        oIn != null -> oIn
+        nIn != null -> nIn
+        else -> null
+    }
+    val oOut = observedOlder.outsideTempAvg
+    val nOut = observedNewer.outsideTempAvg
+    val outsideTemp = when {
+        oOut != null && nOut != null -> (oOut + nOut) / 2.0
+        oOut != null -> oOut
+        nOut != null -> nOut
+        else -> null
+    }
     return ParkedDetailData(
         olderDriveId = olderDriveId,
         newerDriveId = newerDriveId,
         startDate = older.endDate,
         endDate = newer.startDate,
-        address = observedOlder.endAddress?.toChineseDisplayAddress() ?: observedOlder.endAddress,
+        address = resolvedAddress,
         startBatteryLevel = startBattery,
         endBatteryLevel = endBattery,
         batteryDelta = if (startBattery != null && endBattery != null) endBattery - startBattery else null,
         energyKwh = null,
         averagePowerKw = null,
         peakPowerKw = null,
-        insideTempAverage = null,
-        outsideTempAverage = null,
+        insideTempAverage = insideTemp,
+        outsideTempAverage = outsideTemp,
         sampleCount = 0,
         coverageSeconds = 0,
         coverageRatio = 0.0,

@@ -92,6 +92,7 @@ import com.matelink.ui.components.TelemetrySectionHeader
 import com.matelink.ui.screens.trips.displayName
 import com.matelink.ui.theme.telemetryPalette
 import com.matelink.util.formatDuration
+import com.matelink.util.formatRouteAddresses
 import com.matelink.util.formatMonthDayTime
 import com.matelink.util.formatTime
 import com.matelink.util.parseIsoDateTime
@@ -440,11 +441,10 @@ private fun UnifiedTripCard(
             }
 
             val unknownLocation = stringResource(R.string.unknown_location)
-            val defaultStart = detail.startAddress?.takeIf { it.isNotBlank() && !it.contains("°N") && it != "30.27°N, 120.15°E" }?.toChineseDisplayAddress()
-            val defaultEnd = detail.endAddress?.takeIf { it.isNotBlank() && !it.contains("°N") && it != "30.27°N, 120.15°E" }?.toChineseDisplayAddress()
+            val (defaultStart, defaultEnd) = formatRouteAddresses(detail.startAddress, detail.endAddress, unknownLocation)
             RouteIndicator(
-                start = defaultStart ?: unknownLocation,
-                end = defaultEnd ?: unknownLocation
+                start = defaultStart,
+                end = defaultEnd
             )
 
             HorizontalDivider(
