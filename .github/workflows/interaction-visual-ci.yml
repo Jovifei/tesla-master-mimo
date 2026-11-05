@@ -143,8 +143,7 @@ jobs:
           (cd deploy/jourvolt-dev-mock && go vet ./... && go mod verify && go build ./...) 2>&1 | tee evidence/go-build.log
           python3 -m unittest discover -s deploy/teslamate-home-docker/qualification -p 'test_*.py' -v 2>&1 | tee evidence/upstream-qualification.log
           (cd deploy/teslamate-home-docker/adapter && go test ./... -count=1) 2>&1 | tee evidence/adapter.log
-          (cd deploy/teslamate-home-docker/archive-bridge && go test ./... -count=1) 2>&1 | tee evidence/bridge.log
-          (cd deploy/teslamate-home-docker/archive-bridge && go test -race -v -count=1 -run '^TestExistingBridge.*Pending503' ./cmd/battery-trend) 2>&1 | tee evidence/bridge-race.log
+          bash tools/interaction-stage/bridge-isolated-ci.sh
           (cd deploy/jourvolt-dev-mock && JOURVOLT_RUN_LEGACY_MEMORY_BENCH=0 go test -race -v -count=1 -run 'Test(Independent|Energy|BatteryTrend|BoundedHistory|ChargeEnergy|Parked|CompactTelemetry|NativeShadow|History(Sample|Energy|Summary|MetadataMemory|ReadCancellation|MemoryHTTP|QueriesPostgresScope|MetadataSQL|ReadBudget|ResourceAdmission|HeavyBudget|Import|Archive|DecodeAdmission)|ArchiveImport|Telemetry(PostgresCompactBootstrap|PostgresCompactAdmissionReference|History|PostgresNativeIdentity|PostgresIdleDriveFinalization|PostgresNativeShadow))' ./...) 2>&1 | tee evidence/go-race.log
           python3 - <<'PY'
           import json
