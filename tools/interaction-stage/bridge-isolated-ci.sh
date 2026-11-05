@@ -6,7 +6,16 @@ cd "$ROOT"
 mkdir -p evidence
 TMP=$(mktemp -d)
 PG_NAME="matelink-visual-pg-${GITHUB_RUN_ID:-$$}-${GITHUB_RUN_ATTEMPT:-1}"
-cleanup() { docker rm -f "$PG_NAME" >/dev/null 2>&1 || true; rm -rf "$TMP"; }
+NET_NAME="$PG_NAME-net"
+API_NAME="$PG_NAME-api"
+ADAPTER_NAME="$PG_NAME-adapter"
+ADAPTER_IMAGE="matelink-visual-adapter:${GITHUB_RUN_ID:-$$}-${GITHUB_RUN_ATTEMPT:-1}"
+cleanup() {
+  docker rm -f "$ADAPTER_NAME" "$API_NAME" "$PG_NAME" >/dev/null 2>&1 || true
+  docker network rm "$NET_NAME" >/dev/null 2>&1 || true
+  docker image rm "$ADAPTER_IMAGE" >/dev/null 2>&1 || true
+  rm -rf "$TMP"
+}
 trap cleanup EXIT
 mkdir -p "$TMP/tests" "$TMP/original"
 printf '{"synthetic":true}\n' > "$TMP/original/state.json"
@@ -24,15 +33,21 @@ for index in "${!PACKAGES[@]}"; do
 done
 test -n "${BATTERY_TEST:-}"
 (cd "$ADAPTER" && CGO_ENABLED=0 go test -c -o "$TMP/tests/adapter.test" ./cmd/adapter)
+(cd "$ADAPTER" && CGO_ENABLED=0 go build -o "$TMP/matelink-adapter" ./cmd/adapter)
+sha256sum "$TMP/matelink-adapter" > evidence/bridge-adapter-binary.sha256
 IMAGE=debian:bookworm-slim
 PG_IMAGE=postgres@sha256:22c89fe0d0f507606260237fd55e51f6137f58b2d5bcf6152242b96d9fe8f9a4
 MIGRATION_IMAGE=teslamate/teslamate:4.3.0@sha256:516fc9f0a14369f541b1a70ff2f65dd9b57c2e01c1f533b6d43b375445404955
+API_IMAGE=tobiasehlert/teslamateapi:1.25.0@sha256:6f7eea55c6475c2bc4639ee582dfec01d5cf618d30b0c7444020274a4786704e
 docker pull "$IMAGE"
 docker pull "$PG_IMAGE"
 docker pull "$MIGRATION_IMAGE"
-docker image inspect "$IMAGE" "$PG_IMAGE" "$MIGRATION_IMAGE" --format '{{json .RepoDigests}}' > evidence/bridge-container-images.json
-# No published ports or external network. Test containers share only this synthetic loopback.
-docker run -d --rm --name "$PG_NAME" --network none --tmpfs /var/lib/postgresql:rw \
+docker pull "$API_IMAGE"
+docker image inspect "$IMAGE" "$PG_IMAGE" "$MIGRATION_IMAGE" "$API_IMAGE" --format '{{json .RepoDigests}}' > evidence/bridge-container-images.json
+# Internal network has no external connectivity or published host ports.
+# Bridge tests share the PG namespace so guarded TEMP-table tests still use loopback.
+docker network create --internal "$NET_NAME" > evidence/bridge-internal-network.txt
+docker run -d --rm --name "$PG_NAME" --network "$NET_NAME" --network-alias database --tmpfs /var/lib/postgresql:rw \
   -e POSTGRES_USER=compat_only -e POSTGRES_PASSWORD=isolated-only -e POSTGRES_DB=compat430 \
   "$PG_IMAGE" -p 55432 -c fsync=off > evidence/bridge-postgres-container.txt
 READY=0
@@ -52,6 +67,40 @@ docker exec -i "$PG_NAME" psql -v ON_ERROR_STOP=1 -p 55432 -U compat_only -d com
 CREATE ROLE bt_test LOGIN PASSWORD 'isolated-only';
 CREATE DATABASE matelink_battery_trend_test OWNER bt_test;
 SQL
+# Execute the already-compiled exact-source adapter as a real disposable image.
+cat > "$TMP/Dockerfile" <<DOCKERFILE
+FROM $IMAGE
+COPY matelink-adapter /usr/local/bin/matelink-adapter
+USER 10001:10001
+ENTRYPOINT ["/usr/local/bin/matelink-adapter"]
+DOCKERFILE
+docker build --network none --label "org.opencontainers.image.revision=$(git rev-parse HEAD)" \
+  -t "$ADAPTER_IMAGE" "$TMP" 2>&1 | tee evidence/bridge-adapter-image-build.log
+docker run -d --rm --name "$API_NAME" --network "$NET_NAME" --network-alias api \
+  -e DATABASE_USER=compat_only -e DATABASE_PASS=isolated-only -e DATABASE_NAME=compat430 \
+  -e DATABASE_HOST=database -e DATABASE_PORT=55432 -e ENCRYPTION_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= \
+  -e TZ=UTC -e MQTT_HOST=synthetic.invalid -e API_TOKEN= "$API_IMAGE" > evidence/bridge-api-container.txt
+docker run -d --rm --name "$ADAPTER_NAME" --network "$NET_NAME" --network-alias adapter \
+  --read-only --cap-drop ALL --security-opt no-new-privileges --tmpfs /tmp:rw,nosuid,nodev \
+  -e 'DATABASE_URL=postgres://compat_only:isolated-only@database:55432/compat430?sslmode=disable' \
+  -e UPSTREAM_URL=http://api:8080 -e API_TOKEN=synthetic-valid-secret -e MQTT_ENABLED=false -e TZ=UTC \
+  "$ADAPTER_IMAGE" > evidence/bridge-adapter-container.txt
+wait_http() {
+  local host=$1 route=$2 expected=$3 ready=0
+  for attempt in $(seq 1 60); do
+    if timeout 3s docker exec "$PG_NAME" bash -c \
+      'exec 3<>/dev/tcp/"$1"/8080; printf "GET %s HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n" "$2" "$1" >&3; head -n 1 <&3' \
+      probe "$host" "$route" 2>/dev/null | grep -q " $expected "; then ready=1; break; fi
+    sleep 1
+  done
+  if [[ "$ready" != 1 ]]; then
+    docker logs "$API_NAME" > evidence/bridge-api-startup.log 2>&1 || true
+    docker logs "$ADAPTER_NAME" > evidence/bridge-adapter-startup.log 2>&1 || true
+    echo "Synthetic endpoint $host was not ready" >&2; return 1
+  fi
+}
+wait_http api /api/v1/cars 200
+wait_http adapter /api/matelink/v1/capabilities 401
 run_test() {
   local binary=$1 directory=$2
   docker run --rm --network "container:$PG_NAME" --read-only --cap-drop ALL --security-opt no-new-privileges \
@@ -62,6 +111,8 @@ run_test() {
     -e MATELINK_SYNTHETIC_ORIGINAL=/original/state.json \
     -e 'MATELINK_COMPAT_DATABASE_URL=postgres://compat_only:isolated-only@127.0.0.1:55432/compat430?sslmode=disable' \
     -e 'MATELINK_COMPAT_UNSUPPORTED_DATABASE_URL=postgres://compat_only:isolated-only@127.0.0.1:55432/compat430?sslmode=disable&search_path=compat_unsupported' \
+    -e MATELINK_COMPAT_UPSTREAM_URL=http://api:8080 \
+    -e MATELINK_COMPAT_RUNNING_ADAPTER_URL=http://adapter:8080 \
     -e 'MATELINK_BATTERY_TREND_TEST_DSN=postgres://bt_test:isolated-only@127.0.0.1:55432/matelink_battery_trend_test?sslmode=disable' \
     "$IMAGE" "/tests/$binary" -test.v 2>&1 | tee -a evidence/bridge-container.log
 }
@@ -80,6 +131,8 @@ docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-
 test "$BEFORE" = "$(sha256sum "$TMP/original/state.json" | cut -d' ' -f1)"
 grep -q -- '--- PASS: TestSyntheticContainerMountIsolation' evidence/bridge-container.log
 grep -q -- '--- PASS: TestSyntheticContainerMountIsolation' evidence/bridge-writable-alias.log
+grep -q -- '--- PASS: TestCompatibilityRealAPI1250ProxyV430Schema' evidence/bridge-container.log
+grep -q -- '--- PASS: TestCompatibilityRunningImageEndpoints' evidence/bridge-container.log
 grep -q -- '--- PASS: TestPostgresReadsScopedBoundaryEvidenceAndBlocksOpenLowerID' evidence/bridge-container.log
 test "$(grep -c -- '--- PASS: TestCompatibilityRealPG18MigratedV430 (' evidence/bridge-container.log)" -eq 2
 if grep -E -- '--- (FAIL|SKIP):' evidence/bridge-container.log evidence/bridge-writable-alias.log; then exit 1; fi

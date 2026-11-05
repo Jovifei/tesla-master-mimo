@@ -2,7 +2,7 @@
 
 ## Approved scope
 
-App baseline `984196d8c1a6deaff124eaa8dd6c45f55c40e700`; Mini baseline `a64c9e5344f1f4812bb1ab88c1f8957a65781db1`.
+App baseline `984196d8c1a6deaff124eaa8dd6c45f55c40e700`; Mini actual branch baseline `55d49b921f541c5c1d793c88e64dfaac51ee32b2` (the initial design review used its earlier `a64c9e5` ancestor).
 App branch `codex/app-interaction-visuals-20261104`; Mini branch `codex/miniprogram-interaction-visuals-20261104`.
 Preserve card ordering, numeric contracts, navigation, public vehicle art, existing brand loading logo and all persistent data.
 
