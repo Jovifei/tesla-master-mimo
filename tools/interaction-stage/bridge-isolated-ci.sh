@@ -9,12 +9,26 @@ PG_NAME="matelink-visual-pg-${GITHUB_RUN_ID:-$$}-${GITHUB_RUN_ATTEMPT:-1}"
 NET_NAME="$PG_NAME-net"
 API_NAME="$PG_NAME-api"
 ADAPTER_NAME="$PG_NAME-adapter"
+MQTT_NAME="$PG_NAME-mqtt"
 ADAPTER_IMAGE="matelink-visual-adapter:${GITHUB_RUN_ID:-$$}-${GITHUB_RUN_ATTEMPT:-1}"
+capture_services() {
+  # Preserve only job-owned, synthetic service diagnostics, never container env.
+  local name
+  for name in "$API_NAME" "$ADAPTER_NAME" "$MQTT_NAME" "$PG_NAME"; do
+    if docker inspect "$name" >/dev/null 2>&1; then
+      docker logs "$name" > "evidence/${name##"$PG_NAME"}-service.log" 2>&1 || true
+      docker inspect --format '{{json .State}}' "$name" > "evidence/${name##"$PG_NAME"}-state.json" || true
+    fi
+  done
+}
 cleanup() {
-  docker rm -f "$ADAPTER_NAME" "$API_NAME" "$PG_NAME" >/dev/null 2>&1 || true
+  local result=$?
+  capture_services
+  docker rm -f "$ADAPTER_NAME" "$API_NAME" "$MQTT_NAME" "$PG_NAME" >/dev/null 2>&1 || true
   docker network rm "$NET_NAME" >/dev/null 2>&1 || true
   docker image rm "$ADAPTER_IMAGE" >/dev/null 2>&1 || true
   rm -rf "$TMP"
+  return "$result"
 }
 trap cleanup EXIT
 mkdir -p "$TMP/tests" "$TMP/original"
@@ -39,20 +53,36 @@ IMAGE=debian:bookworm-slim
 PG_IMAGE=postgres@sha256:22c89fe0d0f507606260237fd55e51f6137f58b2d5bcf6152242b96d9fe8f9a4
 MIGRATION_IMAGE=teslamate/teslamate:4.3.0@sha256:516fc9f0a14369f541b1a70ff2f65dd9b57c2e01c1f533b6d43b375445404955
 API_IMAGE=tobiasehlert/teslamateapi:1.25.0@sha256:6f7eea55c6475c2bc4639ee582dfec01d5cf618d30b0c7444020274a4786704e
+# Match the existing project's real MQTT dependency, but only inside this
+# disposable internal network. Record the resolved immutable image ID below.
+MQTT_IMAGE=eclipse-mosquitto:2
+docker pull "$MQTT_IMAGE"
 docker pull "$IMAGE"
 docker pull "$PG_IMAGE"
 docker pull "$MIGRATION_IMAGE"
 docker pull "$API_IMAGE"
-docker image inspect "$IMAGE" "$PG_IMAGE" "$MIGRATION_IMAGE" "$API_IMAGE" --format '{{json .RepoDigests}}' > evidence/bridge-container-images.json
+docker image inspect "$IMAGE" "$PG_IMAGE" "$MIGRATION_IMAGE" "$API_IMAGE" "$MQTT_IMAGE" --format '{{json .RepoDigests}}' > evidence/bridge-container-images.json
 # Internal network has no external connectivity or published host ports.
 # Bridge tests share the PG namespace so guarded TEMP-table tests still use loopback.
 docker network create --internal "$NET_NAME" > evidence/bridge-internal-network.txt
-docker run -d --rm --name "$PG_NAME" --network "$NET_NAME" --network-alias database --tmpfs /var/lib/postgresql:rw \
+docker run -d --name "$PG_NAME" --network "$NET_NAME" --network-alias database --tmpfs /var/lib/postgresql:rw \
   -e POSTGRES_USER=compat_only -e POSTGRES_PASSWORD=isolated-only -e POSTGRES_DB=compat430 \
   "$PG_IMAGE" -p 55432 -c fsync=off > evidence/bridge-postgres-container.txt
 READY=0
 for attempt in $(seq 1 60); do
   if docker exec "$PG_NAME" pg_isready -p 55432 -U compat_only -d compat430; then READY=1; break; fi
+  sleep 1
+done
+test "$READY" = 1
+# The real API subscribes to MQTT during startup. A deliberately unresolvable
+# host is not a valid fixture dependency; start a real isolated broker instead.
+docker run -d --name "$MQTT_NAME" --network "$NET_NAME" --network-alias mqtt \
+  --read-only --cap-drop ALL --security-opt no-new-privileges --user 1883:1883 \
+  --tmpfs /mosquitto/data:rw,nosuid,nodev,uid=1883,gid=1883 \
+  "$MQTT_IMAGE" mosquitto -c /mosquitto-no-auth.conf > evidence/bridge-mqtt-container.txt
+READY=0
+for attempt in $(seq 1 30); do
+  if timeout 2s docker exec "$PG_NAME" bash -c 'exec 3<>/dev/tcp/mqtt/1883' 2>/dev/null; then READY=1; break; fi
   sleep 1
 done
 test "$READY" = 1
@@ -76,26 +106,30 @@ ENTRYPOINT ["/usr/local/bin/matelink-adapter"]
 DOCKERFILE
 docker build --network none --label "org.opencontainers.image.revision=$(git rev-parse HEAD)" \
   -t "$ADAPTER_IMAGE" "$TMP" 2>&1 | tee evidence/bridge-adapter-image-build.log
-docker run -d --rm --name "$API_NAME" --network "$NET_NAME" --network-alias api \
+docker run -d --name "$API_NAME" --network "$NET_NAME" --network-alias api \
   -e DATABASE_USER=compat_only -e DATABASE_PASS=isolated-only -e DATABASE_NAME=compat430 \
   -e DATABASE_HOST=database -e DATABASE_PORT=55432 -e ENCRYPTION_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= \
-  -e TZ=UTC -e MQTT_HOST=synthetic.invalid -e API_TOKEN= "$API_IMAGE" > evidence/bridge-api-container.txt
-docker run -d --rm --name "$ADAPTER_NAME" --network "$NET_NAME" --network-alias adapter \
+  -e TZ=UTC -e MQTT_HOST=mqtt -e MQTT_PORT=1883 -e API_TOKEN= "$API_IMAGE" > evidence/bridge-api-container.txt
+docker run -d --name "$ADAPTER_NAME" --network "$NET_NAME" --network-alias adapter \
   --read-only --cap-drop ALL --security-opt no-new-privileges --tmpfs /tmp:rw,nosuid,nodev \
   -e 'DATABASE_URL=postgres://compat_only:isolated-only@database:55432/compat430?sslmode=disable' \
   -e UPSTREAM_URL=http://api:8080 -e API_TOKEN=synthetic-valid-secret -e MQTT_ENABLED=false -e TZ=UTC \
   "$ADAPTER_IMAGE" > evidence/bridge-adapter-container.txt
 wait_http() {
   local host=$1 route=$2 expected=$3 ready=0
+  local container="$API_NAME"
+  if [[ "$host" == adapter ]]; then container="$ADAPTER_NAME"; fi
   for attempt in $(seq 1 60); do
+    # Fail promptly with retained logs if a dependency exited; never turn it
+    # into a skip or a mocked successful HTTP response.
+    if [[ "$(docker inspect --format '{{.State.Running}}' "$container")" != true ]]; then break; fi
     if timeout 3s docker exec "$PG_NAME" bash -c \
       'exec 3<>/dev/tcp/"$1"/8080; printf "GET %s HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n" "$2" "$1" >&3; head -n 1 <&3' \
       probe "$host" "$route" 2>/dev/null | grep -q " $expected "; then ready=1; break; fi
     sleep 1
   done
   if [[ "$ready" != 1 ]]; then
-    docker logs "$API_NAME" > evidence/bridge-api-startup.log 2>&1 || true
-    docker logs "$ADAPTER_NAME" > evidence/bridge-adapter-startup.log 2>&1 || true
+    capture_services
     echo "Synthetic endpoint $host was not ready" >&2; return 1
   fi
 }
