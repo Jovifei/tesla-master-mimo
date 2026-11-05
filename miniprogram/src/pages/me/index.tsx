@@ -9,6 +9,8 @@ import { MOCK_FIXTURE_ENABLED } from '../../services/mock_fixture'
 import { getAppNavGeometry } from '../../services/nav_geometry'
 import { CONSENT_STORAGE_KEY, readStoredConsent, writeStoredConsent } from '../../domain/legal'
 import LoadingIndicator from '../../components/LoadingIndicator'
+import { ConnectionVisual } from '../../components/interaction/InteractionVisuals'
+import { connectionVisualPhase } from '../../domain/interaction_visuals'
 import { useSessionRecoveryReload } from '../../services/use_session_recovery'
 
 const TERMS_VERSION = JOURVOLT_TERMS_VERSION
@@ -416,6 +418,7 @@ export default function MePage() {
           </View>
           <Text className={`state-pill ${session ? 'state-pill-ready' : ''}`}>{session ? '会话已建立' : '尚未登录'}</Text>
         </View>
+        <ConnectionVisual kind="tesla" active={pageVisible.current} phase={connectionVisualPhase({ pending: loading || restoring, verified: Boolean(session), actionRequired: authorizationPending, failed: Boolean(error) })} />
         <Text className="muted">使用特斯拉账号登录，授权在 Tesla 官方页面完成。与 App 使用同一特斯拉账号，可查看该账号已有的车辆和历史数据。</Text>
       </View>
 
@@ -452,6 +455,7 @@ export default function MePage() {
           <Button className="button" loading={loading} disabled={loading || !termsAccepted || !privacyAccepted} onClick={startTeslaAuthorization}>重新授权 Tesla</Button>
           <Button className="button button-secondary" disabled={loading || authorizationPending || !termsAccepted || !privacyAccepted} onClick={startTeslaAuthorization}>切换 Tesla 账号</Button>
           {!MOCK_FIXTURE_ENABLED ? <>
+            <ConnectionVisual kind="wechat" active={pageVisible.current} phase={connectionVisualPhase({ pending: loading || restoring, verified: wechatBound === true, actionRequired: wechatBound === false, failed: Boolean(error) || wechatBound === null && !loading })} />
             <Text className="muted">{wechatBound === null ? '微信绑定状态暂未确认' : wechatBound ? '此账号已绑定微信' : '此账号尚未绑定微信'}{recoveryEnabled ? '，本机已启用快捷进入。' : '。'}</Text>
             <Button className="button button-secondary" disabled={loading || restoring || authorizationPending} onClick={() => { void bindWechat() }}>{wechatBound ? '启用当前微信快捷进入' : '绑定当前微信'}</Button>
             {wechatBound ? <Button className="button button-secondary" disabled={loading || restoring || authorizationPending} onClick={() => { void unbindWechat() }}>解绑微信</Button> : null}

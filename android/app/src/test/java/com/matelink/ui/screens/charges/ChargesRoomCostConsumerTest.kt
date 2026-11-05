@@ -87,8 +87,11 @@ class ChargesRoomCostConsumerTest {
             startDate = start, endDate = end, chargeEnergyAdded = 2.0,
             source = "teslamate_archive", sourceInstanceId = "archive-A",
             qualityState = "observed", qualityReason = "api").toSyncSummary(localId)))
+        // Distinct real sessions need distinct windows: same-window receipts are
+        // intentionally deduplicated by UnifiedHistoryRepository. Do not race its
+        // final projection against an earlier unmerged Room emission.
         f.db.chargeSummaryDao().upsert(requireNotNull(ChargeData(65,
-            startDate = start, endDate = end, chargeEnergyAdded = 8.0,
+            startDate = "2026-10-20T12:00:00Z", endDate = "2026-10-20T13:00:00Z", chargeEnergyAdded = 8.0,
             cost = 9.0, currencyCode = "USD",
             source = "teslamate_archive", sourceInstanceId = "archive-A",
             qualityState = "observed", qualityReason = "api").toSyncSummary(localId)))

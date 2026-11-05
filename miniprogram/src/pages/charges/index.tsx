@@ -16,6 +16,7 @@ import { readAppSession } from '../../services/session'
 import { useSessionRecoveryReload } from '../../services/use_session_recovery'
 import { historyCacheKey, readHistoryCache, writeHistoryCache } from '../../services/history_cache'
 import LoadingIndicator from '../../components/LoadingIndicator'
+import { EmptyHistoryVisual } from '../../components/interaction/InteractionVisuals'
 import HistoryIntervalSummary from '../../components/HistoryIntervalSummary'
 import HistoryDateChips from '../../components/HistoryDateChips'
 import { inspectForegroundEvents, observeForegroundEvents, type ForegroundNotice } from '../../services/foreground_events'
@@ -706,7 +707,7 @@ export default function ChargesPage() {
       {!readAppSession(Taro) && loading ? <LoadingIndicator label="正在恢复会话…" /> : !readAppSession(Taro) ? (
         <View className="card empty-state"><VisualIcon name="account" /><Text className="section-title">等待特斯拉账号登录</Text><Text className="muted">请先在“更多”中登录特斯拉账号。</Text></View>
       ) : trustedItems.length === 0 && !loading ? (
-        <View className="card empty-state"><VisualIcon name="energy" /><Text className="section-title">暂无可展示的充电记录</Text><Text className="muted">{items.some(item => !isHistoryQuarantined(item)) && !showShortCharges ? '当前记录均为短充；可选择“显示短充”查看。' : '当前没有可展示的充电记录，空响应不会生成示例数据。'}</Text>
+        <View className="card empty-state"><EmptyHistoryVisual kind="charge" failed={Boolean(error)} /><Text className="section-title">暂无可展示的充电记录</Text><Text className="muted">{items.some(item => !isHistoryQuarantined(item)) && !showShortCharges ? '当前记录均为短充；可选择“显示短充”查看。' : '当前没有可展示的充电记录，空响应不会生成示例数据。'}</Text>
           {!offline && meta?.hasMore ? <Button className="button" loading={loadingMore} onClick={loadMore}>{copy('common.loadMore')}</Button> : null}
         </View>
       ) : (

@@ -4,7 +4,7 @@ import { beforeEach, expect, it, vi } from 'vitest'
 import type { TpmsPoint } from '../domain/tpms'
 import type { TpmsHistory } from '../services/tpms_cache'
 const canvas = vi.hoisted(() => ({ draws: [] as unknown[][][] }))
-vi.mock('@tarojs/components', () => ({ Text: 'text', View: 'view', Button: 'button', Canvas: 'canvas' }))
+vi.mock('@tarojs/components', () => ({ Text: 'text', View: 'view', Button: 'button', Canvas: 'canvas', Image: 'image' }))
 vi.mock('@tarojs/taro', () => ({ default: {
   createSelectorQuery: () => ({ select: () => ({ boundingClientRect: (callback: (rect: unknown) => void) => ({ exec: () => callback({ width: 375, height: 200 }) }) }) }),
   createCanvasContext: () => {

@@ -1,0 +1,95 @@
+name: Mini interaction visual final verification
+on:
+  push:
+    branches: [codex/miniprogram-interaction-visuals-20261104]
+permissions:
+  contents: read
+concurrency:
+  group: mini-interaction-final-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  actual-consumers:
+    if: github.repository == 'Jovifei/tesla-master-mimo'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: |
+            miniprogram/package-lock.json
+            miniprogram/test-tooling/package-lock.json
+      - name: Record exact source and verify retained source contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p visual-final-evidence
+          git rev-parse HEAD HEAD^{tree} HEAD^ > visual-final-evidence/source.txt
+          git merge-base --is-ancestor 55d49b921f541c5c1d793c88e64dfaac51ee32b2 HEAD
+          git diff --check 55d49b921f541c5c1d793c88e64dfaac51ee32b2 HEAD
+          python3 tools/interaction-stage/verify-mini-contract.py | tee visual-final-evidence/contract.txt
+          git archive --format=zip --output=visual-final-evidence/source.zip HEAD
+          git diff --binary 55d49b921f541c5c1d793c88e64dfaac51ee32b2 HEAD > visual-final-evidence/source.patch
+      - name: Locked tooling, strict types, full tests and production WeChat bundle
+        working-directory: miniprogram
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence/timezones
+          npm ci --ignore-scripts --no-fund
+          npm ci --prefix test-tooling --ignore-scripts --no-fund
+          npm run typecheck 2>&1 | tee evidence/typecheck.log
+          npm test -- --reporter=default --reporter=junit --outputFile.junit=evidence/tests.xml 2>&1 | tee evidence/tests.log
+          npm run build:weapp 2>&1 | tee evidence/build.log
+          node -e "const p=require('./dist/project.config.json'); if(p.setting.urlCheck !== true) throw Error('domain check disabled')"
+          for zone in UTC Asia/Shanghai Asia/Tokyo America/Los_Angeles; do
+            name="${zone//\//_}"
+            TZ="$zone" node test-tooling/node_modules/vitest/vitest.mjs run --config test-tooling/vitest.config.mts \
+              src/domain/history_query.test.ts src/domain/partial_charge_cost.test.ts \
+              src/pages/wechat_startup.test.tsx src/pages/charge_cost_consistency.test.tsx \
+              src/services/cache_budget.test.ts src/domain/parked_interaction.test.ts \
+              src/components/interaction/InteractionVisuals.test.tsx \
+              --reporter=default --reporter=junit --outputFile.junit="evidence/timezones/$name.xml" \
+              2>&1 | tee "evidence/timezones/$name.log"
+          done
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as E
+          files=list(Path('evidence/timezones').glob('*.xml'))
+          assert len(files)==4
+          for file in [Path('evidence/tests.xml'), *files]:
+              root=E.parse(file).getroot(); cases=root.findall('.//testcase')
+              assert len(cases)>20 and not root.findall('.//failure') and not root.findall('.//error'),str(file)
+              print(file.name,'real_cases',len(cases))
+          PY
+      - name: Install CJK fonts only in the disposable test runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install --no-install-recommends -y fonts-noto-cjk
+          fc-match 'Noto Sans CJK SC' | tee visual-final-evidence/cjk-font.txt
+          grep -q 'Noto Sans CJK' visual-final-evidence/cjk-font.txt
+      - name: Real component clicks, readable Chinese glyphs and light/dark browser renders
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test tools/interaction-stage/browser/launch.test.mjs 2>&1 | tee visual-final-evidence/browser-launch-tests.log
+          node tools/interaction-stage/browser/build.mjs
+          node tools/interaction-stage/browser/capture.mjs
+          git diff --exit-code
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mini-visual-final-consumers
+          retention-days: 14
+          path: |
+            visual-final-evidence/
+            visual-browser-evidence/
+            miniprogram/evidence/
+            miniprogram/dist/

@@ -2,7 +2,7 @@ import React from 'react'
 import renderer, { act } from 'react-test-renderer'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 const fake = vi.hoisted(() => ({ request: vi.fn(), values: new Map<string, unknown>() }))
-vi.mock('@tarojs/components', () => ({ Text: 'text', View: 'view', Button: 'button' }))
+vi.mock('@tarojs/components', () => ({ Text: 'text', View: 'view', Button: 'button', Image: 'image' }))
 vi.mock('@tarojs/taro', () => ({ default: {
   request: fake.request, getStorageSync: (key: string) => fake.values.get(key),
   setStorageSync: (key: string, value: unknown) => { fake.values.set(key, value) }, removeStorageSync: (key: string) => { fake.values.delete(key) },
@@ -34,7 +34,7 @@ it('actual status API adapter carries each wheel contract into cache rebuild and
   const reopened = readTpmsCache({ getStorageSync: key => values.get(key) }, 'owner', 'https://api.example.test', 'uid', now)
   expect(reopened.points).toHaveLength(2)
   const tree = renderer.create(<TpmsPanel snapshot={status.tpms} history={reopened} now={now} />)
-  act(() => tree.root.findByType('button').props.onClick())
+  act(() => tree.root.findByProps({ className: 'tpms-evidence-toggle' }).props.onClick())
   const shown = tree.root.findAllByType('text').map(node => node.children.join('')).join('\n')
   expect(shown).toContain('旧观测 · 2026-10-14T01:00:00.000Z')
   expect(shown).toContain('缺少有效逐轮观测时间')
