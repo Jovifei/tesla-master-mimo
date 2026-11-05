@@ -3,9 +3,9 @@
  */
 import fs from 'node:fs'
 import path from 'node:path'
-import os from 'node:os'
 import http from 'node:http'
-import { spawn, execFileSync } from 'node:child_process'
+import { execFileSync } from 'node:child_process'
+import { launchIsolatedBrowser } from './launch.mjs'
 import { fileURLToPath } from 'node:url'
 import { createHash } from 'node:crypto'
 import assert from 'node:assert/strict'
@@ -17,7 +17,6 @@ if(!chrome)for(const name of ['google-chrome','google-chrome-stable','chromium',
   try{chrome=execFileSync('which',[name],{encoding:'utf8'}).trim();if(chrome)break}catch{}
 }
 if(!chrome)throw new Error('No isolated Chromium executable; browser rendering cannot be claimed')
-const profile=fs.mkdtempSync(path.join(os.tmpdir(),'matelink-visual-'))
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms))
 const mime={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.png':'image/png'}
 const server=http.createServer((req,res)=>{
@@ -29,18 +28,10 @@ const server=http.createServer((req,res)=>{
 })
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve))
 const origin=`http://127.0.0.1:${server.address().port}`
-const processChrome=spawn(chrome,['--headless=new','--no-sandbox','--disable-gpu','--no-first-run','--no-default-browser-check',
-  '--disable-background-networking','--disable-component-update','--disable-sync','--hide-scrollbars',
-  '--remote-debugging-port=0',`--user-data-dir=${profile}`,'about:blank'],{stdio:['ignore','ignore','pipe']})
-const chromeLog=fs.createWriteStream(path.join(evidence,'chromium.log'));processChrome.stderr.pipe(chromeLog)
-let ws;const pending=new Map();let next=1;const exceptions=[],outside=[];const captures=[]; const chineseFontEvidence=[]
+let browser, ws;const pending=new Map();let next=1;const exceptions=[],outside=[];const captures=[]; const chineseFontEvidence=[]
 try{
-  for(let i=0;!fs.existsSync(path.join(profile,'DevToolsActivePort'));i++){
-    if(i>=100||processChrome.exitCode!==null)throw new Error('Isolated Chromium did not boot')
-    await sleep(100)
-  }
-  const port=Number(fs.readFileSync(path.join(profile,'DevToolsActivePort'),'utf8').split('\n')[0])
-  const page=await(await fetch(`http://127.0.0.1:${port}/json/new?about:blank`,{method:'PUT'})).json()
+  browser=await launchIsolatedBrowser({chrome,evidence})
+  const page=await(await fetch(`${browser.endpoint}/json/new?about:blank`,{method:'PUT',signal:AbortSignal.timeout(10_000)})).json()
   ws=new WebSocket(page.webSocketDebuggerUrl)
   await new Promise((resolve,reject)=>{ws.addEventListener('open',resolve,{once:true});ws.addEventListener('error',reject,{once:true})})
   ws.addEventListener('message',event=>{
@@ -141,7 +132,8 @@ try{
   console.log(`PASS ${captures.length} actual browser renders; clicks, unknown/zero, scope reset, motion lifecycle and narrow/large-text layout`)
 }finally{
   if(ws)ws.close()
-  processChrome.kill('SIGTERM');server.close();chromeLog.end()
+  server.close()
+  if(browser)await browser.close()
   for(const value of pending.values()){clearTimeout(value.timer);value.reject(new Error('browser closing'))}
-  await sleep(150);fs.rmSync(profile,{recursive:true,force:true})
+
 }

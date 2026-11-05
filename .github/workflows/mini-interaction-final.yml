@@ -79,6 +79,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          node --test tools/interaction-stage/browser/launch.test.mjs 2>&1 | tee visual-final-evidence/browser-launch-tests.log
           node tools/interaction-stage/browser/build.mjs
           node tools/interaction-stage/browser/capture.mjs
           git diff --exit-code
