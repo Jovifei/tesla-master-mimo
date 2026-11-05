@@ -174,6 +174,38 @@ class MileageRoomFirstRegressionTest {
         } finally { vm.viewModelScope.cancel(); advanceUntilIdle(); Dispatchers.resetMain() }
     }
 
+    @Test fun selectingYearAfterIdentityLossNeverKeepsOldProjectionWhileActivationRuns() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val source = Source()
+        val vm = MileageViewModel(source, StandardTestDispatcher(testScheduler))
+        try {
+            vm.setCarId(7)
+            advanceUntilIdle()
+            assertTrue(vm.uiState.value.yearlyData.isNotEmpty())
+            source.current = false
+            vm.selectYear(2026)
+            assertTrue(vm.uiState.value.allDrives.isEmpty())
+            assertTrue(vm.uiState.value.yearlyData.isEmpty())
+            assertEquals(HISTORY_IDENTITY_UNAVAILABLE, vm.uiState.value.error)
+        } finally { vm.viewModelScope.cancel(); advanceUntilIdle(); Dispatchers.resetMain() }
+    }
+
+    @Test fun accountChangeClearsProjectionBeforeTheNextActivationCompletes() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val source = Source()
+        val vm = MileageViewModel(source, StandardTestDispatcher(testScheduler))
+        try {
+            vm.setCarId(7)
+            advanceUntilIdle()
+            assertTrue(vm.uiState.value.allDrives.isNotEmpty())
+            source.current = false
+            vm.setCarId(7)
+            runCurrent()
+            assertTrue(vm.uiState.value.allDrives.isEmpty())
+            assertTrue(vm.uiState.value.yearlyData.isEmpty())
+        } finally { vm.viewModelScope.cancel(); advanceUntilIdle(); Dispatchers.resetMain() }
+    }
+
     @Test fun delayedMonthAggregationClearsSilentlyRevokedProof() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         val queue = QueuedDispatcher()
