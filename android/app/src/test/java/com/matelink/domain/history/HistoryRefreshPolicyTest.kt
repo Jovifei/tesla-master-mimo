@@ -35,9 +35,22 @@ class HistoryRefreshPolicyTest {
         assertEquals(HistoryDateWindow(null, null), refreshedHistoryWindow(null, false, null, null, clock("2026-10-04T01:00:00Z")))
     }
     @Test fun foregroundReturnRefreshesOnlyOnceAndNotAtFirstComposition() {
-        val gate = HistoryResumeGate()
+        val gate = HistoryResumeGate(minIntervalMs = 0L)
         assertFalse(gate.onResume()); assertFalse(gate.onResume())
         gate.onStop(); assertTrue(gate.onResume()); assertFalse(gate.onResume())
         gate.onStop(); gate.onStop(); assertTrue(gate.onResume()); assertFalse(gate.onResume())
+    }
+
+    @Test fun foregroundReturnSuppressesRapidReentryWithinCooldown() {
+        var time = 1000L
+        val gate = HistoryResumeGate(minIntervalMs = 60_000L, clock = { time })
+        gate.onStop()
+        assertTrue(gate.onResume())
+        time += 5_000L
+        gate.onStop()
+        assertFalse(gate.onResume())
+        time += 60_000L
+        gate.onStop()
+        assertTrue(gate.onResume())
     }
 }

@@ -152,7 +152,8 @@ sealed interface Screen {
         val carId: Int,
         val olderDriveId: Int,
         val newerDriveId: Int,
-        val exteriorColor: String? = null
+        val exteriorColor: String? = null,
+        val location: String? = null
     ) : Screen
 
     @Serializable
@@ -731,9 +732,9 @@ fun NavGraph(
                 onNavigateToDriveDetail = { driveId ->
                     navController.navigate(Screen.DriveDetail(route.carId, driveId, route.exteriorColor))
                 },
-                onNavigateToParkedDetail = { olderDriveId, newerDriveId ->
+                onNavigateToParkedDetail = { olderDriveId, newerDriveId, location ->
                     navController.navigate(
-                        Screen.ParkedDetail(route.carId, olderDriveId, newerDriveId, route.exteriorColor)
+                        Screen.ParkedDetail(route.carId, olderDriveId, newerDriveId, route.exteriorColor, location)
                     )
                 }
             )
@@ -746,6 +747,7 @@ fun NavGraph(
                 olderDriveId = route.olderDriveId,
                 newerDriveId = route.newerDriveId,
                 onNavigateBack = { navController.popBackStack() },
+                initialLocation = route.location,
                 onNavigateToChargeDetail = { chargeId ->
                     navController.navigate(Screen.ChargeDetail(route.carId, chargeId, route.exteriorColor))
                 }

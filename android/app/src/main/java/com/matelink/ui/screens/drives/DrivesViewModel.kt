@@ -530,6 +530,7 @@ class DrivesViewModel @Inject constructor(
     }
 
     fun refresh() {
+        _uiState.update { it.copy(isRefreshing = true) }
         synchronized(attemptedEnergy) { attemptedEnergy.clear() }
         resetCompletedDriveAddressAttempts(attemptedAddresses)
         refreshForForeground()
@@ -538,7 +539,6 @@ class DrivesViewModel @Inject constructor(
     fun refreshForForeground() {
         screenActive = true
         carId?.let {
-            _uiState.update { it.copy(isRefreshing = true) }
             val state = _uiState.value
             val window = refreshedHistoryWindow(state.dateFilter.days, state.dateFilter == DriveDateFilter.CUSTOM,
                 state.startDate, state.endDate, clock)

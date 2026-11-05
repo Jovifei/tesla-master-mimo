@@ -101,6 +101,8 @@ import com.matelink.ui.components.formatEditorialDate
 import com.matelink.ui.components.formatShortDate
 import com.matelink.ui.components.parseListItemDate
 import com.matelink.util.formatDuration
+import com.matelink.util.formatParkedAddress
+import com.matelink.util.formatRouteAddresses
 import com.matelink.util.parseIsoInstant
 import com.matelink.util.toChineseDisplayAddress
 import com.matelink.ui.theme.CarColorPalette
@@ -116,7 +118,7 @@ fun DrivesScreen(
     carId: Int,
     exteriorColor: String? = null,
     onNavigateToDriveDetail: (driveId: Int) -> Unit,
-    onNavigateToParkedDetail: (olderDriveId: Int, newerDriveId: Int) -> Unit = { _, _ -> },
+    onNavigateToParkedDetail: (olderDriveId: Int, newerDriveId: Int, location: String?) -> Unit = { _, _, _ -> },
     viewModel: DrivesViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -270,7 +272,7 @@ private fun DrivesContent(
     onCustomRangeSelected: (LocalDate, LocalDate) -> Unit,
     onDistanceFilterSelected: (DriveDistanceFilter) -> Unit,
     onDriveClick: (driveId: Int) -> Unit,
-    onParkedClick: (olderDriveId: Int, newerDriveId: Int) -> Unit
+    onParkedClick: (olderDriveId: Int, newerDriveId: Int, location: String?) -> Unit
 ) {
     val historyItems = remember(historySequence, drives, parkedPairs) {
         selectVisibleDriveHistoryItems(historySequence, drives, parkedPairs)
@@ -360,7 +362,7 @@ private fun DrivesContent(
                     is DriveHistoryItem.Parked -> ParkedItem(
                         item = item,
                         palette = palette,
-                        onClick = { onParkedClick(item.olderDrive.id, item.newerDrive.id) }
+                        onClick = { onParkedClick(item.olderDrive.id, item.newerDrive.id, item.location) }
                     )
                 }
             }
@@ -684,10 +686,7 @@ private fun DriveItem(
 ) {
     val receiptUnits = drivePresentationUnits(drive.lengthUnit, units)
     val unknown = stringResource(R.string.unknown)
-    val formattedStart = drive.startAddress?.takeIf { it.isNotBlank() }?.toChineseDisplayAddress()
-    val formattedEnd = drive.endAddress?.takeIf { it.isNotBlank() }?.toChineseDisplayAddress()
-    val startCity = formattedStart ?: unknown
-    val endCity = formattedEnd ?: unknown
+    val (startCity, endCity) = formatRouteAddresses(drive.startAddress, drive.endAddress, unknown)
 
     val energyPres = drive.historyEnergy(metrics)
     val start = drive.startBatteryLevel
@@ -829,7 +828,7 @@ private fun ParkedItem(
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Text(
-                    text = stringResource(R.string.drive_history_parked_at, item.location.toChineseDisplayAddress() ?: unknown),
+                    text = stringResource(R.string.drive_history_parked_at, formatParkedAddress(item.location, unknown)),
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.Medium
                 )
