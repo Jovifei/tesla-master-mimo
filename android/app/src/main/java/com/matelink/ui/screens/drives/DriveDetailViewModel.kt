@@ -113,9 +113,15 @@ class DriveDetailViewModel @Inject constructor(
             historyRepository.scopeChanges?.collect { next ->
                 val proof = historyProof ?: return@collect
                 if (next != proof.scope || vehicleContexts?.isHistoryContextCurrentNow(proof.scope, proof.context) == false) {
-                    latestLoad.invalidate()
-                    historyProof = null
-                    _uiState.value = DriveDetailUiState(isLoading = false, error = historyIdentityUnavailableError().message)
+                    val c = this@DriveDetailViewModel.carId
+                    val d = this@DriveDetailViewModel.driveId
+                    if (c != null && d != null) {
+                        loadDriveDetail(c, d)
+                    } else {
+                        latestLoad.invalidate()
+                        historyProof = null
+                        _uiState.value = DriveDetailUiState(isLoading = false, error = historyIdentityUnavailableError().message)
+                    }
                 }
             }
         }

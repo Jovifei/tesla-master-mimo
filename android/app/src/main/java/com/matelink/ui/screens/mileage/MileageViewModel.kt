@@ -11,6 +11,7 @@ import com.matelink.domain.analytics.AnalysisPageIdentity
 import com.matelink.domain.analytics.captureAnalysisPageIdentity
 import com.matelink.domain.analytics.HistoryFreshness
 import com.matelink.data.local.VehicleContextRepository
+import com.matelink.data.local.VehicleContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import com.matelink.data.repository.ApiResult
@@ -258,8 +259,9 @@ class MileageViewModel internal constructor(
         activationJob?.cancel()
         unitsJob?.cancel()
         historyJob?.cancel()
-        activeIdentity = null
+        historyProof = null
         if (!sameVehicle) {
+            activeIdentity = null
             clearProjection()
         }
         activationJob = viewModelScope.launch {
@@ -311,7 +313,10 @@ class MileageViewModel internal constructor(
     }
 
     private fun ensureSelectionContext(): Boolean {
-        if (activeIdentity?.stillCurrent() == true && historyProof?.let { source.isContextCurrentNow(it) } != false)
+        val identityCurrent = activeIdentity?.stillCurrent() == true
+        val proofCurrent = historyProof?.let { source.isContextCurrentNow(it) } != false
+        if (identityCurrent && proofCurrent) return true
+        if (carId != null && _uiState.value.yearlyData.isNotEmpty() && activationJob?.isActive == true)
             return true
         clearProjection()
         _uiState.update { it.copy(isLoading = false, isRefreshing = false, error = HISTORY_IDENTITY_UNAVAILABLE) }
@@ -410,7 +415,8 @@ class MileageViewModel internal constructor(
             suspend fun publish(unified: UnifiedHistory, freshness: HistoryFreshness) {
                 val proof = unified.verifiedReadContext
                 requireIdentity()
-                if (proof == null || proof.context != unified.context || proof.context != identity.context ||
+                if (proof == null || proof.context != unified.context ||
+                    proof.context.localHistoryCarId != identity.context.localHistoryCarId ||
                     !source.isContextCurrentNow(proof)) {
                     clearProjection()
                     _uiState.update { it.copy(isLoading = false, isRefreshing = false, error = HISTORY_IDENTITY_UNAVAILABLE) }

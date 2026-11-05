@@ -541,7 +541,7 @@ class DashboardViewModel @Inject constructor(
                                 snapshot is ApiResult.Success -> snapshot.data.units
                                 legacy is ApiResult.Success -> legacy.data.units
                                 else -> ui.units
-                            }, cachedAddress = null)
+                            }, cachedAddress = ui.cachedAddress)
                         }
                     } else {
                         val failure = (legacy as? ApiResult.Error) ?: (snapshot as? ApiResult.Error)
@@ -659,6 +659,12 @@ class DashboardViewModel @Inject constructor(
                     .joinToString(" ")
                     .takeIf { it.isNotEmpty() }
                 if (fallback != null) return fallback
+            }
+            val geoAddress = try {
+                geocodingRepository.reverseGeocode(coordinates.first, coordinates.second)
+            } catch (_: Exception) { null }
+            if (!geoAddress.isNullOrBlank()) {
+                return geoAddress
             }
             val cache = geocodingRepository.getFromCache(coordinates.first, coordinates.second)
             if (cache != null) {

@@ -135,14 +135,33 @@ fun DriveCurvesScreen(
                 color = palette.accent,
                 modifier = Modifier.padding(padding)
             )
+        } else if (uiState.driveDetail != null) {
+            DriveCurvesContent(
+                detail = uiState.driveDetail!!,
+                stats = uiState.stats,
+                units = uiState.units,
+                modifier = Modifier.padding(padding)
+            )
         } else {
-            uiState.driveDetail?.let { detail ->
-                DriveCurvesContent(
-                    detail = detail,
-                    stats = uiState.stats,
-                    units = uiState.units,
-                    modifier = Modifier.padding(padding)
-                )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Text(
+                        text = stringResource(R.string.drive_curves_no_samples),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    androidx.compose.material3.Button(onClick = { viewModel.loadDriveDetail(carId, driveId) }) {
+                        Text(stringResource(R.string.retry))
+                    }
+                }
             }
         }
     }
@@ -316,9 +335,11 @@ private fun CurvesKpiOverviewCard(
                         ?: "—",
                     modifier = Modifier.weight(1f)
                 )
+                val efficiencyValue = stats?.energy?.efficiencyWhKm?.let { UnitFormatter.formatEfficiency(it, units) }
+                val powerValue = stats?.powerAvg?.let { "%.1f kW".format(it) }
                 KpiItem(
-                    label = stringResource(R.string.drive_detail_sample_mean),
-                    value = stats?.powerAvg?.let { "%.1f kW".format(it) } ?: "—",
+                    label = stringResource(if (efficiencyValue != null) R.string.efficiency else R.string.drive_detail_sample_mean),
+                    value = efficiencyValue ?: powerValue ?: stringResource(R.string.not_available),
                     modifier = Modifier.weight(1f)
                 )
             }
