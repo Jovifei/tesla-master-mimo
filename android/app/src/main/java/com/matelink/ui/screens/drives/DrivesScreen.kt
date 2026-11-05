@@ -412,7 +412,7 @@ private fun DrivesContent(
 
     // Sub-100ms loads never see a spinner — only sustained ones cross the
     // perceptual threshold worth giving feedback for.
-    val showSpinner = rememberDebouncedLoading(isFilterLoading || (isLoading && !isRefreshing))
+    val showSpinner = rememberDebouncedLoading((isFilterLoading || (isLoading && !isRefreshing)) && drives.isEmpty())
     if (showSpinner) {
         Box(
             modifier = Modifier

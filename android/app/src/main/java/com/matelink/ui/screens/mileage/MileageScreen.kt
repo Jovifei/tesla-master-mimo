@@ -174,7 +174,7 @@ fun MileageScreen(
                     .fillMaxSize()
                     .padding(padding)
             ) {
-                if (uiState.isLoading && !uiState.isRefreshing) {
+                if (uiState.isLoading && !uiState.isRefreshing && uiState.allDrives.isEmpty()) {
                     MateLinkLoadingPlaceholder(color = palette.accent)
                 } else {
                     YearOverviewContent(

@@ -1655,6 +1655,10 @@
     <string name="telemetry_setup_configuring_body">Your Tesla key is confirmed. MateLink is pushing the data configuration to the vehicle; this finishes automatically once the vehicle responds. There is nothing you need to do.</string>
     <string name="telemetry_setup_awaiting_title">Waiting for your vehicle’s first data</string>
     <string name="telemetry_setup_awaiting_body">Configuration is complete. New trips and charges appear as soon as the vehicle sends its first data — usually on the next drive or charge. Your history remains available in the meantime.</string>
+    <string name="cmd_group_locks">Doors &amp; Security</string>
+    <string name="cmd_group_climate">Climate</string>
+    <string name="cmd_group_charging">Charging</string>
+    <string name="cmd_group_windows">Windows &amp; Sentry</string>
     <string name="remote_controls_title">Vehicle controls</string>
     <string name="remote_reauth_title">Additional authorization needed</string>
     <string name="remote_reauth_body">Vehicle controls need additional Tesla permission scopes. Re-authorize once to enable them; your password is only ever entered on Tesla’s own page.</string>

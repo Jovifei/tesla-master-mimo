@@ -494,7 +494,7 @@ private fun ChargesContent(
 
     // Sub-100ms loads never see a spinner — only sustained ones cross the
     // perceptual threshold worth giving feedback for.
-    val showSpinner = rememberDebouncedLoading(isFilterLoading || (isLoading && !isRefreshing))
+    val showSpinner = rememberDebouncedLoading((isFilterLoading || (isLoading && !isRefreshing)) && charges.isEmpty())
     if (showSpinner) {
         // Overlay scrim lets the existing UI content show through clearly with a subtle dim.
         Box(

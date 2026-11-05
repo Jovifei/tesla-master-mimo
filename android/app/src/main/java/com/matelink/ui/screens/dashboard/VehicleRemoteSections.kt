@@ -43,6 +43,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
@@ -97,6 +98,21 @@ private fun commandIcon(name: String): ImageVector = when (name) {
     else -> Icons.Default.Refresh
 }
 
+private enum class CommandCategory(val titleRes: Int) {
+    LOCKS(R.string.cmd_group_locks),
+    CLIMATE(R.string.cmd_group_climate),
+    CHARGING(R.string.cmd_group_charging),
+    WINDOWS(R.string.cmd_group_windows)
+}
+
+private fun commandCategory(name: String): CommandCategory = when (name) {
+    "lock", "unlock", "flash", "honk" -> CommandCategory.LOCKS
+    "climate_on", "climate_off", "set_climate_temp" -> CommandCategory.CLIMATE
+    "charge_port_open", "charge_port_close", "charge_start", "charge_stop", "set_charge_limit" -> CommandCategory.CHARGING
+    "windows_vent", "windows_close", "sentry_on", "sentry_off" -> CommandCategory.WINDOWS
+    else -> CommandCategory.LOCKS
+}
+
 private fun commandErrorRes(errorClass: String?): Int = when (errorClass) {
     "commands_disabled" -> R.string.cmd_err_commands_disabled
     "scope_missing" -> R.string.cmd_err_scope_missing
@@ -137,7 +153,9 @@ internal fun VehicleControlsSection(
         return
     }
 
-    val offered = offeredCommands(status)
+    val offered = offeredCommands(status).ifEmpty {
+        if (status.commandAuthorization == null) vehicleCommandCatalog else emptyList()
+    }
     if (offered.isEmpty()) return
 
     var confirmUnlock by remember { mutableStateOf(false) }
@@ -147,40 +165,60 @@ internal fun VehicleControlsSection(
 
     TelemetryPanel(modifier = Modifier.fillMaxWidth()) {
         Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Text(stringResource(R.string.remote_controls_title), style = MaterialTheme.typography.titleSmall)
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                offered.forEach { command ->
-                    FilledTonalButton(
-                        enabled = !busy,
-                        onClick = {
-                            when {
-                                command.name == "set_climate_temp" -> showClimateDialog = true
-                                command.name == "set_charge_limit" -> showChargeLimitDialog = true
-                                command.needsConfirmation -> confirmUnlock = true
-                                else -> viewModel.executeCommand(carId, command)
-                            }
-                        }
-                    ) {
-                        Icon(
-                            imageVector = commandIcon(command.name),
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Text(
-                            stringResource(commandLabelRes(command.name)),
-                            modifier = Modifier.padding(start = 6.dp)
-                        )
-                    }
+                Text(
+                    stringResource(R.string.remote_controls_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                if (busy) {
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp))
                 }
             }
-            if (busy) {
-                CircularProgressIndicator(modifier = Modifier.size(18.dp))
+
+            val grouped = offered.groupBy { commandCategory(it.name) }
+            grouped.forEach { (category, commands) ->
+                Text(
+                    stringResource(category.titleRes),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold
+                )
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    commands.forEach { command ->
+                        FilledTonalButton(
+                            enabled = !busy,
+                            onClick = {
+                                when {
+                                    command.name == "set_climate_temp" -> showClimateDialog = true
+                                    command.name == "set_charge_limit" -> showChargeLimitDialog = true
+                                    command.needsConfirmation -> confirmUnlock = true
+                                    else -> viewModel.executeCommand(carId, command)
+                                }
+                            }
+                        ) {
+                            Icon(
+                                imageVector = commandIcon(command.name),
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                stringResource(commandLabelRes(command.name)),
+                                modifier = Modifier.padding(start = 6.dp)
+                            )
+                        }
+                    }
+                }
             }
             when (val outcome = state.outcome) {
                 is CommandOutcome.Accepted -> Text(

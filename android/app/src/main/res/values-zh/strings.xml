@@ -1646,6 +1646,10 @@
     <string name="telemetry_setup_configuring_body">Tesla 钥匙已确认，MateLink 正在把数据配置同步到车辆。车辆响应后会自动完成，无需你再操作，已有历史可以继续查看。</string>
     <string name="telemetry_setup_awaiting_title">等待车辆首次数据</string>
     <string name="telemetry_setup_awaiting_body">配置已经完成。车辆发出第一批数据后（通常是下一次行程或充电），新记录就会出现；在此之前已有历史可以继续查看。</string>
+    <string name="cmd_group_locks">门锁与寻车</string>
+    <string name="cmd_group_climate">空调温控</string>
+    <string name="cmd_group_charging">充电管理</string>
+    <string name="cmd_group_windows">车窗与哨兵</string>
     <string name="remote_controls_title">车辆控制</string>
     <string name="remote_reauth_title">需要补充授权</string>
     <string name="remote_reauth_body">控制车辆需要额外的 Tesla 授权范围。重新授权一次即可启用；密码始终只在 Tesla 官方页面输入。</string>
