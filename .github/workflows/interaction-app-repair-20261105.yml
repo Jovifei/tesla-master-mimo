@@ -1,0 +1,94 @@
+name: Interaction App inherited-gate corrective verification
+on:
+  push:
+    branches: [codex/app-interaction-visuals-20261104]
+    paths:
+      - tools/interaction-execution/app_gate_repair.py
+      - .github/workflows/interaction-app-repair-20261105.yml
+permissions:
+  contents: write
+concurrency:
+  group: interaction-app-corrective-20261105
+  cancel-in-progress: false
+jobs:
+  repair:
+    if: github.repository == 'Jovifei/tesla-master-mimo'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      TARGET_BRANCH: codex/app-interaction-visuals-20261104
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply exact consumer corrections on the owned branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/$TARGET_BRANCH"
+          git merge-base --is-ancestor 4eac02c594383a1bb6555e839c59ec2341eb6d5c HEAD
+          test "$(git ls-remote origin "refs/heads/$TARGET_BRANCH" | cut -f1)" = "$GITHUB_SHA"
+          python3 tools/interaction-execution/app_gate_repair.py
+          git diff --check
+          git add android
+          mkdir -p correction-evidence
+          git diff --cached --binary > correction-evidence/source.patch
+          git diff --cached --name-only > correction-evidence/paths.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          paths=Path('correction-evidence/paths.txt').read_text().splitlines()
+          assert len(paths)==3 and all(p.startswith('android/app/src/main/') for p in paths),paths
+          PY
+          git write-tree > correction-evidence/TESTED_TREE.txt
+          git archive --format=zip --output=correction-evidence/reviewed-source.zip "$(git write-tree)"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+          log-accepted-android-sdk-licenses: false
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Real failing-consumer, identity, cancellation and visual regressions in both variants
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd android
+          backup="$(mktemp)"; cp gradle.properties "$backup"
+          trap 'cp "$backup" gradle.properties; rm -f "$backup"' EXIT
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('gradle.properties'); keys={'systemProp.http.proxyHost','systemProp.http.proxyPort','systemProp.https.proxyHost','systemProp.https.proxyPort','systemProp.http.nonProxyHosts'}
+          p.write_text('\n'.join(s for s in p.read_text().splitlines() if s.split('=',1)[0] not in keys)+'\n')
+          PY
+          export TZ=Asia/Shanghai
+          tests=(--tests '*Oct28*' --tests '*SparseReceiptProvenanceTest' --tests '*DeployedBb09ConsumerCompatibilityTest' --tests '*LatestHistoryLoadTest' --tests '*AnalysisCloudPublicationRoomTest' --tests '*VisualStageEnergyReceiptTest' --tests '*DriveHistoryAutoEnergyConsumerTest' --tests '*InteractionVisualStateTest')
+          bash ./gradlew :app:testDebugUnitTest "${tests[@]}" :app:testReleaseUnitTest "${tests[@]}" :app:assembleDebugAndroidTest \
+            --no-daemon --continue --max-workers=1 \
+            -Dorg.gradle.jvmargs='-Xmx5g -XX:MaxMetaspaceSize=1g -XX:+UseSerialGC -Dfile.encoding=UTF-8' \
+            -Pkotlin.compiler.execution.strategy=in-process \
+            -PJOURVOLT_API_BASE_URL=https://api.teslalink.joviluma.com/ \
+            -PMATELINK_PUBLIC_INFO_BASE_URL=https://auth.teslalink.joviluma.com \
+            -PJOURVOLT_AUTH_HOST=auth.teslalink.joviluma.com \
+            2>&1 | tee ../correction-evidence/gradle.log
+      - name: Normal source commit after tests, never force
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --exit-code
+          test "$(git write-tree)" = "$(cat correction-evidence/TESTED_TREE.txt)"
+          test "$(git ls-remote origin "refs/heads/$TARGET_BRANCH" | cut -f1)" = "$GITHUB_SHA"
+          git config user.name 'Jovifei'
+          git config user.email '110970864+Jovifei@users.noreply.github.com'
+          git commit -m 'fix(android): keep unverified Fleet scalars and conflicting receipts out of visual consumers'
+          git push origin "HEAD:refs/heads/$TARGET_BRANCH"
+          git show -s --format='%H%n%T%n%P' HEAD > correction-evidence/PUSHED_SOURCE.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: interaction-app-corrective
+          retention-days: 14
+          path: |
+            correction-evidence/
+            android/app/build/test-results/

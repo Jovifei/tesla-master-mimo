@@ -1,6 +1,11 @@
 package com.matelink.domain.history
 
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -65,5 +70,22 @@ class LatestHistoryLoadTest {
         release.complete(Unit)
         runCurrent()
         assertFalse(published)
+    }
+
+    @Test fun inlinePublicationStartingAnotherLoadKeepsTheNewJobAsCancellationOwner() = runTest {
+        val scope = CoroutineScope(SupervisorJob() + UnconfinedTestDispatcher(testScheduler))
+        val loader = LatestHistoryLoad()
+        var entered = false
+        var cancelled = false
+        try {
+            loader.launch(scope) {
+                loader.launch(scope) {
+                    try { entered = true; awaitCancellation() } finally { cancelled = true }
+                }
+            }
+            assertTrue(entered)
+            loader.invalidate()
+            assertTrue("The latest reentrant request, not the completed parent, must be cancelled", cancelled)
+        } finally { scope.cancel() }
     }
 }

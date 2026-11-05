@@ -32,9 +32,14 @@ internal data class AnalysisPageIdentity(val context: VehicleContext, val stillC
 
 internal suspend fun VehicleContextRepository.captureAnalysisPageIdentity(remoteCarId: Int): AnalysisPageIdentity {
     val scope = captureReadScope()
-    val context = cachedContextForRemote(remoteCarId, scope) ?: resolveRemote(remoteCarId)
+    val resolved = cachedContextForRemote(remoteCarId, scope) ?: resolveRemote(remoteCarId)
     currentCoroutineContext().ensureActive()
-    if (!isHistoryContextCurrentNow(scope, context)) throw HistoryIdentityUnavailableException()
+    if (!isHistoryContextCurrentNow(scope, resolved)) throw HistoryIdentityUnavailableException()
+    // Use the persisted local namespace on both cold and refreshed publication.
+    // An online UID proof authorizes the read; its different string representation is not a new car.
+    val context = cachedContextForRemote(remoteCarId, scope) ?: throw HistoryIdentityUnavailableException()
+    if (context.localHistoryCarId != resolved.localHistoryCarId || !isHistoryContextCurrentNow(scope, context))
+        throw HistoryIdentityUnavailableException()
     return AnalysisPageIdentity(context) { isHistoryContextCurrentNow(scope, context) }
 }
 
@@ -116,6 +121,11 @@ class AnalysisHistoryRepository @Inject constructor(
                 if (proof == null || proof.context != history.context || history.context.remoteApiCarId != carId ||
                     !vehicleContexts.isHistoryContextCurrentNow(proof.scope, proof.context))
                     return com.matelink.data.repository.historyIdentityUnavailableError()
+                val pageContext = vehicleContexts.cachedContextForRemote(carId, proof.scope)
+                    ?: return com.matelink.data.repository.historyIdentityUnavailableError()
+                if (pageContext.localHistoryCarId != history.context.localHistoryCarId ||
+                    !vehicleContexts.isHistoryContextCurrentNow(proof.scope, pageContext))
+                    return com.matelink.data.repository.historyIdentityUnavailableError()
                 val eligibleDrives = history.drives.filter { isAnalysisEligible(it.qualityState, it.qualityReason) }
                 val eligibleCharges = history.charges.filter {
                     isAnalysisEligible(it.qualityState, it.qualityReason) ||
@@ -136,12 +146,13 @@ class AnalysisHistoryRepository @Inject constructor(
                     freshness = history.analysisFreshness(families),
                     staleReason = if (history.analysisFreshness(families) == HistoryFreshness.FRESH)
                         null else "retained local evidence or refresh unavailable",
-                    context = history.context
+                    context = pageContext
                 )
                 currentCoroutineContext().ensureActive()
-                if (!vehicleContexts.isHistoryContextCurrentNow(proof.scope, proof.context))
+                if (!vehicleContexts.isHistoryContextCurrentNow(proof.scope, proof.context) ||
+                    !vehicleContexts.isHistoryContextCurrentNow(proof.scope, pageContext))
                     return com.matelink.data.repository.historyIdentityUnavailableError()
-                cache.put(history.context.stableIdentity, snapshot)
+                cache.put(pageContext.stableIdentity, snapshot)
                 ApiResult.Success(snapshot)
             }
             is ApiResult.Error -> result
