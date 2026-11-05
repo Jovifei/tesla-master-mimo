@@ -71,6 +71,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.matelink.R
 import com.matelink.domain.analytics.BatteryTrendSource
 import com.matelink.ui.components.MateLinkLoadingPlaceholder
+import com.matelink.ui.components.HistoryForegroundRefreshEffect
 import com.matelink.ui.components.CachedHistoryBanner
 import com.matelink.ui.components.TelemetryGauge
 import com.matelink.ui.components.TelemetryPanel
@@ -105,6 +106,7 @@ fun BatteryScreen(
     viewModel: BatteryViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    HistoryForegroundRefreshEffect { viewModel.refresh() }
     val snackbarHostState = remember { SnackbarHostState() }
     val healthLoadError = stringResource(R.string.battery_health_load_error)
     val isDarkTheme = isSystemInDarkTheme()

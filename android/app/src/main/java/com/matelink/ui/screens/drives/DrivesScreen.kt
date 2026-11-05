@@ -4,6 +4,10 @@ import com.matelink.ui.components.historyReadWarningMessageRes
 import com.matelink.ui.components.historyReadErrorMessageRes
 import com.matelink.ui.components.showHistoryReadFailure
 import androidx.compose.foundation.background
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -349,19 +353,25 @@ private fun DrivesContent(
             }
         } else {
             items(historyItems, key = { it.key }) { item ->
-                when (item) {
-                    is DriveHistoryItem.Drive -> DriveItem(
-                        drive = item.drive,
-                        metrics = driveMetrics[item.drive.id],
-                        units = units,
-                        palette = palette,
-                        onClick = { onDriveClick(item.drive.id) }
-                    )
-                    is DriveHistoryItem.Parked -> ParkedItem(
-                        item = item,
-                        palette = palette,
-                        onClick = { onParkedClick(item.olderDrive.id, item.newerDrive.id) }
-                    )
+                AnimatedVisibility(
+                    visible = true,
+                    enter = fadeIn(animationSpec = tween(180)) +
+                        slideInVertically(initialOffsetY = { it / 8 }, animationSpec = tween(180))
+                ) {
+                    when (item) {
+                        is DriveHistoryItem.Drive -> DriveItem(
+                            drive = item.drive,
+                            metrics = driveMetrics[item.drive.id],
+                            units = units,
+                            palette = palette,
+                            onClick = { onDriveClick(item.drive.id) }
+                        )
+                        is DriveHistoryItem.Parked -> ParkedItem(
+                            item = item,
+                            palette = palette,
+                            onClick = { onParkedClick(item.olderDrive.id, item.newerDrive.id) }
+                        )
+                    }
                 }
             }
         }

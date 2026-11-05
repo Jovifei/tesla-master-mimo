@@ -53,6 +53,7 @@ import com.matelink.data.local.TirePosition
 import com.matelink.data.repository.ApiErrorKind
 import com.matelink.ui.components.AmapPointView
 import com.matelink.ui.components.MateLinkLoadingPlaceholder
+import com.matelink.ui.components.HistoryForegroundRefreshEffect
 import com.matelink.ui.components.TelemetryPanel
 import com.matelink.ui.components.TelemetryMetricSpec
 import com.matelink.ui.components.TelemetryMetricStrip
@@ -100,6 +101,7 @@ fun DashboardScreen(
     viewModel: DashboardViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    HistoryForegroundRefreshEffect { viewModel.refresh() }
     val context = LocalContext.current
     val refreshRotation = remember { Animatable(0f) }
     val refreshScope = rememberCoroutineScope()

@@ -5,6 +5,10 @@ import com.matelink.ui.components.showHistoryReadFailure
 import com.matelink.domain.model.UnitFormatter
 
 import androidx.compose.foundation.background
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -407,31 +411,37 @@ private fun ChargesContent(
             }
         } else {
             items(charges, key = { it.chargeId }) { charge ->
-                ChargeItem(
-                    charge = charge,
-                    isDcCharge = when (historyChargeType(charge, dcChargeIds, processedChargeIds)) {
-                        ChargeType.DC -> true
-                        ChargeType.AC -> false
-                        ChargeType.UNKNOWN -> null
-                    },
-                    currencySymbol = currencySymbol,
-                    effectiveCost = effectiveCosts[charge.chargeId]
-                        ?: EffectiveChargeCost(null, ChargeCostSource.UNAVAILABLE),
-                    pendingLegacyAmount = pendingLegacyAmounts[charge.chargeId],
-                    pendingBoundAmount = pendingBoundAmounts[charge.chargeId],
-                    otherCurrencyAmount = otherCurrencyAmounts[charge.chargeId],
-                    referenceEnergyKwh = referenceEnergyKwh[charge.chargeId],
-                    referenceEstimate = referenceEstimates[charge.chargeId],
-                    palette = palette,
-                    onEditCost = { onEditCost(charge) },
-                    onClick = {
-                        onChargeClick(
-                            charge.chargeId,
-                            listState.firstVisibleItemIndex,
-                            listState.firstVisibleItemScrollOffset
-                        )
-                    }
-                )
+                AnimatedVisibility(
+                    visible = true,
+                    enter = fadeIn(animationSpec = tween(180)) +
+                        slideInVertically(initialOffsetY = { it / 8 }, animationSpec = tween(180))
+                ) {
+                    ChargeItem(
+                        charge = charge,
+                        isDcCharge = when (historyChargeType(charge, dcChargeIds, processedChargeIds)) {
+                            ChargeType.DC -> true
+                            ChargeType.AC -> false
+                            ChargeType.UNKNOWN -> null
+                        },
+                        currencySymbol = currencySymbol,
+                        effectiveCost = effectiveCosts[charge.chargeId]
+                            ?: EffectiveChargeCost(null, ChargeCostSource.UNAVAILABLE),
+                        pendingLegacyAmount = pendingLegacyAmounts[charge.chargeId],
+                        pendingBoundAmount = pendingBoundAmounts[charge.chargeId],
+                        otherCurrencyAmount = otherCurrencyAmounts[charge.chargeId],
+                        referenceEnergyKwh = referenceEnergyKwh[charge.chargeId],
+                        referenceEstimate = referenceEstimates[charge.chargeId],
+                        palette = palette,
+                        onEditCost = { onEditCost(charge) },
+                        onClick = {
+                            onChargeClick(
+                                charge.chargeId,
+                                listState.firstVisibleItemIndex,
+                                listState.firstVisibleItemScrollOffset
+                            )
+                        }
+                    )
+                }
             }
         }
 
