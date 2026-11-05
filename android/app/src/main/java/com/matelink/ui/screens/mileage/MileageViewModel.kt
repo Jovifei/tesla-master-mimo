@@ -220,8 +220,10 @@ class MileageViewModel internal constructor(
         loadSettings()
         viewModelScope.launch {
             source.scopeChanges.collect {
-                if (activeIdentity?.stillCurrent() == false || historyProof?.let { !source.isContextCurrentNow(it) } == true)
+                if (activeIdentity?.stillCurrent() == false || historyProof?.let { !source.isContextCurrentNow(it) } == true) {
+                    clearProjection()
                     carId?.let(::activate)
+                }
             }
         }
     }
@@ -252,7 +254,6 @@ class MileageViewModel internal constructor(
     }
 
     private fun activate(id: Int) {
-        val sameVehicle = (carId == id && _uiState.value.yearlyData.isNotEmpty())
         carId = id
         val generation = ++identityGeneration
         loadGeneration++
@@ -260,10 +261,8 @@ class MileageViewModel internal constructor(
         unitsJob?.cancel()
         historyJob?.cancel()
         historyProof = null
-        if (!sameVehicle) {
-            activeIdentity = null
-            clearProjection()
-        }
+        activeIdentity = null
+        clearProjection()
         activationJob = viewModelScope.launch {
             val execution = currentCoroutineContext()
             try {
@@ -316,8 +315,6 @@ class MileageViewModel internal constructor(
         val identityCurrent = activeIdentity?.stillCurrent() == true
         val proofCurrent = historyProof?.let { source.isContextCurrentNow(it) } != false
         if (identityCurrent && proofCurrent) return true
-        if (carId != null && _uiState.value.yearlyData.isNotEmpty() && activationJob?.isActive == true)
-            return true
         clearProjection()
         _uiState.update { it.copy(isLoading = false, isRefreshing = false, error = HISTORY_IDENTITY_UNAVAILABLE) }
         return false

@@ -13,6 +13,7 @@ import com.matelink.data.local.VehicleContext
 import com.matelink.data.local.entity.ChargeCostOverride
 import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.CarStatusWithUnits
+import com.matelink.data.repository.HISTORY_IDENTITY_UNAVAILABLE
 import com.matelink.data.repository.UnifiedHistory
 import com.matelink.data.repository.VerifiedHistoryReadContext
 import com.matelink.domain.analytics.AnalysisPageIdentity
@@ -53,6 +54,7 @@ class MileageRoomFirstViewModelTest {
         var origin = "https://synthetic-a.test"
         var kind = HistoryConnectionSource.CLOUD
         var vehicle = "vehicle-a"
+        var available = true
         val events = MutableStateFlow(0L)
         val scope get() = HistoryReadScope(kind, origin, account, origin, epoch, epoch, epoch)
         fun context(id: Int) = VehicleContext(id, "$kind/$origin/$account/$vehicle/$id",
@@ -65,10 +67,10 @@ class MileageRoomFirstViewModelTest {
         }
         fun capture(id: Int): AnalysisPageIdentity {
             val scope = scope; val context = context(id)
-            return AnalysisPageIdentity(context) { this.scope == scope && this.context(id) == context }
+            return AnalysisPageIdentity(context) { available && this.scope == scope && this.context(id) == context }
         }
         fun proof(id: Int) = VerifiedHistoryReadContext(scope, context(id), true, null, false)
-        fun current(proof: VerifiedHistoryReadContext) = proof.scope == scope && proof.context == context(proof.context.remoteApiCarId)
+        fun current(proof: VerifiedHistoryReadContext) = available && proof.scope == scope && proof.context == context(proof.context.remoteApiCarId)
     }
 
     private class MileageSource(val identity: Identity = Identity()) : MileagePageSource {
@@ -220,6 +222,36 @@ class MileageRoomFirstViewModelTest {
             // A cached snapshot bound to another account/vehicle must never surface cached rows,
             // even when the numeric remote id matches this car.
             assertTrue(vm.uiState.value.allDrives.isEmpty())
+        } finally { vm.viewModelScope.cancel(); advanceUntilIdle(); Dispatchers.resetMain() }
+    }
+
+    @Test fun mileageClearsProjectionWhenAccountChangesBeforeRefreshCompletes() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val source = MileageSource()
+        val vm = MileageViewModel(source, StandardTestDispatcher(testScheduler))
+        try {
+            vm.setCarId(7); advanceUntilIdle()
+            assertTrue(vm.uiState.value.allDrives.isNotEmpty())
+            source.identity.available = false
+            source.identity.change(account = "B", emit = true)
+            advanceUntilIdle()
+            assertTrue(vm.uiState.value.allDrives.isEmpty())
+            assertTrue(vm.uiState.value.yearlyData.isEmpty())
+        } finally { vm.viewModelScope.cancel(); advanceUntilIdle(); Dispatchers.resetMain() }
+    }
+
+    @Test fun mileageClearsProjectionWhenVehicleBindingChangesWithSameRemoteId() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val source = MileageSource()
+        val vm = MileageViewModel(source, StandardTestDispatcher(testScheduler))
+        try {
+            vm.setCarId(7); advanceUntilIdle()
+            assertTrue(vm.uiState.value.allDrives.isNotEmpty())
+            source.identity.available = false
+            source.identity.change(vehicle = "vehicle-b", emit = true)
+            advanceUntilIdle()
+            assertTrue(vm.uiState.value.allDrives.isEmpty())
+            assertTrue(vm.uiState.value.yearlyData.isEmpty())
         } finally { vm.viewModelScope.cancel(); advanceUntilIdle(); Dispatchers.resetMain() }
     }
 
