@@ -1,5 +1,6 @@
 package com.matelink.ui.screens.dashboard
 
+import com.matelink.ui.components.VehicleOpeningsVisual
 import android.content.Intent
 import com.matelink.BuildConfig
 import androidx.compose.animation.AnimatedContent
@@ -926,6 +927,7 @@ private fun vehicleProfileSubtitle(profile: VehicleHeroProfile, trim: String?): 
 
 @Composable
 internal fun VehicleOpeningAlert(openings: Set<VehicleOpening>) {
+    var expanded by remember(openings) { mutableStateOf(false) }
     val ordered = listOf(
         VehicleOpening.DOORS,
         VehicleOpening.WINDOWS,
@@ -956,6 +958,14 @@ internal fun VehicleOpeningAlert(openings: Set<VehicleOpening>) {
                     color = StatusWarning
                 )
             }
+            TextButton(onClick = { expanded = !expanded }) {
+                Text(stringResource(if (expanded) R.string.interaction_openings_hide else R.string.interaction_openings_show))
+            }
+            if (expanded) VehicleOpeningsVisual(
+                doors = true.takeIf { VehicleOpening.DOORS in openings },
+                windows = true.takeIf { VehicleOpening.WINDOWS in openings },
+                frunk = true.takeIf { VehicleOpening.FRUNK in openings },
+                trunk = true.takeIf { VehicleOpening.TRUNK in openings })
             ordered.chunked(2).forEach { rowOpenings ->
                 Row(
                     modifier = Modifier.fillMaxWidth(),

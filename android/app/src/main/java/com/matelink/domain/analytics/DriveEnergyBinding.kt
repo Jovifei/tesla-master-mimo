@@ -20,6 +20,12 @@ fun DriveDetail.resolveDriveEnergy(
     trimBadging: String? = null,
     capacityBasis: String? = null
 ): ResolvedDriveEnergy {
+    // Conflicting provider record identifiers cannot acquire evidence by presentation fallback.
+    if (sourceRecordIdentity.conflicted) return ResolvedDriveEnergy(
+        DriveEnergyEstimate(null, null, DriveEnergySource.UNAVAILABLE,
+            qualityReason = "source_record_conflict"),
+        EnergyMetric(source = source, startDate = startDate, endDate = endDate,
+            quality = "unknown", reason = "source_record_conflict"))
     val supplied = energyContract?.takeUnless {
         it.netEnergy?.quality == "unknown" && it.netEnergy?.reason == "no_verified_driving_net_energy"
     }
@@ -43,7 +49,7 @@ fun DriveDetail.resolveDriveEnergy(
     }
     // A legacy bb09 Fleet scalar lacks its entire counter/window evidence;
     // archived observed power samples remain a separately labeled estimate.
-    val scalar = energyConsumedNet.takeIf { legacyScalarEnergyAllowed(source) || source == "telemetry_mqtt" || source == "fleet_api" }
+    val scalar = energyConsumedNet.takeIf { legacyScalarEnergyAllowed(source) }
     val samples = if (source in setOf("local_import", "local_history")) emptyList() else positions.orEmpty()
     val estimate = DriveEnergyResolver.resolve(
         apiEnergyKwh = scalar,

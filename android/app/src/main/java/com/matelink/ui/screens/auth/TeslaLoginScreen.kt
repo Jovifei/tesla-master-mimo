@@ -1,5 +1,8 @@
 package com.matelink.ui.screens.auth
 
+import com.matelink.ui.components.ConnectionVisual
+import com.matelink.domain.model.ConnectionVisualPhase
+import com.matelink.domain.model.connectionVisualPhase
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.BorderStroke
@@ -137,7 +140,14 @@ fun TeslaLoginScreen(
                 .padding(horizontal = 20.dp, vertical = 20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            LoginHeaderPanel()
+            val visualPhase = connectionVisualPhase(
+                verified = isAuthenticated && postLoginOnboarding == TeslaLoginOnboardingState.Ready,
+                pending = uiState == TeslaLoginUiState.Loading || postLoginOnboarding == TeslaLoginOnboardingState.Checking,
+                failed = uiState is TeslaLoginUiState.Error || postLoginOnboarding is TeslaLoginOnboardingState.PermissionRequired ||
+                    postLoginOnboarding is TeslaLoginOnboardingState.Blocked,
+                actionRequired = postLoginOnboarding is TeslaLoginOnboardingState.PairingRequired ||
+                    postLoginOnboarding == TeslaLoginOnboardingState.Pending)
+            LoginHeaderPanel(visualPhase, isAuthenticated)
 
             val onboarding = if (isAuthenticated) postLoginOnboarding else TeslaLoginOnboardingState.Idle
             when (onboarding) {
@@ -415,7 +425,7 @@ private fun TeslaBlockedOnboardingPanel(reason: String?, onRetry: () -> Unit, on
 }
 
 @Composable
-private fun LoginHeaderPanel() {
+private fun LoginHeaderPanel(phase: ConnectionVisualPhase, pairing: Boolean) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -426,6 +436,7 @@ private fun LoginHeaderPanel() {
             modifier = Modifier.padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            ConnectionVisual(phase = phase, vehicle = pairing)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     imageVector = Icons.Filled.Description,
