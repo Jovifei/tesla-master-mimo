@@ -1,5 +1,8 @@
 package com.matelink.ui.screens.auth
 
+import com.matelink.ui.components.ConnectionVisual
+import com.matelink.domain.model.ConnectionVisualPhase
+import com.matelink.domain.model.connectionVisualPhase
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.BorderStroke
@@ -76,6 +79,7 @@ fun TeslaLoginScreen(
     val reauthorizing by viewModel.reauthorizing.collectAsState()
     val postLoginOnboarding by viewModel.postLoginOnboarding.collectAsState()
     val pairingFlowPending by viewModel.teslaPairingFlowPending.collectAsState()
+    val onboardingPhase by viewModel.onboardingPhase.collectAsState()
     val onboardingStateRestored by viewModel.onboardingStateRestored.collectAsState()
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -137,7 +141,14 @@ fun TeslaLoginScreen(
                 .padding(horizontal = 20.dp, vertical = 20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            LoginHeaderPanel()
+            val visualPhase = connectionVisualPhase(
+                verified = isAuthenticated && postLoginOnboarding == TeslaLoginOnboardingState.Ready,
+                pending = uiState == TeslaLoginUiState.Loading || postLoginOnboarding == TeslaLoginOnboardingState.Checking,
+                failed = uiState is TeslaLoginUiState.Error || postLoginOnboarding is TeslaLoginOnboardingState.PermissionRequired ||
+                    postLoginOnboarding is TeslaLoginOnboardingState.Blocked,
+                actionRequired = postLoginOnboarding is TeslaLoginOnboardingState.PairingRequired ||
+                    postLoginOnboarding == TeslaLoginOnboardingState.Pending)
+            LoginHeaderPanel(visualPhase, isAuthenticated)
 
             val onboarding = if (isAuthenticated) postLoginOnboarding else TeslaLoginOnboardingState.Idle
             when (onboarding) {
@@ -159,7 +170,7 @@ fun TeslaLoginScreen(
                     text = stringResource(R.string.tesla_onboarding_checking)
                 )
                 TeslaLoginOnboardingState.Pending -> TeslaBlockedOnboardingPanel(
-                    reason = "waiting_vehicle",
+                    reason = onboardingPhase.panelReason() ?: "waiting_vehicle",
                     onRetry = viewModel::retryTeslaOnboarding,
                     onContinue = viewModel::continueAfterTeslaOnboarding
                 )
@@ -393,14 +404,26 @@ private fun TeslaPermissionOnboardingPanel(
 @Composable
 private fun TeslaBlockedOnboardingPanel(reason: String?, onRetry: () -> Unit, onContinue: () -> Unit) {
     val billing = reason == "billing_blocked"
-    val automatic = reason == "waiting_vehicle"
+    val automatic = reason == "waiting_vehicle" || reason == "configuring" || reason == "awaiting_first_event"
+    val titleRes = when {
+        billing -> R.string.tesla_onboarding_blocked_title
+        reason == "configuring" -> R.string.telemetry_setup_configuring_title
+        reason == "awaiting_first_event" -> R.string.telemetry_setup_awaiting_title
+        else -> R.string.telemetry_setup_pending_title
+    }
+    val bodyRes = when {
+        billing -> R.string.tesla_onboarding_blocked_body
+        reason == "configuring" -> R.string.telemetry_setup_configuring_body
+        reason == "awaiting_first_event" -> R.string.telemetry_setup_awaiting_body
+        else -> R.string.telemetry_setup_pending_body
+    }
     LoginPanel(containerColor = if (automatic) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.errorContainer) {
         Text(
-            text = stringResource(if (billing) R.string.tesla_onboarding_blocked_title else R.string.telemetry_setup_pending_title),
+            text = stringResource(titleRes),
             style = MaterialTheme.typography.titleMedium
         )
         Text(
-            text = stringResource(if (billing) R.string.tesla_onboarding_blocked_body else R.string.telemetry_setup_pending_body),
+            text = stringResource(bodyRes),
             style = MaterialTheme.typography.bodyMedium
         )
         if (!billing && !automatic) {
@@ -415,7 +438,7 @@ private fun TeslaBlockedOnboardingPanel(reason: String?, onRetry: () -> Unit, on
 }
 
 @Composable
-private fun LoginHeaderPanel() {
+private fun LoginHeaderPanel(phase: ConnectionVisualPhase, pairing: Boolean) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -426,6 +449,7 @@ private fun LoginHeaderPanel() {
             modifier = Modifier.padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            ConnectionVisual(phase = phase, vehicle = pairing)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     imageVector = Icons.Filled.Description,

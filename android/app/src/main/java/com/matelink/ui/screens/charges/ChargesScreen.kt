@@ -1,5 +1,6 @@
 package com.matelink.ui.screens.charges
 
+import com.matelink.ui.components.EmptyHistoryVisual
 import com.matelink.ui.components.historyReadErrorMessageRes
 import com.matelink.ui.components.showHistoryReadFailure
 import com.matelink.domain.model.UnitFormatter
@@ -395,12 +396,12 @@ private fun ChargesContent(
                         containerColor = MaterialTheme.colorScheme.surfaceVariant
                     )
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(32.dp),
-                        contentAlignment = Alignment.Center
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(32.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
+                        EmptyHistoryVisual(charging = true, failed = readError != null)
                         Text(
                             text = stringResource(readError?.let(::historyReadErrorMessageRes) ?: R.string.no_charges_found),
                             style = MaterialTheme.typography.bodyLarge,

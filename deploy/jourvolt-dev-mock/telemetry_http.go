@@ -45,6 +45,13 @@ func (a *app) telemetryResource(w http.ResponseWriter, r *http.Request, userID s
 		}
 		item := a.telemetryReadiness(r.Context(), userID, vehicleID)
 		a.json(w, http.StatusOK, map[string]any{"data": item})
+	case "gray-fields":
+		if r.Method != http.MethodGet || len(parts) != 1 {
+			a.json(w, http.StatusNotFound, map[string]string{"error": "not_found"})
+			return
+		}
+		enabled, fields := a.telemetry.grayFieldAvailability(r.Context(), userID, vehicleID)
+		a.json(w, http.StatusOK, map[string]any{"data": map[string]any{"enabled": enabled, "fields": fields}})
 	default:
 		a.json(w, http.StatusNotFound, map[string]string{"error": "not_found"})
 	}

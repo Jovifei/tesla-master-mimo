@@ -1,5 +1,6 @@
 package com.matelink.ui.screens.dashboard
 
+import com.matelink.ui.components.VehicleOpeningsVisual
 import android.content.Intent
 import com.matelink.BuildConfig
 import androidx.compose.animation.AnimatedContent
@@ -98,8 +99,10 @@ fun DashboardScreen(
     onNavigateToTemperatureTrend: (carId: Int, exteriorColor: String?) -> Unit = { _, _ -> },
     onNavigateToTrips: (carId: Int, exteriorColor: String?) -> Unit = { _, _ -> },
     onNavigateToReadiness: (carId: Int) -> Unit = {},
+    onNavigateToTeslaLogin: () -> Unit = {},
     viewModel: DashboardViewModel = hiltViewModel()
 ) {
+    val remoteViewModel: VehicleRemoteViewModel = hiltViewModel()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     HistoryForegroundRefreshEffect { viewModel.refresh() }
     val context = LocalContext.current
@@ -567,8 +570,97 @@ fun DashboardScreen(
                 if (openOpenings.isNotEmpty()) {
                     VehicleOpeningAlert(openOpenings)
                 }
+
+                // Extended Fleet display lines (design 2026-11-05 §4). Every
+                // line renders only when the vehicle reported the data; the
+                // shaping rules live in ExtendedStatusPresentation.kt.
+                mediaPlayback(status)?.let { media ->
+                    Text(
+                        stringResource(R.string.media_now_playing, media.displayText),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                softwareUpdateUi(status)?.let { update ->
+                    val percent = update.percent
+                    Text(
+                        when {
+                            percent == null -> stringResource(R.string.software_update_in_progress)
+                            update.phase == SoftwareUpdatePhase.DOWNLOADING ->
+                                stringResource(R.string.software_update_downloading, percent)
+                            else -> stringResource(R.string.software_update_installing, percent)
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (percent != null) {
+                        LinearProgressIndicator(
+                            progress = { percent / 100f },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(7.dp),
+                            strokeCap = androidx.compose.ui.graphics.StrokeCap.Round
+                        )
+                    }
+                }
+                scheduledEvents(status).forEach { event ->
+                    Text(
+                        stringResource(
+                            if (event.kind == ScheduledKind.CHARGING_START) {
+                                R.string.scheduled_charging_start
+                            } else {
+                                R.string.scheduled_departure
+                            },
+                            event.timeText
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                vehicleModes(status)?.let { modes ->
+                    if (modes.valetOn) {
+                        Text(
+                            stringResource(R.string.valet_mode_on),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    modes.speedLimitKmh?.let { limit ->
+                        Text(
+                            stringResource(R.string.speed_limit_on, limit),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                climateTargets(status)?.let { targets ->
+                    val targetText = listOfNotNull(targets.driver, targets.passenger)
+                        .joinToString(" / ") { value ->
+                            if (value % 1.0 == 0.0) value.toInt().toString() else value.toString()
+                        }
+                    if (targetText.isNotEmpty()) {
+                        Text(
+                            stringResource(R.string.climate_target, targetText),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
             }
         }
+
+        // Fleet expansion sections (design 2026-11-05 §5–§7): vehicle
+        // controls (hidden until the backend reports command scopes
+        // ready), nearby charging (loaded on demand to save Fleet API
+        // quota) and named places.
+        VehicleControlsSection(
+            carId = carId,
+            status = status,
+            onReauthorize = onNavigateToTeslaLogin,
+            viewModel = remoteViewModel
+        )
+        NearbyChargingSection(carId = carId, viewModel = remoteViewModel)
+        VehiclePlacesSection(carId = carId, status = status, viewModel = remoteViewModel)
 
         // Info cards row
         Row(
@@ -928,6 +1020,7 @@ private fun vehicleProfileSubtitle(profile: VehicleHeroProfile, trim: String?): 
 
 @Composable
 internal fun VehicleOpeningAlert(openings: Set<VehicleOpening>) {
+    var expanded by remember(openings) { mutableStateOf(false) }
     val ordered = listOf(
         VehicleOpening.DOORS,
         VehicleOpening.WINDOWS,
@@ -958,6 +1051,14 @@ internal fun VehicleOpeningAlert(openings: Set<VehicleOpening>) {
                     color = StatusWarning
                 )
             }
+            TextButton(onClick = { expanded = !expanded }) {
+                Text(stringResource(if (expanded) R.string.interaction_openings_hide else R.string.interaction_openings_show))
+            }
+            if (expanded) VehicleOpeningsVisual(
+                doors = true.takeIf { VehicleOpening.DOORS in openings },
+                windows = true.takeIf { VehicleOpening.WINDOWS in openings },
+                frunk = true.takeIf { VehicleOpening.FRUNK in openings },
+                trunk = true.takeIf { VehicleOpening.TRUNK in openings })
             ordered.chunked(2).forEach { rowOpenings ->
                 Row(
                     modifier = Modifier.fillMaxWidth(),

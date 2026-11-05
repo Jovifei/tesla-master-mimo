@@ -671,6 +671,9 @@ fun NavGraph(
                 },
                 onNavigateToReadiness = { carId ->
                     navController.navigate(Screen.DataReadiness(carId))
+                },
+                onNavigateToTeslaLogin = {
+                    navController.navigate(Screen.TeslaLogin)
                 }
             )
         }

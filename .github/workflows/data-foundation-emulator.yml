@@ -1,7 +1,7 @@
 name: Data foundation isolated API35 Android instrumentation
 on:
   push:
-    branches: ['codex/apk-data-foundation-remote-20261024', 'codex/app-foundation-ui-integrate-20261025']
+    branches: ['codex/apk-data-foundation-remote-20261024', 'codex/app-foundation-ui-integrate-20261025', 'codex/app-interaction-visuals-20261104']
   workflow_dispatch:
 permissions:
   contents: read
@@ -42,25 +42,17 @@ jobs:
           set -euo pipefail
           mkdir -p emulator-evidence
           git rev-parse HEAD HEAD^{tree} HEAD^ > emulator-evidence/source.txt
-          # Never upload the original local Gradle settings or proxy configuration.
           python3 - <<'PY'
           from pathlib import Path
           p=Path('android/gradle.properties')
-          forbidden={'systemProp.http.proxyHost','systemProp.http.proxyPort',
-          'systemProp.https.proxyHost','systemProp.https.proxyPort','systemProp.http.nonProxyHosts'}
-          p.write_text('\n'.join(v for v in p.read_text().splitlines()
-              if v.split('=',1)[0] not in forbidden)+'\n')
+          forbidden={'systemProp.http.proxyHost','systemProp.http.proxyPort','systemProp.https.proxyHost','systemProp.https.proxyPort','systemProp.http.nonProxyHosts'}
+          p.write_text('\n'.join(v for v in p.read_text().splitlines() if v.split('=',1)[0] not in forbidden)+'\n')
           PY
       - name: Start and independently health-check the existing synthetic fixture
         shell: bash
         run: |
           set -euo pipefail
-          # Emulator 10.0.2.2 maps to this runner's loopback interface.
-          # This is the existing synthetic qualification fixture only, never a
-          # provider server or a user's network/vehicle.
-          nohup python3 -u tools/p0_qualification/fixture_server.py \
-            --host 127.0.0.1 --port 18080 --scenario normal \
-            > emulator-evidence/fixture.log 2>&1 </dev/null &
+          nohup python3 -u tools/p0_qualification/fixture_server.py --host 127.0.0.1 --port 18080 --scenario normal > emulator-evidence/fixture.log 2>&1 </dev/null &
           echo "$!" > emulator-evidence/fixture.pid
           python3 - <<'PY'
           import json,time,urllib.request,os

@@ -111,6 +111,10 @@ class TeslaLoginViewModel @Inject constructor(
     val postLoginOnboarding: StateFlow<TeslaLoginOnboardingState> = _postLoginOnboarding.asStateFlow()
     private val _teslaPairingFlowPending = MutableStateFlow(false)
     val teslaPairingFlowPending: StateFlow<Boolean> = _teslaPairingFlowPending.asStateFlow()
+    // Graded onboarding phase (design §8): why setup is still pending —
+    // syncing configuration vs waiting for the vehicle's first data.
+    private val _onboardingPhase = MutableStateFlow(OnboardingPhaseKind.UNKNOWN)
+    val onboardingPhase: StateFlow<OnboardingPhaseKind> = _onboardingPhase.asStateFlow()
     private val _onboardingStateRestored = MutableStateFlow(false)
     val onboardingStateRestored: StateFlow<Boolean> = _onboardingStateRestored.asStateFlow()
     val isAuthenticated: StateFlow<Boolean> = sessionStore.session
@@ -763,6 +767,7 @@ class TeslaLoginViewModel @Inject constructor(
         when (result) {
             is ApiResult.Success -> {
                 val pairing = result.data
+                _onboardingPhase.value = onboardingPhaseKind(pairing)
                 when {
                     shouldSurfaceTeslaVirtualKey(pairing) -> {
                         externalPairingReturnPending = false
