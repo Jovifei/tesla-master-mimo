@@ -33,7 +33,7 @@ const processChrome=spawn(chrome,['--headless=new','--no-sandbox','--disable-gpu
   '--disable-background-networking','--disable-component-update','--disable-sync','--hide-scrollbars',
   '--remote-debugging-port=0',`--user-data-dir=${profile}`,'about:blank'],{stdio:['ignore','ignore','pipe']})
 const chromeLog=fs.createWriteStream(path.join(evidence,'chromium.log'));processChrome.stderr.pipe(chromeLog)
-let ws;const pending=new Map();let next=1;const exceptions=[],outside=[];const captures=[]
+let ws;const pending=new Map();let next=1;const exceptions=[],outside=[];const captures=[]; const chineseFontEvidence=[]
 try{
   for(let i=0;!fs.existsSync(path.join(profile,'DevToolsActivePort'));i++){
     if(i>=100||processChrome.exitCode!==null)throw new Error('Isolated Chromium did not boot')
@@ -62,6 +62,18 @@ try{
     return result.result?.value
   }
   await send('Page.enable');await send('Runtime.enable');await send('Network.enable')
+  await send('DOM.enable');await send('CSS.enable')
+  // Successful PNG capture and document.fonts.ready do not prove readable Chinese.
+  // Query the actual rendered heading glyphs, not an installed-font guess.
+  const verifyChineseGlyphs=async(scene,theme,width)=>{
+    const document=await send('DOM.getDocument')
+    const node=await send('DOM.querySelector',{nodeId:document.root.nodeId,selector:'.fixture-surface h1'})
+    assert(node.nodeId>0,'Missing visible Chinese scene heading')
+    const {fonts}=await send('CSS.getPlatformFontsForNode',{nodeId:node.nodeId})
+    assert(fonts.some(font=>/Noto Sans CJK/.test(font.familyName)&&font.glyphCount>0),
+      `Chinese text lacks rendered CJK glyphs: ${scene} ${JSON.stringify(fonts)}`)
+    chineseFontEvidence.push({scene,theme,width,fonts})
+  }
   const waitFor=async expression=>{for(let i=0;i<100;i++){if(await evaluate(expression))return;await sleep(50)}throw new Error(`DOM condition not met: ${expression}`)}
   const scenes=['vehicle','vehicle-pending','tesla','auth-pending','wechat','tpms','route','openings','parking','empty','loading']
   const save=async(name)=>{
@@ -84,6 +96,7 @@ try{
     await send('Page.navigate',{url:`${origin}/?scene=${scene}`})
     await waitFor(`window.__visualFixture?.ready===true && document.querySelector('[data-scene="${scene}"]')!==null && [...document.images].every(i=>i.complete&&i.naturalWidth>0)`)
     await evaluate('document.fonts.ready')
+    await verifyChineseGlyphs(scene,theme,width)
     if(scene==='openings'){
       await evaluate("document.querySelector('.interaction-disclosure').click()")
       await waitFor("document.querySelector('.opening-position-board')!==null")
@@ -124,7 +137,7 @@ try{
   assert.equal(captures.length,46);assert.equal(exceptions.length,0,exceptions.join('\n'));assert.equal(outside.length,0,'Unexpected external requests')
   assert(new Set(captures.map(c=>c.sha256)).size>=35,'duplicate/blank scenes')
   fs.copyFileSync(path.join(bundle,'SOURCE.txt'),path.join(evidence,'SOURCE.txt'))
-  fs.writeFileSync(path.join(evidence,'manifest.json'),JSON.stringify({kind:'actual React components with test-only DOM adapter; not native WeChat',passed:true,externalRequests:0,exceptionCount:0,captures},null,2))
+  fs.writeFileSync(path.join(evidence,'manifest.json'),JSON.stringify({kind:'actual React components with test-only DOM adapter; not native WeChat',passed:true,externalRequests:0,exceptionCount:0,chineseFontEvidence,captures},null,2))
   console.log(`PASS ${captures.length} actual browser renders; clicks, unknown/zero, scope reset, motion lifecycle and narrow/large-text layout`)
 }finally{
   if(ws)ws.close()
