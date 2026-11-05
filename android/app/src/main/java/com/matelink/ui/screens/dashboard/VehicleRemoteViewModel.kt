@@ -16,26 +16,26 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /** Outcome of one executed command, for honest result copy (§6.3). */
-internal sealed interface CommandOutcome {
+sealed interface CommandOutcome {
     data class Accepted(val command: String, val verified: Boolean) : CommandOutcome
     data class Failed(val command: String, val errorClass: String?) : CommandOutcome
 }
 
-internal sealed interface NearbyState {
+sealed interface NearbyState {
     data object NotLoaded : NearbyState
     data object Loading : NearbyState
     data class Loaded(val sites: List<ChargingSite>, val source: String?) : NearbyState
     data object Failed : NearbyState
 }
 
-internal sealed interface PlacesState {
+sealed interface PlacesState {
     data object NotLoaded : PlacesState
     data object Loading : PlacesState
     data class Loaded(val places: List<VehiclePlace>) : PlacesState
     data object Failed : PlacesState
 }
 
-internal data class VehicleRemoteUiState(
+data class VehicleRemoteUiState(
     val busyCommand: String? = null,
     val outcome: CommandOutcome? = null,
     val nearby: NearbyState = NearbyState.NotLoaded,

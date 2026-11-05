@@ -11,13 +11,13 @@ import com.matelink.data.api.models.CarStatus
  *
  * Pure Kotlin (no Compose) so the offering rules are unit-testable.
  */
-internal enum class CommandTier {
+enum class CommandTier {
     LOW,
     MID,
     HIGH
 }
 
-internal data class CommandUi(
+data class CommandUi(
     val name: String,
     val tier: CommandTier,
     /** High-tier commands need the confirmation flag (and a confirm UI). */
