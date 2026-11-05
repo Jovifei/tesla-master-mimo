@@ -13,7 +13,7 @@ import com.matelink.data.api.models.TelemetryPairingStatus
  * Pure Kotlin so the grading is unit-testable; the Compose layer maps
  * each kind to its title/body strings.
  */
-internal enum class OnboardingPhaseKind {
+enum class OnboardingPhaseKind {
     PAIRING_REQUIRED,
     PERMISSION_REQUIRED,
     CONFIGURING,
