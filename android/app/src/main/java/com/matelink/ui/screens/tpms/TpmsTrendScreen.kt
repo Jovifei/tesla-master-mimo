@@ -173,7 +173,7 @@ fun TpmsTrendScreen(
                     val point = state.series[wheel]?.lastOrNull { it.pressureBar != null }
                     visualWheelReading(point?.pressureBar, point?.observedAt, now, verified = point != null)
                 }
-                TpmsVehicleVisual(readings, focusedWheel, onSelect = { focusedWheel = it })
+                TpmsVehicleVisual(readings, focusedWheel, onSelect = { focusedWheel = it }, profile = state.alertProfile)
                 TpmsTrendChart(if (focusedWheel == null) state.series else state.series.filterKeys { it == focusedWheel })
                 TpmsSummary(state)
             }

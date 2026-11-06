@@ -1,0 +1,202 @@
+name: Complete App interaction full verification
+on:
+  push:
+    branches: [codex/app-interaction-complete-20261106]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: interaction-complete-full-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  source:
+    if: github.repository == 'Jovifei/tesla-master-mimo'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify exact baseline, retained behavior and wired consumers
+        run: |
+          set -euo pipefail
+          mkdir -p visual-evidence
+          python3 tools/interaction-stage/verify-complete-preservation.py | tee visual-evidence/preservation.json
+          python3 tools/interaction-stage/verify-visual-contract.py | tee visual-evidence/contract.txt
+          git rev-parse HEAD HEAD^{tree} HEAD^ > visual-evidence/source.txt
+          git diff --binary fc812ff8505dc72f6002023bc93c041d5de92b75 HEAD > visual-evidence/source.patch
+          git archive --format=zip --output=visual-evidence/source.zip HEAD
+          git grep -n -E 'TpmsVehicleVisual|RouteInteractionVisual|ConnectionVisual|VehicleOpeningsVisual|RecordedChargeRail|EmptyHistoryVisual' -- android/app/src/main | tee visual-evidence/wired-consumers.txt
+          python3 - <<'PY'
+          import subprocess
+          result=subprocess.run(['git','grep','-n','-i','-E','wechat|微信','--','android/app/src/main'],text=True,capture_output=True)
+          assert result.returncode in (0,1)
+          print('NATIVE_WECHAT_EXISTING_SOURCE',result.stdout or 'No native WeChat binding consumer in this base; do not manufacture one.')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: complete-visual-fixed-source
+          path: visual-evidence/
+          retention-days: 14
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+          log-accepted-android-sdk-licenses: false
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+      - name: Real Room SQL and complete Debug Release lint R8 gates
+        run: |
+          set -euo pipefail
+          python3 tools/energy-stage/verify-energy-dao-sql.py
+          bash tools/energy-stage/android-ci.sh
+      - name: Parse actual variant XML, including the newly wired presentation tests
+        if: always()
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json,xml.etree.ElementTree as E
+          output={}
+          for variant in ('testDebugUnitTest','testReleaseUnitTest'):
+              files=list((Path('android/app/build/test-results')/variant).glob('TEST-*.xml'))
+              roots=[E.parse(file).getroot() for file in files]
+              cases=[case for root in roots for case in root.findall('.//testcase')]
+              output[variant]={'tests':len(cases),'failures':sum(len(c.findall('failure')) for c in cases),'errors':sum(len(c.findall('error')) for c in cases),'skipped':sum(len(c.findall('skipped')) for c in cases)}
+              assert any('InteractionEvidencePresentationTest' in c.get('classname','') for c in cases),variant
+              assert len(cases)>1000 and output[variant]['failures']==0 and output[variant]['errors']==0,output
+          Path('android-evidence').mkdir(exist_ok=True)
+          Path('android-evidence/complete-counts.json').write_text(json.dumps(output,indent=2))
+          print(json.dumps(output,indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: complete-visual-android
+          retention-days: 14
+          path: |
+            android-evidence/
+            android/app/build/test-results/
+            android/app/build/reports/
+            android/app/build/outputs/apk/
+            android/app/schemas/
+  miniprogram:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: miniprogram
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: |
+            miniprogram/package-lock.json
+            miniprogram/test-tooling/package-lock.json
+      - name: Preserve inherited Mini compatibility
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          git rev-parse HEAD HEAD^{tree} HEAD^ > evidence/source.txt
+          npm ci --ignore-scripts --no-fund
+          npm ci --prefix test-tooling --ignore-scripts --no-fund
+          npm run typecheck 2>&1 | tee evidence/typecheck.log
+          npm test -- --reporter=default --reporter=junit --outputFile.junit=evidence/tests.xml 2>&1 | tee evidence/tests.log
+          npm run build:weapp 2>&1 | tee evidence/build.log
+          node -e "const p=require('./dist/project.config.json'); if(p.setting.urlCheck !== true) throw Error('domain check disabled')"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: complete-inherited-mini-compatibility
+          retention-days: 14
+          path: |
+            miniprogram/evidence/
+            miniprogram/dist/
+  backend-web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: matelink_test
+          POSTGRES_PASSWORD: isolated-only
+          POSTGRES_DB: matelink_partial_test_ci
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U matelink_test -d matelink_partial_test_ci"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      JOURVOLT_TEST_DATABASE_URL: postgres://matelink_test:isolated-only@localhost:5432/matelink_partial_test_ci?sslmode=disable
+      MATELINK_TEST_ISOLATED_POSTGRES: '1'
+      JOURVOLT_REQUIRE_HISTORY_PG: '1'
+      JOURVOLT_RUN_LEGACY_MEMORY_BENCH: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: deploy/jourvolt-dev-mock/go.mod
+          cache: false
+      - name: Isolated Go PostgreSQL TLS upstream and race consumers
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          git rev-parse HEAD HEAD^{tree} HEAD^ > evidence/source.txt
+          python3 -m unittest discover -s tools/energy-stage -p 'test_*.py' -v 2>&1 | tee evidence/tls-unit-tests.log
+          bash tools/energy-stage/test-tls-deployment-policy.sh 2>&1 | tee evidence/tls-policy.log
+          (cd deploy/jourvolt-dev-mock && go test ./... -count=1 -json) 2>&1 | tee evidence/go-tests.json
+          (cd deploy/jourvolt-dev-mock && go vet ./... && go mod verify && go build ./...) 2>&1 | tee evidence/go-build.log
+          python3 -m unittest discover -s deploy/teslamate-home-docker/qualification -p 'test_*.py' -v 2>&1 | tee evidence/upstream-qualification.log
+          (cd deploy/teslamate-home-docker/adapter && go test ./... -count=1) 2>&1 | tee evidence/adapter.log
+          bash tools/interaction-stage/bridge-isolated-ci.sh
+          (cd deploy/jourvolt-dev-mock && JOURVOLT_RUN_LEGACY_MEMORY_BENCH=0 go test -race -v -count=1 -run 'Test(Independent|Energy|BatteryTrend|BoundedHistory|ChargeEnergy|Parked|CompactTelemetry|NativeShadow|History(Sample|Energy|Summary|MetadataMemory|ReadCancellation|MemoryHTTP|QueriesPostgresScope|MetadataSQL|ReadBudget|ResourceAdmission|HeavyBudget|Import|Archive|DecodeAdmission)|ArchiveImport|Telemetry(PostgresCompactBootstrap|PostgresCompactAdmissionReference|History|PostgresNativeIdentity|PostgresIdleDriveFinalization|PostgresNativeShadow))' ./...) 2>&1 | tee evidence/go-race.log
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          rows=[json.loads(s) for s in Path('evidence/go-tests.json').read_text().splitlines() if s.startswith('{')]
+          assert not any(r.get('Action') in ('fail','skip') for r in rows)
+          for name in ['TestBoundedHistoryPostgresListDetailTenantSourceAndCancellation','TestParkedHistoryBoundsPostgresHTTPMemoryParityAndUnknown','TestEnergyPostgresResetReplayAndACModeScope','TestPostgresHistoryDetailLoadsOnlyTheRequestedFullRoute']:
+              assert any(r.get('Test')==name and r.get('Action')=='pass' for r in rows),name
+          counts={a:sum(r.get('Action')==a and bool(r.get('Test')) for r in rows) for a in ('run','pass','fail','skip')}
+          Path('evidence/counts.json').write_text(json.dumps(counts))
+          print(counts)
+          PY
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - name: Web tests and locked production build
+        shell: bash
+        working-directory: web_matelink
+        run: |
+          set -euo pipefail
+          node --experimental-strip-types --test tests/history-pages.test.mjs 2>&1 | tee ../evidence/web-tests.log
+          npm ci --no-audit --no-fund 2>&1 | tee ../evidence/web-install.log
+          npm run build 2>&1 | tee ../evidence/web-build.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: complete-backend-web
+          retention-days: 14
+          path: evidence/
