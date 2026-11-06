@@ -8,6 +8,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -52,6 +54,29 @@ class InteractionVisualAndroidTest {
         compose.onNodeWithText("2.60 bar").assertDoesNotExist()
     }
 
+    @Test fun narrowLargeTextWheelControlsNeverOverlapVehicleOrEachOther() {
+        val scale = mutableStateOf(1f)
+        compose.setContent { MateLinkTheme {
+            val density = LocalDensity.current.density
+            CompositionLocalProvider(LocalDensity provides Density(density, scale.value)) {
+                Column(Modifier.width(320.dp).padding(16.dp)) {
+                    TpmsVehicleVisual(emptyMap(), null, {})
+                }
+            }
+        } }
+        for (fontScale in listOf(1f, 1.8f)) {
+            compose.runOnIdle { scale.value = fontScale }
+            compose.waitForIdle()
+            val car = compose.onNodeWithTag("interaction-tpms-car").fetchSemanticsNode().boundsInRoot
+            fun wheel(name: String) = compose.onNodeWithTag("interaction-wheel-$name")
+                .assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+            val fl = wheel("FL"); val fr = wheel("FR"); val rl = wheel("RL"); val rr = wheel("RR")
+            assertTrue("left controls overlap car at scale=$fontScale", fl.right <= car.left && rl.right <= car.left)
+            assertTrue("right controls overlap car at scale=$fontScale", fr.left >= car.right && rr.left >= car.right)
+            assertTrue("front/rear controls overlap at scale=$fontScale", fl.bottom < rl.top && fr.bottom < rr.top)
+        }
+    }
+
     @Test fun allVisualGroupsRenderAtPhoneWidthsAndInBothThemes() {
         val scene = mutableStateOf(0); val dark = mutableStateOf(false); val width = mutableStateOf(320)
         val now = 1_800_000_000_000L
@@ -85,6 +110,48 @@ class InteractionVisualAndroidTest {
             compose.waitForIdle()
             capture("matelink_visual_${if (night) "dark" else "light"}_$index")
         }
+    }
+
+
+    @Test fun connectionIllustrationsStayInsideNarrowCardsAtLargeText() {
+        val scale = mutableStateOf(1f)
+        val vehicle = mutableStateOf(false)
+        val phase = mutableStateOf(ConnectionVisualPhase.IDLE)
+        compose.setContent { MateLinkTheme {
+            val density = LocalDensity.current.density
+            CompositionLocalProvider(LocalDensity provides Density(density, scale.value)) {
+                Column(Modifier.width(280.dp).padding(16.dp).testTag("connection-test-card")) {
+                    ConnectionVisual(phase.value, vehicle.value)
+                }
+            }
+        } }
+        for (fontScale in listOf(1f, 1.8f)) for (withVehicle in listOf(false, true)) {
+            compose.runOnIdle {
+                scale.value = fontScale; vehicle.value = withVehicle
+                phase.value = ConnectionVisualPhase.ACTION_REQUIRED
+            }
+            compose.waitForIdle()
+            val board = compose.onNodeWithTag("connection-test-card").fetchSemanticsNode().boundsInRoot
+            val source = compose.onNodeWithTag("interaction-peer-source").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+            val bridge = compose.onNodeWithTag("interaction-bridge").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+            val target = compose.onNodeWithTag("interaction-peer-target").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+            assertTrue(source.left >= board.left && target.right <= board.right)
+            assertTrue(source.right <= bridge.left && bridge.right <= target.left)
+        }
+        compose.runOnIdle { phase.value = ConnectionVisualPhase.UNAVAILABLE }
+        compose.onNodeWithTag("interaction-connection-UNAVAILABLE").assertIsDisplayed()
+        compose.onNodeWithTag("interaction-connection-CONNECTED").assertDoesNotExist()
+    }
+
+    @Test fun changedEndpointReceiptClearsPreviousEndpointFocus() {
+        val start = mutableStateOf<String?>("Synthetic A")
+        val end = mutableStateOf<String?>("Synthetic B")
+        compose.setContent { MateLinkTheme { RouteInteractionVisual(start.value, end.value) } }
+        compose.onNodeWithTag("interaction-route-1").performClick().assertIsSelected()
+        compose.runOnIdle { start.value = "New receipt"; end.value = null }
+        compose.onNodeWithTag("interaction-route-0").assertIsSelected()
+        compose.onNodeWithTag("interaction-route-1").assertIsNotSelected()
+        compose.onNodeWithText("Synthetic B").assertDoesNotExist()
     }
 
     private fun capture(name: String) {

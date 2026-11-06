@@ -28,6 +28,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
@@ -36,6 +37,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -48,6 +50,7 @@ import com.matelink.domain.model.hasVisualRouteEndpoints
 import com.matelink.domain.model.ConnectionVisualPhase
 import com.matelink.domain.model.VisualWheelReading
 import com.matelink.domain.model.VisualWheelState
+import com.matelink.data.local.TpmsAlertProfile
 import com.matelink.data.local.TirePosition
 import java.text.DateFormat
 import java.util.Date
@@ -87,18 +90,22 @@ fun ConnectionVisual(phase: ConnectionVisualPhase, vehicle: Boolean = false,
         ConnectionVisualPhase.CONNECTED -> R.string.interaction_link_confirmed
         ConnectionVisualPhase.UNAVAILABLE -> R.string.interaction_link_unavailable
     })
-    Column(modifier.fillMaxWidth().testTag("interaction-connection-${phase.name}"),
-        horizontalAlignment = Alignment.CenterHorizontally) {
-        Row(Modifier.fillMaxWidth().height(86.dp), verticalAlignment = Alignment.CenterVertically,
+    Column(modifier.fillMaxWidth().testTag("interaction-connection-${phase.name}")
+        .semantics { stateDescription = label }, horizontalAlignment = Alignment.CenterHorizontally) {
+        Row(Modifier.fillMaxWidth().heightIn(min = 86.dp).padding(vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center) {
-            if (vehicle) BundledVehicleIllustration(Modifier.width(132.dp).height(80.dp))
-            else Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surface) {
+            if (vehicle) BundledVehicleIllustration(Modifier.weight(1f).height(80.dp)
+                .testTag("interaction-peer-source"))
+            else Surface(modifier = Modifier.weight(1f).testTag("interaction-peer-source"),
+                shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surface) {
                 Column(Modifier.padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(Icons.Default.Lock, null, tint = accent)
                     Text("Tesla", style = MaterialTheme.typography.labelMedium)
                 }
             }
-            Box(Modifier.width(72.dp).height(48.dp), contentAlignment = Alignment.Center) {
+            Box(Modifier.width(56.dp).height(48.dp).testTag("interaction-bridge"),
+                contentAlignment = Alignment.Center) {
                 if (phase == ConnectionVisualPhase.CONNECTING) {
                     // Native progress obeys system duration scale; no fake completion value.
                     if (rememberVisualMotionEnabled()) LinearProgressIndicator(
@@ -108,7 +115,8 @@ fun ConnectionVisual(phase: ConnectionVisualPhase, vehicle: Boolean = false,
                     else if (phase == ConnectionVisualPhase.UNAVAILABLE) Icons.Default.CloudOff
                     else Icons.Default.Link, null, tint = accent)
             }
-            Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surface) {
+            Surface(modifier = Modifier.weight(1f).testTag("interaction-peer-target"),
+                shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surface) {
                 Column(Modifier.padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(Icons.Default.AccountCircle, null, tint = accent)
                     Text("MateLink", style = MaterialTheme.typography.labelMedium)
@@ -124,6 +132,11 @@ fun ConnectionVisual(phase: ConnectionVisualPhase, vehicle: Boolean = false,
 fun RouteInteractionVisual(start: String?, end: String?, modifier: Modifier = Modifier) {
     var selected by remember(start, end) { mutableStateOf(0) }
     val knownStart = !start.isNullOrBlank(); val knownEnd = !end.isNullOrBlank()
+    val motion = rememberVisualMotionEnabled()
+    // This moves emphasis, not a car or a purported GPS point.
+    val focus by animateFloatAsState(
+        targetValue = selected.toFloat(),
+        animationSpec = tween(if (motion) 180 else 0), label = "endpointFocus")
     val accent = MaterialTheme.colorScheme.primary
     val muted = MaterialTheme.colorScheme.outline
     val description = stringResource(R.string.interaction_route_schematic)
@@ -138,6 +151,8 @@ fun RouteInteractionVisual(start: String?, end: String?, modifier: Modifier = Mo
                     pathEffect = PathEffect.dashPathEffect(floatArrayOf(6.dp.toPx(), 5.dp.toPx()))))
             drawCircle(if (knownStart) accent else muted, 6.dp.toPx(), from)
             drawCircle(if (knownEnd) accent else muted, 6.dp.toPx(), to)
+            drawCircle(accent.copy(alpha = 1f - focus), 10.dp.toPx(), from, style = Stroke(2.dp.toPx()))
+            drawCircle(accent.copy(alpha = focus), 10.dp.toPx(), to, style = Stroke(2.dp.toPx()))
         }
         listOf(start, end).forEachIndexed { index, address ->
             val label = stringResource(if (index == 0) R.string.start else R.string.end)
@@ -177,33 +192,46 @@ fun wheelVisualLabel(wheel: TirePosition): String = stringResource(when (wheel) 
 
 @Composable
 fun TpmsVehicleVisual(readings: Map<TirePosition, VisualWheelReading>, selected: TirePosition?,
-    onSelect: (TirePosition?) -> Unit, modifier: Modifier = Modifier) {
+    onSelect: (TirePosition?) -> Unit, modifier: Modifier = Modifier, profile: TpmsAlertProfile? = null) {
+    // A malformed direct consumer input must not upgrade a raw report to observed UI evidence.
+    val displayReadings = TirePosition.entries.associateWith { qualifiedVisualReading(readings[it]) }
     Column(modifier.fillMaxWidth().testTag("interaction-tpms")) {
-        Box(Modifier.fillMaxWidth().heightIn(min = 216.dp), contentAlignment = Alignment.Center) {
-            VehiclePositionSchematic(Modifier.height(204.dp).width(108.dp))
-            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(72.dp)) {
-                listOf(listOf(TirePosition.FL, TirePosition.FR), listOf(TirePosition.RL, TirePosition.RR)).forEach { pair ->
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        pair.forEach { wheel ->
-                            val reading = readings[wheel]
-                            val value = reading?.pressureBar?.let { String.format(Locale.getDefault(), "%.2f bar", it) }
+        // Independent side columns never overlap the car, even at large font scale.
+        Row(Modifier.fillMaxWidth().heightIn(min = 216.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(listOf(TirePosition.FL, TirePosition.RL), listOf(TirePosition.FR, TirePosition.RR))
+                .forEachIndexed { side, wheels ->
+                    if (side == 1) VehiclePositionSchematic(Modifier.height(204.dp).width(108.dp)
+                        .testTag("interaction-tpms-car"))
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(32.dp)) {
+                        wheels.forEach { wheel ->
+                            val reading = displayReadings.getValue(wheel)
+                            val value = reading.pressureBar?.let { String.format(Locale.getDefault(), "%.2f bar", it) }
                                 ?: stringResource(R.string.not_available)
                             val label = wheelVisualLabel(wheel)
-                            val stateLabel = stringResource(when (reading?.state) {
+                            val band = visualPressureBand(reading, profile)
+                            val stateLabel = stringResource(when {
+                                band == VisualPressureBand.LOW -> R.string.interaction_evidence_pressure_low
+                                band == VisualPressureBand.HIGH -> R.string.interaction_evidence_pressure_high
+                                band == VisualPressureBand.IN_RANGE -> R.string.interaction_evidence_pressure_range
+                                else -> when (reading.state) {
                                 VisualWheelState.RECORDED -> R.string.interaction_observed
                                 VisualWheelState.STALE -> R.string.interaction_stale
                                 VisualWheelState.WARNING -> R.string.interaction_warning
                                 else -> R.string.interaction_unknown
+                                }
                             })
                             val isSelected = selected == wheel
-                            val accent = if (reading?.state == VisualWheelState.WARNING) MaterialTheme.colorScheme.error
-                                else if (reading?.state == VisualWheelState.RECORDED) MaterialTheme.colorScheme.primary
+                            val accent = if (band == VisualPressureBand.LOW || band == VisualPressureBand.HIGH ||
+                                reading.state == VisualWheelState.WARNING) MaterialTheme.colorScheme.error
+                                else if (reading.state == VisualWheelState.RECORDED) MaterialTheme.colorScheme.primary
                                 else MaterialTheme.colorScheme.onSurfaceVariant
-                            Column(Modifier.widthIn(max = 112.dp).heightIn(min = 56.dp)
+                            Column(Modifier.fillMaxWidth().heightIn(min = 56.dp)
                                 .testTag("interaction-wheel-${wheel.name}")
                                 .selectable(isSelected, role = Role.Button, onClick = { onSelect(if (isSelected) null else wheel) })
                                 .background(if (isSelected) MaterialTheme.colorScheme.primaryContainer
-                                    else MaterialTheme.colorScheme.surface, RoundedCornerShape(12.dp)).padding(8.dp)) {
+                                    else MaterialTheme.colorScheme.surface, RoundedCornerShape(12.dp)).padding(horizontal = 4.dp, vertical = 8.dp)) {
                                 Text(label, style = MaterialTheme.typography.labelSmall)
                                 Text(value, style = MaterialTheme.typography.titleSmall, color = accent)
                                 Text(stateLabel, style = MaterialTheme.typography.labelSmall, color = accent)
@@ -211,13 +239,18 @@ fun TpmsVehicleVisual(readings: Map<TirePosition, VisualWheelReading>, selected:
                         }
                     }
                 }
-            }
         }
-        val reading = selected?.let { readings[it] }
-        Text(if (selected == null) stringResource(R.string.interaction_wheel_select)
-            else wheelVisualLabel(selected) + " · " + (reading?.observedAt?.let {
-                DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(it))
-            } ?: stringResource(R.string.interaction_unknown)),
+        if (profile?.enabled == true && profile.isValid) Text(stringResource(R.string.interaction_evidence_pressure_source),
+            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        val observedAt = if (selected == null) latestVisualWheelObservation(displayReadings.values)
+            else displayReadings[selected]?.observedAt
+        val time = observedAt?.let { DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(it)) }
+            ?: stringResource(R.string.interaction_evidence_time_unknown)
+        Text(if (selected == null) stringResource(R.string.interaction_evidence_latest_wheel, time)
+            else wheelVisualLabel(selected) + " · " + time,
+            modifier = Modifier.testTag("interaction-wheel-observed-at"),
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (selected == null) Text(stringResource(R.string.interaction_wheel_select),
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(stringResource(R.string.interaction_vehicle_schematic), style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -229,7 +262,6 @@ fun TpmsVehicleVisual(readings: Map<TirePosition, VisualWheelReading>, selected:
 fun VehicleOpeningsVisual(doors: Boolean?, windows: Boolean?, frunk: Boolean?, trunk: Boolean?,
     modifier: Modifier = Modifier) {
     val warning = MaterialTheme.colorScheme.error
-    val muted = MaterialTheme.colorScheme.outline
     Column(modifier.fillMaxWidth().testTag("interaction-openings"), horizontalAlignment = Alignment.CenterHorizontally) {
         Box(Modifier.width(140.dp).height(184.dp), contentAlignment = Alignment.Center) {
             VehiclePositionSchematic(Modifier.fillMaxSize())
@@ -244,6 +276,25 @@ fun VehicleOpeningsVisual(doors: Boolean?, windows: Boolean?, frunk: Boolean?, t
                 if (trunk == true) drawLine(warning, Offset(size.width * .32f, size.height * .88f), Offset(size.width * .68f, size.height * .88f), 4.dp.toPx(), StrokeCap.Round)
             }
         }
+        // Native text conveys the distinction even without colour perception or image rendering.
+        val rows = listOf(
+            Triple("doors", R.string.interaction_evidence_doors, doors),
+            Triple("windows", R.string.interaction_evidence_windows, windows),
+            Triple("frunk", R.string.interaction_evidence_frunk, frunk),
+            Triple("trunk", R.string.interaction_evidence_trunk, trunk))
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            rows.forEach { (key, labelId, open) ->
+                val statusId = when (open) {
+                    true -> R.string.interaction_evidence_open
+                    false -> R.string.interaction_evidence_closed
+                    null -> R.string.interaction_evidence_unknown
+                }
+                Text(stringResource(R.string.interaction_evidence_opening_row, stringResource(labelId), stringResource(statusId)),
+                    modifier = Modifier.testTag("interaction-opening-$key"),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (open == true) warning else MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
         Text(stringResource(R.string.interaction_openings_aggregate), style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
@@ -252,8 +303,10 @@ fun VehicleOpeningsVisual(doors: Boolean?, windows: Boolean?, frunk: Boolean?, t
 @Composable
 fun EmptyHistoryVisual(charging: Boolean, failed: Boolean = false, modifier: Modifier = Modifier) {
     val accent = MaterialTheme.colorScheme.primary
-    Box(modifier.width(142.dp).height(76.dp).testTag("interaction-empty-${if (charging) "charge" else "drive"}"),
-        contentAlignment = Alignment.Center) {
+    val description = stringResource(if (failed) R.string.interaction_evidence_read_failed
+        else if (charging) R.string.interaction_evidence_charge_empty else R.string.interaction_evidence_drive_empty)
+    Box(modifier.width(142.dp).height(76.dp).testTag("interaction-empty-${if (charging) "charge" else "drive"}")
+        .semantics { contentDescription = description }, contentAlignment = Alignment.Center) {
         if (failed) Icon(Icons.Default.CloudOff, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(42.dp))
         else if (charging) {
             BundledVehicleIllustration(Modifier.fillMaxSize().padding(end = 24.dp))
@@ -273,11 +326,15 @@ fun EmptyHistoryVisual(charging: Boolean, failed: Boolean = false, modifier: Mod
 @Composable
 fun RecordedChargeRail(hasRecordedEnd: Boolean, modifier: Modifier = Modifier) {
     val accent = MaterialTheme.colorScheme.primary
-    Canvas(modifier.width(18.dp).height(56.dp).testTag("interaction-recorded-interval")) {
+    val description = stringResource(if (hasRecordedEnd) R.string.interaction_evidence_interval_complete
+        else R.string.interaction_evidence_interval_open)
+    Canvas(modifier.width(18.dp).height(56.dp).testTag("interaction-recorded-interval")
+        .semantics { contentDescription = description }) {
         val x = size.width / 2
-        drawLine(accent.copy(alpha = .35f), Offset(x, 6.dp.toPx()), Offset(x, size.height - 6.dp.toPx()), 2.dp.toPx())
+        drawLine(accent.copy(alpha = .35f), Offset(x, 6.dp.toPx()), Offset(x, size.height - 6.dp.toPx()), 2.dp.toPx(),
+            pathEffect = if (hasRecordedEnd) null else PathEffect.dashPathEffect(floatArrayOf(3.dp.toPx(), 3.dp.toPx())))
         drawCircle(accent, 4.dp.toPx(), Offset(x, 6.dp.toPx()))
         drawCircle(accent, 4.dp.toPx(), Offset(x, size.height - 6.dp.toPx()),
-            style = if (hasRecordedEnd) Stroke(2.dp.toPx()) else Stroke(1.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(2f,2f))))
+            style = if (hasRecordedEnd) Fill else Stroke(1.dp.toPx()))
     }
 }

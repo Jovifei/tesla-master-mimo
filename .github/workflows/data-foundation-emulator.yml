@@ -1,7 +1,7 @@
 name: Data foundation isolated API35 Android instrumentation
 on:
   push:
-    branches: ['codex/apk-data-foundation-remote-20261024', 'codex/app-foundation-ui-integrate-20261025', 'codex/app-interaction-visuals-20261104']
+    branches: ['codex/apk-data-foundation-remote-20261024', 'codex/app-foundation-ui-integrate-20261025', 'codex/app-interaction-visuals-20261104', 'codex/app-interaction-latest-20261106', 'codex/app-interaction-complete-20261106']
   workflow_dispatch:
 permissions:
   contents: read
