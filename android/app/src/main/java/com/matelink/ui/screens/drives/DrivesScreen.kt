@@ -96,6 +96,8 @@ import com.matelink.ui.components.CompactHistoryMetricStrip
 import com.matelink.ui.components.InteractiveBarChart
 import com.matelink.ui.components.MateLinkLoadingPlaceholder
 import com.matelink.ui.components.MateLinkLoadingMark
+import com.matelink.ui.components.MetricPanelKind
+import com.matelink.ui.components.MetricStatusPanel
 import com.matelink.ui.components.MonthScrollIndicator
 import com.matelink.ui.components.RouteIndicator
 import com.matelink.ui.components.TelemetryMetricSpec
@@ -242,6 +244,7 @@ fun DrivesScreen(
                     viewModel.setDistanceFilter(filter)
                     scope.launch { listState.scrollToItem(0) }
                 },
+                onClearFilters = { viewModel.clearFilters() },
                 onDriveClick = onNavigateToDriveDetail,
                 onParkedClick = onNavigateToParkedDetail
             )
@@ -276,6 +279,7 @@ private fun DrivesContent(
     onDateFilterSelected: (DriveDateFilter) -> Unit,
     onCustomRangeSelected: (LocalDate, LocalDate) -> Unit,
     onDistanceFilterSelected: (DriveDistanceFilter) -> Unit,
+    onClearFilters: () -> Unit,
     onDriveClick: (driveId: Int) -> Unit,
     onParkedClick: (olderDriveId: Int, newerDriveId: Int, location: String?) -> Unit
 ) {
@@ -329,23 +333,33 @@ private fun DrivesContent(
 
         if (drives.isEmpty()) {
             item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                val hasFilters = selectedDateFilter != DriveDateFilter.ALL_TIME ||
+                    selectedDistanceFilter != DriveDistanceFilter.ALL
+                if (readError == null && hasFilters) {
+                    MetricStatusPanel(
+                        kind = MetricPanelKind.EMPTY,
+                        title = stringResource(R.string.metric_state_filter_empty_title),
+                        body = stringResource(R.string.metric_state_filter_empty_body),
+                        actionLabel = stringResource(R.string.history_clear_filters),
+                        onAction = onClearFilters
                     )
-                ) {
-                    Column(
-                        modifier = Modifier.fillMaxWidth().padding(32.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                } else {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                     ) {
-                        EmptyHistoryVisual(charging = false, failed = readError != null)
-                        Text(
-                            text = stringResource(readError?.let(::historyReadErrorMessageRes) ?: R.string.no_drives_found),
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Column(
+                            modifier = Modifier.fillMaxWidth().padding(32.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            EmptyHistoryVisual(charging = false, failed = readError != null)
+                            Text(
+                                text = stringResource(readError?.let(::historyReadErrorMessageRes) ?: R.string.no_drives_found),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
             }

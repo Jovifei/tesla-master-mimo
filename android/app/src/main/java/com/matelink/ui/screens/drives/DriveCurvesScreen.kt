@@ -130,16 +130,16 @@ fun DriveCurvesScreen(
             )
         }
     ) { padding ->
-        if (uiState.isLoading) {
-            MateLinkLoadingPlaceholder(
-                color = palette.accent,
-                modifier = Modifier.padding(padding)
-            )
-        } else if (uiState.driveDetail != null) {
+        if (uiState.driveDetail != null) {
             DriveCurvesContent(
                 detail = uiState.driveDetail!!,
                 stats = uiState.stats,
                 units = uiState.units,
+                modifier = Modifier.padding(padding)
+            )
+        } else if (uiState.isLoading) {
+            MateLinkLoadingPlaceholder(
+                color = palette.accent,
                 modifier = Modifier.padding(padding)
             )
         } else {

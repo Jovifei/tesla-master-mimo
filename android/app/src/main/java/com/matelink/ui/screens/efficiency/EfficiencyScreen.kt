@@ -8,6 +8,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -32,6 +33,7 @@ import com.matelink.ui.components.MetricPanelKind
 import com.matelink.ui.components.MetricStatusPanel
 import com.matelink.ui.components.MateLinkLoadingPlaceholder
 import com.matelink.ui.components.HistoryStatusPanel
+import com.matelink.ui.components.HistoryForegroundRefreshEffect
 import com.matelink.ui.theme.SwissOutline
 import java.util.Locale
 
@@ -47,6 +49,7 @@ fun EfficiencyScreen(
     }
 
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    HistoryForegroundRefreshEffect { viewModel.refresh() }
 
     Scaffold(
         topBar = {
@@ -63,14 +66,21 @@ fun EfficiencyScreen(
             )
         }
     ) { innerPadding ->
+        PullToRefreshBox(
+            isRefreshing = uiState.isRefreshing,
+            onRefresh = viewModel::refresh,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+        ) {
         if (uiState.isLoading && uiState.avgEfficiencyWhKm == null && uiState.driveCount == 0) {
-            MateLinkLoadingPlaceholder(modifier = Modifier.padding(innerPadding))
-            return@Scaffold
+            MateLinkLoadingPlaceholder()
+            return@PullToRefreshBox
         }
 
         if (uiState.error != null) {
             Box(
-                modifier = Modifier.fillMaxSize().padding(innerPadding),
+                modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
             ) {
                 MetricStatusPanel(
@@ -80,15 +90,17 @@ fun EfficiencyScreen(
                         stringResource(R.string.history_identity_unavailable_message)
                     } else {
                         uiState.error ?: stringResource(R.string.no_data)
-                    }
+                    },
+                    actionLabel = stringResource(R.string.metric_state_retry),
+                    onAction = viewModel::refresh
                 )
             }
-            return@Scaffold
+            return@PullToRefreshBox
         }
 
         if (uiState.driveCount == 0) {
             Box(
-                modifier = Modifier.fillMaxSize().padding(innerPadding),
+                modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
             ) {
                 HistoryStatusPanel(
@@ -96,13 +108,12 @@ fun EfficiencyScreen(
                     emptyBody = stringResource(R.string.metric_state_empty_body)
                 )
             }
-            return@Scaffold
+            return@PullToRefreshBox
         }
 
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -305,6 +316,7 @@ fun EfficiencyScreen(
                     }
                 }
             }
+        }
         }
     }
 }

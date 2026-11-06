@@ -234,8 +234,8 @@ class CurrentChargeViewModel internal constructor(private val source: CurrentCha
         val chargeLimitSoc = status?.chargeLimitSoc?.takeIf { it in 0..100 }
         val chargePortDoorOpen = status?.chargingDetails?.chargePortDoorOpen
         val chargerPhases = status?.chargingDetails?.chargerPhases
-        val chargerVoltage = status?.chargerVoltageValue?.takeIf { it.isFinite() && it >= 0.0 }
-        val chargerActualCurrent = status?.chargerActualCurrentValue?.takeIf { it.isFinite() && it >= 0.0 }
+        val chargerVoltage = status?.chargerVoltageValue?.takeIf { it.isFinite() && it >= 100.0 }
+        val chargerActualCurrent = status?.chargerActualCurrentValue?.takeIf { it.isFinite() && it > 0.0 }
         val chargeCurrentRequest = status?.chargeCurrentRequestValue?.takeIf { it.isFinite() && it >= 0.0 }
         val chargeCurrentRequestMax = status?.chargeCurrentRequestMaxValue?.takeIf { it.isFinite() && it >= 0.0 }
         val scheduledChargingStartTime = status?.scheduledChargingStartTime

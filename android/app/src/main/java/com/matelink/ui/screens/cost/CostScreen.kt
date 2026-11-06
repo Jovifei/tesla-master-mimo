@@ -7,6 +7,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -32,6 +33,7 @@ import com.matelink.ui.components.CachedHistoryBanner
 import com.matelink.ui.components.MetricPanelKind
 import com.matelink.ui.components.MetricStatusPanel
 import com.matelink.ui.components.HistoryStatusPanel
+import com.matelink.ui.components.HistoryForegroundRefreshEffect
 import com.matelink.ui.theme.SwissOutline
 import kotlin.math.max
 import java.util.Locale
@@ -51,6 +53,7 @@ fun CostScreen(
         viewModel.load(carId)
     }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    HistoryForegroundRefreshEffect { viewModel.refresh() }
 
     Scaffold(
         topBar = {
@@ -67,14 +70,21 @@ fun CostScreen(
             )
         }
     ) { padding ->
+        PullToRefreshBox(
+            isRefreshing = uiState.isRefreshing,
+            onRefresh = viewModel::refresh,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+        ) {
         if (uiState.loading && uiState.totalCost == null && uiState.totalCharges == 0) {
-            MateLinkLoadingPlaceholder(modifier = Modifier.padding(padding))
-            return@Scaffold
+            MateLinkLoadingPlaceholder()
+            return@PullToRefreshBox
         }
 
         if (uiState.error != null) {
-            Box(
-                modifier = Modifier.fillMaxSize().padding(padding),
+                Box(
+                modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
             ) {
                 MetricStatusPanel(
@@ -84,16 +94,17 @@ fun CostScreen(
                         stringResource(R.string.history_identity_unavailable_message)
                     } else {
                         uiState.error ?: stringResource(R.string.no_data)
-                    }
+                    },
+                    actionLabel = stringResource(R.string.metric_state_retry),
+                    onAction = viewModel::refresh
                 )
             }
-            return@Scaffold
+            return@PullToRefreshBox
         }
 
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -165,6 +176,7 @@ fun CostScreen(
             }
 
             Spacer(modifier = Modifier.height(8.dp))
+        }
         }
     }
 }

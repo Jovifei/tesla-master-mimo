@@ -196,7 +196,7 @@ fun TripDetailScreen(
         }
     ) { padding ->
         when {
-            uiState.isLoading -> {
+            uiState.isLoading && uiState.trip == null -> {
                 MateLinkLoadingPlaceholder(
                     color = palette.accent,
                     modifier = Modifier.padding(padding)
@@ -1174,7 +1174,8 @@ private fun TripMapCard(
                     endPoint = markers.firstOrNull { it.type == TripMapPointType.END }
                         ?.let { it.latitude to it.longitude },
                     startTitle = markers.firstOrNull { it.type == TripMapPointType.START }?.label ?: "Start",
-                    endTitle = markers.firstOrNull { it.type == TripMapPointType.END }?.label ?: "End"
+                    endTitle = markers.firstOrNull { it.type == TripMapPointType.END }?.label ?: "End",
+                    drawRoutePath = false
                 )
 
                 MapOverlayChip(

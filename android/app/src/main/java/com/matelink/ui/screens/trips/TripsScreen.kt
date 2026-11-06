@@ -1,5 +1,10 @@
 package com.matelink.ui.screens.trips
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.background
@@ -152,7 +157,7 @@ fun TripsScreen(
         }
     ) { padding ->
         when {
-            uiState.isLoading -> {
+            uiState.isLoading && uiState.trips.isEmpty() -> {
                 MateLinkLoadingPlaceholder(
                     color = palette.accent,
                     modifier = Modifier.padding(padding)
@@ -321,14 +326,20 @@ private fun TripsContent(
                 "${trip.startDate}|${trip.endDate}|${trip.drives.firstOrNull()?.driveId ?: 0}|$index"
             }
         ) { index, trip ->
-            TripItem(
-                trip = trip,
-                units = units,
-                palette = palette,
-                dcChargeIds = dcChargeIds,
-                acChargeIds = acChargeIds,
-                onClick = { onTripClick(trip) }
-            )
+            AnimatedVisibility(
+                visible = true,
+                enter = fadeIn(tween(220)) + slideInVertically(initialOffsetY = { it / 5 }),
+                exit = fadeOut(tween(120))
+            ) {
+                TripItem(
+                    trip = trip,
+                    units = units,
+                    palette = palette,
+                    dcChargeIds = dcChargeIds,
+                    acChargeIds = acChargeIds,
+                    onClick = { onTripClick(trip) }
+                )
+            }
         }
     }
 

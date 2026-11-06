@@ -209,7 +209,7 @@ fun CurrentChargeScreen(
 @Composable
 private fun ChargeSnapshotBadge(freshness: SnapshotFreshness, mixedSources: Boolean) {
     val (color, label) = when (freshness) {
-        SnapshotFreshness.LIVE -> Color(0xFFE53935) to stringResource(R.string.current_charge_live)
+        SnapshotFreshness.LIVE -> Color(0xFF2E7D32) to stringResource(R.string.current_charge_live)
         SnapshotFreshness.RECENT -> MaterialTheme.colorScheme.tertiary to stringResource(R.string.snapshot_source_recent)
         SnapshotFreshness.HISTORY -> MaterialTheme.colorScheme.secondary to stringResource(R.string.snapshot_source_history)
         SnapshotFreshness.UNAVAILABLE -> MaterialTheme.colorScheme.outline to stringResource(R.string.snapshot_source_unavailable)

@@ -6,7 +6,14 @@ import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Scaffold
@@ -21,6 +28,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -38,6 +46,7 @@ import androidx.navigation.toRoute
 import com.matelink.R
 import com.matelink.ui.components.launchBrowserChooser
 import com.matelink.ui.components.launchExternalIntentSafely
+import com.matelink.ui.components.MateLinkLoadingPlaceholder
 import com.matelink.ui.screens.readiness.officialTeslaVirtualKeyUrlOrNull
 import com.matelink.data.local.ConnectionMode
 import com.matelink.ui.screens.auth.TeslaLoginScreen
@@ -325,7 +334,13 @@ fun NavGraph(
     }
 
     if (startDestination == null) {
-        return // Wait for determination
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            MateLinkLoadingPlaceholder()
+        }
+        return
     }
 
     LaunchedEffect(connectionMode, sessionAccountId, currentCarId) {
@@ -512,7 +527,23 @@ fun NavGraph(
         NavHost(
             navController = navController,
             startDestination = startDestination ?: Screen.Dashboard,
-            modifier = Modifier.padding(innerPadding).consumeWindowInsets(innerPadding)
+            modifier = Modifier.padding(innerPadding).consumeWindowInsets(innerPadding),
+            enterTransition = {
+                fadeIn(animationSpec = tween(180)) +
+                    slideInHorizontally(animationSpec = tween(180), initialOffsetX = { it / 12 })
+            },
+            exitTransition = {
+                fadeOut(animationSpec = tween(120)) +
+                    slideOutHorizontally(animationSpec = tween(120), targetOffsetX = { -it / 20 })
+            },
+            popEnterTransition = {
+                fadeIn(animationSpec = tween(180)) +
+                    slideInHorizontally(animationSpec = tween(180), initialOffsetX = { -it / 12 })
+            },
+            popExitTransition = {
+                fadeOut(animationSpec = tween(120)) +
+                    slideOutHorizontally(animationSpec = tween(120), targetOffsetX = { it / 20 })
+            }
         ) {
         composable<Screen.TeslaLogin> {
             TeslaLoginScreen(

@@ -22,8 +22,9 @@ export default function Dashboard() {
   const [status, setStatus] = useState<CarStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [batteryTrend, setBatteryTrend] = useState<{ date: string; level: number }[]>([]);
   const [showSwitcher, setShowSwitcher] = useState(false);
-  const car = cars.find(c => c.id === currentCarId)!;
+  const car = cars.find(c => c.id === currentCarId);
 
   useEffect(() => {
     let active = true;
@@ -36,6 +37,15 @@ export default function Dashboard() {
       }
     };
     f();
+    api.getBatteryHealth(currentCarId)
+      .then(points => {
+        if (!active) return;
+        setBatteryTrend(points.slice(-7).map(point => ({
+          date: point.date,
+          level: Math.min(100, Math.max(0, Number.isFinite(point.battery_level) ? point.battery_level : 0)),
+        })));
+      })
+      .catch(() => { if (active) setBatteryTrend([]); });
     const i = setInterval(f, 5000);
     return () => { active = false; clearInterval(i); };
   }, [currentCarId]);
@@ -53,7 +63,7 @@ export default function Dashboard() {
       {/* Top bar */}
       <div className="flex items-center justify-between">
         <button onClick={() => setShowSwitcher(!showSwitcher)} className="flex items-center gap-2 group relative">
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{car.name}</h1>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{car?.name ?? 'Vehicle'}</h1>
           <span className="text-gray-400 text-sm group-hover:text-blue-500">▼</span>
         </button>
         <div className="flex items-center gap-3">
@@ -143,17 +153,18 @@ export default function Dashboard() {
       {/* 7-Day Battery Trend */}
       <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm">
         <h3 className="text-sm font-medium text-gray-500 mb-3">7-Day Battery Trend</h3>
-        <div className="flex items-end gap-2 h-32">
-          {[75, 72, 68, 70, 73, 76, 78].map((val, i) => (
-            <div key={i} className="flex-1 flex flex-col items-center gap-1">
-              <div
-                className="w-full bg-blue-500 rounded-t"
-                style={{ height: `${(val - 60) * 2}px` }}
-              />
-              <span className="text-xs text-gray-400">{['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][i]}</span>
-            </div>
-          ))}
-        </div>
+        {batteryTrend.length === 0 ? (
+          <div className="h-32 flex items-center justify-center text-sm text-gray-400">No battery trend data</div>
+        ) : (
+          <div className="flex items-end gap-2 h-32">
+            {batteryTrend.map(point => (
+              <div key={point.date} className="flex-1 flex flex-col items-center gap-1">
+                <div className="w-full bg-blue-500 rounded-t" style={{ height: `${Math.max(4, point.level * 1.2)}px` }} />
+                <span className="text-xs text-gray-400">{new Date(point.date).toLocaleDateString(undefined, { weekday: 'short' })}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

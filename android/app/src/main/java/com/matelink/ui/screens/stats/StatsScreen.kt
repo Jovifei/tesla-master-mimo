@@ -1612,6 +1612,15 @@ private fun RecordsCard(
         pageCount = { pages.size }
     )
 
+    LaunchedEffect(pages.size, selectedCategory) {
+        val targetPage = if (selectedCategory.isEmpty()) 0 else {
+            pages.indexOfFirst { it.categoryTitle == selectedCategory }.takeIf { it >= 0 } ?: 0
+        }
+        if (targetPage != pagerState.currentPage && pages.isNotEmpty()) {
+            pagerState.animateScrollToPage(targetPage.coerceIn(0, pages.lastIndex))
+        }
+    }
+
 // Update selected category when page changes
     LaunchedEffect(pagerState.currentPage) {
         snapshotFlow { pagerState.currentPage }

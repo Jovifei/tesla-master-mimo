@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { useStore } from './store';
 import { api, getApiErrorMessage } from './api/client';
 import { flattenCar } from './api/types';
+import type { CarStatus } from './api/types';
 import mockData from './mock_data.json';
 
 // Pages
@@ -57,6 +58,11 @@ function App() {
   const theme = useStore(s => s.theme);
   const setTheme = useStore(s => s.setTheme);
   const cars = useStore(s => s.cars);
+  const [currentStatus, setCurrentStatus] = useState<CarStatus | null>(null);
+
+  useEffect(() => {
+    if (mockMode && cars.length === 0) setCars((mockData.cars as Parameters<typeof flattenCar>[0][]).map(flattenCar));
+  }, [mockMode, cars.length, setCars]);
 
   // Online/offline detection
   useEffect(() => {
@@ -74,6 +80,7 @@ function App() {
   useEffect(() => {
     if (mockMode || !serverUrl) return;
     let active = true;
+    setCars([]);
     api.getCars()
       .then(items => {
         if (!active) return;
@@ -86,8 +93,21 @@ function App() {
     return () => { active = false; };
   }, [mockMode, serverUrl, setCars]);
 
-  const currentCar = mockData.cars.find(c => c.car_id === currentCarId);
-  const currentStatus = mockData.statuses[String(currentCarId) as keyof typeof mockData.statuses];
+  useEffect(() => {
+    let active = true;
+    if (mockMode) {
+      setCurrentStatus((mockData.statuses[String(currentCarId) as keyof typeof mockData.statuses] as CarStatus | undefined) ?? null);
+      return () => { active = false; };
+    }
+    setCurrentStatus(null);
+    if (!serverUrl) return () => { active = false; };
+    api.getCarStatus(currentCarId)
+      .then(status => { if (active) setCurrentStatus(status); })
+      .catch(() => { if (active) setCurrentStatus(null); });
+    return () => { active = false; };
+  }, [currentCarId, mockMode, serverUrl]);
+
+  const currentCar = cars.find(c => c.id === currentCarId);
 
   return (
     <BrowserRouter>

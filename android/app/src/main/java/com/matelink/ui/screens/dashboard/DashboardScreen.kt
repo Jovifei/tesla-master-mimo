@@ -24,6 +24,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AcUnit
 import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Lock
@@ -505,12 +506,23 @@ fun DashboardScreen(
                         )
                     }
                     Column(horizontalAlignment = Alignment.End) {
-                        Text(
-                            text = rangeKm?.let { UnitFormatter.formatDistance(it, uiState.units, 0) } ?: "--",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Bolt,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                text = rangeKm?.let { UnitFormatter.formatDistance(it, uiState.units, 0) } ?: "--",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
                         Text(
                             text = stringResource(R.string.range),
                             style = MaterialTheme.typography.labelMedium,
@@ -1214,10 +1226,14 @@ internal fun dashboardHudChargeEnergy(status: CarStatus): String =
     status.chargeEnergyAdded?.let { "%.1f kWh".format(Locale.ROOT, it) } ?: "--"
 
 internal fun dashboardHudVoltageCurrent(status: CarStatus): String? {
-    val voltage = status.chargerVoltage
-    val current = status.chargerActualCurrent
+    // Ignore transient non-charging samples so the HUD never presents values such as 2V/0A as live charging telemetry.
+    val rawVoltage = status.chargerVoltage
+    val rawCurrent = status.chargerActualCurrent
+    val voltage = rawVoltage?.takeIf { it >= 100 }
+    val current = rawCurrent?.takeIf { it > 0 }
+    if ((rawVoltage != null && voltage == null) || (rawCurrent != null && current == null)) return null
     if (voltage == null && current == null) return null
-    return "${voltage?.toString() ?: "--"}V / ${current?.toString() ?: "--"}A"
+    return "${voltage ?: "--"}V / ${current ?: "--"}A"
 }
 
 @Suppress("UNUSED_PARAMETER")
@@ -1542,25 +1558,46 @@ private fun ActiveChargingHudCard(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(10.dp)
-                            .background(StatusWarning, shape = CircleShape)
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.BatteryChargingFull,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                            tint = StatusSuccess
+                        )
+                        Text("->", color = StatusSuccess, style = MaterialTheme.typography.labelSmall)
+                        Icon(
+                            imageVector = Icons.Default.DirectionsCar,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
                     Text(
                         text = stringResource(R.string.active_charging_hud_title),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
-                    (status.chargerPowerValue ?: status.chargerPower?.toDouble())?.let {
-                        Text(
-                            text = "%.1f kW".format(Locale.ROOT, it),
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.SemiBold,
-                            color = StatusWarning
-                        )
-                    }
+                    (status.chargerPowerValue ?: status.chargerPower?.toDouble())
+                        ?.takeIf { it.isFinite() && it > 0.0 }?.let {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    text = "%.1f kW".format(Locale.ROOT, it),
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = StatusSuccess
+                                )
+                                Text(
+                                    text = stringResource(R.string.charge_power),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
                 }
                 TextButton(
                     onClick = onDismiss,
@@ -1601,7 +1638,7 @@ private fun ActiveChargingHudCard(
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = stringResource(R.string.charge_power),
+                            text = "${stringResource(R.string.current_charge_voltage)} / ${stringResource(R.string.current_charge_current)}",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

@@ -17,8 +17,10 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import java.time.Clock
 import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneOffset
 
 /** Real VM publication/cache/selection paths. Network completion is synthetic and deliberately non-cooperative. */
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -123,6 +125,54 @@ class EfficiencyMileageIdentityConsumerTest {
             assertFalse(vm.uiState.value.isLoading)
         } finally {
             vm.viewModelScope.cancel(); advanceUntilIdle(); Dispatchers.resetMain()
+        }
+    }
+
+    @Test fun efficiencyRefreshReloadsRemoteWhileKeepingThePublishedProjection() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val source = EfficiencySource()
+        var nextId = 22
+        source.body = { id -> snapshot(source.identity.context(id), listOf(drive(nextId))) }
+        val vm = EfficiencyViewModel(source)
+        try {
+            vm.load(7)
+            advanceUntilIdle()
+            assertEquals(listOf(22), vm.uiState.value.tripPositions.map { it.driveId })
+            nextId = 33
+            vm.refresh()
+            assertTrue(vm.uiState.value.isRefreshing)
+            advanceUntilIdle()
+            assertEquals(2, source.calls)
+            assertEquals(listOf(33), vm.uiState.value.tripPositions.map { it.driveId })
+            assertFalse(vm.uiState.value.isRefreshing)
+        } finally {
+            vm.viewModelScope.cancel()
+            advanceUntilIdle()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test fun efficiencyUsesInjectedClockZoneForDateWindowSelection() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val source = EfficiencySource()
+        val edgeDrive = DriveData(99,
+            startDate = "2025-12-31T23:30:00Z",
+            endDate = "2025-12-31T23:40:00Z",
+            odometerDetails = DriveOdometerDetails(distance = 10.0),
+            energyConsumedNet = 2.0,
+            source = "teslamate_archive", qualityState = "observed", lengthUnit = "km")
+        source.body = { id -> snapshot(source.identity.context(id), listOf(edgeDrive)) }
+        val clock = Clock.fixed(Instant.parse("2026-01-01T00:30:00Z"), ZoneOffset.ofHours(14))
+        val vm = EfficiencyViewModel(source, clock)
+        try {
+            vm.load(7)
+            advanceUntilIdle()
+            vm.selectCustomRange(LocalDate.of(2026, 1, 1), LocalDate.of(2026, 1, 1))
+            assertEquals(listOf(99), vm.uiState.value.tripPositions.map { it.driveId })
+        } finally {
+            vm.viewModelScope.cancel()
+            advanceUntilIdle()
+            Dispatchers.resetMain()
         }
     }
 

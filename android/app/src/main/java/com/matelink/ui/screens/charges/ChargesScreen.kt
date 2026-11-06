@@ -97,6 +97,8 @@ import com.matelink.ui.components.CompactHistoryMetricStrip
 import com.matelink.ui.components.HistoryReadNotices
 import com.matelink.ui.components.HistoryArchiveNotice
 import com.matelink.ui.components.HistoryOnceNotice
+import com.matelink.ui.components.MetricPanelKind
+import com.matelink.ui.components.MetricStatusPanel
 import com.matelink.ui.components.InteractiveBarChart
 import com.matelink.ui.components.MateLinkLoadingPlaceholder
 import com.matelink.ui.components.MateLinkLoadingMark
@@ -217,6 +219,7 @@ fun ChargesScreen(
                 isFilterLoading = uiState.isFilterLoading,
                 onDateFilterSelected = { viewModel.setDateFilter(it) },
                 onCustomRangeSelected = { start, end -> viewModel.setCustomDateRange(start, end) },
+                onClearFilters = { viewModel.clearFilters() },
                 availableLocations = uiState.availableLocations,
                 locationLabels = uiState.locationLabels,
                 selectedLocations = uiState.selectedLocations,
@@ -296,6 +299,7 @@ private fun ChargesContent(
     isFilterLoading: Boolean,
     onDateFilterSelected: (DateFilter) -> Unit,
     onCustomRangeSelected: (LocalDate, LocalDate) -> Unit,
+    onClearFilters: () -> Unit,
     onChargeTypeFilterSelected: (ChargeTypeFilter) -> Unit,
     onCostFilterSelected: (CostFilter) -> Unit,
     onEditCost: (ChargeData) -> Unit,
@@ -394,23 +398,34 @@ private fun ChargesContent(
 
         if (charges.isEmpty()) {
             item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                val hasFilters = selectedDateFilter != DateFilter.ALL_TIME ||
+                    selectedChargeTypeFilter != ChargeTypeFilter.ALL ||
+                    selectedCostFilter != CostFilter.ALL || selectedLocations.isNotEmpty()
+                if (readError == null && hasFilters) {
+                    MetricStatusPanel(
+                        kind = MetricPanelKind.EMPTY,
+                        title = stringResource(R.string.metric_state_filter_empty_title),
+                        body = stringResource(R.string.metric_state_filter_empty_body),
+                        actionLabel = stringResource(R.string.history_clear_filters),
+                        onAction = onClearFilters
                     )
-                ) {
-                    Column(
-                        modifier = Modifier.fillMaxWidth().padding(32.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                } else {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                     ) {
-                        EmptyHistoryVisual(charging = true, failed = readError != null)
-                        Text(
-                            text = stringResource(readError?.let(::historyReadErrorMessageRes) ?: R.string.no_charges_found),
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Column(
+                            modifier = Modifier.fillMaxWidth().padding(32.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            EmptyHistoryVisual(charging = true, failed = readError != null)
+                            Text(
+                                text = stringResource(readError?.let(::historyReadErrorMessageRes) ?: R.string.no_charges_found),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
             }

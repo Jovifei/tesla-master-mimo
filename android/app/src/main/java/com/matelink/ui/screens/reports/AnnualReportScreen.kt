@@ -1,5 +1,7 @@
 package com.matelink.ui.screens.reports
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
@@ -17,6 +19,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
@@ -512,11 +515,11 @@ private fun MonthlyTrendsSection(
 
         // Drive count line chart
         Text(stringResource(R.string.annual_report_drives_per_month), style = MaterialTheme.typography.labelMedium)
-        LineChart(
+        BarChart(
             data = (1..12).map { month -> monthlyDrives.firstOrNull { it.month == month }?.driveCount?.toFloat() },
             labels = (1..12).map { monthLabel(it) },
-            color = MaterialTheme.colorScheme.tertiary,
-            modifier = Modifier.fillMaxWidth().height(120.dp)
+            color = Color(0xFF14B8A6),
+            modifier = Modifier.fillMaxWidth().height(160.dp)
         )
     }
 
@@ -527,7 +530,7 @@ private fun MonthlyTrendsSection(
         if (monthlyCharges.any { it.totalEnergy != null }) BarChart(
             data = (1..12).map { month -> monthlyCharges.firstOrNull { it.month == month }?.totalEnergy?.toFloat() },
             labels = (1..12).map { monthLabel(it) },
-            color = MaterialTheme.colorScheme.secondary,
+            color = Color(0xFFF59E0B),
             modifier = Modifier.fillMaxWidth().height(160.dp)
         ) else Text(stringResource(R.string.analysis_coverage_insufficient))
     }
@@ -546,6 +549,10 @@ private fun BarChart(
     val span = (high - low).coerceAtLeast(1f)
     val zeroColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
     val recoveryColor = MaterialTheme.colorScheme.tertiary
+    val revealProgress = remember(data) { Animatable(0f) }
+    LaunchedEffect(data) {
+        revealProgress.animateTo(1f, animationSpec = tween(durationMillis = 420))
+    }
 
     Canvas(modifier = modifier) {
         val barWidth = size.width / (data.size * 2f)
@@ -555,13 +562,21 @@ private fun BarChart(
 
         data.forEachIndexed { index, value ->
             if (value == null) return@forEachIndexed
-            val barHeight = (kotlin.math.abs(value) / span) * chartHeight
+            val barHeight = (kotlin.math.abs(value) / span) * chartHeight * revealProgress.value
             val x = index * (size.width / data.size) + barWidth / 2
             val y = if (value >= 0f) zeroY - barHeight else zeroY
 
             if (value == 0f) drawCircle(color, radius = 2.5f, center = Offset(x + barWidth / 2, zeroY))
             else drawRoundRect(
-                color = if (value < 0f) recoveryColor else color,
+                brush = Brush.verticalGradient(
+                    colors = if (value < 0f) {
+                        listOf(recoveryColor.copy(alpha = 0.95f), recoveryColor.copy(alpha = 0.55f))
+                    } else {
+                        listOf(color.copy(alpha = 0.95f), color.copy(alpha = 0.55f))
+                    },
+                    startY = y,
+                    endY = y + barHeight
+                ),
                 topLeft = Offset(x, y),
                 size = Size(barWidth, barHeight),
                 cornerRadius = CornerRadius(4f, 4f)

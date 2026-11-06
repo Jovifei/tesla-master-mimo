@@ -433,6 +433,7 @@
     <string name="metric_state_insufficient_body">已有记录，但此分析所需的字段缺失或覆盖不足。</string>
     <string name="metric_state_filter_empty_title">当前范围没有记录</string>
     <string name="metric_state_filter_empty_body">请切换时间范围，或选择“全部”。</string>
+    <string name="history_clear_filters">清除筛选</string>
     <string name="metric_state_collecting_title">历史数据正在采集</string>
     <string name="metric_state_collecting_body">数据源已经开始记录，新的历史数据到达后会显示分析结果。</string>
     <string name="metric_state_unavailable_title">历史数据不可用</string>

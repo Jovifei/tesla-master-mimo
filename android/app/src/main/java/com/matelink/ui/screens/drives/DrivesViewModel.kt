@@ -529,6 +529,25 @@ class DrivesViewModel @Inject constructor(
         }
     }
 
+    fun clearFilters() {
+        savedStateHandle[KEY_DATE_FILTER] = DriveDateFilter.ALL_TIME.name
+        savedStateHandle[KEY_DISTANCE_FILTER] = DriveDistanceFilter.ALL.name
+        savedStateHandle[KEY_CUSTOM_START] = null
+        savedStateHandle[KEY_CUSTOM_END] = null
+        _uiState.update {
+            it.copy(
+                dateFilter = DriveDateFilter.ALL_TIME,
+                startDate = null,
+                endDate = null,
+                customStartDate = null,
+                customEndDate = null,
+                distanceFilter = DriveDistanceFilter.ALL,
+                canLoadMore = false
+            )
+        }
+        loadDrives(null, null)
+    }
+
     fun refresh() {
         _uiState.update { it.copy(isRefreshing = true) }
         synchronized(attemptedEnergy) { attemptedEnergy.clear() }

@@ -575,6 +575,31 @@ class ChargesViewModel @Inject constructor(
         activeHistoryProof?.let(::requestChargeAddresses)
     }
 
+    fun clearFilters() {
+        savedStateHandle[KEY_DATE_FILTER] = DateFilter.ALL_TIME.name
+        savedStateHandle[KEY_CHARGE_TYPE_FILTER] = ChargeTypeFilter.ALL.name
+        savedStateHandle[KEY_COST_FILTER] = CostFilter.ALL.name
+        savedStateHandle[KEY_LOCATIONS] = ArrayList<String>()
+        savedStateHandle[KEY_LOCATIONS_VERSION] = 1
+        savedStateHandle[KEY_CUSTOM_START] = null
+        savedStateHandle[KEY_CUSTOM_END] = null
+        legacyLocationSelection = false
+        _uiState.update {
+            it.copy(
+                selectedFilter = DateFilter.ALL_TIME,
+                startDate = null,
+                endDate = null,
+                customStartDate = null,
+                customEndDate = null,
+                chargeTypeFilter = ChargeTypeFilter.ALL,
+                costFilter = CostFilter.ALL,
+                selectedLocations = emptySet(),
+                canLoadMore = false
+            )
+        }
+        loadCharges(null, null)
+    }
+
     private fun invalidateAddressLookup(clearResults: Boolean = false) {
         addressGeneration++
         addressJob?.cancel()

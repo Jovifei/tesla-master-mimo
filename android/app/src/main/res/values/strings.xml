@@ -293,15 +293,15 @@
 
     <!-- Timeline -->
     <string name="timeline_title">Timeline</string>
-    <string name="timeline_empty">暂无事件</string>
-    <string name="timeline_drive">行驶</string>
-    <string name="timeline_charge">充电</string>
+    <string name="timeline_empty">No events yet</string>
+    <string name="timeline_drive">Drive</string>
+    <string name="timeline_charge">Charge</string>
     <string name="timeline_distance_value">%.1f km</string>
     <string name="timeline_battery_end">%d%%</string>
     <string name="timeline_energy_added">%.1f kWh</string>
     <string name="timeline_cost_value">%1$s%2$.2f</string>
-    <string name="timeline_unknown_route">未知路线</string>
-    <string name="timeline_unknown_location">未知地点</string>
+    <string name="timeline_unknown_route">Unknown route</string>
+    <string name="timeline_unknown_location">Unknown location</string>
 
     <!-- Drives -->
     <string name="drives_title">Drive History</string>
@@ -433,6 +433,7 @@
     <string name="metric_state_insufficient_body">Records exist, but the fields required for this analysis are missing or incomplete.</string>
     <string name="metric_state_filter_empty_title">No records in this range</string>
     <string name="metric_state_filter_empty_body">Try another time range or choose All.</string>
+    <string name="history_clear_filters">Clear filters</string>
     <string name="metric_state_collecting_title">History collection is in progress</string>
     <string name="metric_state_collecting_body">The data source has started collecting records. Analysis will appear as new history arrives.</string>
     <string name="metric_state_unavailable_title">History is unavailable</string>

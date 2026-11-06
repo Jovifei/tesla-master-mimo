@@ -160,30 +160,29 @@ fun DriveDetailScreen(
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
-        if (uiState.isLoading) {
+        if (uiState.driveDetail != null) {
+            val detail = uiState.driveDetail!!
+            DriveDetailContent(
+                localArchiveLinkPending = uiState.localArchiveLinkPending &&
+                    uiState.historyNoticeLocalCarId?.let { it < 0 } != true,
+                historySyncWarning = uiState.historySyncWarning,
+                detail = detail,
+                stats = uiState.stats,
+                units = drivePresentationUnits(detail.lengthUnit, uiState.units),
+                routeColor = palette.accent,
+                weatherPoints = uiState.weatherPoints,
+                isLoadingWeather = uiState.isLoadingWeather,
+                containingTrip = uiState.containingTrip,
+                onNavigateToTripDetail = onNavigateToTripDetail,
+                onNavigateToDriveCurves = onNavigateToDriveCurves,
+                onRemoveFromTrip = viewModel::removeFromTrip,
+                modifier = Modifier.padding(padding)
+            )
+        } else if (uiState.isLoading) {
             MateLinkLoadingPlaceholder(
                 color = palette.accent,
                 modifier = Modifier.padding(padding)
             )
-        } else {
-            uiState.driveDetail?.let { detail ->
-                DriveDetailContent(
-                    localArchiveLinkPending = uiState.localArchiveLinkPending &&
-                        uiState.historyNoticeLocalCarId?.let { it < 0 } != true,
-                    historySyncWarning = uiState.historySyncWarning,
-                    detail = detail,
-                    stats = uiState.stats,
-                    units = drivePresentationUnits(detail.lengthUnit, uiState.units),
-                    routeColor = palette.accent,
-                    weatherPoints = uiState.weatherPoints,
-                    isLoadingWeather = uiState.isLoadingWeather,
-                    containingTrip = uiState.containingTrip,
-                    onNavigateToTripDetail = onNavigateToTripDetail,
-                    onNavigateToDriveCurves = onNavigateToDriveCurves,
-                    onRemoveFromTrip = viewModel::removeFromTrip,
-                    modifier = Modifier.padding(padding)
-                )
-            }
         }
     }
 }
@@ -367,6 +366,20 @@ private fun DriveDetailContent(
             SpeedChartCard(
                 positions = positions, projected = projection.speed,
                 units = units,
+                timeLabels = timeLabels,
+                externalSelectedFraction = speedChartFraction,
+                onXSelected = { speedChartFraction = it },
+                fractionToTimeLabel = fractionToTimeLabel
+            )
+            PowerChartCard(
+                positions = positions, projected = projection.power,
+                timeLabels = timeLabels,
+                externalSelectedFraction = speedChartFraction,
+                onXSelected = { speedChartFraction = it },
+                fractionToTimeLabel = fractionToTimeLabel
+            )
+            BatteryChartCard(
+                positions = positions, projected = projection.battery,
                 timeLabels = timeLabels,
                 externalSelectedFraction = speedChartFraction,
                 onXSelected = { speedChartFraction = it },
@@ -575,7 +588,7 @@ private fun DriveMapCard(positions: List<DrivePosition>, routeColor: Color, star
                 Box(modifier = Modifier.fillMaxWidth().height(250.dp)
                     .clip(RoundedCornerShape(8.dp))) {
                     AmapRouteView(modifier = Modifier.fillMaxSize(), routePoints = routePoints, routeSegments = segments,
-                        startTitle = startLabel, endTitle = endLabel, routeColor = routeColor)
+                        startTitle = startLabel, endTitle = endLabel, routeColor = routeColor, drawRoutePath = false)
                 }
             }
         }

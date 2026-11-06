@@ -12,7 +12,7 @@ import org.junit.Test
 
 /** Functions are the actual data expressions consumed by the existing Compose HUD/badge. */
 class AppReleaseDashboardValuesTest {
-    @Test fun absentHudMetricsAreUnknownWhileObservedZeroRemainsZero() {
+    @Test fun absentHudMetricsAreUnknownWhileInvalidLiveElectricalSampleIsHidden() {
         val missing = CarStatus(state = "driving", chargingDetails = ChargingDetails(chargerVoltage = 230.0))
         assertEquals("--", dashboardHudSpeed(missing, Units("km")))
         assertEquals("--", dashboardHudChargeEnergy(missing))
@@ -21,7 +21,7 @@ class AppReleaseDashboardValuesTest {
             chargingDetails = ChargingDetails(chargeEnergyAdded = 0.0, chargerVoltage = 230.0, chargerActualCurrent = 0.0))
         assertEquals("0 km/h", dashboardHudSpeed(zero, Units("km")))
         assertEquals("0.0 kWh", dashboardHudChargeEnergy(zero))
-        assertEquals("230V / 0A", dashboardHudVoltageCurrent(zero))
+        assertNull(dashboardHudVoltageCurrent(zero))
     }
 
     @Test fun currentOnlyHudRetainsObservedAmpsWhenVoltageIsUnavailable() {
@@ -29,9 +29,9 @@ class AppReleaseDashboardValuesTest {
         assertEquals("--V / 16A", dashboardHudVoltageCurrent(status))
     }
 
-    @Test fun currentOnlyHudRetainsObservedZeroWhenVoltageIsUnavailable() {
+    @Test fun currentOnlyHudHidesZeroCurrentWhileCharging() {
         val status = CarStatus(state = "charging", chargingDetails = ChargingDetails(chargerActualCurrent = 0.0))
-        assertEquals("--V / 0A", dashboardHudVoltageCurrent(status))
+        assertNull(dashboardHudVoltageCurrent(status))
     }
 
     @Test fun voltageCurrentHudRemainsAbsentWhenNeitherMeasurementWasObserved() {

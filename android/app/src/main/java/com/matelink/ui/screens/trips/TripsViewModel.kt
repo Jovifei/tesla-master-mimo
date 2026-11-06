@@ -172,6 +172,26 @@ class TripsViewModel @Inject constructor(
             val proof = scope to context
             if (!current(generation, carId, proof)) return@launch
             owner = proof
+            val cached = historyRefresher.cached(carId)
+            if (cached != null && cached.localHistoryCarId == context.localHistoryCarId &&
+                current(generation, carId, proof)
+            ) {
+                allTrips = cached.trips
+                val cachedYears = allTrips.mapNotNull { parseYear(it.startDate) }
+                    .distinct()
+                    .sortedDescending()
+                val cachedAcIds = aggregateDao.getAcChargeIds(context.localHistoryCarId).toSet()
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        availableYears = cachedYears,
+                        dcChargeIds = cached.dcChargeIds,
+                        acChargeIds = cachedAcIds,
+                        historySyncWarning = cached.historySyncWarning
+                    )
+                }
+                applyFilter()
+            }
             val refreshed = historyRefresher.refresh(carId)
             val acIds = aggregateDao.getAcChargeIds(context.localHistoryCarId).toSet()
             check(current(generation, carId, proof) && refreshed.localHistoryCarId == context.localHistoryCarId) {
@@ -196,10 +216,13 @@ class TripsViewModel @Inject constructor(
             } catch (e: CancellationException) { throw e }
               catch (_: Exception) {
                 if (generation == loadGeneration) {
-                    allTrips = emptyList()
-                    owner = null
-                    _uiState.value = TripsUiState(isLoading = false,
-                        historySyncWarning = "history_identity_unavailable")
+                    if (allTrips.isEmpty()) {
+                        owner = null
+                        _uiState.value = TripsUiState(isLoading = false,
+                            historySyncWarning = "history_identity_unavailable")
+                    } else {
+                        _uiState.update { it.copy(isLoading = false) }
+                    }
                 }
             }
         }

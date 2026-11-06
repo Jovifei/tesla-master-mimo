@@ -26,6 +26,7 @@ import com.matelink.domain.history.LatestHistoryLoad
 import com.matelink.domain.analytics.calculateCostTotals
 import com.matelink.domain.analytics.selectWindow
 import dagger.hilt.android.lifecycle.HiltViewModel
+import java.time.Clock
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.YearMonth
@@ -111,6 +112,7 @@ internal fun buildLocationCosts(
 
 data class CostUiState(
     val loading: Boolean = true,
+    val isRefreshing: Boolean = false,
     val historyFreshness: HistoryFreshness = HistoryFreshness.FRESH,
     val noDataReason: NoDataReason? = null,
     val selectedWindow: AnalysisWindow = AnalysisWindow.ALL_TIME,
@@ -139,7 +141,8 @@ class CostViewModel @Inject constructor(
     private val aggregateDao: AggregateDao,
     private val chargeCostOverrideStore: ChargeCostOverrideStore,
     private val settingsDataStore: SettingsDataStore,
-    private val vehicleContexts: VehicleContextRepository
+    private val vehicleContexts: VehicleContextRepository,
+    private val clock: Clock = Clock.systemDefaultZone()
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(CostUiState())
     val uiState = _uiState.asStateFlow()
@@ -187,20 +190,30 @@ class CostViewModel @Inject constructor(
         }
     }
 
-    fun load(carId: Int) {
+    fun refresh() {
+        currentCarId?.let { load(it, force = true) }
+    }
+
+    fun load(carId: Int, force: Boolean = false) {
         val sameCar = currentCarId == carId
+        val preserveProjection = force && sameCar && charges.isNotEmpty() &&
+            activeScope != null && activeContext != null
         val window = if (sameCar) _uiState.value.selectedWindow else AnalysisWindow.ALL_TIME
         if (!sameCar) {
             customStart = null
             customEnd = null
         }
-        clearProjection()
         currentCarId = carId
-        _uiState.value = CostUiState(loading = true, selectedWindow = window)
+        if (preserveProjection) {
+            _uiState.value = _uiState.value.copy(isRefreshing = true, error = null)
+        } else {
+            clearProjection()
+            _uiState.value = CostUiState(loading = true, selectedWindow = window)
+        }
         latestLoad.launch(viewModelScope) {
             var capturedScope: HistoryReadScope? = null
             var capturedContext: VehicleContext? = null
-            var cachedPublished = false
+            var cachedPublished = preserveProjection
             try {
                 val scope = vehicleContexts.captureReadScope()
                 val context = vehicleContexts.cachedContextForRemote(carId, scope)
@@ -252,7 +265,8 @@ class CostViewModel @Inject constructor(
                     _uiState.value = _uiState.value.copy(
                         currencySymbol = currencySymbol,
                         historyFreshness = snapshot.freshness,
-                        noDataReason = historyReason
+                        noDataReason = historyReason,
+                        isRefreshing = false
                     )
                     charges = snapshot.charges.mapNotNull { charge ->
                         parseDate(charge)?.let { DatedCharge(it, charge) }
@@ -277,6 +291,9 @@ class CostViewModel @Inject constructor(
                         } else if (!cachedPublished) {
                             _uiState.value = CostUiState(loading = false,
                                 selectedWindow = window, noDataReason = NoDataReason.SOURCE_UNAVAILABLE)
+                        } else {
+                            _uiState.value = _uiState.value.copy(loading = false, isRefreshing = false,
+                                historyFreshness = HistoryFreshness.STALE)
                         }
                     }
                 }
@@ -294,7 +311,7 @@ class CostViewModel @Inject constructor(
                     publishIdentityUnavailable(window)
                 } else if (cachedPublished) {
                     _uiState.value = _uiState.value.copy(loading = false,
-                        historyFreshness = HistoryFreshness.STALE, error = null)
+                        isRefreshing = false, historyFreshness = HistoryFreshness.STALE, error = null)
                 } else {
                     _uiState.value = CostUiState(loading = false,
                         selectedWindow = window, noDataReason = NoDataReason.SOURCE_UNAVAILABLE)
@@ -345,7 +362,7 @@ class CostViewModel @Inject constructor(
             publishIdentityUnavailable(window)
             return
         }
-        val selected = selectWindow(charges, window, LocalDate.now(), customStart, customEnd).map { it.charge }
+        val selected = selectWindow(charges, window, LocalDate.now(clock), customStart, customEnd).map { it.charge }
         fun costFor(charge: ChargeData): Double? {
             val car = historyCarId ?: return null
             return projectEffectiveChargeCost(charge, car,
@@ -401,7 +418,7 @@ class CostViewModel @Inject constructor(
     private fun parseDate(charge: ChargeData): LocalDate? {
         val value = charge.startDate ?: return null
 		return runCatching { LocalDate.parse(value) }.getOrNull()
-			?: parseIsoInstant(value)?.atZone(java.time.ZoneId.systemDefault())?.toLocalDate()
+			?: parseIsoInstant(value)?.atZone(clock.zone)?.toLocalDate()
     }
 
     private data class DatedCharge(

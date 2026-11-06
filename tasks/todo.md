@@ -4504,3 +4504,56 @@ Review：当前生产仍为 API 8d3da22；生产候选 b11bae0 尚未部署，�
 - [x] 记录实际日期、源码/部署版本和测试证据，仅推送 App 分支，不影响小程序。
 
 Review：进行中。build84 全量及模拟器通过但真机空卡仍失败；临时 build85 只记录脱敏计数，手机原首次安装时间未变。生产仍为 API 8d3，b11 和后续续跑候选未上线。桥候选 `aae2f6af` 有跨账号风险，禁止部署；不得把合成数据、用户反馈和生产实测混为一谈。
+
+## 2026-11-06 本轮 APP 产品与用户体验审核
+
+- [x] 固定当前工作区版本、分支、脏改动和可运行入口
+- [x] 读取 Android 主要页面、ViewModel、Repository、计算器、空态/刷新组件
+- [x] 并行审查 Android UI/交互、数据链路/参数计算、Web 登录与页面切换
+- [x] 汇总 P0/P1/P2 问题与最小完整改动范围
+- [x] `EfficiencyViewModel.kt`：增加强制刷新入口，保留已有同车缓存投影并正确结束刷新状态
+- [x] `EfficiencyScreen.kt`：接入前台刷新、下拉刷新和错误重试按钮
+- [x] `CostViewModel.kt`：增加强制刷新入口，保留已有同车缓存投影并正确结束刷新状态
+- [x] `CostScreen.kt`：接入前台刷新、下拉刷新和错误重试按钮
+- [x] `NavGraph.kt`：启动占位与全局轻量页面切换动画
+- [x] `TimelineScreen.kt`、英文资源：暗色主题与英文空态文案
+- [x] 补充刷新回归断言，运行聚焦测试、编译/lint 或可执行的最小验证
+- [x] 更新本文件 review 结果与剩余风险
+
+## Review 2026-11-06
+
+- [x] Android audit completed: startup blank state, analysis refresh gap, navigation transition gap, Timeline dark-theme mismatch, English resource leakage.
+- [x] Web audit completed: real mode mock-data leakage, hard-coded charts, missing loading/empty states, route guard/request race, responsive overflow, token persistence risk.
+- [x] Implemented Android and scoped Web fixes in the current branch; no data schema, credential, or history identity boundary was changed.
+- [x] Verification: Android full `:app:testDebugUnitTest`, targeted Clock/analysis tests, and `:app:lintDebug` passed; Web `npm run lint` and `npm run build` passed.
+- [ ] Full device visual verification, Release build/lint, and real TeslaMate browser replay remain open.
+
+### Remaining risks
+
+- Mileage/Vampire and other analysis surfaces may still have independent time helpers; the three audited pages now use injected Clock.
+- Charges/Drives now show a filtered-empty state and clear-filter action; provider/source-level collecting vs no-history metadata remains a later refinement.
+- Web token localStorage, route/request race, mobile layout, and remaining page calculations still need a separate browser-focused pass.
+
+## 2026-11-06 执行审核整改
+
+- [x] 先固定本轮整改范围和受影响调用方/测试
+- [x] Web P0：真实模式禁止 mock 数据，图表与地区页接真实数据或明确空态
+- [x] Web P1：补关键加载/空态/错误/重试与计算边界
+- [x] Android P1：统一分析页时间窗口的 Clock/ZoneId 口径
+- [x] Android P1：区分充电/行程筛选为空与历史源为空，并提供清除筛选动作
+- [x] 运行 Web lint/build 与 Android 定向回归/lint
+- [x] 更新报告和整改结果
+
+Review：本轮整改已完成。Web 真实模式不再以页面直接读取 mock 夹具，车辆/状态/充电/行程/电池/地区和详情页均走 API；硬编码图表、随机遥测和硬编码天气已移除，并补充加载、错误、空态与筛选清除。Android 效率、费用、续航分析统一使用注入 Clock；充电/行程筛选为空时显示明确原因并提供清除筛选。验证通过：Web `npm run lint`、`npm run build`，Android 三个定向测试集合和 `:app:lintDebug`，`git diff --check`。未做真实 TeslaMate 联调、真机视觉验收、Release 构建；Web 保留 token localStorage、路由/请求竞态、Heatmap/Mileage 等后续风险。
+
+## 2026-11-06 充电/行程/统计展示整改
+
+- [ ] `DashboardScreen.kt`：修正充电 HUD 的“电压/电流”误标为“功率”，主功率统一使用 kW；充电状态改为非警告色；续航增加充电/闪电标识。
+- [ ] `CurrentChargeScreen.kt`、`ChargePresentation.kt`：详细页分别展示电压、电流和功率，零值/不可信瞬时值不冒充有效测量。
+- [ ] `InteractiveBarChart.kt`、`ChargesScreen.kt`、统计页面：统一柱状图渐变与 AC/DC/未识别配色，并保留点击数值交互。
+- [ ] `TripsScreen.kt`、`TripsViewModel.kt`、`TripDetailScreen.kt`、`TripDetailViewModel.kt`：本地缓存优先，后台增量刷新；详情不重复全屏转圈，恢复功率/电量/速度曲线并把路线简化为 A→B。
+- [ ] `MileageViewModel.kt`、`MileageScreen.kt` 与相关统计计算器：逐项校验今年里程、行程数、能耗口径和二级跳转。
+- [ ] 更新 `AppReleaseDashboardValuesTest`、`ChargePresentationTest`、行程 Room-first/曲线测试和统计计算测试。
+- [ ] 运行聚焦测试、Android 全量单测与 lint；再用真机只读截图验收，不执行车辆命令。
+
+范围边界：不修改 API 契约、凭据、Room 历史身份或车辆远程控制命令链路。真实车辆控制部分当前受安全策略限制，不在本轮代码修改范围内。
