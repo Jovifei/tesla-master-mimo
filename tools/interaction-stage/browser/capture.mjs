@@ -80,6 +80,7 @@ try{
     assert(bounds.fl.right<=bounds.car.left&&bounds.rl.right<=bounds.car.left,'left wheel controls overlap car')
     assert(bounds.fr.left>=bounds.car.right&&bounds.rr.left>=bounds.car.right,'right wheel controls overlap car')
     assert(bounds.fl.bottom<bounds.rl.top&&bounds.fr.bottom<bounds.rr.top,'front/rear wheel controls overlap')
+    assert(await evaluate("[...document.querySelectorAll('.tpms-position-wheel')].every(e=>getComputedStyle(e).borderTopWidth==='1px')"),'wheel status boundaries must survive the generic button reset')
   }
   for(const theme of ['light','dark'])for(const width of [320,412])for(const scene of scenes){
     await send('Emulation.setDeviceMetricsOverride',{width,height:780,deviceScaleFactor:1,mobile:true})
@@ -111,6 +112,7 @@ try{
       assert(await evaluate("document.querySelector('[data-wheel=\"fl\"]').dataset.alert==='low' && document.querySelector('[data-wheel=\"fr\"]').dataset.alert==='high' && document.querySelector('[data-wheel=\"rl\"]').innerText.includes('设置范围内') && document.querySelector('[data-wheel=\"rr\"]').dataset.state==='unknown'"))
     }
     if(scene==='parking')assert(await evaluate("document.querySelectorAll('.recorded-charge-row').length===2 && document.body.innerText.includes('0.00 kWh') && document.body.innerText.includes('结束未记录')"))
+    if(scene==='parking'||scene==='openings')assert(await evaluate("[...document.querySelectorAll('.recorded-charge-select,.interaction-disclosure')].every(e=>getComputedStyle(e).borderTopWidth==='0px')"),'unexpected browser-native control border')
     assert(await evaluate('document.documentElement.scrollWidth<=innerWidth'),'horizontal overflow')
     await save(`mini-${theme}-${width}-${scene}`)
     if((scene==='tpms'||scene==='tpms-warning')&&width===320){

@@ -1,6 +1,6 @@
 /* Scoped additions only: existing metrics, navigation, cards and buttons keep their layout. */
 .interaction-visual { --iv-primary:#157a86; --iv-soft:#ddf0f1; --iv-text:#1f2937; --iv-muted:#6b7280; --iv-line:#cbd5e1; --iv-surface:#fff; --iv-warning:#b45309; color:var(--iv-text); box-sizing:border-box; max-width:100%; }
-.interaction-visual button { box-sizing:border-box; }
+.interaction-visual button { box-sizing:border-box; border:0; }
 .interaction-caption { display:block; font-size:12px; line-height:1.5; color:var(--iv-muted); overflow-wrap:anywhere; }
 .connection-visual { width:100%; margin:8px 0; text-align:center; }
 .connection-pair { display:flex; align-items:center; justify-content:center; min-height:86px; }
