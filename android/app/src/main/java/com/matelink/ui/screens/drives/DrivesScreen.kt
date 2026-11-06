@@ -1184,25 +1184,30 @@ internal fun DrivesChartPage(
             DrivesChartType.DISTANCE -> distanceUnit
             DrivesChartType.TOP_SPEED -> speedUnit
         }
-        Text(
-            text = stringResource(R.string.visual_trip_chart_unit, axisUnit),
-            style = MaterialTheme.typography.labelMedium,
-            color = palette.onSurfaceVariant,
-            modifier = Modifier.padding(bottom = 6.dp)
-        )
-
         val missingData = when (chartType) {
             DrivesChartType.TIME -> chartData.any { it.durationSampleCount < it.count }
             DrivesChartType.DISTANCE -> chartData.any { it.distanceSampleCount < it.count }
             else -> false
         }
-        if (missingData) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 6.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Text(
-                text = stringResource(R.string.history_chart_partial_data),
-                style = MaterialTheme.typography.bodySmall,
-                color = palette.onSurfaceVariant,
-                modifier = Modifier.padding(bottom = 6.dp)
+                text = stringResource(R.string.visual_trip_chart_unit, axisUnit),
+                style = MaterialTheme.typography.labelMedium,
+                color = palette.onSurfaceVariant
             )
+            if (missingData) {
+                Text(
+                    text = stringResource(R.string.history_chart_partial_data),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = palette.onSurfaceVariant.copy(alpha = 0.8f)
+                )
+            }
         }
         if (barData.isEmpty()) {
             Text(

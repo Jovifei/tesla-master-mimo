@@ -422,7 +422,7 @@ internal fun DistanceCurveCard(
 }
 
 @Composable
-private fun PowerCurveCard(
+internal fun PowerCurveCard(
     positions: List<DrivePosition>,
     timeLabels: List<String>,
     externalSelectedFraction: Float?,
@@ -448,7 +448,7 @@ private fun PowerCurveCard(
 }
 
 @Composable
-private fun BatteryCurveCard(
+internal fun BatteryCurveCard(
     positions: List<DrivePosition>,
     timeLabels: List<String>,
     externalSelectedFraction: Float?,
@@ -484,7 +484,7 @@ private fun BatteryCurveCard(
 }
 
 @Composable
-private fun ElevationCurveCard(
+internal fun ElevationCurveCard(
     positions: List<DrivePosition>,
     timeLabels: List<String>,
     externalSelectedFraction: Float?,

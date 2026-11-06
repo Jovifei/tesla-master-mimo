@@ -729,3 +729,10 @@
 - Release 构建必须使用当前生产 API `https://api.teslalink.joviluma.com/`，不能沿用历史默认 `api.jourvolt.com`。构建后核对 generated BuildConfig，再装机验证首页和充电页。
 - 手机内旧的 `http://192.168.0.104:18080` 配置只代表自托管历史来源；云端主链路恢复后，先确认服务器云 API 健康再评估是否需要恢复自托管 Adapter。
 - 本次是执行错误，不是环境偶发：页面逻辑任务不应改变生产数据源；任何 Release 参数必须从 `docs/CURRENT-PRODUCTION-CONFIG.md` 读取，禁止从 build.gradle 历史默认值、旧报告或记忆推断。
+
+## 2026-11-07：长会话与截图输出推高 token
+
+- Pattern: 本项目累计 token 高达数百亿，主要来自数千轮长会话的缓存基数和 1.4-3.4MB 的 `view_image` 输出；单条大日志/UI dump 也会重复进入每轮缓存。
+- Resolution: 在 `docs/EXECUTION-PLAYBOOK.md` 增加强制节流规则：一个阶段一个会话、~150 轮或 2 小时封顶后收口、截图预算 2-3 张、>10k 字符输出必须过滤、subagent 少轮询。
+- Prevention rule: 任何新阶段先写 `tasks/todo.md` 边界，再开新会话执行；验证性截图只保留证明关键结论的最少数量。
+- 统计口径修正：`token_count` 事件数不等于人工对话轮数；同一会话的 fork/恢复会在多个 rollout 文件重复累计值，跨项目比较必须按会话 ID 去重。轮次上限的触发提醒必须在收口回复中明确要求 Jovi 新开会话。

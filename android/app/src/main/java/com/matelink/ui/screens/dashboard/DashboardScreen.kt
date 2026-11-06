@@ -731,7 +731,7 @@ fun DashboardScreen(
         // controls (hidden until the backend reports command scopes
         // ready), nearby charging (loaded on demand to save Fleet API
         // quota) and named places.
-        VehicleControlsSection(
+        VehicleQuickStatusAndControlSheet(
             carId = carId,
             status = status,
             onReauthorize = onNavigateToTeslaLogin,

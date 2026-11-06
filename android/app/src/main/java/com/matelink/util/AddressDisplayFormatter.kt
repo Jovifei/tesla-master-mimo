@@ -158,6 +158,25 @@ data class ParsedChineseAddress(
         }.trim()
 }
 
+fun simplifyAddressLandmark(raw: String): String {
+    if (raw.isBlank()) return raw
+    val text = raw.trim()
+
+    // 1. Check if bracket content contains a major landmark (e.g. 鞠婆婆绵绵冰(美塘广场杭州总店) -> 美塘广场)
+    val bracketMatch = Regex("[\\(（]([^\\(\\)（）]+)[\\)）]").find(text)
+    if (bracketMatch != null) {
+        val bracketContent = bracketMatch.groupValues[1]
+        val landmarkMatch = Regex("([\\u4e00-\\u9fa5]{2,6}?(?:广场|中心|大厦|大楼|园区|科技园|软件园|商城|商业中心|商场|印象城|万达|万象城|银泰|百联|天街))").find(bracketContent)
+        if (landmarkMatch != null) {
+            return landmarkMatch.groupValues[1]
+        }
+    }
+
+    // 2. Strip bracket branch suffixes like (xx店), (xx分店), (xx总店)
+    val clean = text.replace(Regex("[\\(（][^\\(\\)（）]*(?:店|分店|总店|支店|分公司)[^\\(\\)（）]*[\\)）]"), "").trim()
+    return clean
+}
+
 fun parseChineseAddress(raw: String): ParsedChineseAddress {
     val trimmed = raw.trim()
     if (trimmed.isEmpty()) return ParsedChineseAddress(original = raw)
@@ -198,13 +217,15 @@ fun parseChineseAddress(raw: String): ParsedChineseAddress {
         current = current.substring(streetMatch.range.last + 1).trimStart()
     }
 
+    val simplifiedDetail = simplifyAddressLandmark(current)
+
     return ParsedChineseAddress(
         original = raw,
         province = province,
         city = city,
         district = district,
         street = street,
-        detail = current
+        detail = simplifiedDetail
     )
 }
 

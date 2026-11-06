@@ -1094,6 +1094,7 @@
     <string name="filter_last_7_days">近 7 天</string>
     <string name="filter_last_90_days">近 90 天</string>
     <string name="filter_location">位置</string>
+    <string name="filter_location_all">全部地点</string>
     <string name="filter_road_trip_km">长途 (100 km+)</string>
     <string name="filter_road_trip_mi">长途 (约 62.1 mi+)</string>
     <string name="filter_today">今天</string>

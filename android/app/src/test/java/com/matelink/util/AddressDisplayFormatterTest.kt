@@ -56,8 +56,17 @@ class AddressDisplayFormatterTest {
         val start = "浙江省杭州市余杭区仓前街道重庆鸡公煲(万通中心店)万通中心"
         val end = "浙江省杭州市余杭区仓前街道钱腾云都"
         val (dispStart, dispEnd) = formatRouteAddresses(start, end)
-        assertEquals("重庆鸡公煲(万通中心店)万通中心", dispStart)
+        assertEquals("万通中心", dispStart)
         assertEquals("钱腾云都", dispEnd)
+    }
+
+    @Test
+    fun simplifiesLandmarksAndRemovesVerboseShopBranches() {
+        val start = "浙江省杭州市余杭区良渚街道鞠婆婆绵绵冰(美塘广场杭州总店)"
+        val end = "浙江省杭州市西湖区文新街道西溪天堂"
+        val (dispStart, dispEnd) = formatRouteAddresses(start, end)
+        assertEquals("余杭区良渚街道美塘广场", dispStart)
+        assertEquals("西湖区文新街道西溪天堂", dispEnd)
     }
 
     @Test

@@ -447,6 +447,94 @@ private fun ParkedDetailContent(
             }
         }
 
+        TelemetryPanel(
+            modifier = Modifier.fillMaxWidth(),
+            accent = Color(0xFF0284C7)
+        ) {
+            Column(
+                modifier = Modifier.padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Bolt,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                        tint = Color(0xFF0284C7)
+                    )
+                    Text(
+                        text = "驻车待机能耗分析",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("预估续航损失", style = MaterialTheme.typography.bodyMedium)
+                    val lossText = when {
+                        estRangeLossKm == null -> "—"
+                        batteryDeltaVal == 0 -> "0 km (无衰减)"
+                        (batteryDeltaVal ?: 0) > 0 -> "+%.1f km (充电增加)".format(estRangeLossKm)
+                        else -> "≈%.1f km".format(estRangeLossKm)
+                    }
+                    Text(
+                        text = lossText,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (batteryDeltaVal == 0 || (batteryDeltaVal ?: 0) > 0) Color(0xFF10B981) else Color(0xFFF97316)
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("等效待机功耗", style = MaterialTheme.typography.bodyMedium)
+                    val wattText = when {
+                        standbyWatts == null -> "—"
+                        batteryDeltaVal == 0 -> "< 50 W (超低待机)"
+                        else -> "≈%.0f W".format(standbyWatts)
+                    }
+                    Text(
+                        text = wattText,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFF0284C7)
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("待机工况推算", style = MaterialTheme.typography.bodyMedium)
+                    val statusText = when {
+                        batteryDeltaVal == 0 || socPointsPerHour == null || kotlin.math.abs(socPointsPerHour) < 0.05 -> "深度睡眠休眠 (超低功耗)"
+                        kotlin.math.abs(socPointsPerHour) in 0.05..0.45 -> "哨兵模式 / 车机唤醒 (常态待机)"
+                        else -> "车机活跃 / 驻车保温"
+                    }
+                    Text(
+                        text = statusText,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+                Text(
+                    text = "推算说明：按 Tesla 标准续航版约 60 kWh 电池容量基准，1% 约对应 0.60 kWh 及 3.8 km 额定续航；开启哨兵模式时典型待机功耗为 200~350 W。",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
         // 3. Separate recorded charging sessions; a whole-parked SOC rate is
         // not a non-charging drain rate when any session overlaps this window.
         if (hasRecordedCharge && chargeBreakdown != null) {
@@ -489,15 +577,15 @@ private fun ParkedDetailContent(
                 val inside = telemetry.insideTemp ?: data.insideTempAverage
                 val outside = telemetry.outsideTemp ?: data.outsideTempAverage
                 ParkedTelemetryRow(Icons.Default.Thermostat, stringResource(R.string.parked_inside_temp),
-                    inside?.let { "%.1f".format(it) }, "°C", Color(0xFF0D9488))
+                    inside?.let { "%.1f".format(it) }, "°C", Color(0xFF0D9488), fallback = "休眠未唤醒")
                 ParkedTelemetryRow(Icons.Default.Thermostat, stringResource(R.string.parked_outside_temp),
-                    outside?.let { "%.1f".format(it) }, "°C", Color(0xFF0284C7))
+                    outside?.let { "%.1f".format(it) }, "°C", Color(0xFF0284C7), fallback = "休眠未唤醒")
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 ParkedTelemetryRow(Icons.Default.Schedule, stringResource(R.string.parked_coverage),
-                    telemetry.coveragePercent?.let { "%.0f".format(it) }, "%", Color(0xFF64748B))
+                    telemetry.coveragePercent?.let { "%.0f".format(it) }, "%", Color(0xFF64748B), fallback = "0% (车辆休眠)")
                 ParkedTelemetryRow(Icons.Default.Schedule, stringResource(R.string.parked_sample_count),
                     telemetry.sampleCount?.let { "%,d".format(it) },
-                    stringResource(R.string.parked_sample_unit), Color(0xFF64748B))
+                    stringResource(R.string.parked_sample_unit), Color(0xFF64748B), fallback = "0 次 (免打扰)")
                 if (telemetry.hasMissing) {
                     Text(stringResource(R.string.parked_telemetry_missing_note),
                         style = MaterialTheme.typography.bodySmall,
@@ -506,84 +594,7 @@ private fun ParkedDetailContent(
             }
         }
 
-        TelemetryPanel(
-            modifier = Modifier.fillMaxWidth(),
-            accent = Color(0xFF0284C7)
-        ) {
-            Column(
-                modifier = Modifier.padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Bolt,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp),
-                        tint = Color(0xFF0284C7)
-                    )
-                    Text(
-                        text = "驻车待机能耗分析",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("预估续航损失", style = MaterialTheme.typography.bodyMedium)
-                    Text(
-                        text = estRangeLossKm?.let { "≈%.1f km".format(it) } ?: "—",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color(0xFFF97316)
-                    )
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("等效待机功耗", style = MaterialTheme.typography.bodyMedium)
-                    Text(
-                        text = standbyWatts?.let { "≈%.0f W".format(it) } ?: "—",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color(0xFF0284C7)
-                    )
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("待机工况推算", style = MaterialTheme.typography.bodyMedium)
-                    val statusText = when {
-                        socPointsPerHour == null || kotlin.math.abs(socPointsPerHour) < 0.05 -> "深度睡眠休眠 (超低功耗)"
-                        kotlin.math.abs(socPointsPerHour) in 0.05..0.45 -> "哨兵模式 / 车机唤醒 (常态待机)"
-                        else -> "车机活跃 / 驻车保温"
-                    }
-                    Text(
-                        text = statusText,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
-                Text(
-                    text = "推算说明：按 Tesla 标准续航版约 60 kWh 电池容量基准，1% 约对应 0.60 kWh 及 3.8 km 额定续航；开启哨兵模式时典型待机功耗为 200~350 W。",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-
-                Text(
+        Text(
             text = when (data.source) {
                 "local_room_cache" -> stringResource(R.string.parked_detail_local_source_note)
                 "database_latest", "teslamate_archive" -> stringResource(R.string.parked_detail_archive_source_note)
@@ -598,7 +609,7 @@ private fun ParkedDetailContent(
 }
 
 @Composable
-private fun ParkedTelemetryRow(icon: ImageVector, label: String, value: String?, unit: String?, tint: Color) {
+private fun ParkedTelemetryRow(icon: ImageVector, label: String, value: String?, unit: String?, tint: Color, fallback: String = "休眠待机") {
     val available = value != null
     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -606,8 +617,8 @@ private fun ParkedTelemetryRow(icon: ImageVector, label: String, value: String?,
             tint = if (available) tint else MaterialTheme.colorScheme.onSurfaceVariant)
         Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
         Text(buildAnnotatedString {
-            withStyle(SpanStyle(fontSize = 17.sp, fontWeight = FontWeight.SemiBold)) {
-                append(value ?: "—")
+            withStyle(SpanStyle(fontSize = if (available) 17.sp else 13.sp, fontWeight = if (available) FontWeight.SemiBold else FontWeight.Normal)) {
+                append(value ?: fallback)
             }
             if (available && unit != null) withStyle(SpanStyle(fontSize = 12.sp)) {
                 append(" $unit")

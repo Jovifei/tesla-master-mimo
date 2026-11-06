@@ -998,18 +998,7 @@ internal fun ChargeItem(
                     fontWeight = FontWeight.SemiBold,
                     color = accent
                 )
-                if (avgPowerKw != null && avgPowerKw > 0.1) {
-                    Text(
-                        text = "·",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = "%.1f kW".format(avgPowerKw),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+                // Note: Charging power (kW) deliberately omitted from list card per user direction (kept in detail page)
                 if (resolvedUnitPrice != null) {
                     Text(
                         text = "·",
@@ -1017,7 +1006,7 @@ internal fun ChargeItem(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        text = "$currencySymbol%.2f/kWh".format(resolvedUnitPrice),
+                        text = "$currencySymbol%.2f/度".format(resolvedUnitPrice),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1031,16 +1020,28 @@ internal fun ChargeItem(
             horizontalAlignment = Alignment.End,
             verticalArrangement = Arrangement.spacedBy(2.dp)
         ) {
+            // 电量组: 充入度数 + SOC变动
             displayedEnergy?.let {
                 val prefix = if (isPartialEnergy || isReferenceEnergy) "≈" else "+"
                 Text(
-                    text = "$prefix%.1f kWh".format(it),
+                    text = "$prefix%.1f 度".format(it),
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
+                    fontWeight = FontWeight.Bold,
                     color = palette.onSurface
                 )
             }
 
+            val socRange = UnitFormatter.formatSocRange(start, end, "")
+            if (socRange.isNotBlank()) {
+                Text(
+                    text = socRange,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = accent,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+
+            // 费用组: 总金额
             val costText = when {
                 displayCost != null && !isFree ->
                     (if (isReferenceCost || (pending == null && effectiveCost.source == ChargeCostSource.ESTIMATE)) "≈" else "") + "$currencySymbol%.2f".format(displayCost)
@@ -1061,15 +1062,6 @@ internal fun ChargeItem(
                         color = if (isFree) palette.acColor else if (pending != null) Color(0xFFF59E0B) else Color(0xFF22C55E)
                     )
                 }
-            }
-
-            val socRange = UnitFormatter.formatSocRange(start, end, "")
-            if (socRange.isNotBlank()) {
-                Text(
-                    text = socRange,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
         }
 
@@ -1326,7 +1318,7 @@ private fun LocationFilterDropdown(
                 if (hasSelection && selectedLocations.size == 1)
                     label(selectedLocations.first())
                 else if (hasSelection) stringResource(R.string.selected_locations_count, selectedLocations.size)
-                else stringResource(R.string.filter_location),
+                else stringResource(R.string.filter_location_all),
                 modifier = Modifier.widthIn(max = 120.dp), maxLines = 1,
                 overflow = TextOverflow.Ellipsis, color = palette.onSurfaceVariant
             )

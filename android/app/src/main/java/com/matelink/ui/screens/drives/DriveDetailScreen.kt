@@ -236,6 +236,38 @@ private fun DriveDetailContent(
             onNavigateToDriveCurves = onNavigateToDriveCurves
         )
 
+        // Directly embedded real telemetry curves (Power, Speed, Battery)
+        val receiptUnits = drivePresentationUnits(detail.lengthUnit, units)
+        if (hasChartData) {
+            PowerCurveCard(
+                positions = positions,
+                projected = projection.power,
+                timeLabels = timeLabels,
+                externalSelectedFraction = speedChartFraction,
+                onXSelected = { speedChartFraction = it },
+                fractionToTimeLabel = fractionToTimeLabel
+            )
+            if (detail.hasKnownLengthUnit) {
+                SpeedCurveCard(
+                    positions = positions,
+                    projected = projection.speed,
+                    units = receiptUnits,
+                    timeLabels = timeLabels,
+                    externalSelectedFraction = speedChartFraction,
+                    onXSelected = { speedChartFraction = it },
+                    fractionToTimeLabel = fractionToTimeLabel
+                )
+            }
+            BatteryCurveCard(
+                positions = positions,
+                projected = projection.battery,
+                timeLabels = timeLabels,
+                externalSelectedFraction = speedChartFraction,
+                onXSelected = { speedChartFraction = it },
+                fractionToTimeLabel = fractionToTimeLabel
+            )
+        }
+
         // Part-of-trip banner: link to the containing saved trip + detach action
         if (containingTrip != null) {
             val (_, trip) = containingTrip
@@ -456,9 +488,11 @@ private fun UnifiedTripCard(
 
             val unknownLocation = stringResource(R.string.unknown_location)
             val (defaultStart, defaultEnd) = formatRouteAddresses(detail.startAddress, detail.endAddress, unknownLocation)
-            androidx.compose.runtime.key(detail.driveId, detail.startDate, detail.endDate) {
-                RouteInteractionVisual(start = defaultStart, end = defaultEnd)
-            }
+            RouteIndicator(
+                start = defaultStart,
+                end = defaultEnd,
+                accent = MaterialTheme.colorScheme.primary
+            )
 
             HorizontalDivider(
                 color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)

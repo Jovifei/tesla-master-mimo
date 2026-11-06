@@ -1100,6 +1100,7 @@
     <string name="filter_last_7_days">Last 7 Days</string>
     <string name="filter_last_90_days">Last 90 Days</string>
     <string name="filter_location">Location</string>
+    <string name="filter_location_all">All locations</string>
     <string name="filter_road_trip_km">Road Trip (100 km+)</string>
     <string name="filter_road_trip_mi">Road Trip (approx. 62.1 mi+)</string>
     <string name="filter_today">Today</string>

@@ -1,5 +1,11 @@
 package com.matelink.ui.screens.dashboard
 
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -250,6 +256,166 @@ private fun TemperatureStepper(
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun VehicleQuickStatusAndControlSheet(
+    carId: Int,
+    status: CarStatus,
+    onReauthorize: () -> Unit,
+    viewModel: VehicleRemoteViewModel
+) {
+    var showSheet by remember { mutableStateOf(false) }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    val isLocked = status.locked ?: true
+    val isClimateOn = status.isClimateOn ?: false
+    val isSentryOn = status.sentryMode ?: false
+    val climateTarget = status.driverTempSetting ?: 21.0
+
+    // 1. Sleek Apple-style Status Pill Strip on Homepage
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Lock Pill
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = if (isLocked) MaterialTheme.colorScheme.surfaceContainerHigh else Color(0xFFEF4444).copy(alpha = 0.15f),
+            border = BorderStroke(0.5.dp, if (isLocked) MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f) else Color(0xFFEF4444).copy(alpha = 0.4f)),
+            onClick = { showSheet = true }
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(5.dp)
+            ) {
+                Icon(
+                    imageVector = if (isLocked) Icons.Default.Lock else Icons.Default.LockOpen,
+                    contentDescription = null,
+                    modifier = Modifier.size(14.dp),
+                    tint = if (isLocked) MaterialTheme.colorScheme.onSurfaceVariant else Color(0xFFEF4444)
+                )
+                Text(
+                    text = if (isLocked) "已上锁" else "未上锁",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Medium,
+                    color = if (isLocked) MaterialTheme.colorScheme.onSurface else Color(0xFFEF4444)
+                )
+            }
+        }
+
+        // Climate Pill
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = if (isClimateOn) Color(0xFF0284C7).copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceContainerHigh,
+            border = BorderStroke(0.5.dp, if (isClimateOn) Color(0xFF0284C7).copy(alpha = 0.4f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+            onClick = { showSheet = true }
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(5.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.AcUnit,
+                    contentDescription = null,
+                    modifier = Modifier.size(14.dp),
+                    tint = if (isClimateOn) Color(0xFF0284C7) else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = if (isClimateOn) "空调 %.1f°C".format(climateTarget) else "空调关闭",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Medium,
+                    color = if (isClimateOn) Color(0xFF0284C7) else MaterialTheme.colorScheme.onSurface
+                )
+            }
+        }
+
+        // Sentry Pill
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = if (isSentryOn) Color(0xFF10B981).copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceContainerHigh,
+            border = BorderStroke(0.5.dp, if (isSentryOn) Color(0xFF10B981).copy(alpha = 0.4f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+            onClick = { showSheet = true }
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(5.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Security,
+                    contentDescription = null,
+                    modifier = Modifier.size(14.dp),
+                    tint = if (isSentryOn) Color(0xFF10B981) else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = if (isSentryOn) "哨兵开启" else "哨兵关闭",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Medium,
+                    color = if (isSentryOn) Color(0xFF10B981) else MaterialTheme.colorScheme.onSurface
+                )
+            }
+        }
+
+        // Control Panel Entry Pill
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f),
+            border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
+            onClick = { showSheet = true }
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(5.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.DirectionsCar,
+                    contentDescription = null,
+                    modifier = Modifier.size(14.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    text = "车辆控制 >",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
+    }
+
+    // 2. Apple-Style Modal Bottom Sheet (Prevents accidental clicks on homepage)
+    if (showSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showSheet = false },
+            sheetState = sheetState,
+            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+            containerColor = MaterialTheme.colorScheme.surface
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 32.dp)
+            ) {
+                VehicleControlsSection(
+                    carId = carId,
+                    status = status,
+                    onReauthorize = {
+                        showSheet = false
+                        onReauthorize()
+                    },
+                    viewModel = viewModel
                 )
             }
         }
