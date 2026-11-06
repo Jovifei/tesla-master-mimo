@@ -17,7 +17,7 @@ type ConnectionProps = { phase: ConnectionPhase; kind?: 'vehicle' | 'tesla' | 'w
 export function ConnectionVisual({ phase, kind = 'tesla', active = true, reducedMotion = false }: ConnectionProps) {
   const motion = useVisualMotion(active, phase === 'connecting', reducedMotion)
   const label = phase === 'connected' ? (kind === 'wechat' ? '微信绑定已确认' : kind === 'tesla' ? 'MateLink 会话已建立' : phaseLabels[phase]) : phaseLabels[phase]
-  return <View className={`interaction-visual connection-visual connection-${phase}`} data-phase={phase} ariaLabel={label}>
+  return <View className={`interaction-visual connection-visual connection-${phase}`} data-phase={phase} data-kind={kind} ariaLabel={label}>
     <View className="connection-pair">
       {kind === 'vehicle' ? <Image className="connection-vehicle" src={vehicle} mode="aspectFit" ariaLabel="内置车型插图，不代表当前绑定车辆" /> :
         <View className="connection-end"><Text className="connection-lock">◇</Text><Text>{kind === 'wechat' ? 'MateLink' : 'Tesla'}</Text></View>}
@@ -30,17 +30,24 @@ export function ConnectionVisual({ phase, kind = 'tesla', active = true, reduced
   </View>
 }
 
-/** A/B only describes endpoint order. It is not a geographic path or vehicle playback. */
-export function RouteInteractionVisual({ start, end }: { start?: string | null; end?: string | null }) {
+type RouteVisualProps = { start?: string | null; end?: string | null; active?: boolean; reducedMotion?: boolean }
+/** Reset synchronously when the received boundaries change, even without a parent key. */
+export function RouteInteractionVisual(props: RouteVisualProps) {
+  return <RouteInteractionContent key={JSON.stringify([props.start ?? null, props.end ?? null])} {...props} />
+}
+/** A/B describes endpoint order, never geographic shape or observed vehicle movement. */
+function RouteInteractionContent({ start, end, active = true, reducedMotion = false }: RouteVisualProps) {
   const [selected, setSelected] = useState<0 | 1>(0)
   const complete = hasVisualRouteEndpoints(start, end)
-  return <View className="interaction-visual route-interaction" data-complete={complete}>
+  const motion = useVisualMotion(active, true, reducedMotion)
+  return <View className={`interaction-visual route-interaction${motion ? '' : ' route-motion-paused'}`} data-complete={complete} data-motion={motion}>
     <View className={`route-schematic ${complete ? '' : 'route-schematic-incomplete'}`} ariaLabel="起终点顺序示意，非实际轨迹">
       <View className="route-schematic-line" /><View className={`route-point route-point-a ${selected === 0 ? 'route-point-selected' : ''}`}>A</View>
       <View className={`route-point route-point-b ${selected === 1 ? 'route-point-selected' : ''}`}>B</View>
     </View>
     {[start, end].map((address, index) => <Button key={index} className={`route-endpoint ${selected === index ? 'route-endpoint-selected' : ''}`}
-      data-endpoint={index === 0 ? 'A' : 'B'} ariaLabel={`${index === 0 ? '起点' : '终点'} ${address?.trim() || '地点未知'}`}
+      data-endpoint={index === 0 ? 'A' : 'B'} data-selected={selected === index}
+      ariaLabel={`${index === 0 ? '起点' : '终点'} ${address?.trim() || '地点未知'}${selected === index ? '，已选中' : ''}`}
       onClick={() => setSelected(index as 0 | 1)}><Text className="route-endpoint-letter">{index === 0 ? 'A' : 'B'}</Text>
       <Text className="route-endpoint-address">{address?.trim() || '地点未知'}</Text></Button>)}
     <Text className="interaction-caption">起终点顺序示意 · 非实际轨迹</Text>
@@ -58,7 +65,7 @@ export function TpmsVehicleVisual({ snapshot, selected, onSelect, now = Date.now
       const reading = current.wheels[wheel]
       const status = reading.state === 'observed' ? '已观测' : reading.state === 'stale' ? '旧观测' : '暂无合格观测'
       return <Button key={wheel} className={`tpms-position-wheel tpms-position-${wheel} tpms-reading-${reading.state} ${selected === wheel ? 'tpms-position-selected' : ''}`}
-        data-wheel={wheel} data-state={reading.state} data-selected={selected === wheel} ariaLabel={`${VISUAL_WHEEL_NAMES[wheel]} ${reading.pressureBar == null ? '未知' : reading.pressureBar.toFixed(2) + ' bar'} ${status}`}
+        data-wheel={wheel} data-state={reading.state} data-selected={selected === wheel} ariaLabel={`${VISUAL_WHEEL_NAMES[wheel]} ${reading.pressureBar == null ? '未知' : reading.pressureBar.toFixed(2) + ' bar'} ${status}${selected === wheel ? '，已选中' : ''}`}
         onClick={() => onSelect(selected === wheel ? null : wheel)}><Text className="tpms-position-name">{VISUAL_WHEEL_NAMES[wheel]}</Text>
         <Text className="tpms-position-value">{reading.pressureBar == null ? '—' : reading.pressureBar.toFixed(2)}{reading.pressureBar == null ? '' : ' bar'}</Text>
         <Text className="tpms-position-status">{status}</Text></Button>
@@ -74,7 +81,7 @@ export function VehicleOpeningsVisual({ doors, windows, frunk, trunk }: OpeningP
   const values = [{ key: 'doors', label: '车门', value: doors }, { key: 'windows', label: '车窗', value: windows },
     { key: 'frunk', label: '前备箱', value: frunk }, { key: 'trunk', label: '后备箱', value: trunk }]
   return <View className="interaction-visual openings-visual">
-    <Button className="interaction-disclosure" onClick={event => { event.stopPropagation(); setExpanded(!expanded) }}>{expanded ? '收起开口位置示意' : '查看开口位置示意'}</Button>
+    <Button className="interaction-disclosure" data-expanded={expanded} onClick={event => { event.stopPropagation(); setExpanded(!expanded) }}>{expanded ? '收起开口位置示意' : '查看开口位置示意'}</Button>
     {expanded ? <><View className="opening-position-board"><VehiclePositionSchematic />{values.filter(row => row.value === true).map(row =>
       <View key={row.key} className={`opening-highlight opening-${row.key}`} data-opening={row.key} ariaLabel={`${row.label}报告为打开`} />)}</View>
       <View className="opening-status-list">{values.map(row => <Text key={row.key} className={row.value === true ? 'opening-reported' : ''}>{row.label}：{row.value === true ? '报告打开' : row.value === false ? '报告关闭' : '状态未知'}</Text>)}</View>
@@ -83,24 +90,34 @@ export function VehicleOpeningsVisual({ doors, windows, frunk, trunk }: OpeningP
 }
 
 export function EmptyHistoryVisual({ kind, failed = false }: { kind: 'drive' | 'charge'; failed?: boolean }) {
-  return <View className={`interaction-visual empty-history-visual empty-${kind}`} ariaLabel={failed ? '读取暂不可用' : kind === 'drive' ? '行程空态示意' : '充电空态示意'}>
+  return <View className={`interaction-visual empty-history-visual empty-${kind}`} data-status={failed ? 'unavailable' : 'empty'} ariaLabel={failed ? '读取暂不可用' : kind === 'drive' ? '行程空态示意' : '充电空态示意'}>
     {failed ? <Text className="empty-cloud">☁</Text> : kind === 'charge' ? <><Image src={vehicle} mode="aspectFit" className="empty-charge-vehicle" ariaLabel="内置车型示意" /><View className="empty-charge-post"><Text>ϟ</Text></View></> :
       <View className="route-schematic"><View className="route-schematic-line" /><View className="route-point route-point-a">A</View><View className="route-point route-point-b">B</View></View>}
   </View>
 }
 
+type TimelineProps = { sessions?: readonly RecordedChargeInterval[]; complete?: boolean | null }
+/** Scope changes are still fenced by the owning page. Receipt changes reset local disclosure too. */
+export function ParkedChargeTimeline(props: TimelineProps) {
+  const receipt = JSON.stringify((props.sessions ?? []).map(row => [row.id, row.startDate, row.endDate ?? null, row.energyKwh ?? null]))
+  return <ParkedChargeTimelineContent key={receipt} {...props} />
+}
 /** Separate actual intervals; unknown gaps never acquire a stop/charge label. */
-export function ParkedChargeTimeline({ sessions, complete = false }: { sessions?: readonly RecordedChargeInterval[]; complete?: boolean | null }) {
+function ParkedChargeTimelineContent({ sessions, complete = false }: TimelineProps) {
   const [selected, setSelected] = useState<string | null>(null)
   if (!sessions?.length) return null
   return <View className="interaction-visual parked-charge-timeline"><Text className="interaction-section-title">已记录充电时段</Text>
-    {sessions.map(session => <View className="recorded-charge-row" key={`${session.id}:${session.startDate}`}>
-      <View className={`recorded-charge-rail ${session.endDate ? '' : 'recorded-charge-rail-open'}`} ariaLabel={session.endDate ? '已记录起止时间' : '结束时间未记录'} />
-      <View className="recorded-charge-copy"><Button className="recorded-charge-select" onClick={() => setSelected(selected === session.id ? null : session.id)}>
-        <Text>{historyDetailDateTime(session.startDate)} → {session.endDate ? historyDetailDateTime(session.endDate) : '结束未记录'}</Text>
-        <Text className="interaction-caption">{session.energyKwh == null ? '充入电量未记录' : `${session.energyKwh.toFixed(2)} kWh`}</Text></Button>
-        {selected === session.id ? <Text className="interaction-caption">本条已保存会话的时间区间；不代表两条会话之间一直未充电。</Text> : null}
-      </View></View>)}
+    {sessions.map(session => {
+      const key = JSON.stringify([session.id, session.startDate, session.endDate ?? null])
+      const energy = session.energyKwh != null && Number.isFinite(session.energyKwh) ? session.energyKwh : null
+      return <View className="recorded-charge-row" key={key}>
+        <View className={`recorded-charge-rail ${session.endDate ? '' : 'recorded-charge-rail-open'}`} ariaLabel={session.endDate ? '已记录起止时间' : '结束时间未记录'} />
+        <View className="recorded-charge-copy"><Button className="recorded-charge-select" data-selected={selected === key} onClick={() => setSelected(selected === key ? null : key)}>
+          <Text>{historyDetailDateTime(session.startDate)} → {session.endDate ? historyDetailDateTime(session.endDate) : '结束未记录'}</Text>
+          <Text className="interaction-caption">{energy == null ? '充入电量未记录' : `${energy.toFixed(2)} kWh`}</Text></Button>
+          {selected === key ? <Text className="interaction-caption">本条已保存会话的时间区间；不代表两条会话之间一直未充电。</Text> : null}
+        </View></View>
+    })}
     <Text className="interaction-caption">{complete ? '已返回查询范围内保存的会话；不等于车辆全部充电均已采集。' : '部分已保存会话；不据空白区间推断停充或耗电。'}</Text>
   </View>
 }
