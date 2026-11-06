@@ -7,7 +7,8 @@
     "build:weapp": "node ../tools/miniprogram/build-vehicle-assets.mjs --check && taro build --type weapp && node ../tools/miniprogram/build-vehicle-assets.mjs --check-dist",
     "dev:weapp": "taro build --type weapp --watch",
     "test": "node --test ../tools/miniprogram/vehicle-assets-integrity.test.mjs ../tools/miniprogram/vehicle-assets-native.test.mjs && node test-tooling/node_modules/vitest/vitest.mjs run --config test-tooling/vitest.config.mts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "upload:weapp": "powershell -ExecutionPolicy Bypass -File ../tools/miniprogram/upload-experience.ps1"
   },
   "dependencies": {
     "@tarojs/components": "4.2.1",
