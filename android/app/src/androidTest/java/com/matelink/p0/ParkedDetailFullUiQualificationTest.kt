@@ -90,8 +90,10 @@ class ParkedDetailFullUiQualificationTest {
             composeRule.scrollUntilText(parkedTitle)
             composeRule.onNodeWithText(parkedTitle).performClick()
             composeRule.waitForText(context.getString(R.string.parked_recorded_charge_count, 2))
-            composeRule.onNodeWithText("6.00 kWh/hour", substring = true).assertExists()
-            composeRule.onNodeWithText("4.00 kWh/hour", substring = true).assertExists()
+            // Assert each actual native detail row, including its own duration and energy.
+            // A separate overview can also display ≈4.00; that is not this session's rate.
+            composeRule.onNodeWithText("40m · 4.00 kWh · 6.00 kWh/hour", useUnmergedTree = true).assertExists()
+            composeRule.onNodeWithText("15m · 1.00 kWh · 4.00 kWh/hour", useUnmergedTree = true).assertExists()
             composeRule.onNodeWithText("1.7 pp/hour", substring = true).assertExists()
             assertSixTelemetryLabels(context)
             composeRule.onNodeWithText(context.getString(R.string.parked_telemetry_missing_note)).assertExists()

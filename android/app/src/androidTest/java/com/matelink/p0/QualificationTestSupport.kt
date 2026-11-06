@@ -21,7 +21,10 @@ import com.matelink.R
 import com.matelink.data.local.AppSettings
 import com.matelink.data.local.ConnectionMode
 import com.matelink.data.local.ConnectionModeStore
+import com.matelink.data.local.DataReadinessStore
+import com.matelink.data.local.JourVoltSessionStore
 import com.matelink.data.repository.SettingsRepository
+import com.matelink.data.repository.compatibilityDataReadiness
 import com.matelink.locale.LocaleHelper
 import com.matelink.receiver.DebugEndpointReceiver
 import dagger.hilt.android.EntryPointAccessors
@@ -68,6 +71,19 @@ internal suspend fun prepareQualificationState(
     // These data-page tests do not qualify the separate first-run permission dialog.
     // Mark only the app's prompt state; never grant or change the OS permission.
     settingsDataStore(context).saveNotificationPermissionAsked()
+    // The isolated legacy fixture has no readiness endpoint: its real repository
+    // compatibility result is version 0 for car 101. Mark ONLY that exact current
+    // account/origin/car explanation as seen, before the asynchronous dashboard read.
+    // A new capability, another vehicle, or an unexpected dialog must still fail.
+    val readinessStore = DataReadinessStore(
+        context.applicationContext,
+        JourVoltSessionStore(context.applicationContext),
+        ConnectionModeStore(context.applicationContext),
+        settingsDataStore(context)
+    )
+    val readiness = compatibilityDataReadiness(101)
+    readinessStore.markSeen(readiness, 101)
+    check(readinessStore.hasSeen(readiness, 101)) { "Synthetic readiness explanation was not initialized" }
     // Other UI qualification cases exercise page controls, not the one-time explanation.
     context.getSharedPreferences("history_notice_acknowledgements", Context.MODE_PRIVATE)
         .edit().putBoolean("charge_estimate_v1", true).commit()
