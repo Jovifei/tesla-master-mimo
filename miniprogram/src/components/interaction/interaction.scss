@@ -4,8 +4,8 @@
 .interaction-caption { display:block; font-size:12px; line-height:1.5; color:var(--iv-muted); overflow-wrap:anywhere; }
 .connection-visual { width:100%; margin:8px 0; text-align:center; }
 .connection-pair { display:flex; align-items:center; justify-content:center; min-height:86px; }
-.connection-vehicle { width:132px; height:80px; flex-shrink:1; }
-.connection-end { display:flex; flex-direction:column; align-items:center; justify-content:center; min-width:66px; padding:10px; border-radius:16px; background:var(--iv-surface); font-size:13px; line-height:1.4; }
+.connection-vehicle { width:132px; height:80px; flex:1 1 0; min-width:0; }
+.connection-end { display:flex; flex:1 1 0; min-width:0; box-sizing:border-box; flex-direction:column; align-items:center; justify-content:center; padding:10px; border-radius:16px; background:var(--iv-surface); font-size:13px; line-height:1.4; overflow-wrap:anywhere; }
 .connection-lock,.connection-account { font-size:26px; line-height:30px; color:var(--iv-primary); }
 .connection-bridge { width:60px; height:42px; flex-shrink:0; display:flex; justify-content:center; align-items:center; position:relative; }
 .connection-track { position:absolute; left:6px; right:6px; top:20px; border-top:2px dashed var(--iv-line); }
@@ -21,9 +21,11 @@
 .route-point { width:20px; height:20px; border-radius:50%; line-height:20px; font-size:11px; font-weight:600; background:var(--iv-soft); color:var(--iv-primary); position:absolute; top:6px; text-align:center; transition:transform 220ms ease; }
 .route-point-a { left:0; } .route-point-b { right:0; top:18px; }
 .route-point-selected { transform:scale(1.12); background:var(--iv-primary); color:#fff; }
+.route-motion-paused .route-point { transition:none; }
 .interaction-visual .route-endpoint { margin:0; min-height:48px; width:100%; display:flex; align-items:center; gap:12px; border:0; border-radius:10px; background:transparent; color:var(--iv-text); padding:10px 12px; font-size:14px; text-align:left; line-height:1.5; }
 .interaction-visual .route-endpoint::after,.interaction-visual .tpms-position-wheel::after,.interaction-visual .interaction-disclosure::after,.interaction-visual .recorded-charge-select::after { border:0; }
 .interaction-visual .route-endpoint-selected { background:var(--iv-soft); }
+.interaction-visual .route-endpoint:focus-visible,.interaction-visual .tpms-position-wheel:focus-visible,.interaction-visual .interaction-disclosure:focus-visible,.interaction-visual .recorded-charge-select:focus-visible { outline:2px solid var(--iv-primary); outline-offset:2px; }
 .route-endpoint-letter { color:var(--iv-primary); font-weight:600; flex-shrink:0; }
 .route-endpoint-address { overflow-wrap:anywhere; min-width:0; }
 .tpms-position-board { min-height:216px; display:grid; grid-template-columns:minmax(0,1fr) 108px minmax(0,1fr); column-gap:8px; row-gap:32px; align-items:center; }
