@@ -18,6 +18,8 @@ base = bases[branch]
 subprocess.run(['git', 'merge-base', '--is-ancestor', base, 'HEAD'], cwd=root, check=True)
 app = branch == 'codex/app-interaction-complete-20261106'
 allowed_app = {
+    'android/app/src/main/java/com/matelink/ui/screens/tpms/TpmsTrendViewModel.kt',
+    'android/app/src/main/java/com/matelink/ui/screens/tpms/TpmsTrendScreen.kt',
     'android/app/src/main/java/com/matelink/ui/components/InteractionVisuals.kt',
     'android/app/src/main/java/com/matelink/ui/components/InteractionEvidencePresentation.kt',
     'android/app/src/main/res/values/interaction_evidence.xml',

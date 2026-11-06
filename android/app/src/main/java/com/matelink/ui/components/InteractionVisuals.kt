@@ -50,6 +50,7 @@ import com.matelink.domain.model.hasVisualRouteEndpoints
 import com.matelink.domain.model.ConnectionVisualPhase
 import com.matelink.domain.model.VisualWheelReading
 import com.matelink.domain.model.VisualWheelState
+import com.matelink.data.local.TpmsAlertProfile
 import com.matelink.data.local.TirePosition
 import java.text.DateFormat
 import java.util.Date
@@ -191,7 +192,7 @@ fun wheelVisualLabel(wheel: TirePosition): String = stringResource(when (wheel) 
 
 @Composable
 fun TpmsVehicleVisual(readings: Map<TirePosition, VisualWheelReading>, selected: TirePosition?,
-    onSelect: (TirePosition?) -> Unit, modifier: Modifier = Modifier) {
+    onSelect: (TirePosition?) -> Unit, modifier: Modifier = Modifier, profile: TpmsAlertProfile? = null) {
     // A malformed direct consumer input must not upgrade a raw report to observed UI evidence.
     val displayReadings = TirePosition.entries.associateWith { qualifiedVisualReading(readings[it]) }
     Column(modifier.fillMaxWidth().testTag("interaction-tpms")) {
@@ -209,14 +210,21 @@ fun TpmsVehicleVisual(readings: Map<TirePosition, VisualWheelReading>, selected:
                             val value = reading.pressureBar?.let { String.format(Locale.getDefault(), "%.2f bar", it) }
                                 ?: stringResource(R.string.not_available)
                             val label = wheelVisualLabel(wheel)
-                            val stateLabel = stringResource(when (reading.state) {
+                            val band = visualPressureBand(reading, profile)
+                            val stateLabel = stringResource(when {
+                                band == VisualPressureBand.LOW -> R.string.interaction_evidence_pressure_low
+                                band == VisualPressureBand.HIGH -> R.string.interaction_evidence_pressure_high
+                                band == VisualPressureBand.IN_RANGE -> R.string.interaction_evidence_pressure_range
+                                else -> when (reading.state) {
                                 VisualWheelState.RECORDED -> R.string.interaction_observed
                                 VisualWheelState.STALE -> R.string.interaction_stale
                                 VisualWheelState.WARNING -> R.string.interaction_warning
                                 else -> R.string.interaction_unknown
+                                }
                             })
                             val isSelected = selected == wheel
-                            val accent = if (reading.state == VisualWheelState.WARNING) MaterialTheme.colorScheme.error
+                            val accent = if (band == VisualPressureBand.LOW || band == VisualPressureBand.HIGH ||
+                                reading.state == VisualWheelState.WARNING) MaterialTheme.colorScheme.error
                                 else if (reading.state == VisualWheelState.RECORDED) MaterialTheme.colorScheme.primary
                                 else MaterialTheme.colorScheme.onSurfaceVariant
                             Column(Modifier.fillMaxWidth().heightIn(min = 56.dp)
@@ -232,6 +240,8 @@ fun TpmsVehicleVisual(readings: Map<TirePosition, VisualWheelReading>, selected:
                     }
                 }
         }
+        if (profile?.enabled == true && profile.isValid) Text(stringResource(R.string.interaction_evidence_pressure_source),
+            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         val observedAt = if (selected == null) latestVisualWheelObservation(displayReadings.values)
             else displayReadings[selected]?.observedAt
         val time = observedAt?.let { DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(it)) }

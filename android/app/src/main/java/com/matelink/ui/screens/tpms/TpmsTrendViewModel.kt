@@ -2,6 +2,8 @@ package com.matelink.ui.screens.tpms
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.matelink.data.local.SettingsDataStore
+import com.matelink.data.local.TpmsAlertProfile
 import com.matelink.data.local.TirePosition
 import com.matelink.data.local.dao.DriveSummaryDao
 import com.matelink.data.local.VehicleContextRepository
@@ -21,6 +23,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -54,6 +58,7 @@ internal interface TpmsTrendHistorySource {
 
 internal data class TpmsTrendHistorySnapshot(
     val samples: List<TpmsPressureSample>, val drives: List<DriveSummary>,
+    val profile: TpmsAlertProfile? = null,
     val stillCurrent: suspend () -> Boolean = { true }
 )
 
@@ -61,7 +66,8 @@ private class RepositoryTpmsTrendHistorySource(
     private val historyRepository: TpmsHistoryRepository,
     private val driveSummaryDao: DriveSummaryDao,
     private val vehicleContextRepository: VehicleContextRepository,
-    private val repository: com.matelink.data.repository.TeslamateRepository
+    private val repository: com.matelink.data.repository.TeslamateRepository,
+    private val settings: SettingsDataStore
 ) : TpmsTrendHistorySource {
     override suspend fun load7DaySamples(carId: Int, now: Long) = historyRepository.load7DaySamples(carId, now)
     override suspend fun load30DaySamples(carId: Int, now: Long) = historyRepository.load30DaySamples(carId, now)
@@ -83,7 +89,12 @@ private class RepositoryTpmsTrendHistorySource(
         verify()
         val drives = driveSummaryDao.getAllChronological(context.localHistoryCarId)
         verify()
-        return TpmsTrendHistorySnapshot(samples, drives) {
+        // A setting from another account/source/car cannot colour this history.
+        val profile = try { settings.getTpmsAlertProfile(context.localHistoryCarId) }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { null }
+        verify()
+        return TpmsTrendHistorySnapshot(samples, drives, profile) {
             vehicleContextRepository.isHistoryContextCurrent(identity, context)
         }
     }
@@ -95,7 +106,8 @@ internal class TpmsTrendRefreshController(
     private val analyzer: TpmsTrendAnalyzer,
     private val scope: CoroutineScope,
     private val onSuccess: (TpmsTrendWindow, TpmsTrendAnalysis) -> Unit,
-    private val onFailure: () -> Unit
+    private val onFailure: () -> Unit,
+    private val onProfile: (TpmsAlertProfile?) -> Unit = {}
 ) {
     private data class Request(val carId: Int, val window: TpmsTrendWindow, val now: Long)
 
@@ -108,13 +120,16 @@ internal class TpmsTrendRefreshController(
         lastRequest = request
         val token = ++requestToken
         refreshJob?.cancel()
-        refreshJob = scope.launch {
+        val job = scope.launch(start = CoroutineStart.LAZY) {
             try {
                 val snapshot = source.loadSnapshot(request.carId, request.window, request.now)
                 val analysis = analyzer.analyze(snapshot.samples, snapshot.drives)
                 val identityCurrent = snapshot.stillCurrent()
                 if (token == requestToken) {
-                    if (identityCurrent) onSuccess(request.window, analysis) else onFailure()
+                    if (identityCurrent) {
+                        onProfile(snapshot.profile)
+                        if (token == requestToken) onSuccess(request.window, analysis)
+                    } else onFailure()
                 }
             } catch (_: CancellationException) {
                 // A superseded request is intentionally silent.
@@ -122,6 +137,9 @@ internal class TpmsTrendRefreshController(
                 if (token == requestToken) onFailure()
             }
         }
+        // Install ownership before immediate/reentrant publication can start the next request.
+        refreshJob = job
+        job.start()
     }
 
     fun retry() {
@@ -183,7 +201,8 @@ data class TpmsTrendUiState(
     val possibleFactors: List<TpmsTrendEvidence> = emptyList(),
     val possibleFactorConclusion: TpmsTrendConclusion = possibleFactorConclusion(emptyList()),
     val isLoading: Boolean = true,
-    val error: TpmsTrendLoadError? = null
+    val error: TpmsTrendLoadError? = null,
+    val alertProfile: TpmsAlertProfile? = null
 ) {
     val isUnavailable: Boolean
         get() = series.values.none { points -> points.any { it.pressureBar != null } }
@@ -231,32 +250,38 @@ class TpmsTrendViewModel @Inject constructor(
     private val historyRepository: TpmsHistoryRepository,
     private val driveSummaryDao: DriveSummaryDao,
     private val vehicleContextRepository: VehicleContextRepository,
-    private val repository: com.matelink.data.repository.TeslamateRepository
+    private val repository: com.matelink.data.repository.TeslamateRepository,
+    private val settings: SettingsDataStore
 ) : ViewModel() {
     private val analyzer = TpmsTrendAnalyzer()
     private val _uiState = MutableStateFlow(TpmsTrendUiState())
     val uiState: StateFlow<TpmsTrendUiState> = _uiState.asStateFlow()
 
     private var loadedCarId: Int? = null
+    private var qualifiedProfile: TpmsAlertProfile? = null
     private val refreshController = TpmsTrendRefreshController(
-        source = RepositoryTpmsTrendHistorySource(historyRepository, driveSummaryDao, vehicleContextRepository, repository),
+        source = RepositoryTpmsTrendHistorySource(historyRepository, driveSummaryDao, vehicleContextRepository, repository, settings),
         analyzer = analyzer,
         scope = viewModelScope,
         onSuccess = { window, analysis ->
-            _uiState.value = analysis.toUiState(window)
+            _uiState.value = analysis.toUiState(window).copy(alertProfile = qualifiedProfile)
         },
         onFailure = {
+            qualifiedProfile = null
             _uiState.value = _uiState.value.copy(
                 isLoading = false,
-                error = TpmsTrendLoadError.LOAD_FAILED
+                error = TpmsTrendLoadError.LOAD_FAILED,
+                alertProfile = null
             )
-        }
+        },
+        onProfile = { qualifiedProfile = it }
     )
 
     init {
         viewModelScope.launch {
             vehicleContextRepository.historyScopeChanges.collect {
                 refreshController.invalidate()
+                qualifiedProfile = null
                 // Clear the previous account/origin's visible result even if the numeric car is unchanged.
                 val carId = loadedCarId
                 _uiState.value = TpmsTrendUiState(selectedWindow = _uiState.value.selectedWindow)
@@ -265,10 +290,25 @@ class TpmsTrendViewModel @Inject constructor(
         }
     }
 
+    init {
+        viewModelScope.launch {
+            settings.tpmsAlertProfiles.distinctUntilChanged().collect {
+                loadedCarId?.let { carId ->
+                    qualifiedProfile = null
+                    _uiState.value = _uiState.value.copy(alertProfile = null)
+                    refreshController.refresh(carId, _uiState.value.selectedWindow)
+                }
+            }
+        }
+    }
+
     fun load(carId: Int) {
         if (loadedCarId == carId && !_uiState.value.isLoading && _uiState.value.error == null) return
+        val changedCar = loadedCarId != carId
         loadedCarId = carId
-        _uiState.value = _uiState.value.copy(isLoading = true, error = null)
+        qualifiedProfile = null
+        _uiState.value = if (changedCar) TpmsTrendUiState(selectedWindow = _uiState.value.selectedWindow)
+            else _uiState.value.copy(isLoading = true, error = null, alertProfile = null)
         refreshController.refresh(carId, _uiState.value.selectedWindow)
     }
 

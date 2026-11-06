@@ -28,6 +28,20 @@ class InteractionEvidenceAndroidTest {
     @get:Rule val compose = createComposeRule()
     private fun label(id: Int) = InstrumentationRegistry.getInstrumentation().targetContext.getString(id)
 
+    @Test fun configuredLimitsAreWiredToTheActualFourWheelConsumer() {
+        val setting = mutableStateOf<com.matelink.data.local.TpmsAlertProfile?>(com.matelink.data.local.TpmsAlertProfile(2.9, 2.6, 3.4, true))
+        val readings = mapOf(TirePosition.FL to VisualWheelReading(0.0, 1800000000000L, VisualWheelState.RECORDED),
+            TirePosition.FR to VisualWheelReading(3.5, 1800000000000L, VisualWheelState.RECORDED),
+            TirePosition.RL to VisualWheelReading(2.9, 1800000000000L, VisualWheelState.RECORDED))
+        compose.setContent { MateLinkTheme { TpmsVehicleVisual(readings, null, {}, profile = setting.value) } }
+        compose.onNodeWithTag("interaction-wheel-FL").assertTextContains(label(R.string.interaction_evidence_pressure_low), substring = true)
+        compose.onNodeWithTag("interaction-wheel-FR").assertTextContains(label(R.string.interaction_evidence_pressure_high), substring = true)
+        compose.onNodeWithTag("interaction-wheel-RL").assertTextContains(label(R.string.interaction_evidence_pressure_range), substring = true)
+        compose.runOnIdle { setting.value = null }
+        compose.onNodeWithText(label(R.string.interaction_evidence_pressure_low)).assertDoesNotExist()
+        compose.onNodeWithTag("interaction-wheel-FL").assertTextContains(label(R.string.interaction_observed), substring = true)
+    }
+
     @Test fun openingsExposeOpenClosedAndUnknownWithoutColorOrIndividualDoorClaims() {
         val door = mutableStateOf<Boolean?>(true)
         compose.setContent { MateLinkTheme { VehicleOpeningsVisual(door.value, false, null, null) } }

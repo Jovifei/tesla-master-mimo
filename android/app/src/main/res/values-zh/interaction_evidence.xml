@@ -14,4 +14,8 @@
     <string name="interaction_evidence_read_failed">历史暂不可用，不代表没有历史记录</string>
     <string name="interaction_evidence_drive_empty">行程空态示意，请结合当前筛选及数据状态查看</string>
     <string name="interaction_evidence_charge_empty">充电空态示意，请结合当前筛选及数据状态查看</string>
+    <string name="interaction_evidence_pressure_low">低于设置下限</string>
+    <string name="interaction_evidence_pressure_high">高于设置上限</string>
+    <string name="interaction_evidence_pressure_range">设置范围内</string>
+    <string name="interaction_evidence_pressure_source">按你保存的阈值比较，不代表车辆原厂告警</string>
 </resources>

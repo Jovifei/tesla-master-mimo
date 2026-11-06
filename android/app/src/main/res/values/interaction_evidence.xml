@@ -14,4 +14,8 @@
     <string name="interaction_evidence_read_failed">History temporarily unavailable; not evidence of an empty history</string>
     <string name="interaction_evidence_drive_empty">Trip empty-state illustration; see the current filter and data status</string>
     <string name="interaction_evidence_charge_empty">Charging empty-state illustration; see the current filter and data status</string>
+    <string name="interaction_evidence_pressure_low">Below saved lower limit</string>
+    <string name="interaction_evidence_pressure_high">Above saved upper limit</string>
+    <string name="interaction_evidence_pressure_range">Within saved range</string>
+    <string name="interaction_evidence_pressure_source">Compared with your saved thresholds; not a Tesla warning</string>
 </resources>
