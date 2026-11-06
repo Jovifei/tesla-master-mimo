@@ -142,8 +142,9 @@ internal class TpmsTrendRefreshController(
         job.start()
     }
 
-    fun retry() {
-        lastRequest?.let { refresh(it.carId, it.window, it.now) }
+    fun retry(now: Long = System.currentTimeMillis()) {
+        // The live window advances; never exclude observations received after the failed attempt.
+        lastRequest?.let { refresh(it.carId, it.window, now) }
     }
 
     fun invalidate() {
