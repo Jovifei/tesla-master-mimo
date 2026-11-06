@@ -1834,4 +1834,8 @@
     <string name="diagnostic_fleet_summary">Fleet 官方读取：%1$s。车辆状态：%2$s；配置：%3$s；近期错误：%4$s。这些读取不会配置或唤醒车辆。</string>
     <string name="diagnostic_fleet_vehicle">虚拟钥匙已配对：%1$s；流式传输已启用：%2$s。未知值保持未确认。</string>
     <string name="diagnostic_fleet_config">配置已同步：%1$s。期望服务目标：%2$s；采样字段：%3$s；CA：%4$s。近期错误：%5$s。配置与流式传输状态不代表已收到遥测。</string>
+    <string name="charge_unit_price">平均电价</string>
+    <string name="charge_avg_energy">单次平均</string>
+    <string name="charge_unit_cost_label">单价</string>
+    <string name="charge_avg_power_label">均功</string>
 </resources>

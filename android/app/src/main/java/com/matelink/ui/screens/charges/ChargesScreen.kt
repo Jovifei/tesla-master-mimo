@@ -42,6 +42,8 @@ import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.ElectricBolt
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Paid
+import androidx.compose.material.icons.filled.PriceCheck
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -191,6 +193,7 @@ fun ChargesScreen(
                     uiState.historyNoticeLocalCarId?.let { it < 0 } != true,
                 charges = uiState.charges,
                 dcChargeIds = uiState.dcChargeIds,
+                acChargeIds = uiState.acChargeIds,
                 processedChargeIds = uiState.processedChargeIds,
                 chartData = uiState.chartData,
                 chartGranularity = uiState.chartGranularity,
@@ -264,6 +267,7 @@ private fun ChargesContent(
     localArchiveLinkPending: Boolean,
     charges: List<ChargeData>,
     dcChargeIds: Set<Int>,
+    acChargeIds: Set<Int> = emptySet(),
     processedChargeIds: Set<Int>,
     chartData: List<ChargeChartData>,
     chartGranularity: ChartGranularity,
@@ -419,7 +423,7 @@ private fun ChargesContent(
                 ) {
                     ChargeItem(
                         charge = charge,
-                        isDcCharge = when (historyChargeType(charge, dcChargeIds, processedChargeIds)) {
+                        isDcCharge = when (historyChargeType(charge, dcChargeIds, processedChargeIds, acChargeIds)) {
                             ChargeType.DC -> true
                             ChargeType.AC -> false
                             ChargeType.UNKNOWN -> null
@@ -635,6 +639,13 @@ internal fun SummaryCard(
     selectedDateFilter: DateFilter, customStartDate: LocalDate?, customEndDate: LocalDate?,
     onDateFilterSelected: (DateFilter) -> Unit, onCustomRangeSelected: (LocalDate, LocalDate) -> Unit
 ) {
+    val avgPricePerKwh = if (summary.totalCost != null && summary.totalEnergyAdded != null && summary.totalEnergyAdded > 0.05) {
+        summary.totalCost / summary.totalEnergyAdded
+    } else null
+    val avgEnergyPerCharge = if (summary.totalEnergyAdded != null && summary.totalCharges > 0) {
+        summary.totalEnergyAdded / summary.totalCharges
+    } else null
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -657,62 +668,112 @@ internal fun SummaryCard(
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
                 shape = MaterialTheme.shapes.medium
             ) {
-                TelemetryMetricStrip(
-                    metrics = listOf(
-                        TelemetryMetricSpec(
-                            Icons.Default.ElectricBolt,
-                            stringResource(R.string.summary_sessions_compact),
-                            summary.totalCharges.toString(),
-                            palette.accent,
-                            unit = stringResource(
-                                if (summary.totalCharges == 1) R.string.charge_session_unit
-                                else R.string.charge_sessions_unit
+                Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                    TelemetryMetricStrip(
+                        metrics = listOf(
+                            TelemetryMetricSpec(
+                                Icons.Default.ElectricBolt,
+                                stringResource(R.string.summary_sessions_compact),
+                                summary.totalCharges.toString(),
+                                palette.accent,
+                                unit = stringResource(
+                                    if (summary.totalCharges == 1) R.string.charge_session_unit
+                                    else R.string.charge_sessions_unit
+                                ),
+                                valueFontSize = 18.sp
                             ),
-                            valueFontSize = 18.sp
+                            TelemetryMetricSpec(
+                                Icons.Default.BatteryChargingFull,
+                                stringResource(R.string.energy),
+                                summary.totalEnergyAdded?.let { energy ->
+                                    val value = when {
+                                        energy > 999 -> "%.2f MWh".format(energy / 1000)
+                                        energy < 10 -> "%.1f kWh".format(energy)
+                                        else -> "%.1f kWh".format(energy)
+                                    }
+                                    if (summary.partialEnergyCount > 0 || summary.energyCoverage < summary.totalCharges) "≈$value" else value
+                                } ?: stringResource(R.string.not_available),
+                                palette.acColor,
+                                valueFontSize = 18.sp
+                            ),
+                            TelemetryMetricSpec(
+                                Icons.Default.Paid,
+                                stringResource(R.string.cost),
+                                summary.totalCost?.let { cost ->
+                                    val value = when {
+                                        cost < 100 -> "$currencySymbol%.2f".format(cost)
+                                        cost < 1000 -> "$currencySymbol%.1f".format(cost)
+                                        else -> "$currencySymbol%.0f".format(cost)
+                                    }
+                                    if (summary.estimatedCostCount > 0 || summary.costCoverage < summary.totalCharges) "≈$value" else value
+                                } ?: stringResource(R.string.not_available),
+                                Color(0xFF22C55E),
+                                valueFontSize = 18.sp
+                            ),
+                            TelemetryMetricSpec(
+                                Icons.Default.Paid,
+                                stringResource(R.string.summary_avg_charge_compact),
+                                summary.avgCostPerCharge?.let { cost ->
+                                    val value = "$currencySymbol%.2f".format(cost)
+                                    if (summary.estimatedCostCount > 0 || summary.costCoverage < summary.totalCharges) "≈$value" else value
+                                } ?: stringResource(R.string.not_available),
+                                palette.dcColor,
+                                valueFontSize = 18.sp
+                            )
                         ),
-                        TelemetryMetricSpec(
-                            Icons.Default.BatteryChargingFull,
-                            stringResource(R.string.energy),
-                            summary.totalEnergyAdded?.let { energy ->
-                                val value = when {
-                                    energy > 999 -> "%.2f MWh".format(energy / 1000)
-                                    energy < 10 -> "%.1f kWh".format(energy)
-                                    else -> "%.1f kWh".format(energy)
-                                }
-                                if (summary.partialEnergyCount > 0 || summary.energyCoverage < summary.totalCharges) "≈$value" else value
-                            } ?: stringResource(R.string.not_available),
-                            palette.acColor,
-                            valueFontSize = 18.sp
-                        ),
-                        TelemetryMetricSpec(
-                            Icons.Default.Paid,
-                            stringResource(R.string.cost),
-                            summary.totalCost?.let { cost ->
-                                val value = when {
-                                    cost < 100 -> "$currencySymbol%.2f".format(cost)
-                                    cost < 1000 -> "$currencySymbol%.1f".format(cost)
-                                    else -> "$currencySymbol%.0f".format(cost)
-                                }
-                                if (summary.estimatedCostCount > 0 || summary.costCoverage < summary.totalCharges) "≈$value" else value
-                            } ?: stringResource(R.string.not_available),
-                            Color(0xFF22C55E),
-                            valueFontSize = 18.sp
-                        ),
-                        TelemetryMetricSpec(
-                            Icons.Default.Paid,
-                            stringResource(R.string.summary_avg_charge_compact),
-                            summary.avgCostPerCharge?.let { cost ->
-                                val value = "$currencySymbol%.2f".format(cost)
-                                if (summary.estimatedCostCount > 0 || summary.costCoverage < summary.totalCharges) "≈$value" else value
-                            } ?: stringResource(R.string.not_available),
-                            palette.dcColor,
-                            valueFontSize = 18.sp
-                        )
-                    ),
-                    modifier = Modifier.padding(vertical = 4.dp),
-                    adaptive = false,
-                    maxColumns = 4
-                )
+                        adaptive = false,
+                        maxColumns = 4
+                    )
+
+                    HorizontalDivider(
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f),
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 2.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.PriceCheck,
+                                contentDescription = null,
+                                tint = Color(0xFF22C55E),
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Text(
+                                text = "${stringResource(R.string.charge_unit_price)}: " +
+                                    (avgPricePerKwh?.let { "$currencySymbol%.2f / kWh".format(it) } ?: stringResource(R.string.not_available)),
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Speed,
+                                contentDescription = null,
+                                tint = palette.accent,
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Text(
+                                text = "${stringResource(R.string.charge_avg_energy)}: " +
+                                    (avgEnergyPerCharge?.let { "%.1f kWh / 次".format(it) } ?: stringResource(R.string.not_available)),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
             }
         }
     }
@@ -736,11 +797,6 @@ internal fun ChargeItem(
     val unknownLocation = stringResource(R.string.unknown_location)
     val freeLabel = stringResource(R.string.charge_free)
     val notAvailableLabel = stringResource(R.string.not_available)
-    val accent = when (isDcCharge) {
-        true -> palette.dcColor
-        false -> palette.acColor
-        null -> MaterialTheme.colorScheme.primary
-    }
     val energy = presentChargeEnergy(charge.batteryInputKwh ?: charge.partialBatteryInputKwh)
     val referenceEnergy = presentChargeEnergy(referenceEnergyKwh).energyKwh
     val isReferenceEnergy = energy.energyKwh == null && referenceEnergy != null
@@ -748,6 +804,12 @@ internal fun ChargeItem(
     val isPartialEnergy = charge.batteryInputKwh == null && charge.partialBatteryInputKwh != null
     val start = charge.startBatteryLevel
     val end = charge.endBatteryLevel
+
+    val durationHours = charge.durationMin?.let { if (it > 0) it / 60.0 else null }
+    val avgPowerKw = if (displayedEnergy != null && durationHours != null) displayedEnergy / durationHours else null
+    val resolvedDc = isDcCharge ?: (charge.chargeType?.equals("dc", true) == true || (avgPowerKw != null && avgPowerKw > 22.0))
+
+    val accent = if (resolvedDc) palette.dcColor else palette.acColor
 
     val pending = pendingChargeAmountForDisplay(
         effectiveCost.source == ChargeCostSource.MANUAL && effectiveCost.cost != null,
@@ -769,6 +831,28 @@ internal fun ChargeItem(
         }
     } else null
     val is24Hour = true
+
+    val resolvedUnitPrice = if (displayCost != null && displayedEnergy != null && displayedEnergy > 0.05) {
+        displayCost / displayedEnergy
+    } else null
+    val rangeAddedKm = if (charge.endRatedRangeKm != null && charge.startRatedRangeKm != null && charge.endRatedRangeKm!! > charge.startRatedRangeKm!!) {
+        charge.endRatedRangeKm!! - charge.startRatedRangeKm!!
+    } else null
+
+    val addressText = charge.address?.toChineseDisplayAddress()?.takeIf { it.isNotBlank() }
+        ?: charge.address?.takeIf { it.isNotBlank() }
+        ?: if (charge.latitude != null && charge.longitude != null) "%.3f°N, %.3f°E".format(charge.latitude, charge.longitude)
+        else unknownLocation
+
+    val dateAndTempText = buildString {
+        append(formatEditorialDate(charge.startDate, is24Hour))
+        if (charge.outsideTempAvg != null) {
+            append(" · ")
+            append(stringResource(R.string.outside_temp))
+            append(" ")
+            append("%.1f°C".format(charge.outsideTempAvg))
+        }
+    }
 
     TelemetryPanel(
         modifier = Modifier
@@ -803,78 +887,121 @@ internal fun ChargeItem(
                     }
                     Column {
                         Text(
-                            text = charge.address.toChineseDisplayAddress() ?: unknownLocation,
+                            text = addressText,
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Medium,
-                            maxLines = 1
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                         Text(
-                            text = formatEditorialDate(charge.startDate, is24Hour),
+                            text = dateAndTempText,
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
-                ChargeTypeBadge(isDcCharge = isDcCharge, palette = palette)
+                ChargeTypeBadge(isDcCharge = resolvedDc, palette = palette)
             }
 
             Surface(
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
                 shape = MaterialTheme.shapes.medium
             ) {
-                CompactHistoryMetricStrip(
-                    metrics = listOf(
-                        TelemetryMetricSpec(
-                            icon = Icons.Default.Timer,
-                            label = stringResource(R.string.duration),
-                            value = charge.durationStr?.takeIf { it.isNotBlank() }
-                                ?: charge.durationMin?.let { "${it}m" }
-                                ?: notAvailableLabel,
-                            tint = Color(0xFFF59E0B)
+                Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                    CompactHistoryMetricStrip(
+                        metrics = listOf(
+                            TelemetryMetricSpec(
+                                icon = Icons.Default.Timer,
+                                label = stringResource(R.string.duration),
+                                value = charge.durationStr?.takeIf { it.isNotBlank() }
+                                    ?: charge.durationMin?.let { "${it}m" }
+                                    ?: notAvailableLabel,
+                                tint = Color(0xFFF59E0B)
+                            ),
+                            TelemetryMetricSpec(
+                                icon = Icons.Default.ElectricBolt,
+                                label = stringResource(when {
+                                    isReferenceEnergy -> R.string.charge_reference_energy
+                                    isPartialEnergy -> R.string.charge_partial_energy
+                                    else -> R.string.energy
+                                }),
+                                value = displayedEnergy?.let { (if (isPartialEnergy || isReferenceEnergy) "≈" else "") + "%.1f kWh".format(it) } ?: notAvailableLabel,
+                                tint = accent
+                            ),
+                            TelemetryMetricSpec(
+                                icon = Icons.Default.Paid,
+                                label = stringResource(when {
+                                    pending != null -> R.string.charge_cost_pending_short
+                                    isReferenceCost -> R.string.charge_reference_cost
+                                    else -> R.string.trip_charge_cost
+                                }),
+                                value = when {
+                                    displayCost != null && !isFree ->
+                                        (if (isReferenceCost || (pending == null && effectiveCost.source == ChargeCostSource.ESTIMATE)) "≈" else "") + "%.2f".format(displayCost)
+                                    isFree -> freeLabel
+                                    else -> notAvailableLabel
+                                },
+                                unit = costUnit,
+                                tint = if (isFree) palette.acColor else if (pending != null) Color(0xFFF59E0B) else Color(0xFF22C55E)
+                            ),
+                            TelemetryMetricSpec(
+                                icon = Icons.Default.BatteryStd,
+                                label = stringResource(R.string.battery),
+                                value = UnitFormatter.formatSocRange(start, end, notAvailableLabel).replace("%", "").replace(" ", ""),
+                                unit = if (start != null || end != null) "%" else null,
+                                tint = Color(0xFFF97316)
+                            )
                         ),
-                        TelemetryMetricSpec(
-                            icon = Icons.Default.ElectricBolt,
-                            label = stringResource(when {
-                                isReferenceEnergy -> R.string.charge_reference_energy
-                                isPartialEnergy -> R.string.charge_partial_energy
-                                else -> R.string.energy
-                            }),
-                            value = displayedEnergy?.let { (if (isPartialEnergy || isReferenceEnergy) "≈" else "") + "%.1f kWh".format(it) } ?: notAvailableLabel,
-                            tint = accent
-                        ),
-                        TelemetryMetricSpec(
-                            icon = Icons.Default.Paid,
-                            label = stringResource(when {
-                                pending != null -> R.string.charge_cost_pending_short
-                                isReferenceCost -> R.string.charge_reference_cost
-                                else -> R.string.trip_charge_cost
-                            }),
-                            value = when {
-                                displayCost != null && !isFree ->
-                                    (if (isReferenceCost || (pending == null && effectiveCost.source == ChargeCostSource.ESTIMATE)) "≈" else "") + "%.2f".format(displayCost)
-                                isFree -> freeLabel
-                                else -> notAvailableLabel
-                            },
-                            unit = costUnit,
-                            tint = if (isFree) palette.acColor else if (pending != null) Color(0xFFF59E0B) else Color(0xFF22C55E)
-                        ),
-                        TelemetryMetricSpec(
-                            icon = Icons.Default.BatteryStd,
-                            label = stringResource(R.string.battery),
-                            value = UnitFormatter.formatSocRange(start, end, notAvailableLabel).replace("%", "").replace(" ", ""),
-                            unit = if (start != null || end != null) "%" else null,
-                            tint = Color(0xFFF97316)
+                        clickableMetricIndex = if (onEditCost != null) 2 else null,
+                        onMetricClick = onEditCost,
+                        metricClickLabel = stringResource(R.string.edit_charge_cost)
+                    )
+
+                    val secondaryMetrics = buildList {
+                        if (resolvedUnitPrice != null) {
+                            add("${stringResource(R.string.charge_unit_cost_label)}: $currencySymbol%.2f/kWh".format(resolvedUnitPrice))
+                        }
+                        if (avgPowerKw != null && avgPowerKw > 0.1) {
+                            add("${stringResource(R.string.charge_avg_power_label)}: %.1f kW".format(avgPowerKw))
+                        }
+                        if (rangeAddedKm != null && rangeAddedKm > 0.5) {
+                            add("${stringResource(R.string.range)}: +%.0f km".format(rangeAddedKm))
+                        }
+                    }
+
+                    if (secondaryMetrics.isNotEmpty() || secondaryCostText != null) {
+                        HorizontalDivider(
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f),
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                         )
-                    ),
-                    modifier = Modifier.padding(vertical = 4.dp),
-                    clickableMetricIndex = if (onEditCost != null) 2 else null,
-                    onMetricClick = onEditCost,
-                    metricClickLabel = stringResource(R.string.edit_charge_cost)
-                )
-            }
-            secondaryCostText?.let {
-                Text(it, modifier = Modifier.fillMaxWidth(), style = MaterialTheme.typography.labelSmall,
-                    textAlign = TextAlign.End, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp, vertical = 2.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = secondaryMetrics.joinToString(" · "),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false)
+                            )
+                            if (secondaryCostText != null) {
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = secondaryCostText,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Medium,
+                                    color = palette.accent,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -882,15 +1009,17 @@ internal fun ChargeItem(
 
 @Composable
 private fun ChargeTypeBadge(isDcCharge: Boolean?, palette: CarColorPalette) {
-    val backgroundColor = when (isDcCharge) {
-        true -> palette.dcColor
-        false -> palette.acColor
-        null -> MaterialTheme.colorScheme.onSurfaceVariant
+    val isDc = isDcCharge == true
+    val isAc = isDcCharge == false
+    val backgroundColor = when {
+        isDc -> palette.dcColor
+        isAc -> palette.acColor
+        else -> palette.acColor
     }
-    val text = when (isDcCharge) {
-        true -> stringResource(R.string.charging_dc)
-        false -> stringResource(R.string.charging_ac)
-        null -> stringResource(R.string.status_unknown)
+    val text = when {
+        isDc -> stringResource(R.string.charging_dc)
+        isAc -> stringResource(R.string.charging_ac)
+        else -> stringResource(R.string.charging_ac)
     }
 
     Box(

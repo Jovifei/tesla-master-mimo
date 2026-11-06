@@ -57,6 +57,7 @@ import com.matelink.util.formatMonthYear
 import com.matelink.util.formatShortNoYear
 import com.matelink.util.formatWeekLabel
 import com.matelink.util.parseIsoInstant
+import com.matelink.util.toChineseDisplayAddress
 import java.util.Locale
 import java.time.temporal.ChronoUnit
 import java.time.temporal.WeekFields
@@ -607,7 +608,9 @@ class ChargesViewModel @Inject constructor(
 
     private fun displayAddress(charge: ChargeData): String? =
         if (!charge.address.needsChineseChargeAddress()) charge.address
-        else chargeAddressKey(charge)?.let(resolvedAddresses::get) ?: charge.address
+        else chargeAddressKey(charge)?.let(resolvedAddresses::get)
+            ?: charge.address?.toChineseDisplayAddress()
+            ?: charge.address
 
     private fun requestChargeAddresses(proof: VerifiedHistoryReadContext) {
         invalidateAddressLookup()
@@ -634,7 +637,9 @@ class ChargesViewModel @Inject constructor(
                     withTimeoutOrNull(5_000L) { addressLookup(coordinates.first, coordinates.second) }
                 } catch (e: CancellationException) { throw e } catch (_: Exception) { null }
                 if (!current()) return@launch
-                val chinese = address.usableChineseChargeAddress() ?: continue
+                val chinese = address?.toChineseDisplayAddress()?.usableChineseChargeAddress()
+                    ?: address?.usableChineseChargeAddress()
+                    ?: continue
                 val currentKeys = allCharges.asSequence().filter { it.address.needsChineseChargeAddress() }
                     .mapNotNull(::chargeAddressKey).toSet()
                 keys.filter { it in currentKeys }.forEach { resolvedAddresses[it] = chinese }

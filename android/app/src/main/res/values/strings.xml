@@ -1843,4 +1843,8 @@
     <string name="diagnostic_fleet_summary">Official Fleet reads: %1$s. Vehicle status: %2$s; configuration: %3$s; recent errors: %4$s. These reads do not configure or wake the vehicle.</string>
     <string name="diagnostic_fleet_vehicle">Virtual key paired: %1$s; streaming enabled: %2$s. Unknown values remain unconfirmed.</string>
     <string name="diagnostic_fleet_config">Configuration synced: %1$s. Desired service target: %2$s; fields: %3$s; CA: %4$s. Recent errors: %5$s. Configuration and streaming are not proof of received telemetry.</string>
+    <string name="charge_unit_price">Avg Electricity Price</string>
+    <string name="charge_avg_energy">Avg per Session</string>
+    <string name="charge_unit_cost_label">Unit Price</string>
+    <string name="charge_avg_power_label">Avg Power</string>
 </resources>
