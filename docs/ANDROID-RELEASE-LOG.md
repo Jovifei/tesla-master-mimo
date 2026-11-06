@@ -20,7 +20,7 @@
 本文件记录 MateLink Android App 每次**正式包（release）**的版本更新与真机安装情况，倒序排列（最新在最上）。
 
 适用范围：Release 正式包为 `com.matelink`；Debug 固定为隔离包 `com.matelink.test.mock`，不得覆盖车主包。
-完整构建、部署与真机验证 SOP 请参见：[SOP-ANDROID-DEVICE-DEPLOYMENT-AND-VERIFICATION.md](file:///e:/project/tesla_master/app_mimo/docs/SOP-ANDROID-DEVICE-DEPLOYMENT-AND-VERIFICATION.md)
+完整构建、部署与真机验证 SOP 请参见：[SOP-ANDROID-DEVICE-DEPLOYMENT-AND-VERIFICATION.md(release-quality/SOP-ANDROID-DEVICE-DEPLOYMENT-AND-VERIFICATION.md)
 
 > 安全约定：本文件只记录构建配置的文件路径与公网地址，**不记录 keystore 口令**。
 > 签名配置文件位于仓库外（`E:\Claude_allow\matelink-release.properties`），不提交远端。

@@ -4,7 +4,7 @@
 
 - 10 月 28 日实机为 2.1.55/build74；经源库与云端只读核对，当天反馈的三次行程缺少原始记录。个人归档绑定 22:05 过期，Fleet 尚无首事件。
 - App 源码提交 `4e9d5cb4`，独立服务端源码提交 `1d4fdb58`；两者均未安装或部署，不修改小程序和页面布局参数。
-- 干净源码树 Debug/Release 各 1,592 项 0 失败（Release 8 跳过），双 lint 0 错误；提交后关键回归 34 项通过；服务端全量 tests/vet 与隔离 PostgreSQL 16 集成测试通过。[问题、日期、版本、未解决事项](RPT-2026-10-28-missing-drives.md)。
+- 干净源码树 Debug/Release 各 1,592 项 0 失败（Release 8 跳过），双 lint 0 错误；提交后关键回归 34 项通过；服务端全量 tests/vet 与隔离 PostgreSQL 16 集成测试通过。[问题、日期、版本、未解决事项(data-history/RPT-2026-10-28-missing-drives.md)。
 
 ## 2026-10-27 显示验收续查（2.1.55 / build74候选）
 

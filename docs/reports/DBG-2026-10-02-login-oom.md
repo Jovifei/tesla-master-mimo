@@ -2,7 +2,7 @@
 
 ## 最新状态：修复分支完成隔离验证；生产尚未部署验收
 
-本页第1节至原始经验记录保留事故诊断时的事实与未完成状态。后续源码整改见文末更新及 [整改报告](RPT-2026-10-02-history-memory-repair.md)，不得把原事故时的NOT_RUN误读为新修复未测试，也不得把新测试通过误读为生产已恢复稳定。
+本页第1节至原始经验记录保留事故诊断时的事实与未完成状态。后续源码整改见文末更新及 [整改报告](..\data-history\RPT-2026-10-02-history-memory-repair.md)，不得把原事故时的NOT_RUN误读为新修复未测试，也不得把新测试通过误读为生产已恢复稳定。
 
 ## 原始诊断：CHANGES_REQUIRED，事故记录时尚未修复
 
@@ -57,4 +57,4 @@
 
 ## 可复用经验
 
-状态、统计和来源查询直接读取其需要的字段，不能调用详情再裁剪。压缩尺寸不能推断Go堆。当前OOMKilled=false不能排除此前OOM，结合内核、RestartCount、StartedAt与代理时间线。更多规则见 [资源边界经验](LESSONS-2026-10-02-history-resource-bounds.md)。
+状态、统计和来源查询直接读取其需要的字段，不能调用详情再裁剪。压缩尺寸不能推断Go堆。当前OOMKilled=false不能排除此前OOM，结合内核、RestartCount、StartedAt与代理时间线。更多规则见 [资源边界经验](..\plans-handoffs\LESSONS-2026-10-02-history-resource-bounds.md)。

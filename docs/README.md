@@ -6,6 +6,7 @@
 
 - [AI-RULES.md](AI-RULES.md) - **Mandatory AI execution rules**, identity bounds, package naming, and cloud URL rules.
 - [CURRENT-PRODUCTION-CONFIG.md](CURRENT-PRODUCTION-CONFIG.md) - Active production endpoint (`https://api.teslalink.joviluma.com/`), App Link host, and build parameters.
+- [EXECUTION-PLAYBOOK.md](EXECUTION-PLAYBOOK.md) - Mandatory commit, build, production-diagnosis, and compile-error playbook.
 - [ANDROID-RELEASE-LOG.md](ANDROID-RELEASE-LOG.md) - Historical release ledger, build versions, and APK hashes.
 - [APP-ISSUE-VERSIONS.md](APP-ISSUE-VERSIONS.md) - Issues tracked across application versions.
 - [BUG-REGISTER.md](BUG-REGISTER.md) - Historical bug catalog and resolutions.

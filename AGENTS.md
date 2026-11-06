@@ -4,6 +4,7 @@
 
 - Read `docs/AI-RULES.md` before any code/config change, build, server inspection, package installation, or production diagnosis.
 - Read `docs/CURRENT-PRODUCTION-CONFIG.md` before any Release build or production-link check. It overrides historical docs and build defaults.
+- Read `docs/EXECUTION-PLAYBOOK.md` before every commit, Release build, compile-error fix, or production-link diagnosis.
 - The cloud API is `https://api.teslalink.joviluma.com/`; never build a current Release with `https://api.jourvolt.com/`.
 - MateLink services run on the production server. Do not use Jovi's local Docker as the assumed production backend.
 

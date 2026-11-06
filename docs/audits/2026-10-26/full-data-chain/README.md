@@ -2,20 +2,20 @@
 
 **结论：当前候选暂不通过上线。** 已完成39个注册路由的源码链路审查，约500条字段/位置检查记录；有确定错值/漏读，也有真实采样和提供方证据缺口。不能宣称每一显示位置已由真实数据支撑。
 
-审查从2026-10-26开始，跨至客户端2026-10-27收口。实际工作根为`E:\project\_worktrees\matelink-release-data-audit-20261026`，分支`codex/release-data-audit-20261026`；从原目录复制当前候选954文件，稳定副本哈希不变。只有审查文档和隔离样本，本轮没有修产品/改布局、安装手机或发布。详情见[00-scope-and-isolation.md](E:/project/_worktrees/matelink-release-data-audit-20261026/docs/audits/2026-10-26/full-data-chain/00-scope-and-isolation.md)。
+审查从2026-10-26开始，跨至客户端2026-10-27收口。实际工作根为`E:\project\_worktrees\matelink-release-data-audit-20261026`，分支`codex/release-data-audit-20261026`；从原目录复制当前候选954文件，稳定副本哈希不变。只有审查文档和隔离样本，本轮没有修产品/改布局、安装手机或发布。详情见[00-scope-and-isolation.md](./00-scope-and-isolation.md)。
 
 ## 全范围覆盖
 
 | 组 | 注册路由数 | 字段检查行 | 页面及矩阵 |
 |---|---:|---:|---|
-| 登录/首页 | 2 | 72 | [01-auth-home.md](E:/project/_worktrees/matelink-release-data-audit-20261026/docs/audits/2026-10-26/full-data-chain/01-auth-home.md)：TeslaLogin、Dashboard及全部主组件 |
-| 充电 | 3 | 67 | [02-charging.md](E:/project/_worktrees/matelink-release-data-audit-20261026/docs/audits/2026-10-26/full-data-chain/02-charging.md)：列表、详情、当前充电 |
-| 行程/驻车 | 4 | 47 | [03-driving-parked.md](E:/project/_worktrees/matelink-release-data-audit-20261026/docs/audits/2026-10-26/full-data-chain/03-driving-parked.md)：列表、详情、曲线、驻车；含1条历史已删除地图项 |
-| 我的分析 | 6 | 55 | [04-analysis.md](E:/project/_worktrees/matelink-release-data-audit-20261026/docs/audits/2026-10-26/full-data-chain/04-analysis.md)：电池、能效、续航、待机、温度、四轮胎压 |
-| 统计/费用/里程/时间线 | 6 | 102 | [05-statistics.md](E:/project/_worktrees/matelink-release-data-audit-20261026/docs/audits/2026-10-26/full-data-chain/05-statistics.md)：含国家/地区、里程年/月/日 |
-| 长途/报告/导出 | 6 | 104 | [06-trips-reports.md](E:/project/_worktrees/matelink-release-data-audit-20261026/docs/audits/2026-10-26/full-data-chain/06-trips-reports.md)：列表/创建/详情、年度、PDF、CSV/JSON |
-| 系统/配置/辅助 | 12 | 56 | [07-system.md](E:/project/_worktrees/matelink-release-data-audit-20261026/docs/audits/2026-10-26/full-data-chain/07-system.md)：我的入口、设置、电价、胎压设置、高德配置/预览、关于、数据状态、软件更新、哨兵及未开放辅助路由 |
-| 合计 | **39** | **503** | [route-inventory.json](E:/project/_worktrees/matelink-release-data-audit-20261026/docs/audits/2026-10-26/full-data-chain/route-inventory.json)、[field-matrix.json](E:/project/_worktrees/matelink-release-data-audit-20261026/docs/audits/2026-10-26/full-data-chain/field-matrix.json)可逐项检索 |
+| 登录/首页 | 2 | 72 | [01-auth-home.md](./01-auth-home.md)：TeslaLogin、Dashboard及全部主组件 |
+| 充电 | 3 | 67 | [02-charging.md](./02-charging.md)：列表、详情、当前充电 |
+| 行程/驻车 | 4 | 47 | [03-driving-parked.md](./03-driving-parked.md)：列表、详情、曲线、驻车；含1条历史已删除地图项 |
+| 我的分析 | 6 | 55 | [04-analysis.md](./04-analysis.md)：电池、能效、续航、待机、温度、四轮胎压 |
+| 统计/费用/里程/时间线 | 6 | 102 | [05-statistics.md](./05-statistics.md)：含国家/地区、里程年/月/日 |
+| 长途/报告/导出 | 6 | 104 | [06-trips-reports.md](./06-trips-reports.md)：列表/创建/详情、年度、PDF、CSV/JSON |
+| 系统/配置/辅助 | 12 | 56 | [07-system.md](./07-system.md)：我的入口、设置、电价、胎压设置、高德配置/预览、关于、数据状态、软件更新、哨兵及未开放辅助路由 |
+| 合计 | **39** | **503** | [route-inventory.json](./route-inventory.json)、[field-matrix.json](./field-matrix.json)可逐项检索 |
 
 行数不是实车通过数，也不是互不重叠的单个传感器数量；同一行可能明确列出共用链路的多个位置。39是注册路由数，WhereWasI/Vehicle3d等没有发现当前生产入口，其实现问题单列潜伏项，不冒充当前可见页面阻断。
 
@@ -49,7 +49,7 @@
 - 没有声称仅quarantined记录的国家必画地图；SQL样本保留了合格锚点才验证额外隔离点。
 - 分时50kWh预览明确是“假设”，不是假用户账单；问题是启用配置尚无实际费用消费者。
 
-完整独立反证：[09-independent-review.md](E:/project/_worktrees/matelink-release-data-audit-20261026/docs/audits/2026-10-26/full-data-chain/09-independent-review.md)、[10-statistics-review.md](E:/project/_worktrees/matelink-release-data-audit-20261026/docs/audits/2026-10-26/full-data-chain/10-statistics-review.md)。
+完整独立反证：[09-independent-review.md](./09-independent-review.md)、[10-statistics-review.md](./10-statistics-review.md)。
 
 ## 空值如何处理
 
@@ -61,6 +61,6 @@
 
 ## 下一步
 
-可审阅的源码范围、测试与非布局约束见[FIX-PLAN.md](E:/project/_worktrees/matelink-release-data-audit-20261026/docs/audits/2026-10-26/full-data-chain/FIX-PLAN.md)的F1–F7。按Jovi先授权代码修改的约定，本轮尚未实施这些新增修复；不自动提交、安装或上线。生产/真实账户/车辆门分别验收。
+可审阅的源码范围、测试与非布局约束见[FIX-PLAN.md](./FIX-PLAN.md)的F1–F7。按Jovi先授权代码修改的约定，本轮尚未实施这些新增修复；不自动提交、安装或上线。生产/真实账户/车辆门分别验收。
 
 Hub初始计划已上报；后续上报遇共享工作目录不一致及本机服务拒绝连接，已停止自动重试并留本地说明，没有声称发送成功。审查证据不依赖Hub在线。

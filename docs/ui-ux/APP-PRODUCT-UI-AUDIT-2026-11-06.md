@@ -45,10 +45,10 @@
 
 涉及文件：
 
-- [EfficiencyViewModel.kt](../android/app/src/main/java/com/matelink/ui/screens/efficiency/EfficiencyViewModel.kt:120)
-- [EfficiencyScreen.kt](../android/app/src/main/java/com/matelink/ui/screens/efficiency/EfficiencyScreen.kt:70)
-- [CostViewModel.kt](../android/app/src/main/java/com/matelink/ui/screens/cost/CostViewModel.kt:191)
-- [CostScreen.kt](../android/app/src/main/java/com/matelink/ui/screens/cost/CostScreen.kt:74)
+- [EfficiencyViewModel.kt](../../android/app/src/main/java/com/matelink/ui/screens/efficiency/EfficiencyViewModel.kt:120)
+- [EfficiencyScreen.kt](../../android/app/src/main/java/com/matelink/ui/screens/efficiency/EfficiencyScreen.kt:70)
+- [CostViewModel.kt](../../android/app/src/main/java/com/matelink/ui/screens/cost/CostViewModel.kt:191)
+- [CostScreen.kt](../../android/app/src/main/java/com/matelink/ui/screens/cost/CostScreen.kt:74)
 
 用户结果：用户可以在当前页面主动重试，刷新失败不会立即丢失已有历史数据。
 
@@ -58,7 +58,7 @@
 
 处理：增加全屏品牌加载占位。
 
-涉及文件：[NavGraph.kt](../android/app/src/main/java/com/matelink/ui/navigation/NavGraph.kt:336)
+涉及文件：[NavGraph.kt](../../android/app/src/main/java/com/matelink/ui/navigation/NavGraph.kt:336)
 
 ### 3. 页面切换增加轻量动画
 
@@ -66,7 +66,7 @@
 
 处理：全局 NavHost 增加短时淡入、横向滑入和返回方向动画，时长控制在 120–180ms，避免影响数据加载。
 
-涉及文件：[NavGraph.kt](../android/app/src/main/java/com/matelink/ui/navigation/NavGraph.kt:531)
+涉及文件：[NavGraph.kt](../../android/app/src/main/java/com/matelink/ui/navigation/NavGraph.kt:531)
 
 ### 4. 时间线适配暗色主题和英文资源
 
@@ -76,8 +76,8 @@
 
 涉及文件：
 
-- [TimelineScreen.kt](../android/app/src/main/java/com/matelink/ui/screens/timeline/TimelineScreen.kt:71)
-- [strings.xml](../android/app/src/main/res/values/strings.xml:296)
+- [TimelineScreen.kt](../../android/app/src/main/java/com/matelink/ui/screens/timeline/TimelineScreen.kt:71)
+- [strings.xml](../../android/app/src/main/res/values/strings.xml:296)
 
 ### 5. Android 分析时间口径和列表筛选空态
 
@@ -87,11 +87,11 @@
 
 涉及文件：
 
-- [EfficiencyViewModel.kt](../android/app/src/main/java/com/matelink/ui/screens/efficiency/EfficiencyViewModel.kt:84)
-- [CostViewModel.kt](../android/app/src/main/java/com/matelink/ui/screens/cost/CostViewModel.kt:141)
-- [RangeViewModel.kt](../android/app/src/main/java/com/matelink/ui/screens/range/RangeViewModel.kt:93)
-- [ChargesScreen.kt](../android/app/src/main/java/com/matelink/ui/screens/charges/ChargesScreen.kt:398)
-- [DrivesScreen.kt](../android/app/src/main/java/com/matelink/ui/screens/drives/DrivesScreen.kt:332)
+- [EfficiencyViewModel.kt](../../android/app/src/main/java/com/matelink/ui/screens/efficiency/EfficiencyViewModel.kt:84)
+- [CostViewModel.kt](../../android/app/src/main/java/com/matelink/ui/screens/cost/CostViewModel.kt:141)
+- [RangeViewModel.kt](../../android/app/src/main/java/com/matelink/ui/screens/range/RangeViewModel.kt:93)
+- [ChargesScreen.kt](../../android/app/src/main/java/com/matelink/ui/screens/charges/ChargesScreen.kt:398)
+- [DrivesScreen.kt](../../android/app/src/main/java/com/matelink/ui/screens/drives/DrivesScreen.kt:332)
 
 ## Android 审核结果
 
@@ -211,12 +211,12 @@
 
 已发现问题：
 
-- TopDestinations [TopDestinations.tsx](../web_matelink/src/pages/TopDestinations.tsx:26) 把距离乘以 100 后直接显示，结果可能放大约 100 倍。
-- Mileage [Mileage.tsx](../web_matelink/src/pages/Mileage.tsx:42) 的能耗汇总使用全部历史充电数据，但页面标题按年份展示；约 43–44 行的平均效率为简单平均，未按距离或有效样本加权。
-- BatteryHealth [BatteryHealth.tsx](../web_matelink/src/pages/BatteryHealth.tsx:27) 未处理原始额定续航为 0、结果越界和非法数值。
-- Heatmap [Heatmap.tsx](../web_matelink/src/pages/Heatmap.tsx:40) 先计算整段平均速度，再写入起止小时，跨小时行程可能重复累计。
+- TopDestinations [TopDestinations.tsx](../../web_matelink/src/pages/TopDestinations.tsx:26) 把距离乘以 100 后直接显示，结果可能放大约 100 倍。
+- Mileage [Mileage.tsx](../../web_matelink/src/pages/Mileage.tsx:42) 的能耗汇总使用全部历史充电数据，但页面标题按年份展示；约 43–44 行的平均效率为简单平均，未按距离或有效样本加权。
+- BatteryHealth [BatteryHealth.tsx](../../web_matelink/src/pages/BatteryHealth.tsx:27) 未处理原始额定续航为 0、结果越界和非法数值。
+- Heatmap [Heatmap.tsx](../../web_matelink/src/pages/Heatmap.tsx:40) 先计算整段平均速度，再写入起止小时，跨小时行程可能重复累计。
 - Settings 中的单位、温度、费率设置没有持久化或参与计算；对应行为需补浏览器操作验证。
-- API token 通过 [store.ts](../web_matelink/src/store.ts:63) 持久化到 localStorage，存在明文存储风险。
+- API token 通过 [store.ts](../../web_matelink/src/store.ts:63) 持久化到 localStorage，存在明文存储风险。
 
 证据类型：**源码 + 部分修复 + Web lint/build；Mileage/Heatmap/设置安全等仍待真实浏览器数据回放。**
 
@@ -279,7 +279,7 @@
 - 未完成真机逐页视觉验收。
 - 未完成 Android Release 构建和 Release lint。
 - Web 真实模式与关键页面已修改，但未做真实 TeslaMate 接口联调。
-- Hub 上报服务连接被拒绝，已保留本地 pending 记录：[matelink-ux-audit-20261106.pending.json](../tasks/matelink-ux-audit-20261106.pending.json)。
+- Hub 上报服务连接被拒绝，已保留本地 pending 记录：[matelink-ux-audit-20261106.pending.json](../../tasks/matelink-ux-audit-20261106.pending.json)。
 - 仍未处理：Web token localStorage 明文存储、未登录直达/请求竞态的浏览器复现、Mileage/Heatmap 计算口径、移动端像素布局；Android 未做 Release/真机验收。
 - 本报告中的 Web 修复已通过源码和构建验证，尚未用生产账号或真实用户数据验证。
 

@@ -25,7 +25,7 @@
 
 - [10 月 1 日同步与充电费用修复](BUG-REPAIR-2026-10-01-sync-charge-cost.md)：Bridge 曾挂载已删除的工作树，写游标失败导致反复发送首条。此次正确 runtime 挂载、游标推进和待传 0/0 已排除该故障重演。
 - [10 月 2 日登录 OOM 诊断](DBG-2026-10-02-login-oom.md)：API 曾发生 OOM 与 502；分支测试通过不等于生产部署。此次 `781c4025` 仍有整段历史读取成本，候选手机若遇到 history 502 必须继续区分服务端失败。
-- [Fleet 与个人 TeslaMate 分工](ARCH-DECISION-2026-09-27-fleet-teslamate-hybrid.md)：Archive 历史、Fleet 实时数据与手机本地缓存是不同证据，不能相互冒充。
+- [Fleet 与个人 TeslaMate 分工](..\architecture\ARCH-DECISION-2026-09-27-fleet-teslamate-hybrid.md)：Archive 历史、Fleet 实时数据与手机本地缓存是不同证据，不能相互冒充。
 
 ## 已确认的读取门禁
 

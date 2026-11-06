@@ -7,7 +7,7 @@
 - `OCT28-DRIVE-CHARGE-BLOCK`、`OCT28-ROOM-NEW-DRIVES`、`OCT28-NEW-IDENTITY`、`OCT28-UID-REMAP`、`OCT28-ADDRESS-COLLISION`、`OCT28-ADDRESS-LATE`、`OCT28-TIMEOUT-MESSAGE`：本地提交 `4e9d5cb4`，34 项定向及双变体全量测试通过；避免慢请求、首次映射、换车及同 ID 不同会话导致漏显或串数据。
 - `OCT28-PG-FINALIZER`：线上对应源码可能因 PostgreSQL 游标占用连接导致已采到的行程无法结束；本地提交 `1d4fdb58`，真实隔离数据库测试通过，生产未部署。其与本次三条未被采集并非同一已证实原因。
 - `OCT29-TIMELINE-ROUTE`：源级条件性路由风险，车辆发现迟到时 More 与时间线可能读取不同车号；未运行复现，不能认作本次漏采原因。
-- [完整排查和版本记录](RPT-2026-10-28-missing-drives.md)。
+- [完整排查和版本记录(data-history/RPT-2026-10-28-missing-drives.md)。
 
 ## 2026-10-27 build73续查新增三项
 
@@ -37,7 +37,7 @@
 | ID / 状态 | 复现与根因 | 处理、防回归与证据 |
 | --- | --- | --- |
 | `ML-DATA-20261025-01` **OPEN-EVIDENCE** | build71 某段历史驻车详情起止电量未知，首页却有当前 SOC。`ParkedDetailViewModel.kt` 只能用相邻行程末/初 SOC；该两条历史行程也缺 SOC。`VehicleStatusStore.kt` 仅保存当前快照；归档驻车响应不含合格温度、能量、功率样本。当前 SOC 的观测时间不属于旧窗口。 | **不能**倒填或恢复固定 `0.60 kWh/百分点` 伪能耗。WIP UI 用 `—` 与时间证据说明替代三次“暂无数据”；未来应按账号/车/来源/观测时间有界保存真实状态点，再以边界证据计算。回归：`ParkedTelemetryPresentationTest` 与 API35 驻车 UI（当前 WIP 未验）；真实历史仍需自然采样。关键词：`驻车 当前电量 历史端点 温度 采样 证据时间`。 |
-| `ML-DATA-20261025-02` **OPEN-TRIAGE** | 用户持续看到其他页面“暂无数据”；目前未建立逐字段原始 receipt→资格→Room→UI 的完整记录清单，不能一概判为车端未上报。 | 每发现新字段按本页开头五步新建子条目，写精确页面/记录窗口与失败环节；没有来源证据时保留未知，不填零。参考 [数据合同](DATA-FOUNDATION.md)。关键词：`暂无数据 跨页 空态 数据源`。 |
+| `ML-DATA-20261025-02` **OPEN-TRIAGE** | 用户持续看到其他页面“暂无数据”；目前未建立逐字段原始 receipt→资格→Room→UI 的完整记录清单，不能一概判为车端未上报。 | 每发现新字段按本页开头五步新建子条目，写精确页面/记录窗口与失败环节；没有来源证据时保留未知，不填零。参考 [数据合同(data-history/DATA-FOUNDATION.md)。关键词：`暂无数据 跨页 空态 数据源`。 |
 
 ### B. 准入资格拒绝／计算口径不一致
 
@@ -67,6 +67,6 @@
 | `ML-CI-20261025-02` **FIXED** | API35 原生测试在 `DrivesScreen` 发生 4 项超时：日期筛选行与距离筛选行横向滚动容器歧义、`DriveHistoryFilterUiTest` 距离过滤期望颠倒且未滚动到首屏外卡片、`ParkedDetailFullUiQualificationTest` 的 `scrollUntilText` 在异步网络返回前过早耗尽重试、`QualificationFullAppSmokeTest` 子串匹配导致多节点歧义。 | 为 `DateFilterChips` 补充明确 testTag 与顺序对齐；`scrollUntilText` 在等待循环中持续推进列表并兼容异步网络到达；纠正 `DriveHistoryFilterUiTest` 距离区间断言并增加必要滚动。 |
 | `ML-CI-20261025-01` **FIXED@af6** | API35 原 shell 截图 PNG 头正常但实际全黑，若只看文件存在会误判 UI 通过。 | `5845b5a9` 改取 Compose root，`4d50af93` 上传图及像素证明；`af6fe089` [API35 run](https://github.com/Jovifei/tesla-master-mimo/actions/runs/40174354371) XML 80/0/0/2、三张合成图非黑且哈希不同。仅是模拟器视觉资格。关键词：`API35 全黑截图 PNG 像素 视觉`。 |
 
-旧案例入口：[10 月 4 日手机历史停在旧日期](BUG-REPAIR-2026-10-04-phone-history-stale.md)、[10 月 1 日归档同步与费用](BUG-REPAIR-2026-10-01-sync-charge-cost.md)、[8 月 31 日历史页闪退](BUG-REPAIR-REPORT-2026-08-31-history-page-crash.md)。它们的当时状态不自动代表当前版本；复发时先比对版本、来源和同窗测试。
+旧案例入口：[10 月 4 日手机历史停在旧日期(reports/BUG-REPAIR-2026-10-04-phone-history-stale.md)、[10 月 1 日归档同步与费用(reports/BUG-REPAIR-2026-10-01-sync-charge-cost.md)、[8 月 31 日历史页闪退(reports/BUG-REPAIR-REPORT-2026-08-31-history-page-crash.md)。它们的当时状态不自动代表当前版本；复发时先比对版本、来源和同窗测试。
 
 维护规则：每个新 Bug 先搜索症状关键词与四类入口；新增稳定 ID、首见/复现版本、根因证据、修复 SHA、真实测试层级、仍待人类/自然事件门。未提交为 `WIP`，CI/手机/生产各自验收后再改状态；每次版本递增同步更新 [变更索引](CHANGE-INDEX.md) 与 [发布台账](ANDROID-RELEASE-LOG.md)。

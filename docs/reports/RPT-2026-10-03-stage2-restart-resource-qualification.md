@@ -69,7 +69,7 @@ headroom and realistic-data measurements. No production admission limit changed.
 
 The JSON receipt includes full heap/RSS/allocation/CPU values, p95/p99, individual
 HTTP status counts, sample counts, source hashes and receipt hashes:
-[`resource-matrix.json`](evidence/2026-10-03-history-qualification/resource-matrix.json).
+[`resource-matrix.json`](../evidence/2026-10-03-history-qualification/resource-matrix.json).
 
 PostgreSQL backend statistics are explicitly flushed on **every idle pool
 connection** before both database snapshots. Review found that merely waiting
