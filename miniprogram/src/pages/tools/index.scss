@@ -1,4 +1,22 @@
 .tools-page {
+
+  background: var(--apple-bg);
+  color: var(--apple-label-primary);
+  
+  .card {
+    border-radius: var(--apple-radius-card, 28rpx);
+    border: 0.5px solid var(--apple-separator);
+    box-shadow: var(--apple-shadow-card);
+    background: var(--apple-surface);
+  }
+
+  .tariff-field input {
+    background: var(--apple-surface-secondary);
+    border: 0.5px solid var(--apple-separator);
+    color: var(--apple-label-primary);
+    border-radius: var(--apple-radius-sm, 14rpx);
+  }
+
   .app-toolbar {
     display: flex;
     justify-content: space-between;

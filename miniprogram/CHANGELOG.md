@@ -1,5 +1,15 @@
 # MateLink 微信小程序变更记录
 
+## 0.6.7 · 2026-11-06
+
+- 全面落地 Apple 风格（Apple Human Interface Guidelines）UI 重构体系：
+  - 新增 `apple-tokens.scss` 设计令牌规范体系：系统间距刻度（8/12/16/24/32/40/48rpx）、平滑连续圆角（14/20/28/36/999rpx）、iOS 级语义灰阶色板、暗黑模式自动自适应、Hairline 细分割线及微动效缓动参数。
+  - 列表视觉彻底告别「卡片墙（Card Wall）」，转向 iOS Inset Grouped 分组式列表，外层整组圆角包裹，内部使用细发丝线分隔，大幅降低视觉噪点并提升滑动流畅度。
+  - 核心遥测数字（SOC、续航、功率、时速、费用等）全面接入等宽表格数字（Tabular Figures `font-variant-numeric: tabular-nums` 与 `font-feature-settings: "tnum" 1`），在动态刷新中整齐稳定不跳动。
+  - 「更多」页重构为原汁原味的 iOS 系统设置风格分组列表（带圆角图标、清晰分类标题、单行微交互、右侧指示箭头），结构层次分明。
+  - 仪表盘与车辆状态区重构：Hero 车辆展示增加克制留白，状态胶囊微调为 Apple Capsule Pill，远程控制与扩展状态归一化为精致触觉反馈面板。
+- 全量自动化测试保持 100% 绿灯（79 个测试文件、994 项单元测试 PASS、6 项车辆资源测试 PASS、TypeScript 0 错误、生产构建 197 文件 PASS）。
+
 ## 0.6.6 · 2026-11-06
 
 - 仪表盘与车辆状态全面对齐原生 App：

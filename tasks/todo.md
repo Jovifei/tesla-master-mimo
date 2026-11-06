@@ -4395,3 +4395,17 @@ Review: 小程序开发本阶段收口，后续改动应另开阶段。所有代
 - [x] 升级版本至 0.6.6，更新 `package.json`、`package-lock.json`、`CHANGELOG.md`、关于页更新文案与任务清单。
 - [x] 提交改动至 `codex/miniprogram-e-migration-20261029` 分支；保证与 `app_mimo` 物理隔离与纯净度。
 - [x] 生成构建产物并提供微信体验版发布与上传对接。
+
+## 2026-11-06 微信小程序 Apple 风格 UI 重构与体验版发布（v0.6.7）
+
+- [x] 确立与落地小程序 Apple 风格设计系统规范：
+  - 创建 `src/styles/apple-tokens.scss`，引入间距刻度、连续圆角、语义色彩、暗黑模式覆盖及 Hairline 细分割线。
+  - 全局样式 `src/app.scss` 接入苹果设计系统，移除厚重投影，确立 Inset Grouped 卡片基线。
+  - 遥测数字接入 `tabular-nums` 与等宽字型，解决动态跳动问题。
+  - 行程与充电历史列表（`_history-list-ui.scss`、`drives/index.scss`、`charges/index.scss`）去卡片墙化，重构为 Inset Grouped 扁平行与胶囊筛选器。
+  - 「更多」页重构为标准的 iOS 系统设置分组列表。
+  - 仪表盘（`vehicle/index.scss`）Hero 区域大面积留白与精细化状态胶囊。
+- [x] 回归验证：79 个测试文件、994 项单元测试 PASS、TypeScript 0 错误、生产构建 197 文件 PASS（主包 1.25MB / 总包 11.5MB）。
+- [x] 版本升至 0.6.7，更新 `package.json`、`package-lock.json`、`CHANGELOG.md`、关于页及任务台账。
+- [x] 提交至 `codex/miniprogram-e-migration-20261029` 分支并推送 GitHub 远端；保证与 `app_mimo` 物理隔离与 0 触碰。
+- [x] 关联 Figma 设计文件：https://www.figma.com/design/F112Y2qzAryxOfitvYumfT

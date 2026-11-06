@@ -1,17 +1,17 @@
-.vehicle-page  {
-  --dashboard-primary:#157a86;
-  --dashboard-primary-container:#ddf0f1;
-  --dashboard-warning:#b45309;
-  --dashboard-neutral-soft:#f4f5f6;
-  --dashboard-neutral-unknown:#edeff2;
-  --dashboard-surface:#f9f9fa;
-  --dashboard-text:#1f2937;
-  --dashboard-muted:#6b7280;
-  --dashboard-border:rgba(233,237,242,.48);
-  --dashboard-soft:#edeff2;
-  --dashboard-badge-bg:#ddf0f1;
-  --dashboard-badge-fg:#164e63;
-  --dashboard-warning-bg:rgba(180,83,9,.10);
+.vehicle-page {
+  --dashboard-primary: var(--apple-teal, #157a86);
+  --dashboard-primary-container: var(--apple-teal-soft, #ddf0f1);
+  --dashboard-warning: var(--apple-warning, #b45309);
+  --dashboard-neutral-soft: var(--apple-surface-secondary, #f4f5f6);
+  --dashboard-neutral-unknown: var(--apple-surface-tertiary, #edeff2);
+  --dashboard-surface: var(--apple-surface, #ffffff);
+  --dashboard-text: var(--apple-label-primary, #1f2937);
+  --dashboard-muted: var(--apple-label-secondary, #6e6e73);
+  --dashboard-border: var(--apple-separator, rgba(60, 60, 67, 0.12));
+  --dashboard-soft: var(--apple-surface-secondary, #edeff2);
+  --dashboard-badge-bg: var(--apple-fill-quaternary, #ddf0f1);
+  --dashboard-badge-fg: var(--apple-label-secondary, #164e63);
+  --dashboard-warning-bg: var(--apple-warning-soft, rgba(255, 149, 0, 0.12));
   color:var(--dashboard-text);
   .dashboard-system-bar-cover {
     position:fixed;
@@ -105,10 +105,11 @@
     line-height:1.3
   }
   .dashboard-hero,.dashboard-info-card,.dashboard-hud,.dashboard-history-entry,.dashboard-current-charge,.dashboard-partial-hero {
-    background:var(--dashboard-surface);
-    border:1rpx solid var(--dashboard-border);
-    box-shadow:0 2rpx 6rpx #00000008;
-    border-radius:24rpx
+    background: var(--dashboard-surface);
+    border: 0.5px solid var(--dashboard-border);
+    box-shadow: var(--apple-shadow-card, 0 2rpx 8rpx rgba(0, 0, 0, 0.03));
+    border-radius: var(--apple-radius-card, 28rpx);
+    transition: background-color var(--apple-transition-fast, 180ms ease);
   }
   .dashboard-hero {
     padding:26rpx 32rpx;
