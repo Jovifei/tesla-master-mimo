@@ -66,7 +66,7 @@ try{
     chineseFontEvidence.push({scene,theme,width,fonts})
   }
   const waitFor=async expression=>{for(let i=0;i<100;i++){if(await evaluate(expression))return;await sleep(50)}throw new Error(`DOM condition not met: ${expression}`)}
-  const scenes=['vehicle','vehicle-pending','tesla','auth-pending','wechat','tpms','route','openings','parking','empty','loading']
+  const scenes=['vehicle','vehicle-pending','tesla','auth-pending','wechat','tpms','tpms-warning','route','openings','parking','empty','loading']
   const save=async(name)=>{
     const result=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:true})
     const bytes=Buffer.from(result.data,'base64');assert(bytes.length>1000)
@@ -80,6 +80,7 @@ try{
     assert(bounds.fl.right<=bounds.car.left&&bounds.rl.right<=bounds.car.left,'left wheel controls overlap car')
     assert(bounds.fr.left>=bounds.car.right&&bounds.rr.left>=bounds.car.right,'right wheel controls overlap car')
     assert(bounds.fl.bottom<bounds.rl.top&&bounds.fr.bottom<bounds.rr.top,'front/rear wheel controls overlap')
+    assert(await evaluate("[...document.querySelectorAll('.tpms-position-wheel')].every(e=>getComputedStyle(e).borderTopWidth==='1px')"),'wheel status boundaries must survive the generic button reset')
   }
   for(const theme of ['light','dark'])for(const width of [320,412])for(const scene of scenes){
     await send('Emulation.setDeviceMetricsOverride',{width,height:780,deviceScaleFactor:1,mobile:true})
@@ -106,12 +107,17 @@ try{
       await evaluate("document.querySelector('[data-wheel=\"fl\"]').click()")
       await waitFor("document.querySelector('[data-wheel=\"fl\"]').dataset.selected==='false'")
     }
+    if(scene==='tpms-warning'){
+      await verifyWheels()
+      assert(await evaluate("document.querySelector('[data-wheel=\"fl\"]').dataset.alert==='low' && document.querySelector('[data-wheel=\"fr\"]').dataset.alert==='high' && document.querySelector('[data-wheel=\"rl\"]').innerText.includes('设置范围内') && document.querySelector('[data-wheel=\"rr\"]').dataset.state==='unknown'"))
+    }
     if(scene==='parking')assert(await evaluate("document.querySelectorAll('.recorded-charge-row').length===2 && document.body.innerText.includes('0.00 kWh') && document.body.innerText.includes('结束未记录')"))
+    if(scene==='parking'||scene==='openings')assert(await evaluate("[...document.querySelectorAll('.recorded-charge-select,.interaction-disclosure')].every(e=>getComputedStyle(e).borderTopWidth==='0px')"),'unexpected browser-native control border')
     assert(await evaluate('document.documentElement.scrollWidth<=innerWidth'),'horizontal overflow')
     await save(`mini-${theme}-${width}-${scene}`)
-    if(scene==='tpms'&&width===320){
+    if((scene==='tpms'||scene==='tpms-warning')&&width===320){
       await evaluate("document.querySelectorAll('.tpms-position-name,.tpms-position-value,.tpms-position-status').forEach(e=>e.style.fontSize=parseFloat(getComputedStyle(e).fontSize)*1.8+'px')")
-      await verifyWheels();await save(`mini-${theme}-${width}-tpms-large-text`)
+      await verifyWheels();await save(`mini-${theme}-${width}-${scene}-large-text`)
       await evaluate('window.__visualFixture.clear()')
       await waitFor("[...document.querySelectorAll('[data-wheel]')].every(e=>e.dataset.state==='unknown')")
       assert(!(await evaluate("document.querySelector('.tpms-vehicle-visual').innerText.includes('0.00')")))
@@ -125,7 +131,7 @@ try{
       assert.equal(await evaluate("getComputedStyle(document.querySelector('.connection-track')).animationName"),'none')
     }
   }
-  assert.equal(captures.length,46);assert.equal(exceptions.length,0,exceptions.join('\n'));assert.equal(outside.length,0,'Unexpected external requests')
+  assert.equal(captures.length,52);assert.equal(exceptions.length,0,exceptions.join('\n'));assert.equal(outside.length,0,'Unexpected external requests')
   assert(new Set(captures.map(c=>c.sha256)).size>=35,'duplicate/blank scenes')
   fs.copyFileSync(path.join(bundle,'SOURCE.txt'),path.join(evidence,'SOURCE.txt'))
   fs.writeFileSync(path.join(evidence,'manifest.json'),JSON.stringify({kind:'actual React components with test-only DOM adapter; not native WeChat',passed:true,externalRequests:0,exceptionCount:0,chineseFontEvidence,captures},null,2))
