@@ -1,5 +1,15 @@
 # Project agent guidance
 
+## Mandatory authority files (微信小程序提交与发布强制规范)
+
+每次执行任何代码修改、配置调整、生产打包、Git 提交或微信公众平台上传前，**必须依序阅读并严格执行以下规范文件**：
+1. `docs/PROJECT-REQUIREMENTS.md`：项目所有者 Jovi 的最高要求与开发军规（禁止虚假汇报、必须自证自检再交付、严禁混淆生产网络边界）。
+2. `docs/SUBMISSION-PLAYBOOK.md`：项目提交与发布备忘录（完整的六步提交门禁：静态单测、配置审查、产物体积、模拟器自动全页面巡检截图、后台上传、Git 提交）。
+3. `docs/SUBMISSION-INDEX.md`：项目提交流档目录与版本履历台账（每次上传后必须按模板追加流档）。
+4. `docs/TROUBLESHOOTING-LESSONS.md`：项目处理经验与踩坑复盘（app.json 丢失根因、环境变量编译注入失效、生产与自托管 502 区分、CLI 自动化实机实景截图方案）。
+
+> **核心纪律**：任何提交必须有完整的参数流档与真实模拟器/真机截图佐证。严禁在未亲眼确认界面正常渲染的情况下声称“已上线或已通过测试”。
+
 <!-- BEGIN:codex-token-efficiency -->
 ## Token-efficient navigation
 
