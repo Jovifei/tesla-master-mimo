@@ -4,7 +4,7 @@ import { resolve } from 'node:path'
 import { readFileSync } from 'node:fs'
 import { vehicleAssetPackages } from '../vehicle-assets.config'
 
-const apiBaseUrl = process.env.TARO_APP_API_BASE_URL ?? ''
+const apiBaseUrl = process.env.TARO_APP_API_BASE_URL || 'https://api.teslalink.joviluma.com/'
 // Compile-time constant: mini-program runtime has no process global; a bare
 // process.env reference would throw at module load and blank every page.
 const mockFixture = process.env.TARO_APP_MOCK_FIXTURE === 'true' ? 'true' : 'false'

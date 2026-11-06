@@ -1,10 +1,10 @@
 {
+  "miniprogramRoot": "dist/",
+  "projectname": "MateLink车迹",
   "description": "MateLink WeChat Mini Program development shell",
-  "packOptions": {
-    "ignore": []
-  },
+  "appid": "wxc84899ab6146f1be",
   "setting": {
-    "urlCheck": true,
+    "urlCheck": false,
     "es6": true,
     "enhance": true,
     "postcss": true,
@@ -12,7 +12,8 @@
     "coverView": true
   },
   "compileType": "miniprogram",
-  "appid": "wxc84899ab6146f1be",
-  "projectname": "MateLink车迹",
+  "packOptions": {
+    "ignore": []
+  },
   "condition": {}
 }
