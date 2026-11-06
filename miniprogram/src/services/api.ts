@@ -25,6 +25,13 @@ import type {
   TeslaAuthorization,
   TelemetryPairing,
   TeslaAuthorizationStatus,
+  ChargingSite,
+  NearbyChargingData,
+  VehiclePlace,
+  VehiclePlaceRequest,
+  VehicleCommandRequest,
+  VehicleCommandResult,
+  VehicleCommandResponse,
 } from './types'
 import {
   clearAppSession,
@@ -544,6 +551,40 @@ function normalizeCarStatus(raw: RawCarStatus, observedAt: string | null, source
     observedAt: originalText(observedAt),
     source: originalText(source),
     fieldSources: statusFieldSources(fieldSources),
+    ...(raw.car_status?.valet_mode !== undefined ? { valetMode: bool(raw.car_status.valet_mode) } : {}),
+    ...(raw.car_status?.speed_limit_mode?.active != null ? {
+      speedLimitMode: {
+        active: bool(raw.car_status.speed_limit_mode.active) ?? false,
+        currentLimitKmh: finite(raw.car_status.speed_limit_mode.current_limit_kmh, 0),
+        pinCodeRequired: bool(raw.car_status.speed_limit_mode.pin_code_required),
+      }
+    } : {}),
+    ...(raw.car_status?.media_info ? {
+      mediaInfo: {
+        mediaState: stringValue(raw.car_status.media_info.media_state),
+        title: stringValue(raw.car_status.media_info.title),
+        artist: stringValue(raw.car_status.media_info.artist),
+        album: stringValue(raw.car_status.media_info.album),
+      }
+    } : {}),
+    ...(raw.car_versions?.software_update ? {
+      softwareUpdate: {
+        status: stringValue(raw.car_versions.software_update.status),
+        downloadPercent: finite(raw.car_versions.software_update.download_percent, 0, 100),
+        installPercent: finite(raw.car_versions.software_update.install_percent, 0, 100),
+        expectedDurationSec: finite(raw.car_versions.software_update.expected_duration_sec, 0),
+      }
+    } : {}),
+    ...(raw.climate_details?.driver_temp_setting !== undefined ? { driverTempSetting: celsius(raw.climate_details.driver_temp_setting) } : {}),
+    ...(raw.climate_details?.passenger_temp_setting !== undefined ? { passengerTempSetting: celsius(raw.climate_details.passenger_temp_setting) } : {}),
+    ...(raw.charging_details?.scheduled_charging_start_time ? { scheduledChargingStartTime: originalText(raw.charging_details.scheduled_charging_start_time) } : {}),
+    ...(raw.charging_details?.scheduled_departure_time ? { scheduledDepartureTime: originalText(raw.charging_details.scheduled_departure_time) } : {}),
+    ...(raw.command_authorization ? {
+      commandAuthorization: {
+        ready: bool(raw.command_authorization.ready),
+        missingScopes: Array.isArray(raw.command_authorization.missing_scopes) ? raw.command_authorization.missing_scopes.filter(s => typeof s === 'string') : null,
+      }
+    } : {}),
   }
 }
 
@@ -1127,6 +1168,82 @@ export const matelinkApi = {
     })
     const data = unwrap(response)
     return { status: data.status ?? null }
+  },
+
+  async getNearbyChargingSites(carId: number, car?: Car): Promise<NearbyChargingData> {
+    assertVehicle(null, carId, car)
+    const response = await requestJson<ApiEnvelope<NearbyChargingData> | NearbyChargingData>(`/api/v1/cars/${carId}/nearby-charging-sites`)
+    const data = unwrap(response)
+    assertVehicle(data, carId, car)
+    return {
+      sites: Array.isArray(data.sites) ? data.sites.map(site => ({
+        name: stringValue(site.name),
+        type: stringValue(site.type),
+        latitude: finite(site.latitude, -90, 90),
+        longitude: finite(site.longitude, -180, 180),
+        distance_km: finite(site.distance_km, 0),
+        available_stalls: finite(site.available_stalls, 0),
+        total_stalls: finite(site.total_stalls, 0),
+        site_closed: bool(site.site_closed),
+      })) : [],
+      meta: data.meta ? { source: stringValue(data.meta.source) } : null,
+    }
+  },
+
+  async getVehiclePlaces(carId: number, car?: Car): Promise<VehiclePlace[]> {
+    assertVehicle(null, carId, car)
+    const response = await requestJson<ApiEnvelope<{ places?: VehiclePlace[] }> | { places?: VehiclePlace[] }>(`/api/v1/cars/${carId}/places`)
+    const data = unwrap(response)
+    assertVehicle(data, carId, car)
+    const places = Array.isArray(data.places) ? data.places : []
+    return places.map(p => ({
+      id: finite(p.id, 1),
+      name: stringValue(p.name),
+      latitude: finite(p.latitude, -90, 90),
+      longitude: finite(p.longitude, -180, 180),
+      radius_m: finite(p.radius_m, 1),
+    }))
+  },
+
+  async createVehiclePlace(carId: number, place: VehiclePlaceRequest, car?: Car): Promise<VehiclePlace> {
+    assertVehicle(null, carId, car)
+    const response = await requestJson<ApiEnvelope<VehiclePlace> | VehiclePlace>(`/api/v1/cars/${carId}/places`, {
+      method: 'POST',
+      header: { 'Content-Type': 'application/json' },
+      data: place,
+    })
+    const data = unwrap(response)
+    return {
+      id: finite(data.id, 1),
+      name: stringValue(data.name),
+      latitude: finite(data.latitude, -90, 90),
+      longitude: finite(data.longitude, -180, 180),
+      radius_m: finite(data.radius_m, 1),
+    }
+  },
+
+  async deleteVehiclePlace(carId: number, placeId: number, car?: Car): Promise<boolean> {
+    assertVehicle(null, carId, car)
+    const response = await requestJson<ApiEnvelope<{ deleted?: boolean }> | { deleted?: boolean }>(`/api/v1/cars/${carId}/places/${placeId}`, {
+      method: 'DELETE',
+    })
+    const data = unwrap(response)
+    return Boolean(data.deleted)
+  },
+
+  async executeVehicleCommand(carId: number, command: string, params?: Record<string, unknown>, confirm = false, car?: Car): Promise<VehicleCommandResult> {
+    assertVehicle(null, carId, car)
+    const response = await requestJson<ApiEnvelope<VehicleCommandResult> | VehicleCommandResult>(`/api/v1/cars/${carId}/commands/${encodeURIComponent(command)}`, {
+      method: 'POST',
+      header: { 'Content-Type': 'application/json' },
+      data: { params: params || null, confirm },
+    })
+    const data = unwrap(response)
+    return {
+      command: stringValue(data.command) || command,
+      result: stringValue(data.result),
+      verified: bool(data.verified),
+    }
   },
 
   async startTeslaAuthorization(consent: AuthConsent): Promise<TeslaAuthorization> {

@@ -5,6 +5,7 @@ import type { Car, CarStatus } from '../../services/types'
 import { restoreTpmsSnapshot, TPMS_WHEELS, type TpmsReport, type TpmsSnapshot } from '../../domain/tpms'
 import type { TpmsAlert } from '../../domain/tpms_alerts'
 import DashboardIcon, { type DashboardIconName } from './DashboardIcon'
+import { climateTargets, mediaPlayback, scheduledEvents, softwareUpdateUi, vehicleModes } from '../../domain/extended_status'
 import { dashboardMetric, dashboardNumber, dashboardPower, dashboardRange, dashboardShift, dashboardState, dashboardTpmsPlaceholder, hudRemaining, rawChargeHours } from './presentation'
 
 export function DashboardInfoCard({ label, value, icon, onClick, warning = false, hint }: { label: string; value: string; icon?: DashboardIconName; onClick?: () => void; warning?: boolean; hint?: string | null }) {
@@ -66,6 +67,14 @@ export function DashboardHero({ car, status, imageSrc, imageLoading, imageError,
 }) {
   const power = dashboardPower(status.power), shift = dashboardShift(status.shiftState), driving = status.state?.toLowerCase() === 'driving'
   const openings = [{ value: status.doorsOpen, text: '车门未关' }, { value: status.windowsOpen, text: '车窗未关' }, { value: status.frunkOpen, text: '前备箱未关' }, { value: status.trunkOpen, text: '后备箱未关' }].filter(item => item.value === true)
+  const media = mediaPlayback(status)
+  const update = softwareUpdateUi(status)
+  const scheduled = scheduledEvents(status)
+  const modes = vehicleModes(status)
+  const targets = climateTargets(status)
+  const climateTargetText = targets
+    ? [targets.driver, targets.passenger].filter(v => v != null).map(v => Number.isInteger(v) ? String(v) : (v as number).toFixed(1)).join(' / ')
+    : null
   return <View className="dashboard-hero" onClick={onOpenBattery}>
     <View className="dashboard-hero-heading"><View><DashboardIcon name="car" /><Text>车辆</Text></View><Text className="dashboard-vehicle-state">{dashboardState(status.state)}</Text></View>
     <DashboardVehicleArt car={car} imageSrc={imageSrc} imageLoading={imageLoading} imageError={imageError} onRetryImage={onRetryImage} onManagePhoto={onManagePhoto} appearanceLabel={appearanceLabel} />
@@ -81,6 +90,47 @@ export function DashboardHero({ car, status, imageSrc, imageLoading, imageError,
     {status.chargeLimitSoc != null ? <Text className="dashboard-charge-target">{status.batteryLevel != null ? `当前 ${dashboardNumber(status.batteryLevel, 0)}% · 充电目标 ${dashboardNumber(status.chargeLimitSoc, 0)}%` : `限制: ${dashboardNumber(status.chargeLimitSoc, 0)}%`}</Text> : null}
     <View className="dashboard-state-row"><DashboardStatusChip icon={status.locked === false ? 'unlock' : 'lock'} value={status.locked} yes="已锁" no="未锁" /><DashboardStatusChip icon="bolt" value={status.pluggedIn} yes="已插枪" no="未插枪" /><DashboardStatusChip icon="climate" value={status.isClimateOn} yes="空调开启" no="空调关闭" /><DashboardStatusChip icon="security" value={status.sentryMode} yes="哨兵已开启" no="哨兵关闭" /></View>
     {openings.length ? <View className="dashboard-opening-alert"><View><DashboardIcon name="warning" tone="warning" /><Text>车门与开口提醒</Text></View><View className="dashboard-opening-grid">{openings.map(opening => <View key={opening.text}><DashboardIcon name="warning" tone="warning" /><Text>{opening.text}</Text></View>)}</View></View> : null}
+    {media ? <View className="dashboard-extended-row"><DashboardIcon name="speed" /><Text className="dashboard-extended-text">正在播放：{media.displayText}</Text></View> : null}
+    {update ? (
+      <View className="dashboard-extended-update">
+        <Text className="dashboard-extended-text">
+          {update.percent == null
+            ? '软件更新进行中'
+            : update.phase === 'downloading'
+            ? `正在下载软件更新（${update.percent}%）`
+            : `正在安装软件更新（${update.percent}%）`}
+        </Text>
+        {update.percent != null ? (
+          <View className="dashboard-update-track">
+            <View style={{ width: `${update.percent}%` }} />
+          </View>
+        ) : null}
+      </View>
+    ) : null}
+    {scheduled.map(ev => (
+      <View key={ev.kind} className="dashboard-extended-row">
+        <DashboardIcon name={ev.kind === 'charging_start' ? 'bolt' : 'speed'} />
+        <Text className="dashboard-extended-text">{ev.kind === 'charging_start' ? `预约充电：${ev.timeText}` : `预约出发：${ev.timeText}`}</Text>
+      </View>
+    ))}
+    {modes?.valetOn ? (
+      <View className="dashboard-extended-row">
+        <DashboardIcon name="lock" />
+        <Text className="dashboard-extended-text">代客模式开启</Text>
+      </View>
+    ) : null}
+    {modes?.speedLimitKmh != null ? (
+      <View className="dashboard-extended-row">
+        <DashboardIcon name="speed" />
+        <Text className="dashboard-extended-text">限速模式开启（${modes.speedLimitKmh} km/h）</Text>
+      </View>
+    ) : null}
+    {climateTargetText ? (
+      <View className="dashboard-extended-row">
+        <DashboardIcon name="climate" />
+        <Text className="dashboard-extended-text">设定温度：{climateTargetText}°C</Text>
+      </View>
+    ) : null}
   </View>
 }
 

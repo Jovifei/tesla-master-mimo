@@ -121,6 +121,15 @@ export type CarStatus = {
   chargerPower: number | null
   observedAt: string | null
   source: string | null
+  valetMode?: boolean | null
+  speedLimitMode?: { active?: boolean | null; currentLimitKmh?: number | null; pinCodeRequired?: boolean | null } | null
+  mediaInfo?: { mediaState?: string | null; title?: string | null; artist?: string | null; album?: string | null } | null
+  softwareUpdate?: { status?: string | null; downloadPercent?: number | null; installPercent?: number | null; expectedDurationSec?: number | null } | null
+  driverTempSetting?: number | null
+  passengerTempSetting?: number | null
+  scheduledDepartureTime?: string | null
+  scheduledChargingStartTime?: string | null
+  commandAuthorization?: { ready?: boolean | null; missingScopes?: string[] | null } | null
 }
 
 export type RawCarStatus = {
@@ -139,6 +148,28 @@ export type RawCarStatus = {
     doors_open?: boolean | null
     trunk_open?: boolean | null
     frunk_open?: boolean | null
+    valet_mode?: boolean | null
+    speed_limit_mode?: {
+      active?: boolean | null
+      current_limit_kmh?: number | null
+      pin_code_required?: boolean | null
+    } | null
+    media_info?: {
+      media_state?: string | null
+      title?: string | null
+      artist?: string | null
+      album?: string | null
+    } | null
+  }
+  car_versions?: {
+    version?: string | null
+    update_available?: boolean | null
+    software_update?: {
+      status?: string | null
+      download_percent?: number | null
+      install_percent?: number | null
+      expected_duration_sec?: number | null
+    } | null
   }
   battery_details?: {
     battery_level?: number | null
@@ -162,6 +193,8 @@ export type RawCarStatus = {
     is_preconditioning?: boolean | null
     inside_temp?: number | null
     outside_temp?: number | null
+    driver_temp_setting?: number | null
+    passenger_temp_setting?: number | null
   }
   charging_details?: {
     plugged_in?: boolean | null
@@ -176,7 +209,13 @@ export type RawCarStatus = {
     charge_current_request?: number | null
     charge_current_request_max?: number | null
     charge_port_door_open?: boolean | null
+    scheduled_charging_start_time?: string | null
+    scheduled_departure_time?: string | null
   }
+  command_authorization?: {
+    ready?: boolean | null
+    missing_scopes?: string[] | null
+  } | null
 }
 
 export type RawStatusPayload = { status?: RawCarStatus | null; observed_at?: string | null; source?: string | null; units?: unknown; field_sources?: unknown }
@@ -457,4 +496,52 @@ export function stableCarId(raw: RawCar): string | null {
   const value = raw.vehicle_uid ?? raw.provider_vehicle_id
   if (value === undefined || value === null || String(value).trim() === '') return null
   return String(value).trim()
+}
+
+export type ChargingSite = {
+  name: string | null
+  type: string | null
+  latitude: number | null
+  longitude: number | null
+  distance_km: number | null
+  available_stalls: number | null
+  total_stalls: number | null
+  site_closed: boolean | null
+}
+
+export type NearbyChargingData = {
+  sites: ChargingSite[]
+  meta?: { source?: string | null } | null
+}
+
+export type VehiclePlace = {
+  id: number | null
+  name: string | null
+  latitude: number | null
+  longitude: number | null
+  radius_m: number | null
+}
+
+export type VehiclePlaceRequest = {
+  name: string
+  latitude: number
+  longitude: number
+  radius_m?: number | null
+}
+
+export type VehicleCommandRequest = {
+  params?: Record<string, unknown> | null
+  confirm?: boolean
+}
+
+export type VehicleCommandResult = {
+  command: string | null
+  result: string | null
+  verified: boolean | null
+}
+
+export type VehicleCommandResponse = {
+  data?: VehicleCommandResult | null
+  error?: string | null
+  missing_scopes?: string[] | null
 }

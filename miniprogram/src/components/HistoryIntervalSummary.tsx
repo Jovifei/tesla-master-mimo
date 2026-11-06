@@ -56,6 +56,20 @@ export default function HistoryIntervalSummary({ interval, query, kind }: {
           </>
         )}
       </View>
+      {kind === 'charges' && (() => {
+        const avgPricePerKwh = cost.value != null && battery?.value != null && battery.value > 0.05
+          ? cost.value / battery.value
+          : null
+        const avgEnergyPerCharge = battery?.value != null && charges.length > 0
+          ? battery.value / charges.length
+          : null
+        const subMetrics = [
+          avgPricePerKwh != null ? `平均电价 ≈ ${currency === 'CNY' ? '¥' : currency}${avgPricePerKwh.toFixed(2)}/kWh` : null,
+          avgEnergyPerCharge != null ? `单次平均 ≈ ${avgEnergyPerCharge.toFixed(1)} kWh` : null,
+        ].filter(Boolean)
+        if (subMetrics.length === 0) return null
+        return <Text className="muted history-summary-secondary">{subMetrics.join(' · ')}</Text>
+      })()}
       {status ? <Text className="muted history-statistics-coverage">{status}</Text> : null}
     </View>
   )

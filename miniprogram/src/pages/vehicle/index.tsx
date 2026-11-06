@@ -11,6 +11,8 @@ import { mapCoordinate } from '../../domain/map_coordinate'
 import { mergeVehicleVisualConfig, resolveVehicleVisual } from '../../domain/vehicle_visual'
 import { ensureVehicleAsset } from '../../services/vehicle_assets'
 import AppearanceSelector from '../../components/dashboard/AppearanceSelector'
+import VehicleRemoteSections, { type CommandOutcome } from '../../components/dashboard/VehicleRemoteSections'
+import type { ChargingSite, VehiclePlace } from '../../services/types'
 import { DEFAULT_VEHICLE_APPEARANCE, clearVehicleAppearance, readVehicleAppearance, writeVehicleAppearance, type VehicleAppearanceScope } from '../../services/vehicle_appearance'
 import './index.scss'
 import { observeTpmsCache, readTpmsCache } from '../../services/tpms_cache'
@@ -88,6 +90,15 @@ export default function VehiclePage() {
   }
   const clearImage = () => { imageEpoch.current += 1; clearNativeImage(); setImageSrc(null); setImageLoading(false); setImageError(false) }
   const [tpmsCacheReason, setTpmsCacheReason] = useState<string | null>(null)
+  const [busyCommand, setBusyCommand] = useState<string | null>(null)
+  const [commandOutcome, setCommandOutcome] = useState<CommandOutcome | null>(null)
+  const [nearbySites, setNearbySites] = useState<ChargingSite[] | null>(null)
+  const [nearbySource, setNearbySource] = useState<string | null>(null)
+  const [nearbyLoading, setNearbyLoading] = useState(false)
+  const [nearbyError, setNearbyError] = useState(false)
+  const [places, setPlaces] = useState<VehiclePlace[] | null>(null)
+  const [placesLoading, setPlacesLoading] = useState(false)
+  const [placesError, setPlacesError] = useState(false)
   const [showDiagnostics, setShowDiagnostics] = useState(false)
   const focusDiagnostics = useRef(false)
   const [historyEvidence, setHistoryEvidence] = useState<HistoryCacheEvidence | null>(null)
@@ -104,9 +115,83 @@ export default function VehiclePage() {
     try { Taro.setStorageSync(carSelectionStorageKey(userId), stableId) } catch { /* optional preference */ }
   }
 
+  const handleExecuteCommand = async (command: string, params?: Record<string, unknown>, confirm = false) => {
+    if (!car) return
+    setBusyCommand(command)
+    setCommandOutcome(null)
+    try {
+      const res = await matelinkApi.executeVehicleCommand(car.id, command, params, confirm, car)
+      setCommandOutcome({ status: 'accepted', command, verified: res.verified ?? false })
+      void load()
+    } catch (err) {
+      const errorClass = err instanceof ApiError ? (err.code || err.message) : 'error'
+      setCommandOutcome({ status: 'failed', command, errorClass })
+    } finally {
+      setBusyCommand(null)
+    }
+  }
+
+  const handleLoadNearby = async () => {
+    if (!car) return
+    setNearbyLoading(true)
+    setNearbyError(false)
+    try {
+      const data = await matelinkApi.getNearbyChargingSites(car.id, car)
+      setNearbySites(data.sites)
+      setNearbySource(data.meta?.source ?? null)
+    } catch {
+      setNearbyError(true)
+    } finally {
+      setNearbyLoading(false)
+    }
+  }
+
+  const handleLoadPlaces = async () => {
+    if (!car) return
+    setPlacesLoading(true)
+    setPlacesError(false)
+    try {
+      const data = await matelinkApi.getVehiclePlaces(car.id, car)
+      setPlaces(data)
+    } catch {
+      setPlacesError(true)
+    } finally {
+      setPlacesLoading(false)
+    }
+  }
+
+  const handleCreatePlace = async (name: string, radiusM: number) => {
+    if (!car || !status?.location) return
+    try {
+      await matelinkApi.createVehiclePlace(car.id, {
+        name,
+        latitude: status.location.latitude,
+        longitude: status.location.longitude,
+        radius_m: radiusM,
+      }, car)
+      void handleLoadPlaces()
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const handleDeletePlace = async (id: number) => {
+    if (!car) return
+    try {
+      await matelinkApi.deleteVehiclePlace(car.id, id, car)
+      void handleLoadPlaces()
+    } catch {
+      /* ignore */
+    }
+  }
+
   const invalidatePage = () => {
     clearImage()
     setAppearanceOpen(false)
+    setBusyCommand(null)
+    setCommandOutcome(null)
+    setNearbySites(null)
+    setPlaces(null)
     requestVersion.current += 1
     scopeGate.current.invalidate()
     setLoading(false)
@@ -463,6 +548,26 @@ export default function VehiclePage() {
         {map ? <View className="dashboard-map-card">{!mapFailed ? <Map id="dashboard-map" latitude={map.latitude} longitude={map.longitude} scale={15} showLocation={false} markers={[{ id: 1, ...map, iconPath: '/assets/tabs/vehicle-selected.png', width: 24, height: 24, title: car.displayName || car.name || '车辆' }]} onError={() => setMapFailed(true)} /> : <View className="dashboard-map-unavailable"><Text>地图暂时无法载入</Text><Button className="dashboard-text-button" onClick={() => setMapFailed(false)}>重试地图</Button></View>}</View> : null}
         <View className="dashboard-history-entry" onClick={() => navigate('/pages/analysis/index?kind=stats')}><DashboardIcon name="bolt" /><View><Text>7天电量趋势</Text><Text>查看已记录的电池历史与容量详情</Text></View></View>
         {activeCharging ? <DashboardCurrentCharge status={status} onOpen={() => navigate('/pages/insights/index?kind=currentCharge')} /> : null}
+        <VehicleRemoteSections
+          carId={car.id}
+          status={status}
+          onReauthorize={copyOfficialLink}
+          onExecuteCommand={handleExecuteCommand}
+          busyCommand={busyCommand}
+          commandOutcome={commandOutcome}
+          onDismissOutcome={() => setCommandOutcome(null)}
+          nearbySites={nearbySites}
+          nearbySource={nearbySource}
+          nearbyLoading={nearbyLoading}
+          nearbyError={nearbyError}
+          onLoadNearby={() => void handleLoadNearby()}
+          places={places}
+          placesLoading={placesLoading}
+          placesError={placesError}
+          onLoadPlaces={() => void handleLoadPlaces()}
+          onCreatePlace={handleCreatePlace}
+          onDeletePlace={handleDeletePlace}
+        />
       </> : car ? <View className="dashboard-partial">
         <View className="dashboard-partial-hero"><DashboardVehicleArt car={car} imageSrc={imageSrc} imageLoading={imageLoading} imageError={imageError} onRetryImage={() => setImageRetry(value => value + 1)} onManagePhoto={appearanceScope ? openAppearance : undefined} appearanceLabel={appearanceLabel} /><Text className="dashboard-section-title">车辆状态暂不可用</Text><Text>当前仅显示已确认的车辆资料，状态数据尚未返回。</Text></View>
         <View className="dashboard-location-row"><DashboardInfoCard label="车型" value={car.model ? `Model ${model}` : '暂无数据'} icon="car" /><DashboardInfoCard label="外观" value={car.exteriorColor || '暂无数据'} /></View>
