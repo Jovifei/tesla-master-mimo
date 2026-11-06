@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { diagnosticSteps } from './diagnostic'
+import { diagnosticSteps, pairingPhase, pairingPhaseDetail } from './diagnostic'
 import type { Car, CarStatus } from '../services/types'
 
 const car: Car = { id: 7, stableId: 'fixture-uid', name: null, model: null, trim: null, exteriorColor: null, wheelType: null, displayName: null }
@@ -48,4 +48,36 @@ it('snapshot metadata alone is not a vehicle observation; real zero and false re
  expect(states({ car, sessionReady: true, status: { ...metadata, batteryLevel: 0 } }).receive).toBe('PASS')
  expect(states({ car, sessionReady: true, status: { ...metadata, locked: false } }).receive).toBe('PASS')
  expect(states({ car, sessionReady: true, status: { ...metadata, tpms: { wheels: {} } } as CarStatus }).receive).toBe('UNKNOWN')
+})
+
+const pairingFixture = (overrides: Record<string, unknown> = {}) => ({
+  status: 'key_confirmed', phase: null, virtual_key_url: null,
+  config_synced: false, updated_at: null, error_class: null, ...overrides,
+})
+
+it('server-sent pairing phase wins over raw fields', () => {
+  expect(pairingPhase(pairingFixture({ phase: 'configuring', config_synced: true }))).toBe('configuring')
+  expect(pairingPhase(pairingFixture({ phase: 'ready', status: 'waiting_vehicle' }))).toBe('ready')
+  expect(pairingPhase(pairingFixture({ phase: 'error', status: 'collecting' }))).toBe('error')
+  expect(pairingPhase(pairingFixture({ phase: 'something_new' }))).toBe('configuring')
+})
+
+it('legacy pairing derives the phase from status and config sync', () => {
+  expect(pairingPhase(null)).toBeNull()
+  expect(pairingPhase(pairingFixture({ status: 'pairing_required' }))).toBe('pairing_required')
+  expect(pairingPhase(pairingFixture({ status: 'billing_blocked' }))).toBe('blocked')
+  expect(pairingPhase(pairingFixture({ status: 'telemetry_error' }))).toBe('error')
+  expect(pairingPhase(pairingFixture({ status: 'collecting' }))).toBe('ready')
+  expect(pairingPhase(pairingFixture({ config_synced: true }))).toBe('awaiting_first_event')
+  expect(pairingPhase(pairingFixture({ config_synced: false }))).toBe('configuring')
+})
+
+it('receive step detail carries the graded onboarding phase', () => {
+  const receive = diagnosticSteps({
+    sessionReady: true,
+    pairing: pairingFixture({ phase: 'awaiting_first_event', config_synced: true }),
+  }).find(step => step.key === 'receive')
+  expect(receive?.detail).toContain('正在等待车辆首次数据')
+  expect(pairingPhaseDetail('configuring')).toContain('正在同步车辆配置')
+  expect(pairingPhaseDetail(null)).toBe('')
 })

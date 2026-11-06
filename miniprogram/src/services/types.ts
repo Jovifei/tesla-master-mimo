@@ -257,6 +257,8 @@ export type DataReadiness = {
 
 export type TelemetryPairing = {
   status: string | null
+  /** Server-graded onboarding phase (design 2026-11-05 §8); absent on older backends. */
+  phase?: string | null
   virtual_key_url: string | null
   config_synced: boolean | null
   updated_at: string | null
