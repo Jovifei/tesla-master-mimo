@@ -384,16 +384,16 @@ internal fun buildLocalParkedDetail(
     val newerAddr = observedNewer.startAddress?.takeIf(String::isNotBlank)
     val resolvedAddress = (olderAddr ?: newerAddr)?.let { it.toChineseDisplayAddress() ?: it }
         ?: parkedAddressLabel(olderAddr, newerAddr)
-    val oIn = observedOlder.insideTempAvg
-    val nIn = observedNewer.insideTempAvg
+    val oIn = observedOlder.insideTempAvg ?: older.insideTempAvg
+    val nIn = observedNewer.insideTempAvg ?: newer.insideTempAvg
     val insideTemp = when {
         oIn != null && nIn != null -> (oIn + nIn) / 2.0
         oIn != null -> oIn
         nIn != null -> nIn
         else -> null
     }
-    val oOut = observedOlder.outsideTempAvg
-    val nOut = observedNewer.outsideTempAvg
+    val oOut = observedOlder.outsideTempAvg ?: older.outsideTempAvg
+    val nOut = observedNewer.outsideTempAvg ?: newer.outsideTempAvg
     val outsideTemp = when {
         oOut != null && nOut != null -> (oOut + nOut) / 2.0
         oOut != null -> oOut
