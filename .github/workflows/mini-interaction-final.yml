@@ -75,14 +75,13 @@ jobs:
           Path('evidence/parsed-counts.json').write_text(json.dumps(counts,indent=2))
           print(json.dumps(counts,indent=2))
           PY
-      - name: Install CJK fonts only in the disposable test runner
+      - name: Bounded CJK dependency setup in disposable runner only
         shell: bash
         run: |
           set -euo pipefail
-          sudo apt-get update -qq
-          sudo apt-get install --no-install-recommends -y fonts-noto-cjk
-          fc-match 'Noto Sans CJK SC' | tee visual-final-evidence/cjk-font.txt
-          grep -q 'Noto Sans CJK' visual-final-evidence/cjk-font.txt
+          python3 tools/interaction-stage/test_cjk_setup.py -v 2>&1 | tee visual-final-evidence/cjk-setup-tests.log
+          bash tools/interaction-stage/ensure-cjk-fonts.sh 2>&1 | tee visual-final-evidence/cjk-font.txt
+          grep -q 'CJK_RENDER_FAMILY=Noto Sans CJK' visual-final-evidence/cjk-font.txt
       - name: Real component clicks, readable Chinese glyphs and light/dark browser renders
         shell: bash
         run: |
