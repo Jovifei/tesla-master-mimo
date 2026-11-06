@@ -136,6 +136,7 @@ data class CarStatus(
      * is null after any completion regardless of charge type.
      */
     val isChargeCompletePluggedIn: Boolean get() = isChargeComplete && pluggedIn == true
+    val chargePortDoorOpen: Boolean? get() = chargingDetails?.chargePortDoorOpen
     val timeToFullCharge: Double? get() = chargingDetails?.timeToFullCharge
 
     /** Parse stateSince ISO timestamp to epoch milliseconds. */
@@ -162,6 +163,7 @@ data class CarStatus(
 
     val locked: Boolean? get() = carStatus?.locked
     val sentryMode: Boolean? get() = carStatus?.sentryMode
+    val windowsOpen: Boolean? get() = carStatus?.windowsOpen
     val centerDisplayState: String? get() = carStatus?.centerDisplayState
     /** True when the center display is showing the sentry warning screen. */
     val isSentryAlerted: Boolean get() = centerDisplayState == "7"

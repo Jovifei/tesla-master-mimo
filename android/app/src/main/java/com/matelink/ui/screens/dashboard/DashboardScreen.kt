@@ -15,6 +15,8 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -202,6 +204,26 @@ fun DashboardScreen(
     }
     val openOpenings = openVehicleOpenings(status)
     val warningTires = warningTires(status.tpmsDetails)
+    var showHeroUnlockConfirm by remember { mutableStateOf(false) }
+
+    if (showHeroUnlockConfirm) {
+        AlertDialog(
+            onDismissRequest = { showHeroUnlockConfirm = false },
+            title = { Text(stringResource(R.string.cmd_unlock_confirm_title)) },
+            text = { Text(stringResource(R.string.cmd_unlock_confirm_body)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showHeroUnlockConfirm = false
+                    vehicleCommandCatalog.firstOrNull { it.name == "unlock" }?.let {
+                        remoteViewModel.executeCommand(carId, it, confirm = true)
+                    }
+                }) { Text(stringResource(R.string.cmd_confirm)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showHeroUnlockConfirm = false }) { Text(stringResource(R.string.cmd_cancel)) }
+            }
+        )
+    }
 
     Column(
         modifier = Modifier
@@ -329,11 +351,7 @@ fun DashboardScreen(
 
         // Vehicle hero and the most important live telemetry.
         TelemetryPanel(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable {
-                    onNavigateToBattery(carId, car?.carDetails?.efficiency, exteriorColor)
-                },
+            modifier = Modifier.fillMaxWidth(),
             accent = MaterialTheme.colorScheme.primary
         ) {
             Column(
@@ -441,7 +459,12 @@ fun DashboardScreen(
 
                 val rangeKm = status.ratedBatteryRangeKm ?: status.idealBatteryRangeKm ?: status.estBatteryRangeKm
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable {
+                            onNavigateToBattery(carId, car?.carDetails?.efficiency, exteriorColor)
+                        },
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.Bottom
                 ) {
@@ -521,6 +544,10 @@ fun DashboardScreen(
                     )
                 }
 
+                val remoteUiState by remoteViewModel.uiState.collectAsStateWithLifecycle()
+                val busyCmd = remoteUiState.busyCommand
+                val canExecute = status.commandAuthorization?.ready ?: (status.commandAuthorization == null)
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -533,6 +560,18 @@ fun DashboardScreen(
                             null -> stringResource(R.string.status_unknown)
                         },
                         active = status.locked,
+                        isLoading = busyCmd in listOf("lock", "unlock"),
+                        onClick = if (canExecute) {
+                            {
+                                if (status.locked == true) {
+                                    showHeroUnlockConfirm = true
+                                } else {
+                                    vehicleCommandCatalog.firstOrNull { it.name == "lock" }?.let {
+                                        remoteViewModel.executeCommand(carId, it)
+                                    }
+                                }
+                            }
+                        } else null,
                         modifier = Modifier.weight(1f)
                     )
                     StatusChip(
@@ -543,6 +582,15 @@ fun DashboardScreen(
                             null -> stringResource(R.string.status_unknown)
                         },
                         active = status.pluggedIn,
+                        isLoading = busyCmd in listOf("charge_port_open", "charge_port_close", "charge_start", "charge_stop"),
+                        onClick = if (canExecute) {
+                            {
+                                val cmdName = if (status.chargePortDoorOpen == true) "charge_port_close" else "charge_port_open"
+                                vehicleCommandCatalog.firstOrNull { it.name == cmdName }?.let {
+                                    remoteViewModel.executeCommand(carId, it)
+                                }
+                            }
+                        } else null,
                         modifier = Modifier.weight(1f)
                     )
                     StatusChip(
@@ -553,6 +601,15 @@ fun DashboardScreen(
                             null -> stringResource(R.string.status_unknown)
                         },
                         active = status.isClimateOn,
+                        isLoading = busyCmd in listOf("climate_on", "climate_off"),
+                        onClick = if (canExecute) {
+                            {
+                                val cmdName = if (status.isClimateOn == true) "climate_off" else "climate_on"
+                                vehicleCommandCatalog.firstOrNull { it.name == cmdName }?.let {
+                                    remoteViewModel.executeCommand(carId, it)
+                                }
+                            }
+                        } else null,
                         modifier = Modifier.weight(1f)
                     )
                     StatusChip(
@@ -563,6 +620,15 @@ fun DashboardScreen(
                             null -> stringResource(R.string.status_unknown)
                         },
                         active = status.sentryMode,
+                        isLoading = busyCmd in listOf("sentry_on", "sentry_off"),
+                        onClick = if (canExecute) {
+                            {
+                                val cmdName = if (status.sentryMode == true) "sentry_off" else "sentry_on"
+                                vehicleCommandCatalog.firstOrNull { it.name == cmdName }?.let {
+                                    remoteViewModel.executeCommand(carId, it)
+                                }
+                            }
+                        } else null,
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -649,7 +715,7 @@ fun DashboardScreen(
             }
         }
 
-        // Fleet expansion sections (design 2026-11-05 §5–§7): vehicle
+        // Fleet expansion sections (design 2026-11-05 §5–�?): vehicle
         // controls (hidden until the backend reports command scopes
         // ready), nearby charging (loaded on demand to save Fleet API
         // quota) and named places.
@@ -659,8 +725,6 @@ fun DashboardScreen(
             onReauthorize = onNavigateToTeslaLogin,
             viewModel = remoteViewModel
         )
-        NearbyChargingSection(carId = carId, viewModel = remoteViewModel)
-        VehiclePlacesSection(carId = carId, status = status, viewModel = remoteViewModel)
 
         // Info cards row
         Row(
@@ -786,6 +850,10 @@ fun DashboardScreen(
                 )
             }
         }
+
+        // Surrounding charging network and saved places
+        NearbyChargingSection(carId = carId, viewModel = remoteViewModel)
+        VehiclePlacesSection(carId = carId, status = status, viewModel = remoteViewModel)
 
         // Battery history navigation. No chart is drawn until real history is available.
         TelemetryPanel(
@@ -1271,10 +1339,17 @@ private fun StatusChip(
     icon: ImageVector,
     label: String,
     active: Boolean?,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isLoading: Boolean = false,
+    onClick: (() -> Unit)? = null
 ) {
+    val clickableModifier = if (onClick != null) {
+        modifier.clickable(enabled = !isLoading, onClick = onClick)
+    } else {
+        modifier.clickable(enabled = false) {}
+    }
     Surface(
-        modifier = modifier,
+        modifier = clickableModifier,
         color = when (active) {
             true -> MaterialTheme.colorScheme.primaryContainer
             false -> MaterialTheme.colorScheme.surfaceVariant
@@ -1287,12 +1362,20 @@ private fun StatusChip(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(3.dp)
         ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = if (active == true) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(18.dp)
-            )
+            if (isLoading) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    strokeWidth = 2.dp,
+                    color = if (active == true) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = if (active == true) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelSmall,

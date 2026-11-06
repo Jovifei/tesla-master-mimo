@@ -1690,6 +1690,8 @@
     <string name="cmd_driver_temp">驾驶位</string>
     <string name="cmd_passenger_temp">副驾驶</string>
     <string name="cmd_charge_limit_dialog_title">设置充电上限</string>
+    <string name="cmd_executing">执行中…</string>
+    <string name="sentry_mode">哨兵模式</string>
     <string name="nearby_title">附近充电</string>
     <string name="nearby_load">加载</string>
     <string name="nearby_hint">车辆附近的超级充电站与目的地充电，按需加载。</string>

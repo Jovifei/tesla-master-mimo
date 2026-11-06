@@ -1699,6 +1699,8 @@
     <string name="cmd_driver_temp">Driver</string>
     <string name="cmd_passenger_temp">Passenger</string>
     <string name="cmd_charge_limit_dialog_title">Set charge limit</string>
+    <string name="cmd_executing">Executing…</string>
+    <string name="sentry_mode">Sentry Mode</string>
     <string name="nearby_title">Nearby charging</string>
     <string name="nearby_load">Load</string>
     <string name="nearby_hint">Superchargers and destination chargers near the vehicle, loaded on demand.</string>
