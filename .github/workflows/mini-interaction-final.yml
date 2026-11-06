@@ -1,7 +1,8 @@
 name: Mini interaction visual final verification
 on:
   push:
-    branches: [codex/miniprogram-interaction-visuals-20261104]
+    branches: [codex/miniprogram-interaction-visuals-20261104, codex/miniprogram-interaction-complete-20261106]
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:
@@ -30,11 +31,12 @@ jobs:
           set -euo pipefail
           mkdir -p visual-final-evidence
           git rev-parse HEAD HEAD^{tree} HEAD^ > visual-final-evidence/source.txt
-          git merge-base --is-ancestor 55d49b921f541c5c1d793c88e64dfaac51ee32b2 HEAD
+          git merge-base --is-ancestor 51d6514a7d897ec2890e60bc37d00c43c4d87a71 HEAD
           git diff --check 55d49b921f541c5c1d793c88e64dfaac51ee32b2 HEAD
+          git diff --exit-code 51d6514a7d897ec2890e60bc37d00c43c4d87a71 HEAD -- android deploy ios web_matelink miniprogram/package.json miniprogram/package-lock.json miniprogram/src/services miniprogram/vehicle-assets
           python3 tools/interaction-stage/verify-mini-contract.py | tee visual-final-evidence/contract.txt
           git archive --format=zip --output=visual-final-evidence/source.zip HEAD
-          git diff --binary 55d49b921f541c5c1d793c88e64dfaac51ee32b2 HEAD > visual-final-evidence/source.patch
+          git diff --binary 51d6514a7d897ec2890e60bc37d00c43c4d87a71 HEAD > visual-final-evidence/source.patch
       - name: Locked tooling, strict types, full tests and production WeChat bundle
         working-directory: miniprogram
         shell: bash
@@ -54,18 +56,22 @@ jobs:
               src/pages/wechat_startup.test.tsx src/pages/charge_cost_consistency.test.tsx \
               src/services/cache_budget.test.ts src/domain/parked_interaction.test.ts \
               src/components/interaction/InteractionVisuals.test.tsx \
+              src/components/interaction/InteractionReceiptRegression.test.tsx \
               --reporter=default --reporter=junit --outputFile.junit="evidence/timezones/$name.xml" \
               2>&1 | tee "evidence/timezones/$name.log"
           done
           python3 - <<'PY'
           from pathlib import Path
-          import xml.etree.ElementTree as E
+          import json, xml.etree.ElementTree as E
           files=list(Path('evidence/timezones').glob('*.xml'))
           assert len(files)==4
+          counts={}
           for file in [Path('evidence/tests.xml'), *files]:
               root=E.parse(file).getroot(); cases=root.findall('.//testcase')
-              assert len(cases)>20 and not root.findall('.//failure') and not root.findall('.//error'),str(file)
-              print(file.name,'real_cases',len(cases))
+              counts[str(file)]={'tests':len(cases),'failures':len(root.findall('.//failure')),'errors':len(root.findall('.//error')),'skips':len(root.findall('.//skipped'))}
+              assert len(cases)>20 and not root.findall('.//failure') and not root.findall('.//error') and not root.findall('.//skipped'),str(file)
+          Path('evidence/parsed-counts.json').write_text(json.dumps(counts,indent=2))
+          print(json.dumps(counts,indent=2))
           PY
       - name: Install CJK fonts only in the disposable test runner
         shell: bash
