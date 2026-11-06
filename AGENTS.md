@@ -1,5 +1,12 @@
 # Project agent guidance
 
+## Current authority files
+
+- Read `docs/AI-RULES.md` before any code/config change, build, server inspection, package installation, or production diagnosis.
+- Read `docs/CURRENT-PRODUCTION-CONFIG.md` before any Release build or production-link check. It overrides historical docs and build defaults.
+- The cloud API is `https://api.teslalink.joviluma.com/`; never build a current Release with `https://api.jourvolt.com/`.
+- MateLink services run on the production server. Do not use Jovi's local Docker as the assumed production backend.
+
 <!-- BEGIN:codex-token-efficiency -->
 ## Token-efficient navigation
 

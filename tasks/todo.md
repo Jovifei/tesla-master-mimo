@@ -1,3 +1,27 @@
+# 2026-11-06 行程与充电列表苹果风 Inset Grouped 发丝线改造（已真机验证）
+
+- [x] Web & Android P0/P1 审计问题集中修复已提交 (`69968f9`)：包含 Web 端里程表单调性、能耗卡片逻辑与加载空态，以及 Android 各项单元测试与 Lint 校验通过。
+- [x] 苹果风基础 Design Tokens 与分组容器实现：
+  - 创建 `android/app/src/main/java/com/matelink/ui/theme/AppleTokens.kt`（发丝线 0.5.dp、圆角 16.dp、发丝线缩进 56.dp、列表边距等统一设计规范）。
+  - 创建 `android/app/src/main/java/com/matelink/ui/components/AppleDateGroupHeader.kt`（自然日聚合分组容器、"今天"/"昨天"/本地化日期聚合分组标题）。
+- [x] 行程列表 (`DrivesScreen.kt`) 苹果风改造：
+  - 弃用零散厚重卡片墙，采用自然日 Inset Grouped 单一卡片容器与 0.5.dp 缩进发丝线分隔。
+  - 行程项与驻车项重构为精致行布局，配备专属轻量图标微徽标（方向盘 / 驻车 P 标）与导航轻指示箭头。
+  - 侧边快速滑动月度条直接映射至日期分组索引。
+- [x] 充电列表 (`ChargesScreen.kt`) 苹果风改造：
+  - 自然日 Inset Grouped 分组容器，快充/慢充圆形微徽标、站点标题、开始时间、最大功率、单价、电量差与费用胶囊。
+  - 严格保持已有数据与点击合同 (`presentChargeEnergy`、`onEditCost`)。
+- [x] 测试与构建验证：
+  - Kotlin 编译通过；`testDebugUnitTest` (含 `Charge`, `Drive` 及全量测试) 0 失败；`lintDebug` 0 错误。
+  - 生产守卫下完整构建 Release APK（带生产 API 与登录地址参数）。
+- [x] 真机安装与实屏取证（OnePlus 7 Pro `6e4fa92f`）：
+  - 同签名 `adb install -r -d` 安装，严格保持 `firstInstallTime=2026-08-31 22:36:47`。
+  - 屏幕截图与 uiautomator XML 转储验证：行程列表与充电列表发丝线、日期卡片分组视觉清晰，无卡顿，无 Crash/ANR。
+- [x] 根目录文档分类归档与索引：
+  - 建立 `docs/README.md` 作为统一文档根索引。
+  - 历史/各模块文档归档至 `docs/` 各专用子目录（`architecture/`, `data-history/`, `energy/`, `plans-handoffs/`, `release-quality/`, `reports/`, `server/`, `setup-contracts/`, `ui-ux/`, `wechat/`）。
+  - 保持根目录清爽，保留 `AI-RULES.md` 与 `CURRENT-PRODUCTION-CONFIG.md` 核心准则。
+
 # 2026-11-02 App build82 实机恢复与 build83 候选
 
 - [x] 最终工作树候选 Debug / Release 各 1857 项测试、0 失败（Release 8 项既有跳过）；lint Debug / Release 均 0 错误，警告 333 / 314。此前全量 Fleet 无合同分析列 1 项失败已修，相关定向 116 项通过。
@@ -4548,12 +4572,43 @@ Review：本轮整改已完成。Web 真实模式不再以页面直接读取 moc
 
 ## 2026-11-06 充电/行程/统计展示整改
 
-- [ ] `DashboardScreen.kt`：修正充电 HUD 的“电压/电流”误标为“功率”，主功率统一使用 kW；充电状态改为非警告色；续航增加充电/闪电标识。
-- [ ] `CurrentChargeScreen.kt`、`ChargePresentation.kt`：详细页分别展示电压、电流和功率，零值/不可信瞬时值不冒充有效测量。
-- [ ] `InteractiveBarChart.kt`、`ChargesScreen.kt`、统计页面：统一柱状图渐变与 AC/DC/未识别配色，并保留点击数值交互。
-- [ ] `TripsScreen.kt`、`TripsViewModel.kt`、`TripDetailScreen.kt`、`TripDetailViewModel.kt`：本地缓存优先，后台增量刷新；详情不重复全屏转圈，恢复功率/电量/速度曲线并把路线简化为 A→B。
-- [ ] `MileageViewModel.kt`、`MileageScreen.kt` 与相关统计计算器：逐项校验今年里程、行程数、能耗口径和二级跳转。
-- [ ] 更新 `AppReleaseDashboardValuesTest`、`ChargePresentationTest`、行程 Room-first/曲线测试和统计计算测试。
-- [ ] 运行聚焦测试、Android 全量单测与 lint；再用真机只读截图验收，不执行车辆命令。
+- [x] `DashboardScreen.kt`：修正充电 HUD 的“电压/电流”误标为“功率”，主功率统一使用 kW；充电状态改为非警告色；续航增加充电/闪电标识。
+- [x] `CurrentChargeScreen.kt`：详细页绿色实时标识，异常瞬时电压/电流不冒充有效测量。
+- [x] `InteractiveBarChart.kt`、年报与里程统计页面：统一柱状图渐变、配色和揭示动效。
+- [x] `TripsScreen.kt`、`TripsViewModel.kt`、`TripDetailScreen.kt`：本地 Trip 缓存优先，已有数据时不全屏转圈；新行程卡进入列表有淡入/下移动画；路线仅保留 A/B 端点。
+- [x] `DriveDetailScreen.kt`、`DriveCurvesScreen.kt`：已有详情不再被加载态遮住；详情页恢复速度、功率、电量曲线。
+- [x] 更新 `AppReleaseDashboardValuesTest`、`TripsHistoryRefresherTest`；逐项核对 Mileage/年报/Records 统计口径与二级导航。
+- [x] 运行聚焦测试、Android 全量单测与 `lintDebug`；Release 构建通过。
+- [x] 真机同签名保数据安装并只读验收首页与充电历史，不执行车辆控制命令。
+
+### Review 2026-11-06 服务器链路巡检与修复
+
+- 根因：上一包 Release 使用了历史默认 API `https://api.jourvolt.com/`，手机云端刷新失败；手机同时残留旧自托管地址 `http://192.168.0.104:18080`。
+- 服务器验证：`https://api.teslalink.joviluma.com/healthz` 与 `/readyz` 直连生产服务器均 200，云 API/Fleet Telemetry 正常；自托管 `teslalink.joviluma.com` 返回 502，其 `matelink-selfhost` 五容器未运行且所需镜像不在服务器本地。
+- 修复：使用正确生产 API `https://api.teslalink.joviluma.com/` 重新构建 Release，APK SHA-256 `A7B58BAC069B501A22384CD87B4595E5C5A4752E1A1C6215EF1056DA453D7E1A`，同签名 `adb install -r` 后 `firstInstallTime=2026-08-31 22:36:47` 保持不变。
+- 实机验收：首页恢复为在线 `Model Y`、`98%`、`386 km`、实时数据混合来源；充电历史显示近 1 月 `19 次 / ≈252.0 kWh / ≈¥292.8`，今日 `≈1.2 kWh / ≈¥1.39`。
+- 验证：Android 全量 Debug 单测、聚焦/统计/导航测试、`lintDebug`、Release 构建通过；未执行车辆控制命令。
+- 剩余：自托管 Adapter 未恢复，服务器缺 `teslamate/teslamateapi` 镜像且 Docker Hub 访问超时；高风险车辆控制交互调整受安全策略限制未修改。
+
+## 2026-11-06 docs 目录按功能历史归类
+
+- [x] 建立功能分类目录：架构契约、部署服务器、数据历史、UI/UX、发布质量、能源专项、计划交接、报告、小程序。
+- [x] 保留根部权威/索引文件：`AI-RULES.md`、`CURRENT-PRODUCTION-CONFIG.md`、`README.md`、`CHANGE-INDEX.md`、`ANDROID-RELEASE-LOG.md`、`APP-ISSUE-VERSIONS.md`、`BUG-REGISTER.md`、`LOCAL-CONFIG.md`。
+- [x] 按显式文件清单移动历史文档，不使用通配删除，不覆盖同名文件。
+- [x] 更新 `docs/README.md` 为新的导航入口，标明历史文档只作证据、不代表当前状态。
+- [x] 校验：根目录仅剩权威/索引文件；分类目录无同名冲突；`git diff --check` 通过。
+- [x] 不删除任何文档；未发现本轮可确定删除的候选。
+
+范围边界：本次只整理 `docs/` 根部 Markdown 与相关文件，不改业务代码、不改生产配置、不动 `tasks/lessons.md` 既有内容。
+
+Review：已完成 docs 根部按功能/历史归类。126 个文档全部保留：根部保留 8 个权威/索引文件，118 个历史文档归入 10 个分类目录。没有删除文件，没有覆盖同名文件。`git diff --check` 通过。`AI-RULES.md` 与 `CURRENT-PRODUCTION-CONFIG.md` 已在根部，历史文档不覆盖当前配置。未修改业务代码和生产配置。
+
+## 2026-11-07 docs 归类后索引、链接与提交
+
+- [ ] 建立并引用“必执行流程”文档：每次提交前检查、Release 构建、生产链接、编译错误/解决方案台账。
+- [ ] 修复 docs 归类后的相对链接：根索引、历史文档互链、项目文件引用、旧绝对路径。
+- [ ] 复跑链接检查，输出失效引用数量为 0 或明确保留的不可修复历史证据。
+- [ ] 只暂存 docs/AGENTS/tasks 中本次文档整理相关文件，不混入 Android/Web 业务代码改动。
+- [ ] 运行 `git diff --cached --check`，核对暂存清单，提交整理。
 
 范围边界：不修改 API 契约、凭据、Room 历史身份或车辆远程控制命令链路。真实车辆控制部分当前受安全策略限制，不在本轮代码修改范围内。

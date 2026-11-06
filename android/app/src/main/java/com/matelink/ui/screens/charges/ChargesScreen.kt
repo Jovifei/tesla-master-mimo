@@ -87,6 +87,11 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.matelink.R
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Bolt
+import com.matelink.ui.components.AppleDateGroupHeader
+import com.matelink.ui.components.HistoryDateGroup
+import com.matelink.ui.theme.AppleTokens
 import com.matelink.data.api.models.ChargeData
 import com.matelink.data.repository.HISTORY_IDENTITY_UNAVAILABLE
 import com.matelink.ui.components.BarChartData
@@ -317,6 +322,42 @@ private fun ChargesContent(
         (if (showFreeHint) 1 else 0) +
         (if (chartData.isNotEmpty()) 1 else 0)
 
+    val groupedCharges = remember(charges) {
+        val groups = mutableListOf<HistoryDateGroup<ChargeData>>()
+        var currentDate: LocalDate? = null
+        var currentGroupItems = mutableListOf<ChargeData>()
+
+        for (charge in charges) {
+            val chargeDate = charge.startDate.parseListItemDate()
+            if (currentGroupItems.isEmpty()) {
+                currentDate = chargeDate
+                currentGroupItems.add(charge)
+            } else if (chargeDate == currentDate) {
+                currentGroupItems.add(charge)
+            } else {
+                val key = currentDate?.toString() ?: "unknown_${groups.size}"
+                groups.add(HistoryDateGroup(currentDate, key, currentGroupItems))
+                currentDate = chargeDate
+                currentGroupItems = mutableListOf(charge)
+            }
+        }
+        if (currentGroupItems.isNotEmpty()) {
+            val key = currentDate?.toString() ?: "unknown_${groups.size}"
+            groups.add(HistoryDateGroup(currentDate, key, currentGroupItems))
+        }
+        groups
+    }
+
+    val indexToDate = remember(headerCount, groupedCharges) {
+        buildList {
+            repeat(headerCount) { add(null) }
+            for (group in groupedCharges) {
+                add(group.date) // header
+                add(group.date) // group container
+            }
+        }
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
     LazyColumn(
         state = listState,
@@ -430,37 +471,57 @@ private fun ChargesContent(
                 }
             }
         } else {
-            items(charges, key = { it.chargeId }) { charge ->
-                AnimatedVisibility(
-                    visible = true,
-                    enter = fadeIn(animationSpec = tween(180)) +
-                        slideInVertically(initialOffsetY = { it / 8 }, animationSpec = tween(180))
-                ) {
-                    ChargeItem(
-                        charge = charge,
-                        isDcCharge = when (historyChargeType(charge, dcChargeIds, processedChargeIds, acChargeIds)) {
-                            ChargeType.DC -> true
-                            ChargeType.AC -> false
-                            ChargeType.UNKNOWN -> null
-                        },
-                        currencySymbol = currencySymbol,
-                        effectiveCost = effectiveCosts[charge.chargeId]
-                            ?: EffectiveChargeCost(null, ChargeCostSource.UNAVAILABLE),
-                        pendingLegacyAmount = pendingLegacyAmounts[charge.chargeId],
-                        pendingBoundAmount = pendingBoundAmounts[charge.chargeId],
-                        otherCurrencyAmount = otherCurrencyAmounts[charge.chargeId],
-                        referenceEnergyKwh = referenceEnergyKwh[charge.chargeId],
-                        referenceEstimate = referenceEstimates[charge.chargeId],
-                        palette = palette,
-                        onEditCost = { onEditCost(charge) },
-                        onClick = {
-                            onChargeClick(
-                                charge.chargeId,
-                                listState.firstVisibleItemIndex,
-                                listState.firstVisibleItemScrollOffset
-                            )
+            groupedCharges.forEach { group ->
+                item(key = "header_${group.dateKey}") {
+                    AppleDateGroupHeader(date = group.date)
+                }
+                item(key = "group_${group.dateKey}") {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(AppleTokens.groupCornerRadius),
+                        color = MaterialTheme.colorScheme.surfaceContainer,
+                        tonalElevation = 0.dp
+                    ) {
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            group.items.forEachIndexed { index, charge ->
+                                if (index > 0) {
+                                    HorizontalDivider(
+                                        modifier = Modifier.padding(
+                                            start = AppleTokens.dividerIndent,
+                                            end = AppleTokens.rowHorizontal
+                                        ),
+                                        thickness = AppleTokens.hairline,
+                                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+                                    )
+                                }
+                                ChargeItem(
+                                    charge = charge,
+                                    isDcCharge = when (historyChargeType(charge, dcChargeIds, processedChargeIds, acChargeIds)) {
+                                        ChargeType.DC -> true
+                                        ChargeType.AC -> false
+                                        ChargeType.UNKNOWN -> null
+                                    },
+                                    currencySymbol = currencySymbol,
+                                    effectiveCost = effectiveCosts[charge.chargeId]
+                                        ?: EffectiveChargeCost(null, ChargeCostSource.UNAVAILABLE),
+                                    pendingLegacyAmount = pendingLegacyAmounts[charge.chargeId],
+                                    pendingBoundAmount = pendingBoundAmounts[charge.chargeId],
+                                    otherCurrencyAmount = otherCurrencyAmounts[charge.chargeId],
+                                    referenceEnergyKwh = referenceEnergyKwh[charge.chargeId],
+                                    referenceEstimate = referenceEstimates[charge.chargeId],
+                                    palette = palette,
+                                    onEditCost = { onEditCost(charge) },
+                                    onClick = {
+                                        onChargeClick(
+                                            charge.chargeId,
+                                            listState.firstVisibleItemIndex,
+                                            listState.firstVisibleItemScrollOffset
+                                        )
+                                    }
+                                )
+                            }
                         }
-                    )
+                    }
                 }
             }
         }
@@ -503,10 +564,7 @@ private fun ChargesContent(
 
     MonthScrollIndicator(
         state = listState,
-        dateAt = { index ->
-            if (index < headerCount) null
-            else charges.getOrNull(index - headerCount)?.startDate.parseListItemDate()
-        },
+        dateAt = { index -> indexToDate.getOrNull(index) },
         accent = palette.accent,
         modifier = Modifier.align(Alignment.CenterEnd),
     )
@@ -869,156 +927,160 @@ internal fun ChargeItem(
         }
     }
 
-    TelemetryPanel(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick),
-        accent = accent
+            .clickable(onClick = onClick)
+            .padding(horizontal = AppleTokens.rowHorizontal, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+        Surface(
+            color = accent.copy(alpha = 0.14f),
+            shape = CircleShape,
+            modifier = Modifier.size(32.dp)
         ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = if (resolvedDc) Icons.Default.Bolt else Icons.Default.ElectricBolt,
+                    contentDescription = null,
+                    tint = accent,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.width(12.dp))
+
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(
+                text = addressText,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Row(
-                    modifier = Modifier.weight(1f),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Surface(
-                        color = accent.copy(alpha = 0.14f),
-                        shape = CircleShape
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.LocationOn,
-                            contentDescription = null,
-                            tint = accent,
-                            modifier = Modifier.padding(9.dp).size(20.dp)
-                        )
-                    }
-                    Column {
-                        Text(
-                            text = addressText,
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Medium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Text(
-                            text = dateAndTempText,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                Text(
+                    text = formatEditorialDate(charge.startDate, is24Hour),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                val durationLabel = charge.durationStr?.takeIf { it.isNotBlank() }
+                    ?: charge.durationMin?.let { "${it}m" }
+                if (durationLabel != null) {
+                    Text(
+                        text = "·",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = durationLabel,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
-                ChargeTypeBadge(isDcCharge = resolvedDc, palette = palette)
             }
 
-            Surface(
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                shape = MaterialTheme.shapes.medium
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Column(modifier = Modifier.padding(vertical = 4.dp)) {
-                    CompactHistoryMetricStrip(
-                        metrics = listOf(
-                            TelemetryMetricSpec(
-                                icon = Icons.Default.Timer,
-                                label = stringResource(R.string.duration),
-                                value = charge.durationStr?.takeIf { it.isNotBlank() }
-                                    ?: charge.durationMin?.let { "${it}m" }
-                                    ?: notAvailableLabel,
-                                tint = Color(0xFFF59E0B)
-                            ),
-                            TelemetryMetricSpec(
-                                icon = Icons.Default.ElectricBolt,
-                                label = stringResource(when {
-                                    isReferenceEnergy -> R.string.charge_reference_energy
-                                    isPartialEnergy -> R.string.charge_partial_energy
-                                    else -> R.string.energy
-                                }),
-                                value = displayedEnergy?.let { (if (isPartialEnergy || isReferenceEnergy) "≈" else "") + "%.1f kWh".format(it) } ?: notAvailableLabel,
-                                tint = accent
-                            ),
-                            TelemetryMetricSpec(
-                                icon = Icons.Default.Paid,
-                                label = stringResource(when {
-                                    pending != null -> R.string.charge_cost_pending_short
-                                    isReferenceCost -> R.string.charge_reference_cost
-                                    else -> R.string.trip_charge_cost
-                                }),
-                                value = when {
-                                    displayCost != null && !isFree ->
-                                        (if (isReferenceCost || (pending == null && effectiveCost.source == ChargeCostSource.ESTIMATE)) "≈" else "") + "%.2f".format(displayCost)
-                                    isFree -> freeLabel
-                                    else -> notAvailableLabel
-                                },
-                                unit = costUnit,
-                                tint = if (isFree) palette.acColor else if (pending != null) Color(0xFFF59E0B) else Color(0xFF22C55E)
-                            ),
-                            TelemetryMetricSpec(
-                                icon = Icons.Default.BatteryStd,
-                                label = stringResource(R.string.battery),
-                                value = UnitFormatter.formatSocRange(start, end, notAvailableLabel).replace("%", "").replace(" ", ""),
-                                unit = if (start != null || end != null) "%" else null,
-                                tint = Color(0xFFF97316)
-                            )
-                        ),
-                        clickableMetricIndex = if (onEditCost != null) 2 else null,
-                        onMetricClick = onEditCost,
-                        metricClickLabel = stringResource(R.string.edit_charge_cost)
+                Text(
+                    text = if (resolvedDc) stringResource(R.string.charging_dc) else stringResource(R.string.charging_ac),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = accent
+                )
+                if (avgPowerKw != null && avgPowerKw > 0.1) {
+                    Text(
+                        text = "·",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-
-                    val secondaryMetrics = buildList {
-                        if (resolvedUnitPrice != null) {
-                            add("${stringResource(R.string.charge_unit_cost_label)}: $currencySymbol%.2f/kWh".format(resolvedUnitPrice))
-                        }
-                        if (avgPowerKw != null && avgPowerKw > 0.1) {
-                            add("${stringResource(R.string.charge_avg_power_label)}: %.1f kW".format(avgPowerKw))
-                        }
-                        if (rangeAddedKm != null && rangeAddedKm > 0.5) {
-                            add("${stringResource(R.string.range)}: +%.0f km".format(rangeAddedKm))
-                        }
-                    }
-
-                    if (secondaryMetrics.isNotEmpty() || secondaryCostText != null) {
-                        HorizontalDivider(
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f),
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                        )
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 8.dp, vertical = 2.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = secondaryMetrics.joinToString(" · "),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f, fill = false)
-                            )
-                            if (secondaryCostText != null) {
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = secondaryCostText,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.Medium,
-                                    color = palette.accent,
-                                    maxLines = 1
-                                )
-                            }
-                        }
-                    }
+                    Text(
+                        text = "%.1f kW".format(avgPowerKw),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                if (resolvedUnitPrice != null) {
+                    Text(
+                        text = "·",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "$currencySymbol%.2f/kWh".format(resolvedUnitPrice),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         }
+
+        Spacer(modifier = Modifier.width(10.dp))
+
+        Column(
+            horizontalAlignment = Alignment.End,
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            displayedEnergy?.let {
+                val prefix = if (isPartialEnergy || isReferenceEnergy) "≈" else "+"
+                Text(
+                    text = "$prefix%.1f kWh".format(it),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = palette.onSurface
+                )
+            }
+
+            val costText = when {
+                displayCost != null && !isFree ->
+                    (if (isReferenceCost || (pending == null && effectiveCost.source == ChargeCostSource.ESTIMATE)) "≈" else "") + "$currencySymbol%.2f".format(displayCost)
+                isFree -> freeLabel
+                else -> null
+            }
+            if (costText != null) {
+                Surface(
+                    color = (if (isFree) palette.acColor else if (pending != null) Color(0xFFF59E0B) else Color(0xFF22C55E)).copy(alpha = 0.12f),
+                    shape = RoundedCornerShape(4.dp),
+                    modifier = Modifier.clickable(enabled = onEditCost != null) { onEditCost?.invoke() }
+                ) {
+                    Text(
+                        text = costText,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (isFree) palette.acColor else if (pending != null) Color(0xFFF59E0B) else Color(0xFF22C55E)
+                    )
+                }
+            }
+
+            val socRange = UnitFormatter.formatSocRange(start, end, "")
+            if (socRange.isNotBlank()) {
+                Text(
+                    text = socRange,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.width(4.dp))
+
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+            modifier = Modifier.size(16.dp)
+        )
     }
 }
 

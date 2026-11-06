@@ -30,6 +30,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.ArrowDropDown
@@ -77,6 +79,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material3.HorizontalDivider
+import com.matelink.ui.components.AppleDateGroupHeader
+import com.matelink.ui.components.HistoryDateGroup
+import com.matelink.ui.theme.AppleTokens
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -286,8 +293,43 @@ private fun DrivesContent(
     val historyItems = remember(historySequence, drives, parkedPairs) {
         selectVisibleDriveHistoryItems(historySequence, drives, parkedPairs)
     }
+    val groupedDriveHistory = remember(historyItems) {
+        val groups = mutableListOf<HistoryDateGroup<DriveHistoryItem>>()
+        var currentDate: LocalDate? = null
+        var currentGroupItems = mutableListOf<DriveHistoryItem>()
+
+        for (item in historyItems) {
+            val itemDate = item.dateForIndicator.parseListItemDate()
+            if (currentGroupItems.isEmpty()) {
+                currentDate = itemDate
+                currentGroupItems.add(item)
+            } else if (itemDate == currentDate) {
+                currentGroupItems.add(item)
+            } else {
+                val key = currentDate?.toString() ?: "unknown_${groups.size}"
+                groups.add(HistoryDateGroup(currentDate, key, currentGroupItems))
+                currentDate = itemDate
+                currentGroupItems = mutableListOf(item)
+            }
+        }
+        if (currentGroupItems.isNotEmpty()) {
+            val key = currentDate?.toString() ?: "unknown_${groups.size}"
+            groups.add(HistoryDateGroup(currentDate, key, currentGroupItems))
+        }
+        groups
+    }
     // Summary, optional chart, then history heading precede the records.
     val headerCount = 2 + (if (chartData.isNotEmpty()) 1 else 0)
+
+    val indexToDate = remember(headerCount, groupedDriveHistory) {
+        buildList {
+            repeat(headerCount) { add(null) }
+            for (group in groupedDriveHistory) {
+                add(group.date) // header item
+                add(group.date) // group container item
+            }
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
     LazyColumn(
@@ -364,25 +406,45 @@ private fun DrivesContent(
                 }
             }
         } else {
-            items(historyItems, key = { it.key }) { item ->
-                AnimatedVisibility(
-                    visible = true,
-                    enter = fadeIn(animationSpec = tween(180)) +
-                        slideInVertically(initialOffsetY = { it / 8 }, animationSpec = tween(180))
-                ) {
-                    when (item) {
-                        is DriveHistoryItem.Drive -> DriveItem(
-                            drive = item.drive,
-                            metrics = driveMetrics[item.drive.id],
-                            units = units,
-                            palette = palette,
-                            onClick = { onDriveClick(item.drive.id) }
-                        )
-                        is DriveHistoryItem.Parked -> ParkedItem(
-                            item = item,
-                            palette = palette,
-                            onClick = { onParkedClick(item.olderDrive.id, item.newerDrive.id, item.location) }
-                        )
+            groupedDriveHistory.forEach { group ->
+                item(key = "header_${group.dateKey}") {
+                    AppleDateGroupHeader(date = group.date)
+                }
+                item(key = "group_${group.dateKey}") {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(AppleTokens.groupCornerRadius),
+                        color = MaterialTheme.colorScheme.surfaceContainer,
+                        tonalElevation = 0.dp
+                    ) {
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            group.items.forEachIndexed { index, item ->
+                                if (index > 0) {
+                                    HorizontalDivider(
+                                        modifier = Modifier.padding(
+                                            start = AppleTokens.dividerIndent,
+                                            end = AppleTokens.rowHorizontal
+                                        ),
+                                        thickness = AppleTokens.hairline,
+                                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+                                    )
+                                }
+                                when (item) {
+                                    is DriveHistoryItem.Drive -> DriveRowItem(
+                                        drive = item.drive,
+                                        metrics = driveMetrics[item.drive.id],
+                                        units = units,
+                                        palette = palette,
+                                        onClick = { onDriveClick(item.drive.id) }
+                                    )
+                                    is DriveHistoryItem.Parked -> ParkedRowItem(
+                                        item = item,
+                                        palette = palette,
+                                        onClick = { onParkedClick(item.olderDrive.id, item.newerDrive.id, item.location) }
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -416,10 +478,7 @@ private fun DrivesContent(
 
     MonthScrollIndicator(
         state = listState,
-        dateAt = { index ->
-            if (index < headerCount) null
-            else historyItems.getOrNull(index - headerCount)?.dateForIndicator.parseListItemDate()
-        },
+        dateAt = { index -> indexToDate.getOrNull(index) },
         accent = palette.accent,
         modifier = Modifier.align(Alignment.CenterEnd),
     )
@@ -697,7 +756,7 @@ internal fun SummaryCard(
 }
 
 @Composable
-private fun DriveItem(
+private fun DriveRowItem(
     drive: DriveData,
     metrics: DriveHistoryMetrics?,
     units: Units?,
@@ -711,103 +770,140 @@ private fun DriveItem(
     val energyPres = drive.historyEnergy(metrics)
     val start = drive.startBatteryLevel
     val end = drive.endBatteryLevel
+    val socRange = UnitFormatter.formatSocRange(start, end, "")
+    val distanceText = drive.distance
+        ?.takeIf { it.isFinite() && it >= 0.0 }
+        ?.let { visualTripNumber(it) }
 
-    TelemetryPanel(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick),
-        accent = palette.accent
+            .clickable(onClick = onClick)
+            .padding(horizontal = AppleTokens.rowHorizontal, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
+        Surface(
+            color = palette.accent.copy(alpha = 0.12f),
+            shape = CircleShape,
+            modifier = Modifier.size(32.dp)
         ) {
-            val socRange = UnitFormatter.formatSocRange(start, end, "")
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top
-            ) {
-                Text(
-                    text = formatEditorialDate(drive.startDate, true),
-                    modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = CustomIcons.SteeringWheel,
+                    contentDescription = null,
+                    tint = palette.accent,
+                    modifier = Modifier.size(16.dp)
                 )
-                if (socRange.isNotBlank()) {
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = socRange,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = palette.onSurface,
-                        maxLines = 1
-                    )
-                }
             }
+        }
 
+        Spacer(modifier = Modifier.width(12.dp))
+
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
             RouteIndicator(
                 start = startCity,
                 end = endCity,
                 accent = palette.accent
             )
 
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(MaterialTheme.shapes.medium)
-                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                CompactHistoryMetricStrip(
-                    metrics = listOf(
-                        TelemetryMetricSpec(
-                            icon = Icons.Default.Bolt,
-                            label = stringResource(R.string.energy),
-                            value = driveHistoryEfficiencyText(energyPres) ?: stringResource(R.string.not_available),
-                            tint = Color(0xFF10B981),
-                            unit = "kWh/100km",
-                            valueFontSize = 16.sp
-                        ),
-                        TelemetryMetricSpec(
-                            icon = CustomIcons.SteeringWheel,
-                            label = stringResource(R.string.distance),
-                            value = drive.distance
-                                ?.takeIf { it.isFinite() && it >= 0.0 }
-                                ?.let { visualTripNumber(it) }
-                                ?: stringResource(R.string.not_available),
-                            tint = Color(0xFF0284C7),
-                            unit = UnitFormatter.getDistanceUnit(receiptUnits),
-                            valueFontSize = 16.sp
-                        ),
-                        TelemetryMetricSpec(
-                            icon = Icons.Default.Speed,
-                            label = stringResource(R.string.max_speed),
-                            value = drive.speedMax?.takeIf { drive.hasKnownLengthUnit && it >= 0 }?.let { "%,d".format(it) }
-                                ?: stringResource(R.string.not_available),
-                            tint = Color(0xFF6366F1),
-                            unit = UnitFormatter.getSpeedUnit(receiptUnits),
-                            valueFontSize = 16.sp
-                        ),
-                        TelemetryMetricSpec(
-                            icon = Icons.Default.Timer,
-                            label = stringResource(R.string.duration),
-                            value = drive.durationMin?.takeIf { it >= 0 }?.let { "%,d".format(it) }
-                                ?: stringResource(R.string.not_available),
-                            tint = Color(0xFFD97706),
-                            unit = stringResource(R.string.visual_trip_duration_unit),
-                            valueFontSize = 16.sp
+                Text(
+                    text = formatEditorialDate(drive.startDate, true),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                drive.durationMin?.takeIf { it >= 0 }?.let { dur ->
+                    Text(
+                        text = "·",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "${dur}m",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            val effText = driveHistoryEfficiencyText(energyPres)
+            val speedText = drive.speedMax?.takeIf { drive.hasKnownLengthUnit && it >= 0 }?.let { "%,d".format(it) }
+            if (effText != null || speedText != null) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (effText != null) {
+                        Text(
+                            text = "$effText kWh/100km",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color(0xFF10B981)
                         )
-                    ),
-                    modifier = Modifier.padding(vertical = 4.dp)
+                    }
+                    if (speedText != null) {
+                        Text(
+                            text = "${stringResource(R.string.max_speed)} $speedText ${UnitFormatter.getSpeedUnit(receiptUnits)}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.width(10.dp))
+
+        Column(
+            horizontalAlignment = Alignment.End,
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            if (distanceText != null) {
+                Text(
+                    text = "$distanceText ${UnitFormatter.getDistanceUnit(receiptUnits)}",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = palette.onSurface
+                )
+            }
+            if (socRange.isNotBlank()) {
+                Text(
+                    text = socRange,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = palette.accent
                 )
             }
         }
+
+        Spacer(modifier = Modifier.width(4.dp))
+
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+            modifier = Modifier.size(16.dp)
+        )
     }
 }
 
 @Composable
-private fun ParkedItem(
+private fun DriveItem(
+    drive: DriveData,
+    metrics: DriveHistoryMetrics?,
+    units: Units?,
+    palette: CarColorPalette,
+    onClick: () -> Unit
+) {
+    DriveRowItem(drive, metrics, units, palette, onClick)
+}
+
+@Composable
+private fun ParkedRowItem(
     item: DriveHistoryItem.Parked,
     palette: CarColorPalette,
     onClick: () -> Unit
@@ -821,59 +917,86 @@ private fun ParkedItem(
     val batteryStart = item.olderDrive.endBatteryLevel
     val batteryEnd = item.newerDrive.startBatteryLevel
 
-    TelemetryPanel(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick),
-        accent = MaterialTheme.colorScheme.outline
+            .clickable(onClick = onClick)
+            .padding(horizontal = AppleTokens.rowHorizontal, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp)
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceContainerHighest,
+            shape = CircleShape,
+            modifier = Modifier.size(32.dp)
         ) {
-            Surface(
-                color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                shape = CircleShape
-            ) {
+            Box(contentAlignment = Alignment.Center) {
                 Icon(
                     imageVector = Icons.Default.LocalParking,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(10.dp).size(22.dp)
+                    modifier = Modifier.size(16.dp)
                 )
-            }
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                Text(
-                    text = stringResource(R.string.drive_history_parked_at, formatParkedAddress(item.location, unknown)),
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Medium
-                )
-                Text(
-                    text = formatEditorialDate(item.startDate, true),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Column(horizontalAlignment = Alignment.End) {
-                Text(
-                    text = durationText,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
-                if (batteryStart != null && batteryEnd != null) {
-                    Text(
-                        text = UnitFormatter.formatSocRange(batteryStart, batteryEnd, ""),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = palette.accent
-                    )
-                }
             }
         }
+
+        Spacer(modifier = Modifier.width(12.dp))
+
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.drive_history_parked_at, formatParkedAddress(item.location, unknown)),
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = formatEditorialDate(item.startDate, true),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        Spacer(modifier = Modifier.width(10.dp))
+
+        Column(
+            horizontalAlignment = Alignment.End,
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            Text(
+                text = durationText,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold
+            )
+            if (batteryStart != null && batteryEnd != null) {
+                Text(
+                    text = UnitFormatter.formatSocRange(batteryStart, batteryEnd, ""),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = palette.accent
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.width(4.dp))
+
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+            modifier = Modifier.size(16.dp)
+        )
     }
+}
+
+@Composable
+private fun ParkedItem(
+    item: DriveHistoryItem.Parked,
+    palette: CarColorPalette,
+    onClick: () -> Unit
+) {
+    ParkedRowItem(item, palette, onClick)
 }
 
 /**
