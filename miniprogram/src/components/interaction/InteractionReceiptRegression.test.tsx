@@ -81,7 +81,7 @@ it('clears an expanded interval when receipt boundaries change, disappear or ret
   expect(text()).not.toContain(disclosure)
 })
 it.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY])('never formats non-finite charge evidence %s as an energy measurement', value => {
-  render(<ParkedChargeTimeline sessions={[{ ...sessions[0], energyKwh: value }, sessions[0]]} />)
+  render(<ParkedChargeTimeline sessions={[{ ...sessions[0], energyKwh: value }, { ...sessions[1], energyKwh: 0 }]} />)
   expect(text()).toContain('充入电量未记录'); expect(text()).toContain('0.00 kWh')
   expect(text()).not.toMatch(/NaN|Infinity/)
 })

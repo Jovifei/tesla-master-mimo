@@ -4,6 +4,8 @@ import vehicle from '../../assets/interaction/vehicle-connection.png'
 import vehicleTop from '../../assets/interaction/vehicle-position.png'
 import { hasVisualRouteEndpoints, VISUAL_WHEEL_NAMES, type ConnectionPhase } from '../../domain/interaction_visuals'
 import { restoreTpmsSnapshot, TPMS_WHEELS, type TpmsSnapshot, type TpmsWheel } from '../../domain/tpms'
+import { evaluateTpmsAlerts, validTpmsProfile, type TpmsProfile } from '../../domain/tpms_alerts'
+import type { TpmsPoint } from '../../domain/tpms'
 import { historyDetailDateTime } from '../../domain/history_query'
 import type { RecordedChargeInterval } from '../../services/analysis_types'
 import { useVisualMotion } from './useVisualMotion'
@@ -57,20 +59,26 @@ function RouteInteractionContent({ start, end, active = true, reducedMotion = fa
 export function VehiclePositionSchematic() {
   return <Image className="interaction-vehicle-top" src={vehicleTop} mode="aspectFit" ariaLabel="中性车辆位置示意，不代表当前车型外观" />
 }
-export function TpmsVehicleVisual({ snapshot, selected, onSelect, now = Date.now() }:
-  { snapshot?: TpmsSnapshot | null; selected: TpmsWheel | null; onSelect: (wheel: TpmsWheel | null) => void; now?: number }) {
+export function TpmsVehicleVisual({ snapshot, selected, onSelect, now = Date.now(), profile = null, history = [] }:
+  { snapshot?: TpmsSnapshot | null; selected: TpmsWheel | null; onSelect: (wheel: TpmsWheel | null) => void; now?: number; profile?: TpmsProfile | null; history?: readonly TpmsPoint[] }) {
   const current = restoreTpmsSnapshot(snapshot, now)
+  const comparison = evaluateTpmsAlerts(profile, current, history, now)
+  const latest = TPMS_WHEELS.map(wheel => current.wheels[wheel].observedAt).filter((value): value is string => value != null).sort().pop() ?? null
+  const at = selected ? current.wheels[selected].observedAt : latest
   return <View className="interaction-visual tpms-vehicle-visual">
     <View className="tpms-position-board"><VehiclePositionSchematic />{TPMS_WHEELS.map(wheel => {
       const reading = current.wheels[wheel]
-      const status = reading.state === 'observed' ? '已观测' : reading.state === 'stale' ? '旧观测' : '暂无合格观测'
-      return <Button key={wheel} className={`tpms-position-wheel tpms-position-${wheel} tpms-reading-${reading.state} ${selected === wheel ? 'tpms-position-selected' : ''}`}
-        data-wheel={wheel} data-state={reading.state} data-selected={selected === wheel} ariaLabel={`${VISUAL_WHEEL_NAMES[wheel]} ${reading.pressureBar == null ? '未知' : reading.pressureBar.toFixed(2) + ' bar'} ${status}${selected === wheel ? '，已选中' : ''}`}
+      const rule = comparison.wheels.find(row => row.wheel === wheel)!
+      const alert = rule.state === 'low' || rule.state === 'high' ? rule.state : rule.changed ? 'change' : 'none'
+      const status = rule.state === 'low' ? '低于设置下限' : rule.state === 'high' ? '高于设置上限' : rule.changed ? '变化规则提醒' : rule.state === 'normal' ? '设置范围内' : reading.state === 'observed' ? '已观测' : reading.state === 'stale' ? '旧观测' : '暂无合格观测'
+      return <Button key={wheel} className={`tpms-position-wheel tpms-position-${wheel} tpms-reading-${reading.state} tpms-alert-${alert} ${selected === wheel ? 'tpms-position-selected' : ''}`}
+        data-wheel={wheel} data-state={reading.state} data-alert={alert} data-selected={selected === wheel} ariaLabel={`${VISUAL_WHEEL_NAMES[wheel]} ${reading.pressureBar == null ? '未知' : reading.pressureBar.toFixed(2) + ' bar'} ${status}${selected === wheel ? '，已选中' : ''}`}
         onClick={() => onSelect(selected === wheel ? null : wheel)}><Text className="tpms-position-name">{VISUAL_WHEEL_NAMES[wheel]}</Text>
         <Text className="tpms-position-value">{reading.pressureBar == null ? '—' : reading.pressureBar.toFixed(2)}{reading.pressureBar == null ? '' : ' bar'}</Text>
         <Text className="tpms-position-status">{status}</Text></Button>
     })}</View>
-    {selected ? <Text className="interaction-caption">{VISUAL_WHEEL_NAMES[selected]} · {current.wheels[selected].observedAt ? historyDetailDateTime(current.wheels[selected].observedAt) : '独立观测时间未知'}</Text> : null}
+    {validTpmsProfile(profile) && (profile.enabled || profile.changeEnabled) ? <Text className="interaction-caption">按你保存的阈值比较，不代表车辆原厂告警。</Text> : null}
+    <Text className="interaction-caption" data-observation-time>{selected ? `${VISUAL_WHEEL_NAMES[selected]} · ` : '最近一轮独立观测：'}{at ? historyDetailDateTime(at) : '独立观测时间未知'}</Text>
     <Text className="interaction-caption">点击轮位查看对应历史；再次点击显示全部。位置示意不代表车型识别。</Text>
   </View>
 }

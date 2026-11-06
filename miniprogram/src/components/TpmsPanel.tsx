@@ -6,11 +6,12 @@ import MetricValue from './MetricValue'
 import TpmsHistoryChart from './TpmsHistoryChart'
 import { TpmsVehicleVisual } from './interaction/InteractionVisuals'
 import type { TpmsWheel } from '../domain/tpms'
+import type { TpmsProfile } from '../domain/tpms_alerts'
 
 const wheelNames = { fl: '左前轮', fr: '右前轮', rl: '左后轮', rr: '右后轮' }
-type Props = { snapshot?: TpmsSnapshot | null; report?: TpmsReport | null; history?: TpmsHistory | null; cacheReason?: string | null; now?: number }
+type Props = { snapshot?: TpmsSnapshot | null; report?: TpmsReport | null; history?: TpmsHistory | null; cacheReason?: string | null; now?: number; profile?: TpmsProfile | null }
 
-export default function TpmsPanel({ snapshot, report, history, cacheReason, now = Date.now() }: Props) {
+export default function TpmsPanel({ snapshot, report, history, cacheReason, now = Date.now(), profile = null }: Props) {
   const [selectedWheel, setSelectedWheel] = useState<TpmsWheel | null>(null)
   const [evidenceExpanded, setEvidenceExpanded] = useState(false)
   const [expanded, setExpanded] = useState(false)
@@ -21,7 +22,7 @@ export default function TpmsPanel({ snapshot, report, history, cacheReason, now 
   const page = Math.max(0, Math.min(historyPage, pages - 1))
   return <View className="tpms-section">
     <View className="tpms-heading"><Text className="section-title">胎压</Text></View>
-    <TpmsVehicleVisual snapshot={snapshot} now={now} selected={selectedWheel} onSelect={wheel => { setSelectedWheel(wheel); setEvidenceExpanded(true); setHistoryPage(0) }} />
+    <TpmsVehicleVisual snapshot={snapshot} now={now} profile={profile} history={history?.points} selected={selectedWheel} onSelect={wheel => { setSelectedWheel(wheel); setEvidenceExpanded(true); setHistoryPage(0) }} />
     <View className="tpms-grid">{TPMS_WHEELS.map(wheel => {
       const row = current.wheels[wheel]
       return <View className="tpms-wheel-card" key={wheel}>

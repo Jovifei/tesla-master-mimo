@@ -37,6 +37,8 @@
 .tpms-position-name,.tpms-position-status { display:block; font-size:11px; color:var(--iv-muted); }
 .tpms-position-value { display:block; font-size:15px; font-weight:600; font-variant-numeric:tabular-nums; }
 .interaction-visual .tpms-position-selected { background:var(--iv-soft); border-color:var(--iv-primary); }
+.tpms-alert-low .tpms-position-status,.tpms-alert-high .tpms-position-status,.tpms-alert-change .tpms-position-status { color:var(--iv-warning); font-weight:600; }
+.interaction-visual .tpms-alert-low,.interaction-visual .tpms-alert-high,.interaction-visual .tpms-alert-change { border-color:var(--iv-warning); }
 .tpms-reading-stale .tpms-position-status { color:var(--iv-warning); }
 .tpms-reading-unknown .tpms-position-value { color:var(--iv-muted); }
 .interaction-visual .interaction-disclosure { margin:8px 0 0; background:transparent; color:var(--iv-primary); min-height:44px; padding:8px 0; font-size:13px; line-height:1.5; text-align:left; }
