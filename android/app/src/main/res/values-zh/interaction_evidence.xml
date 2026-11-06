@@ -1,0 +1,17 @@
+<resources>
+    <string name="interaction_evidence_doors">车门</string>
+    <string name="interaction_evidence_windows">车窗</string>
+    <string name="interaction_evidence_frunk">前备箱</string>
+    <string name="interaction_evidence_trunk">后备箱</string>
+    <string name="interaction_evidence_open">报告打开</string>
+    <string name="interaction_evidence_closed">报告关闭</string>
+    <string name="interaction_evidence_unknown">状态未知</string>
+    <string name="interaction_evidence_opening_row">%1$s：%2$s</string>
+    <string name="interaction_evidence_latest_wheel">最近一轮独立观测：%1$s</string>
+    <string name="interaction_evidence_time_unknown">独立观测时间未知</string>
+    <string name="interaction_evidence_interval_complete">已记录充电起止；不证明两次会话之间的采集完整</string>
+    <string name="interaction_evidence_interval_open">已记录充电起点；结束未记录</string>
+    <string name="interaction_evidence_read_failed">历史暂不可用，不代表没有历史记录</string>
+    <string name="interaction_evidence_drive_empty">行程空态示意，请结合当前筛选及数据状态查看</string>
+    <string name="interaction_evidence_charge_empty">充电空态示意，请结合当前筛选及数据状态查看</string>
+</resources>

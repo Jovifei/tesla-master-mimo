@@ -1,0 +1,17 @@
+<resources>
+    <string name="interaction_evidence_doors">Doors</string>
+    <string name="interaction_evidence_windows">Windows</string>
+    <string name="interaction_evidence_frunk">Front trunk</string>
+    <string name="interaction_evidence_trunk">Rear trunk</string>
+    <string name="interaction_evidence_open">Reported open</string>
+    <string name="interaction_evidence_closed">Reported closed</string>
+    <string name="interaction_evidence_unknown">Status unknown</string>
+    <string name="interaction_evidence_opening_row">%1$s: %2$s</string>
+    <string name="interaction_evidence_latest_wheel">Latest independent wheel observation: %1$s</string>
+    <string name="interaction_evidence_time_unknown">Independent observation time unknown</string>
+    <string name="interaction_evidence_interval_complete">Recorded charging start and end; not proof of collection between sessions</string>
+    <string name="interaction_evidence_interval_open">Recorded charging start; end not recorded</string>
+    <string name="interaction_evidence_read_failed">History temporarily unavailable; not evidence of an empty history</string>
+    <string name="interaction_evidence_drive_empty">Trip empty-state illustration; see the current filter and data status</string>
+    <string name="interaction_evidence_charge_empty">Charging empty-state illustration; see the current filter and data status</string>
+</resources>
