@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import VisualIcon from '../../components/VisualIcon'
 import ReadinessChecklist from '../../components/ReadinessChecklist'
 import MetricValue from '../../components/MetricValue'
-import { DashboardVehicleArt, DashboardHero, DashboardHud, DashboardInfoCard, DashboardTpms, DashboardCurrentCharge } from '../../components/dashboard/DashboardParts'
+import { DashboardVehicleArt, DashboardHero, DashboardHud, DashboardInfoCard, DashboardTpms, DashboardCurrentCharge, DashboardRecentDrive } from '../../components/dashboard/DashboardParts'
 import DashboardIcon from '../../components/dashboard/DashboardIcon'
 import { dashboardMetric, dashboardSource, dashboardSnapshot, dashboardReportTime, dashboardVehicleSubtitle, dashboardTemperature } from '../../components/dashboard/presentation'
 import { mapCoordinate } from '../../domain/map_coordinate'
@@ -12,7 +12,8 @@ import { mergeVehicleVisualConfig, resolveVehicleVisual } from '../../domain/veh
 import { ensureVehicleAsset } from '../../services/vehicle_assets'
 import AppearanceSelector from '../../components/dashboard/AppearanceSelector'
 import VehicleRemoteSections, { type CommandOutcome } from '../../components/dashboard/VehicleRemoteSections'
-import type { ChargingSite, VehiclePlace } from '../../services/types'
+import type { ChargingSite, Drive, VehiclePlace } from '../../services/types'
+import { locationDisplayText } from '../../domain/recent_drive'
 import { DEFAULT_VEHICLE_APPEARANCE, clearVehicleAppearance, readVehicleAppearance, writeVehicleAppearance, type VehicleAppearanceScope } from '../../services/vehicle_appearance'
 import './index.scss'
 import { observeTpmsCache, readTpmsCache } from '../../services/tpms_cache'
@@ -65,6 +66,7 @@ export default function VehiclePage() {
   const [status, setStatus] = useState<CarStatus | null>(null)
   const [readinessItems, setReadinessItems] = useState<ReadinessItem[]>([])
   const [pairing, setPairing] = useState<TelemetryPairing | null>(null)
+  const [recentDrive, setRecentDrive] = useState<Drive | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [cached, setCached] = useState(false)
@@ -146,6 +148,21 @@ export default function VehiclePage() {
     }
   }
 
+  const handleNavigateSite = (site: ChargingSite) => {
+    if (site.latitude == null || site.longitude == null) {
+      Taro.showToast({ title: '该充电站暂无位置信息', icon: 'none' })
+      return
+    }
+    void Taro.openLocation({
+      latitude: site.latitude,
+      longitude: site.longitude,
+      name: site.name || '充电站',
+      scale: 16,
+    }).catch(() => {
+      Taro.showToast({ title: '打开地图失败，请稍后重试', icon: 'none' })
+    })
+  }
+
   const handleLoadPlaces = async () => {
     if (!car) return
     setPlacesLoading(true)
@@ -208,7 +225,7 @@ export default function VehiclePage() {
     try { incomingOrigin = getApiOrigin() } catch { /* A changed or invalid origin cannot own the old display. */ }
     if (pageOwner.current && (pageOwner.current !== incomingOwner || (pageOrigin.current && pageOrigin.current !== incomingOrigin))) {
       scopeGate.current.invalidate(); pageOwner.current = null; pageOrigin.current = null; selectedStableId.current = null
-      setCars([]); setCar(null); setStatus(null); setHistoryEvidence(null); setReadinessItems([]); setPairing(null); setCached(false)
+      setCars([]); setCar(null); setStatus(null); setHistoryEvidence(null); setReadinessItems([]); setPairing(null); setRecentDrive(null); setCached(false)
     }
     setLoading(true)
     await ensureWechatSession()
@@ -226,6 +243,7 @@ export default function VehiclePage() {
     try { getApiOrigin() } catch (reason) {
       scopeGate.current.invalidate()
       setCars([]); setCar(null); setStatus(null); setHistoryEvidence(null); setReadinessItems([]); setPairing(null)
+      setRecentDrive(null)
       setLoading(false); setError(messageFor(reason))
       return
     }
@@ -246,6 +264,7 @@ export default function VehiclePage() {
     setHistoryEvidence(null)
     setReadinessItems([])
     setPairing(null)
+    setRecentDrive(null)
     setCached(false)
     if (!session?.userId) {
       scopeGate.current.invalidate()
@@ -254,6 +273,7 @@ export default function VehiclePage() {
       setStatus(null)
       setReadinessItems([])
       setPairing(null)
+      setRecentDrive(null)
       setCached(false)
       setError(null)
       setLoading(false)
@@ -281,6 +301,7 @@ export default function VehiclePage() {
         setStatus(null)
         setReadinessItems([])
         setPairing(null)
+        setRecentDrive(null)
         return
       }
       scopeGate.current.bind({
@@ -291,10 +312,11 @@ export default function VehiclePage() {
       })
       saveSelection(session.userId, selected.stableId)
       setHistoryEvidence(inspectHistoryCache(Taro, session.userId, selected.stableId, origin))
-      const [statusResult, readinessResult, pairingResult] = await Promise.allSettled([
+      const [statusResult, readinessResult, pairingResult, recentDriveResult] = await Promise.allSettled([
         (async () => { const ticket = scopeGate.current.begin('status'); const value = await matelinkApi.getCarSnapshot(selected.id, selected); return { ticket, value } })(),
         (async () => { const ticket = scopeGate.current.begin('readiness'); const value = await matelinkApi.getReadiness(selected.id, selected); return { ticket, value } })(),
         (async () => { const ticket = scopeGate.current.begin('pairing'); const value = await matelinkApi.getTelemetryPairing(selected.id, selected); return { ticket, value } })(),
+        (async () => { const ticket = scopeGate.current.begin('recent-drive'); const value = await matelinkApi.getDrives(selected.id, 1, 1, selected); return { ticket, value: value.items[0] ?? null } })(),
       ])
       if (!ownerIsCurrent()) return
       if (statusResult.status === 'fulfilled' && statusResult.value.ticket.isCurrent()) {
@@ -320,6 +342,8 @@ export default function VehiclePage() {
       else setReadinessItems([])
       if (pairingResult.status === 'fulfilled' && pairingResult.value.ticket.isCurrent()) setPairing(pairingResult.value.value)
       else setPairing(null)
+      if (recentDriveResult.status === 'fulfilled' && recentDriveResult.value.ticket.isCurrent()) setRecentDrive(recentDriveResult.value.value)
+      else setRecentDrive(null)
       const failed = [statusResult, readinessResult, pairingResult].find(item => item.status === 'rejected')
       if (failed?.status === 'rejected') setError(messageFor(failed.reason))
     } catch (reason) {
@@ -336,6 +360,7 @@ export default function VehiclePage() {
         setHistoryEvidence(selected && origin ? inspectHistoryCache(Taro, session.userId, selected.stableId, origin) : null)
         setReadinessItems([])
         setPairing(null)
+        setRecentDrive(null)
         setCached(true)
       }
     } finally {
@@ -366,6 +391,7 @@ export default function VehiclePage() {
       try { originChanged = Boolean(pageOrigin.current && pageOrigin.current !== getApiOrigin()) } catch { originChanged = true }
       if (pageOwner.current && (originChanged || pageOwner.current !== `${readAppSession(Taro)?.userId ?? ''}:${getApiSessionGeneration()}`)) {
         invalidatePage(); setCars([]); setCar(null); setStatus(null); setReadinessItems([]); setPairing(null); setHistoryEvidence(null)
+        setRecentDrive(null)
         pageOwner.current = null
       }
     }, 1000)
@@ -420,6 +446,7 @@ export default function VehiclePage() {
       setHistoryEvidence(null)
       setReadinessItems([])
       setPairing(null)
+      setRecentDrive(null)
       return
     }
     scopeGate.current.invalidate()
@@ -430,6 +457,7 @@ export default function VehiclePage() {
     setHistoryEvidence(null)
     setReadinessItems([])
     setPairing(null)
+    setRecentDrive(null)
     if (next.remoteVerified === false) {
       requestVersion.current += 1
       setLoading(false)
@@ -527,7 +555,7 @@ export default function VehiclePage() {
   const navigate = (url: string) => { void Taro.navigateTo({ url }) }
   const settings = () => navigate('/pages/tools/index?kind=settings')
   const openBattery = () => navigate('/pages/insights/index?kind=battery')
-  const location = status?.geofence?.trim() || (status?.location ? '已获取位置 · 点击查看地图' : '暂无数据')
+  const location = locationDisplayText({ geofence: status?.geofence, location: status?.location, recentDrive }) ?? '暂无数据'
   const headerGeometry = dashboardHeaderGeometry()
   return (
     <View className="page vehicle-page" style={{ paddingTop: `${headerGeometry.top}px` }}>
@@ -543,6 +571,7 @@ export default function VehiclePage() {
         <DashboardHero car={car} status={status} imageSrc={imageSrc} imageLoading={imageLoading} imageError={imageError} onRetryImage={() => setImageRetry(value => value + 1)} onOpenBattery={openBattery} onManagePhoto={appearanceScope ? openAppearance : undefined} appearanceLabel={appearanceLabel} />
         {loading ? <LoadingIndicator label="正在读取最新数据…" compact /> : null}
         <View className="dashboard-location-row"><DashboardInfoCard label="里程" value={dashboardMetric(status.odometer, 'km', 0)} icon="speed" onClick={() => navigate('/pages/analysis/index?kind=mileage')} /><DashboardInfoCard label="位置" value={location} icon="location" onClick={() => { if (map) navigate('/pages/tools/index?kind=location'); else { focusDiagnostics.current = true; setShowDiagnostics(true) } }} /></View>
+        {recentDrive ? <DashboardRecentDrive drive={recentDrive} onOpen={() => { void Taro.switchTab({ url: '/pages/drives/index' }) }} /> : null}
         <View className="dashboard-temperature-row"><DashboardInfoCard label="车内" value={dashboardTemperature(status.insideTemp)} icon="thermostat" onClick={() => navigate('/pages/tools/index?kind=temperature')} /><DashboardInfoCard label="车外" value={dashboardTemperature(status.outsideTemp)} icon="thermostat" onClick={() => navigate('/pages/tools/index?kind=temperature')} /></View>
         <DashboardTpms snapshot={status.tpms} report={status.tpmsReport} warnings={tpmsAlerts} readiness={tpmsReadiness} onOpen={() => navigate('/pages/tools/index?kind=tpms')} />
         {map ? <View className="dashboard-map-card">{!mapFailed ? <Map id="dashboard-map" latitude={map.latitude} longitude={map.longitude} scale={15} showLocation={false} markers={[{ id: 1, ...map, iconPath: '/assets/tabs/vehicle-selected.png', width: 24, height: 24, title: car.displayName || car.name || '车辆' }]} onError={() => setMapFailed(true)} /> : <View className="dashboard-map-unavailable"><Text>地图暂时无法载入</Text><Button className="dashboard-text-button" onClick={() => setMapFailed(false)}>重试地图</Button></View>}</View> : null}
@@ -561,6 +590,7 @@ export default function VehiclePage() {
           nearbyLoading={nearbyLoading}
           nearbyError={nearbyError}
           onLoadNearby={() => void handleLoadNearby()}
+          onNavigateSite={handleNavigateSite}
           places={places}
           placesLoading={placesLoading}
           placesError={placesError}

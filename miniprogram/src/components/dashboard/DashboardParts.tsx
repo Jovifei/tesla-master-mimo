@@ -1,7 +1,8 @@
 import { APP_DISPLAY_CONTRACT } from '../../domain/app_display_contract'
 import { createElement } from 'react'
 import { Button, Text, View } from '@tarojs/components'
-import type { Car, CarStatus } from '../../services/types'
+import type { Car, CarStatus, Drive } from '../../services/types'
+import { recentDriveCardModel } from '../../domain/recent_drive'
 import { restoreTpmsSnapshot, TPMS_WHEELS, type TpmsReport, type TpmsSnapshot } from '../../domain/tpms'
 import type { TpmsAlert } from '../../domain/tpms_alerts'
 import DashboardIcon, { type DashboardIconName } from './DashboardIcon'
@@ -145,6 +146,29 @@ export function DashboardTpms({ snapshot, report, warnings, readiness, onOpen }:
     const missing = readiness && readiness.status !== 'available' ? dashboardTpmsPlaceholder(readiness) : '暂无数据'
     return <DashboardInfoCard key={wheel} label={names[wheel]} value={pressure == null ? missing : dashboardMetric(pressure, 'bar')} onClick={onOpen} warning={Boolean(warning)} hint={hint} />
   })}</View></View>
+}
+
+export function DashboardRecentDrive({ drive, onOpen }: { drive: Drive; onOpen: () => void }) {
+  const model = recentDriveCardModel(drive)
+  return <View className="dashboard-recent-drive" onClick={onOpen}>
+    <View className="recent-drive-header">
+      <View className="recent-drive-title"><DashboardIcon name="car" /><Text className="dashboard-section-title">最近行程</Text></View>
+      <Text className="recent-drive-time">{model.endTimeText ? `${model.endTimeText} ›` : '›'}</Text>
+    </View>
+    <View className="recent-drive-route-row">
+      <Text className="recent-drive-route">{model.routeText}</Text>
+      <View className="recent-drive-dist">
+        <Text className="recent-drive-distance">{model.distanceText}</Text>
+        {model.socRangeText ? <Text className="recent-drive-soc">{model.socRangeText}</Text> : null}
+      </View>
+    </View>
+    <View className="recent-drive-capsules">
+      {model.capsules.map(capsule => <View className="recent-drive-capsule" key={capsule.label}>
+        <Text className="recent-drive-capsule-label">{capsule.label}</Text>
+        <Text className="recent-drive-capsule-value">{capsule.value}</Text>
+      </View>)}
+    </View>
+  </View>
 }
 
 export function DashboardCurrentCharge({ status, onOpen }: { status: CarStatus; onOpen: () => void }) {

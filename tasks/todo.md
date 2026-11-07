@@ -4409,3 +4409,13 @@ Review: 小程序开发本阶段收口，后续改动应另开阶段。所有代
 - [x] 版本升至 0.6.7，更新 `package.json`、`package-lock.json`、`CHANGELOG.md`、关于页及任务台账。
 - [x] 提交至 `codex/miniprogram-e-migration-20261029` 分支并推送 GitHub 远端；保证与 `app_mimo` 物理隔离与 0 触碰。
 - [x] 关联 Figma 设计文件：https://www.figma.com/design/F112Y2qzAryxOfitvYumfT
+
+## 2026-11-08 小程序对齐 App v2.1.87 · 阶段一（首页）— 分支 muse/mini-align-20261108
+
+- [x] 分级配对 phase 移植（原 PR #43 单提交 cherry-pick 至当前线尖）：TelemetryPairing 增加 phase，诊断页改用后端分级口径（服务端值优先，旧后端回退本地推导）。
+- [x] 附近充电三件套对齐 App：ChargingSite 增加 price_text / parking_policy 并贯通 API 归一化；站点行新增电价（绿色加粗）+ 停车政策行，后端无值时按 App 同口径兜底（超充 ¥1.25/度（分时）/ 充电免费停车2小时；目的地 ¥1.15/度 / 前2小时免费停车）；桩位文案改「空闲 a/b」；整行点按打开地图定位导航（Taro.openLocation）。注：两端均只显示前 5 条，经核 App 同样 take(5)，不作改动。
+- [x] 删除地点二次确认：与 App pendingDelete 弹窗同构（删除地点「名称」？→ 确认执行/取消），点击删除不再直删。
+- [x] 首页最近行程卡（App DashboardRecentDriveCard 同构）：随仪表盘加载并行拉取最近一条行程（scopeGate 车道 recent-drive，失败静默隐藏不报错）；路线（formatRouteAddresses）+ 距离 + SOC 区间 + 能耗/里程/时长/极速四胶囊；点按切换到行程页。
+- [x] 位置卡地址对齐：围栏名优先 → 车仍停在最近行程终点 300 米内时显示该终点中文地址 → 否则保留简洁占位「已获取位置 · 点击查看地图」（小程序既有刻意设计：原始坐标留给地图页，此点与 App 的坐标兜底分支不同，属有意保留）。
+- [x] 验证（阶段门禁）：tsc 0 错误；定点测试全过（domain/nearby 4、domain/recent_drive 6、diagnostic 13、VehicleRemoteSections 5、vehicle_page 55——含加载请求数契约 4→5 的更新：仪表盘新增最近行程拉取，与 App 一致）。
+- [x] 全量门禁：npm test 81 文件 / 1008 项全过（exit 0）；build:weapp 成功（197 文件，资产校验通过）。

@@ -509,6 +509,8 @@ export type ChargingSite = {
   available_stalls: number | null
   total_stalls: number | null
   site_closed: boolean | null
+  price_text: string | null
+  parking_policy: string | null
 }
 
 export type NearbyChargingData = {
