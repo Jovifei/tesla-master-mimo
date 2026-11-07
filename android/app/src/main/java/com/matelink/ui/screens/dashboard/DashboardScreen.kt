@@ -36,6 +36,9 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Thermostat
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.ui.zIndex
+import kotlinx.coroutines.delay
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -227,13 +230,22 @@ fun DashboardScreen(
         )
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
+    val remoteUiState by remoteViewModel.uiState.collectAsState()
+    LaunchedEffect(remoteUiState.outcome) {
+        if (remoteUiState.outcome != null) {
+            delay(3500)
+            remoteViewModel.consumeOutcome()
+        }
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
         // Top bar
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -958,6 +970,76 @@ fun DashboardScreen(
             }
         }
     }
+
+    // Apple-style Dynamic Floating Capsule for vehicle commands
+    androidx.compose.animation.AnimatedVisibility(
+        visible = remoteUiState.busyCommand != null || remoteUiState.outcome != null,
+        enter = fadeIn() + slideInVertically(initialOffsetY = { -it }),
+        exit = fadeOut() + slideOutVertically(targetOffsetY = { -it }),
+        modifier = Modifier
+            .align(Alignment.TopCenter)
+            .padding(top = 16.dp)
+            .zIndex(10f)
+    ) {
+        Surface(
+            shape = RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHighest,
+            shadowElevation = 8.dp,
+            border = androidx.compose.foundation.BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 9.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (remoteUiState.busyCommand != null) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = "正在送达车机指令...",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+                } else if (remoteUiState.outcome is CommandOutcome.Accepted) {
+                    Icon(
+                        imageVector = Icons.Default.CheckCircle,
+                        contentDescription = null,
+                        tint = Color(0xFF10B981),
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Text(
+                        text = "指令已送达并生效",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFF10B981)
+                    )
+                } else if (remoteUiState.outcome is CommandOutcome.Failed) {
+                    val outcome = remoteUiState.outcome as CommandOutcome.Failed
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    val errorText = when (outcome.errorClass) {
+                        "offline" -> "车机离线休眠中"
+                        "unauthorized" -> "特斯拉车机权限未授权"
+                        else -> "指令未生效 (${outcome.errorClass})"
+                    }
+                    Text(
+                        text = errorText,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+        }
+    }
+}
 }
 
 @Composable

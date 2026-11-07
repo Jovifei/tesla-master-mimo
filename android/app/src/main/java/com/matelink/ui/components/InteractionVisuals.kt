@@ -7,6 +7,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -227,14 +229,48 @@ fun TpmsVehicleVisual(readings: Map<TirePosition, VisualWheelReading>, selected:
                                 reading.state == VisualWheelState.WARNING) MaterialTheme.colorScheme.error
                                 else if (reading.state == VisualWheelState.RECORDED) MaterialTheme.colorScheme.primary
                                 else MaterialTheme.colorScheme.onSurfaceVariant
-                            Column(Modifier.fillMaxWidth().heightIn(min = 56.dp)
-                                .testTag("interaction-wheel-${wheel.name}")
-                                .selectable(isSelected, role = Role.Button, onClick = { onSelect(if (isSelected) null else wheel) })
-                                .background(if (isSelected) MaterialTheme.colorScheme.primaryContainer
-                                    else MaterialTheme.colorScheme.surface, RoundedCornerShape(12.dp)).padding(horizontal = 4.dp, vertical = 8.dp)) {
-                                Text(label, style = MaterialTheme.typography.labelSmall)
-                                Text(value, style = MaterialTheme.typography.titleSmall, color = accent)
-                                Text(stateLabel, style = MaterialTheme.typography.labelSmall, color = accent)
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("interaction-wheel-${wheel.name}")
+                                    .selectable(isSelected, role = Role.Button, onClick = { onSelect(if (isSelected) null else wheel) }),
+                                shape = RoundedCornerShape(14.dp),
+                                color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
+                                    else MaterialTheme.colorScheme.surfaceContainerHigh,
+                                border = BorderStroke(
+                                    1.dp,
+                                    if (isSelected) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f)
+                                )
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                                ) {
+                                    Text(
+                                        text = label,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        text = value,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = accent
+                                    )
+                                    Surface(
+                                        shape = RoundedCornerShape(4.dp),
+                                        color = accent.copy(alpha = 0.12f)
+                                    ) {
+                                        Text(
+                                            text = stateLabel,
+                                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                                            fontWeight = FontWeight.Medium,
+                                            color = accent,
+                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -246,14 +282,12 @@ fun TpmsVehicleVisual(readings: Map<TirePosition, VisualWheelReading>, selected:
             else displayReadings[selected]?.observedAt
         val time = observedAt?.let { DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(it)) }
             ?: stringResource(R.string.interaction_evidence_time_unknown)
-        Text(if (selected == null) stringResource(R.string.interaction_evidence_latest_wheel, time)
-            else wheelVisualLabel(selected) + " · " + time,
-            modifier = Modifier.testTag("interaction-wheel-observed-at"),
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        if (selected == null) Text(stringResource(R.string.interaction_wheel_select),
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(stringResource(R.string.interaction_vehicle_schematic), style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(
+            text = if (selected == null) time else "${wheelVisualLabel(selected)} · $time",
+            modifier = Modifier.testTag("interaction-wheel-observed-at").padding(top = 4.dp),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 

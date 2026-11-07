@@ -6,6 +6,8 @@ import com.matelink.domain.model.connectionVisualPhase
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -37,6 +39,11 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.TextButton
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -230,107 +237,104 @@ private fun LoginEntryPanels(
     viewModel: TeslaLoginViewModel,
     onOpenSelfHosted: () -> Unit
 ) {
-    LoginPanel {
-        Text(
-            text = stringResource(R.string.tesla_login_documents_section),
-            style = MaterialTheme.typography.titleMedium
-        )
-        Text(
-            text = stringResource(R.string.tesla_login_documents_hint),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        ConsentRow(
-            checked = termsAccepted,
-            label = stringResource(R.string.tesla_login_terms_consent),
-            onCheckedChange = onTermsChanged
-        )
-        DocumentButton(
-            label = stringResource(R.string.tesla_login_view_terms),
-            enabled = termsUrl != null,
-            onClick = {
-                termsUrl?.let { url ->
-                    context.launchExternalIntentSafely(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                }
-            }
-        )
-        ConsentRow(
-            checked = privacyAccepted,
-            label = stringResource(R.string.tesla_login_privacy_consent),
-            onCheckedChange = onPrivacyChanged
-        )
-        DocumentButton(
-            label = stringResource(R.string.tesla_login_view_privacy),
-            enabled = privacyUrl != null,
-            onClick = {
-                privacyUrl?.let { url ->
-                    context.launchExternalIntentSafely(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                }
-            }
-        )
-    }
-
-    LoginPanel(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                imageVector = Icons.Filled.Cloud,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary
-            )
-            Spacer(Modifier.width(10.dp))
-            Text(
-                text = stringResource(R.string.tesla_login_cloud_section),
-                style = MaterialTheme.typography.titleMedium
-            )
-        }
-        Text(
-            text = stringResource(R.string.tesla_login_cloud_hint),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Button(
-            onClick = { viewModel.startTeslaLogin(termsAccepted, privacyAccepted) },
-            enabled = termsAccepted && privacyAccepted && legalDocumentsConfigured &&
-                BuildConfig.JOURVOLT_CLOUD_LOGIN && uiState !is TeslaLoginUiState.Loading,
-            modifier = Modifier.fillMaxWidth()
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer
+        ),
+        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+    ) {
+        Column(
+            modifier = Modifier.padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Icon(Icons.Filled.Lock, contentDescription = null)
-            Spacer(Modifier.width(8.dp))
-            Text(stringResource(R.string.tesla_login_button))
-        }
-        if (!legalDocumentsConfigured) {
-            Text(
-                text = stringResource(R.string.tesla_login_documents_unavailable),
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodySmall
-            )
+            Button(
+                onClick = { viewModel.startTeslaLogin(termsAccepted, privacyAccepted) },
+                enabled = termsAccepted && privacyAccepted && legalDocumentsConfigured &&
+                    BuildConfig.JOURVOLT_CLOUD_LOGIN && uiState !is TeslaLoginUiState.Loading,
+                shape = RoundedCornerShape(24.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp)
+            ) {
+                Icon(Icons.Filled.Lock, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = "使用 Tesla 账号安全连接",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                ConsentRow(
+                    checked = termsAccepted,
+                    label = stringResource(R.string.tesla_login_terms_consent),
+                    onCheckedChange = onTermsChanged
+                )
+                DocumentButton(
+                    label = stringResource(R.string.tesla_login_view_terms),
+                    enabled = termsUrl != null,
+                    onClick = {
+                        termsUrl?.let { url ->
+                            context.launchExternalIntentSafely(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                        }
+                    }
+                )
+                ConsentRow(
+                    checked = privacyAccepted,
+                    label = stringResource(R.string.tesla_login_privacy_consent),
+                    onCheckedChange = onPrivacyChanged
+                )
+                DocumentButton(
+                    label = stringResource(R.string.tesla_login_view_privacy),
+                    enabled = privacyUrl != null,
+                    onClick = {
+                        privacyUrl?.let { url ->
+                            context.launchExternalIntentSafely(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                        }
+                    }
+                )
+            }
+
+            if (!legalDocumentsConfigured) {
+                Text(
+                    text = stringResource(R.string.tesla_login_documents_unavailable),
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
         }
     }
 
-    LoginPanel(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+    Spacer(Modifier.height(8.dp))
+
+    // Subtle tertiary link for self-hosted
+    Box(
+        modifier = Modifier.fillMaxWidth(),
+        contentAlignment = Alignment.Center
+    ) {
+        TextButton(
+            onClick = onOpenSelfHosted,
+            enabled = uiState !is TeslaLoginUiState.Loading
+        ) {
             Icon(
                 imageVector = Icons.Filled.SettingsEthernet,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary
+                modifier = Modifier.size(14.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Spacer(Modifier.width(10.dp))
+            Spacer(Modifier.width(6.dp))
             Text(
-                text = stringResource(R.string.tesla_login_self_hosted),
-                style = MaterialTheme.typography.titleMedium
+                text = "自建 TeslaMate 服务器接入 >",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-        }
-        Text(
-            text = stringResource(R.string.tesla_login_self_hosted_hint),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        OutlinedButton(
-            onClick = onOpenSelfHosted,
-            enabled = uiState !is TeslaLoginUiState.Loading,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text(stringResource(R.string.tesla_login_self_hosted_open))
         }
     }
 }
@@ -439,35 +443,26 @@ private fun TeslaBlockedOnboardingPanel(reason: String?, onRetry: () -> Unit, on
 
 @Composable
 private fun LoginHeaderPanel(phase: ConnectionVisualPhase, pairing: Boolean) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer
-        )
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Column(
-            modifier = Modifier.padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            ConnectionVisual(phase = phase, vehicle = pairing)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Filled.Description,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer
-                )
-                Spacer(Modifier.width(10.dp))
-                Text(
-                    text = stringResource(R.string.app_name),
-                    style = MaterialTheme.typography.headlineSmall
-                )
-            }
-            Text(
-                text = stringResource(R.string.tesla_login_description),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onPrimaryContainer
-            )
-        }
+        ConnectionVisual(phase = phase, vehicle = pairing)
+        Text(
+            text = stringResource(R.string.app_name),
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold
+        )
+        Text(
+            text = "连接你的 Tesla 智能座驾，安全同步行车与充电数据",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            modifier = Modifier.padding(horizontal = 16.dp)
+        )
     }
 }
 

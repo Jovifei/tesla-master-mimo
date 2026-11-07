@@ -208,11 +208,12 @@ private fun TelemetryMetricCell(
             )
         }
         if (compact) {
+            val baseSize = metric.valueFontSize ?: 16.sp
             val calcFontSize = when {
-                number.length >= 7 -> 12.sp
-                number.length >= 6 -> 13.5.sp
-                number.length >= 5 -> 14.5.sp
-                else -> metric.valueFontSize ?: 16.sp
+                number.length >= 8 -> (baseSize.value - 2.5f).sp
+                number.length >= 7 -> (baseSize.value - 1.5f).sp
+                number.length >= 6 -> (baseSize.value - 0.5f).sp
+                else -> baseSize
             }
             Row(
                 modifier = Modifier.fillMaxWidth(),

@@ -753,45 +753,48 @@ internal fun SummaryCard(
                                     if (summary.totalCharges == 1) R.string.charge_session_unit
                                     else R.string.charge_sessions_unit
                                 ),
-                                valueFontSize = 18.sp
+                                valueFontSize = 16.sp
                             ),
                             TelemetryMetricSpec(
                                 Icons.Default.BatteryChargingFull,
                                 stringResource(R.string.energy),
                                 summary.totalEnergyAdded?.let { energy ->
-                                    val value = when {
-                                        energy > 999 -> "%.2f MWh".format(energy / 1000)
-                                        energy < 10 -> "%.1f 度".format(energy)
-                                        else -> "%.1f 度".format(energy)
+                                    val prefix = if (summary.partialEnergyCount > 0 || summary.energyCoverage < summary.totalCharges) "≈" else ""
+                                    when {
+                                        energy > 999 -> "$prefix%.2f".format(energy / 1000)
+                                        energy < 10 -> "$prefix%.1f".format(energy)
+                                        else -> "$prefix%.1f".format(energy)
                                     }
-                                    if (summary.partialEnergyCount > 0 || summary.energyCoverage < summary.totalCharges) "≈$value" else value
                                 } ?: stringResource(R.string.not_available),
                                 palette.acColor,
-                                valueFontSize = 18.sp
+                                unit = if (summary.totalEnergyAdded != null && summary.totalEnergyAdded > 999) "MWh" else "度",
+                                valueFontSize = 16.sp
                             ),
                             TelemetryMetricSpec(
                                 Icons.Default.Paid,
                                 stringResource(R.string.cost),
                                 summary.totalCost?.let { cost ->
-                                    val value = when {
-                                        cost < 100 -> "$currencySymbol%.2f".format(cost)
-                                        cost < 1000 -> "$currencySymbol%.1f".format(cost)
-                                        else -> "$currencySymbol%.0f".format(cost)
+                                    val prefix = if (summary.estimatedCostCount > 0 || summary.costCoverage < summary.totalCharges) "≈" else ""
+                                    when {
+                                        cost < 100 -> "$prefix%.2f".format(cost)
+                                        cost < 1000 -> "$prefix%.1f".format(cost)
+                                        else -> "$prefix%.0f".format(cost)
                                     }
-                                    if (summary.estimatedCostCount > 0 || summary.costCoverage < summary.totalCharges) "≈$value" else value
                                 } ?: stringResource(R.string.not_available),
                                 Color(0xFF22C55E),
-                                valueFontSize = 18.sp
+                                unit = if (summary.totalCost != null) currencySymbol else null,
+                                valueFontSize = 16.sp
                             ),
                             TelemetryMetricSpec(
                                 Icons.Default.Paid,
                                 stringResource(R.string.summary_avg_charge_compact),
                                 summary.avgCostPerCharge?.let { cost ->
-                                    val value = "$currencySymbol%.2f".format(cost)
-                                    if (summary.estimatedCostCount > 0 || summary.costCoverage < summary.totalCharges) "≈$value" else value
+                                    val prefix = if (summary.estimatedCostCount > 0 || summary.costCoverage < summary.totalCharges) "≈" else ""
+                                    "$prefix%.2f".format(cost)
                                 } ?: stringResource(R.string.not_available),
                                 palette.dcColor,
-                                valueFontSize = 18.sp
+                                unit = if (summary.avgCostPerCharge != null) currencySymbol else null,
+                                valueFontSize = 16.sp
                             )
                         ),
                         adaptive = false,
@@ -1227,6 +1230,24 @@ private fun ChargesChartPage(
         }
 
         Spacer(modifier = Modifier.height(12.dp))
+
+        val unitLabel = when (chartType) {
+            ChargesChartType.ENERGY -> "单位：度"
+            ChargesChartType.COST -> "单位：$currencySymbol"
+            ChargesChartType.COUNT -> "单位：次"
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(24.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = unitLabel,
+                style = MaterialTheme.typography.labelMedium,
+                color = palette.onSurfaceVariant
+            )
+        }
 
         val barData = when (chartType) {
             ChargesChartType.ENERGY -> chartData.map { data ->

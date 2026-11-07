@@ -1185,22 +1185,18 @@ internal fun DrivesChartPage(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 6.dp),
+                .height(24.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = stringResource(R.string.visual_trip_chart_unit, axisUnit),
+                text = stringResource(R.string.visual_trip_chart_unit, axisUnit) +
+                    if (missingData) " · ${stringResource(R.string.history_chart_partial_data)}" else "",
                 style = MaterialTheme.typography.labelMedium,
-                color = palette.onSurfaceVariant
+                color = palette.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
-            if (missingData) {
-                Text(
-                    text = stringResource(R.string.history_chart_partial_data),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = palette.onSurfaceVariant.copy(alpha = 0.8f)
-                )
-            }
         }
         if (barData.isEmpty()) {
             Text(
@@ -1213,7 +1209,7 @@ internal fun DrivesChartPage(
         InteractiveBarChart(
             data = barData,
             modifier = Modifier.fillMaxWidth(),
-            barColor = Color(0xFF0891B2),
+            barColor = palette.accent,
             labelColor = palette.onSurfaceVariant,
             showEveryNthLabel = labelInterval,
             valueFormatter = valueFormatter,
