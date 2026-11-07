@@ -94,6 +94,7 @@ internal interface VampirePageSource {
     fun isCurrentNow(proof: VerifiedHistoryReadContext): Boolean
     suspend fun standby(carId: Int): ApiResult<List<StandbyWindowData>>
     suspend fun history(carId: Int): ApiResult<UnifiedHistory>
+    suspend fun historyCached(carId: Int): ApiResult<UnifiedHistory>? = null
 }
 
 @HiltViewModel
@@ -111,6 +112,7 @@ class VampireViewModel internal constructor(
         override fun isCurrentNow(proof: VerifiedHistoryReadContext) = contexts.isHistoryContextCurrentNow(proof.scope, proof.context)
         override suspend fun standby(carId: Int) = repository.getStandbyWindows(carId)
         override suspend fun history(carId: Int) = historyRepository.load(carId)
+        override suspend fun historyCached(carId: Int) = historyRepository.loadCached(carId)
     })
     private val _uiState = MutableStateFlow(VampireUiState())
     val uiState = _uiState.asStateFlow()
@@ -168,6 +170,19 @@ class VampireViewModel internal constructor(
                 }
                 checkProof()
                 activeProof = proof
+                // Fast-path: publish Room cached local standby windows immediately (<50ms)
+                val cached = try { source.historyCached(carId) }
+                    catch (e: CancellationException) { throw e }
+                    catch (_: Exception) { null }
+                if (cached is ApiResult.Success &&
+                    cached.data.context == proof.context &&
+                    cached.data.verifiedReadContext?.scope == proof.scope) {
+                    val localWindows = buildLocalStandbyWindows(cached.data.drives, cached.data.charges)
+                    if (localWindows.isNotEmpty()) {
+                        allWindows = localWindows.mapNotNull(::toQualifiedWindow)
+                        recalculate(_uiState.value.selectedWindow)
+                    }
+                }
                 when (val response = loadStandbyWindows(carId, proof, ::checkProof)) {
                     is ApiResult.Error -> _uiState.value = VampireUiState(
                         isLoading = false,

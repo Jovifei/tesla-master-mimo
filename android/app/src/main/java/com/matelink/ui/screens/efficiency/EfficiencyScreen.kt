@@ -7,6 +7,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
@@ -118,11 +119,51 @@ fun EfficiencyScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            if (uiState.historyFreshness == HistoryFreshness.STALE) {
-                CachedHistoryBanner(
-                    title = stringResource(R.string.metric_state_cached_title),
-                    body = stringResource(R.string.metric_state_cached_body)
+            var showCachedNoticeDialog by remember { mutableStateOf(false) }
+            if (showCachedNoticeDialog) {
+                AlertDialog(
+                    onDismissRequest = { showCachedNoticeDialog = false },
+                    title = { Text(stringResource(R.string.metric_state_cached_title)) },
+                    text = { Text(stringResource(R.string.metric_state_cached_body)) },
+                    confirmButton = {
+                        TextButton(onClick = { showCachedNoticeDialog = false }) {
+                            Text(stringResource(android.R.string.ok))
+                        }
+                    }
                 )
+            }
+            if (uiState.historyFreshness == HistoryFreshness.STALE) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showCachedNoticeDialog = true },
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    border = BorderStroke(
+                        0.5.dp,
+                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(15.dp)
+                        )
+                        Text(
+                            text = "历史缓存 · 仅供离线查看 ⓘ",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
             }
 
             // Summary card - Average Efficiency
@@ -222,17 +263,47 @@ fun EfficiencyScreen(
             }
 
             uiState.personalPercentile?.let { position ->
+                var showPositionInfo by remember { mutableStateOf(false) }
+                if (showPositionInfo) {
+                    AlertDialog(
+                        onDismissRequest = { showPositionInfo = false },
+                        title = { Text(stringResource(R.string.efficiency_personal_position)) },
+                        text = { Text(stringResource(R.string.efficiency_public_benchmark_unavailable)) },
+                        confirmButton = {
+                            TextButton(onClick = { showPositionInfo = false }) {
+                                Text(stringResource(android.R.string.ok))
+                            }
+                        }
+                    )
+                }
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(16.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Text(
-                            text = stringResource(R.string.efficiency_personal_position),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = stringResource(R.string.efficiency_personal_position),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.weight(1f)
+                            )
+                            IconButton(
+                                onClick = { showPositionInfo = true },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Info,
+                                    contentDescription = stringResource(R.string.efficiency_personal_position),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
                         Text(
                             text = stringResource(R.string.efficiency_percentile_summary, position.percentile, position.sampleCount),
                             style = MaterialTheme.typography.bodyLarge,
@@ -263,12 +334,7 @@ fun EfficiencyScreen(
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = stringResource(R.string.efficiency_public_benchmark_unavailable),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+
                     }
                 }
             }

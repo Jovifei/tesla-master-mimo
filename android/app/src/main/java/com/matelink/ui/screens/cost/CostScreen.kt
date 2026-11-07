@@ -1,11 +1,13 @@
 package com.matelink.ui.screens.cost
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
@@ -116,11 +118,51 @@ fun CostScreen(
                 modifier = Modifier.fillMaxWidth()
             )
 
-            if (uiState.historyFreshness == HistoryFreshness.STALE) {
-                CachedHistoryBanner(
-                    title = stringResource(R.string.metric_state_cached_title),
-                    body = stringResource(R.string.metric_state_cached_body)
+            var showCachedNoticeDialog by remember { mutableStateOf(false) }
+            if (showCachedNoticeDialog) {
+                AlertDialog(
+                    onDismissRequest = { showCachedNoticeDialog = false },
+                    title = { Text(stringResource(R.string.metric_state_cached_title)) },
+                    text = { Text(stringResource(R.string.metric_state_cached_body)) },
+                    confirmButton = {
+                        TextButton(onClick = { showCachedNoticeDialog = false }) {
+                            Text(stringResource(android.R.string.ok))
+                        }
+                    }
                 )
+            }
+            if (uiState.historyFreshness == HistoryFreshness.STALE) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showCachedNoticeDialog = true },
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    border = BorderStroke(
+                        0.5.dp,
+                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(15.dp)
+                        )
+                        Text(
+                            text = "历史缓存 · 仅供离线查看 ⓘ",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
             }
 
             if (uiState.totalCharges == 0) {

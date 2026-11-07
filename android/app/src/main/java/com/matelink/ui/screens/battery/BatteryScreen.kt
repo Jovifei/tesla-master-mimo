@@ -222,12 +222,69 @@ private fun BatteryHealthContent(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        if (showCachedNotice) CachedHistoryBanner(
-            title = stringResource(R.string.metric_state_cached_title),
-            body = stringResource(R.string.battery_cached_scope_notice)
-        )
-
         val trend = stats.batteryTrend?.takeIf { it.source != BatteryTrendSource.UNAVAILABLE }
+    var showObservedHealthDialog by remember { mutableStateOf(false) }
+    var showEstimatedHealthDialog by remember { mutableStateOf(false) }
+    var showCachedDialog by remember { mutableStateOf(false) }
+
+    if (showObservedHealthDialog) {
+        InfoDialog(
+            title = stringResource(R.string.battery_health_title),
+            message = stringResource(R.string.battery_capacity_observed_note),
+            onDismiss = { showObservedHealthDialog = false }
+        )
+    }
+    if (showEstimatedHealthDialog) {
+        val msg = trend?.let {
+            "基于额定续航历史样本估算 (${it.sampleCount} 个有效样本 · ${it.coverageDays} 天)"
+        } ?: stringResource(R.string.battery_health_title)
+        InfoDialog(
+            title = stringResource(R.string.battery_health_title),
+            message = msg,
+            onDismiss = { showEstimatedHealthDialog = false }
+        )
+    }
+    if (showCachedDialog) {
+        InfoDialog(
+            title = stringResource(R.string.metric_state_cached_title),
+            message = stringResource(R.string.battery_cached_scope_notice),
+            onDismiss = { showCachedDialog = false }
+        )
+    }
+
+        if (showCachedNotice) {
+            androidx.compose.material3.Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { showCachedDialog = true },
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                border = androidx.compose.foundation.BorderStroke(
+                    0.5.dp,
+                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+                )
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Info,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(15.dp)
+                    )
+                    Text(
+                        text = "历史缓存 · 仅供离线查看 ⓘ",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+        }
         val trendDegradation = trend?.degradationPercent
         val trendEstimatedHealth = trendDegradation?.let { (100.0 - it).coerceIn(0.0, 100.0) }
 
@@ -251,12 +308,20 @@ private fun BatteryHealthContent(
                     TelemetrySectionHeader(
                         icon = Icons.Default.BatteryChargingFull,
                         title = stringResource(R.string.battery_health_title),
-                        accent = healthColor
-                    )
-                    Text(
-                        text = stringResource(R.string.battery_capacity_observed_note),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        accent = healthColor,
+                        trailing = {
+                            IconButton(
+                                onClick = { showObservedHealthDialog = true },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Info,
+                                    contentDescription = stringResource(R.string.battery_health_title),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
                     )
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -315,12 +380,20 @@ private fun BatteryHealthContent(
                     TelemetrySectionHeader(
                         icon = Icons.Default.BatteryChargingFull,
                         title = stringResource(R.string.battery_health_title),
-                        accent = healthColor
-                    )
-                    Text(
-                        text = "基于额定续航历史样本估算 (${trend.sampleCount} 个有效样本 · ${trend.coverageDays} 天)",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        accent = healthColor,
+                        trailing = {
+                            IconButton(
+                                onClick = { showEstimatedHealthDialog = true },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Info,
+                                    contentDescription = stringResource(R.string.battery_health_title),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
                     )
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -509,7 +582,18 @@ private fun BatteryTrendCard(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            var showTrendInfoDialog by remember { mutableStateOf(false) }
+            if (showTrendInfoDialog) {
+                InfoDialog(
+                    title = title,
+                    message = description,
+                    onDismiss = { showTrendInfoDialog = false }
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Icon(
                     imageVector = Icons.Filled.BatteryChargingFull,
                     contentDescription = null,
@@ -521,14 +605,21 @@ private fun BatteryTrendCard(
                     text = title,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    color = palette.onSurface
+                    color = palette.onSurface,
+                    modifier = Modifier.weight(1f)
                 )
+                IconButton(
+                    onClick = { showTrendInfoDialog = true },
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Info,
+                        contentDescription = title,
+                        tint = palette.onSurfaceVariant.copy(alpha = 0.65f),
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
             }
-            Text(
-                text = description,
-                style = MaterialTheme.typography.bodySmall,
-                color = palette.onSurfaceVariant
-            )
             Text(
                 text = status,
                 style = MaterialTheme.typography.bodyMedium,
@@ -615,18 +706,40 @@ private fun BatteryTrendChart(
     Canvas(
         modifier = Modifier
             .fillMaxWidth()
-            .height(120.dp)
+            .height(130.dp)
             .semantics { contentDescription = chartDescription }
     ) {
         val step = size.width / (points.size - 1).coerceAtLeast(1)
         val path = Path()
+        val fillPath = Path()
         points.forEachIndexed { index, point ->
             val x = index * step
             val y = size.height -
-                ((point.normalizedRangeKm - minValue) / valueRange).toFloat() * size.height
-            if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
-            drawCircle(palette.accent, radius = 4.dp.toPx(), center = Offset(x, y))
+                ((point.normalizedRangeKm - minValue) / valueRange).toFloat() * (size.height - 16.dp.toPx()) - 8.dp.toPx()
+            if (index == 0) {
+                path.moveTo(x, y)
+                fillPath.moveTo(x, y)
+            } else {
+                path.lineTo(x, y)
+                fillPath.lineTo(x, y)
+            }
+            drawCircle(palette.accent, radius = 3.dp.toPx(), center = Offset(x, y))
         }
+        fillPath.lineTo(size.width, size.height)
+        fillPath.lineTo(0f, size.height)
+        fillPath.close()
+
+        drawPath(
+            path = fillPath,
+            brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                colors = listOf(
+                    palette.accent.copy(alpha = 0.22f),
+                    palette.accent.copy(alpha = 0.02f)
+                ),
+                startY = 0f,
+                endY = size.height
+            )
+        )
         drawLine(
             color = palette.onSurface.copy(alpha = 0.12f),
             start = Offset(0f, size.height),
@@ -636,7 +749,7 @@ private fun BatteryTrendChart(
         drawPath(
             path = path,
             color = palette.accent,
-            style = Stroke(width = 2.dp.toPx())
+            style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round)
         )
     }
     Row(
@@ -1492,7 +1605,7 @@ private fun EstimatedCapacityCard(stats: BatteryStats, units: com.matelink.data.
 private fun InfoDialog(
     title: String,
     message: String,
-    confirmText: String,
+    confirmText: String = stringResource(android.R.string.ok),
     onDismiss: () -> Unit
 ) {
     AlertDialog(

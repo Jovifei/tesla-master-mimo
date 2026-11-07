@@ -147,6 +147,35 @@ class TimelineViewModel @Inject constructor(
                     _uiState.value = TimelineUiState(isLoading = true)
                 }
 
+                // Fast-path: display Room cached history immediately on cold start (<50ms)
+                if (_uiState.value.events.isEmpty()) {
+                    try {
+                        val cached = repository.loadCached(carId)
+                        if (cached is ApiResult.Success) {
+                            val cachedHistory = cached.data
+                            val cachedProof = cachedHistory.verifiedReadContext
+                            if (cachedProof != null && cachedProof.scope == capturedScope && repository.isContextCurrent(cachedProof)) {
+                                val records = chargeCostOverrideStore.getAllRecords()
+                                val currency = settingsDataStore.settings.first().currencyCode
+                                val cachedEvents = mergeTimelineEvents(cachedHistory.drives, cachedHistory.charges) { charge ->
+                                    projectEffectiveChargeCost(charge, cachedProof.context.localHistoryCarId,
+                                        findChargeCostOverride(records, cachedProof.context.localHistoryCarId, charge, currency), currency)
+                                }
+                                if (cachedEvents.isNotEmpty()) {
+                                    _uiState.value = TimelineUiState(
+                                        isLoading = false,
+                                        events = cachedEvents,
+                                        groupedEvents = cachedEvents.groupBy { it.date },
+                                        error = null
+                                    )
+                                }
+                            }
+                        }
+                    } catch (_: Exception) {
+                        // Cached pre-load is best-effort and must never abort the remote sync
+                    }
+                }
+
                 val history = when (val result = repository.load(carId)) {
                     is ApiResult.Success -> result.data
                     is ApiResult.Error -> {

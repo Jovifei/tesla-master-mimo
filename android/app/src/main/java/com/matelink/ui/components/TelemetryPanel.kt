@@ -195,7 +195,7 @@ private fun TelemetryMetricCell(
     ) {
         Box(
             modifier = Modifier
-                .size(if (compact) 22.dp else if (adaptive) 30.dp else 26.dp)
+                .size(if (compact) 26.dp else if (adaptive) 30.dp else 26.dp)
                 .clip(CircleShape)
                 .background(metric.tint.copy(alpha = 0.12f)),
             contentAlignment = Alignment.Center
@@ -204,15 +204,15 @@ private fun TelemetryMetricCell(
                 imageVector = metric.icon,
                 contentDescription = null,
                 tint = metric.tint,
-                modifier = Modifier.size(if (compact) 13.dp else if (adaptive) 18.dp else 15.dp)
+                modifier = Modifier.size(if (compact) 16.dp else if (adaptive) 18.dp else 15.dp)
             )
         }
         if (compact) {
-            val baseSize = metric.valueFontSize ?: 16.sp
+            val baseSize = metric.valueFontSize ?: 18.sp
             val calcFontSize = when {
-                number.length >= 8 -> (baseSize.value - 2.5f).sp
-                number.length >= 7 -> (baseSize.value - 1.5f).sp
-                number.length >= 6 -> (baseSize.value - 0.5f).sp
+                number.length >= 9 -> (baseSize.value - 3f).sp
+                number.length >= 8 -> (baseSize.value - 2f).sp
+                number.length >= 7 -> (baseSize.value - 1f).sp
                 else -> baseSize
             }
             Row(

@@ -1,3 +1,21 @@
+# 2026-11-07 苹果风 UI 与交互第三轮推进（离线优先秒开、图表渐变美化与 ⓘ 弹窗纯净重构完成并通过真机验证）
+
+- [x] 充电列表与下拉筛选项地标精简（`ChargesScreen.kt`）：
+  - 充电记录与地点下拉项全面应用 `formatParkedAddress` 智能商圈/地标提取，自动过滤分店与琐碎餐饮店名。
+- [x] 充电与行程 4 项数值字号与单位彻底平衡（`ChargesScreen.kt`、`TelemetryPanel.kt`）：
+  - 充电页面 4 项摘要指标（充电次数、能量、费用、单次均价）统一为 18.sp 纯大粗体排版，数值与单位（度/¥）彻底分离，长数字不缩水，条块色彩统一为品牌主题青色，杜绝柱状图弹跳。
+- [x] 电池健康与分析页面 Apple 极简重构（`BatteryScreen.kt`、`EfficiencyScreen.kt`、`CostScreen.kt`）：
+  - 彻底移除卡片内冗长赘述文字与大横幅，替换为轻量磨砂胶囊微标（“历史缓存 · 仅供离线查看 ⓘ”）；
+  - 估算计算依据与样本说明全部移入卡片右上角内联「ⓘ」信息弹窗，界面视觉极简纯净；
+  - 电池健康趋势折线图增加品牌主题色柔和纵向渐变填充底色与平滑曲线，呈现 Apple Health 级图表质感。
+- [x] 离线优先极速加载（Room 本地持久化缓存渲染）：
+  - 时间线（`TimelineViewModel.kt`）：冷启动优先渲染 Room 本地历史行程与充电事件（<50ms 极速呈现），杜绝全屏旋转菊花卡顿；
+  - 待机能耗（`VampireViewModel.kt`）：冷启动优先基于本地数据构建待机周期，后台异步增量同步。
+- [x] 生产构建与真机验证：
+  - 全量单元测试 `testDebugUnitTest` 100% 通过（33 tasks executed/up-to-date）；
+  - 正式发布包打包完成并验证：`app-release.apk`（SHA-256: `EF6D8BDA77D6CA72E45583C9949A3B606769AF20BE29287A3939B0F0574CDCE1`）；
+  - OnePlus 7 Pro（`6e4fa92f`）安装并验证 `firstInstallTime=2026-08-31 22:36:47` 绝对无损保留；实机 UI 截屏确认 18.sp 规整数值、无弹跳柱状图、电池健康 ⓘ 弹窗与时间线秒开。
+
 # 2026-11-07 苹果风 UI 与交互全量重构及体验深度优化（第二轮推进完成并通过真机验证）
 
 - [x] 充电与行程摘要卡片字体比例与图表固定高（`ChargesScreen.kt`、`DrivesScreen.kt`、`TelemetryPanel.kt`）：
