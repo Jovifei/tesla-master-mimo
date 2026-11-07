@@ -47,8 +47,8 @@ The self-hosted link is optional history infrastructure. It is not the current c
 | Item | Value |
 |---|---|
 | Package | `com.matelink` |
-| Version name | `2.1.83` |
-| Version code | `103` |
+| Version name | `2.1.85` |
+| Version code | `104` |
 | Certificate SHA-256 | `9ab144e824abf26a5941819abb06831288c36a8bfe622657e3dc9d88281fc774` |
 | Current APK SHA-256 | `A7B58BAC069B501A22384CD87B4595E5C5A4752E1A1C6215EF1056DA453D7E1A` |
 | Build API URL | `https://api.teslalink.joviluma.com/` |

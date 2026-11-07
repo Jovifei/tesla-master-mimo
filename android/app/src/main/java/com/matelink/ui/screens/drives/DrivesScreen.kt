@@ -770,7 +770,6 @@ private fun DriveRowItem(
     val energyPres = drive.historyEnergy(metrics)
     val unavailable = stringResource(R.string.not_available)
 
-    // Build 4-metric strip: 能耗 | 里程 | 时长 | 极速
     val effText = driveHistoryEfficiencyText(energyPres) ?: unavailable
     val distText = drive.distance
         ?.takeIf { it.isFinite() && it >= 0.0 }
@@ -779,6 +778,10 @@ private fun DriveRowItem(
     val speedText = drive.speedMax?.takeIf { drive.hasKnownLengthUnit && it >= 0 }
         ?.let { "%,d".format(it) } ?: unavailable
 
+    val startSoc = drive.startBatteryLevel
+    val endSoc = drive.endBatteryLevel
+    val socRange = UnitFormatter.formatSocRange(startSoc, endSoc, "")
+
     val stripMetrics = listOf(
         TelemetryMetricSpec(
             icon = Icons.Default.Eco,
@@ -786,7 +789,7 @@ private fun DriveRowItem(
             value = effText,
             tint = Color(0xFF10B981),
             unit = if (effText != unavailable) "kWh/100km" else null,
-            valueFontSize = 14.sp
+            valueFontSize = 18.sp
         ),
         TelemetryMetricSpec(
             icon = CustomIcons.SteeringWheel,
@@ -794,7 +797,7 @@ private fun DriveRowItem(
             value = distText,
             tint = Color(0xFF0284C7),
             unit = if (distText != unavailable) UnitFormatter.getDistanceUnit(receiptUnits) else null,
-            valueFontSize = 14.sp
+            valueFontSize = 18.sp
         ),
         TelemetryMetricSpec(
             icon = Icons.Default.Timer,
@@ -802,7 +805,7 @@ private fun DriveRowItem(
             value = durText,
             tint = Color(0xFFD97706),
             unit = if (durText != unavailable) "min" else null,
-            valueFontSize = 14.sp
+            valueFontSize = 18.sp
         ),
         TelemetryMetricSpec(
             icon = Icons.Default.Speed,
@@ -810,7 +813,7 @@ private fun DriveRowItem(
             value = speedText,
             tint = Color(0xFF6366F1),
             unit = if (speedText != unavailable) UnitFormatter.getSpeedUnit(receiptUnits) else null,
-            valueFontSize = 14.sp
+            valueFontSize = 18.sp
         )
     )
 
@@ -819,9 +822,9 @@ private fun DriveRowItem(
             .fillMaxWidth()
             .clickable(onClick = onClick)
             .padding(horizontal = AppleTokens.rowHorizontal, vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp)
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        // ── Top row: icon + route + chevron ──────────────────────────────────
+        // ── Top row: left (icon + route + time) and right (distance + SOC change + chevron) ─
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
@@ -859,6 +862,27 @@ private fun DriveRowItem(
                 )
             }
 
+            Spacer(modifier = Modifier.width(10.dp))
+
+            // Right side: Distance + Battery SOC change (matching Parked style)
+            Column(
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Text(
+                    text = if (distText != unavailable) "$distText ${UnitFormatter.getDistanceUnit(receiptUnits)}" else distText,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold
+                )
+                if (socRange.isNotBlank()) {
+                    Text(
+                        text = socRange,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = palette.accent
+                    )
+                }
+            }
+
             Spacer(modifier = Modifier.width(4.dp))
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
@@ -868,10 +892,10 @@ private fun DriveRowItem(
             )
         }
 
-        // ── Bottom row: 4-metric grid ─────────────────────────────────────────
+        // ── Bottom row: 4 key metrics in one compact, neat Apple-style row ────
         CompactHistoryMetricStrip(
             metrics = stripMetrics,
-            numberFontSize = 14.sp
+            numberFontSize = 18.sp
         )
     }
 }

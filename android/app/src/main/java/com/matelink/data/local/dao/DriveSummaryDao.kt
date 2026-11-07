@@ -23,6 +23,9 @@ import com.matelink.util.parseIsoInstant
 
 @Dao
 interface DriveSummaryDao {
+    @Query("SELECT * FROM drives_summary WHERE carId = :carId AND qualityState != 'quarantined' ORDER BY startDate DESC")
+    suspend fun getAllForCar(carId: Int): List<DriveSummary>
+
     @Query("SELECT COUNT(*) FROM drives_summary WHERE carId = :carId AND qualityState != 'quarantined'")
     suspend fun countDiagnosticHistory(carId: Int): Int
 
@@ -189,6 +192,18 @@ interface DriveSummaryDao {
     /** Latest drive with a non-empty endAddress to resolve last known parked location. */
     @Query("SELECT * FROM drives_summary WHERE carId = :carId AND qualityState != 'quarantined' AND endAddress != '' ORDER BY startDate DESC LIMIT 1")
     suspend fun getLatestWithEndAddress(carId: Int): DriveSummary?
+
+    @Query("SELECT * FROM drives_summary WHERE qualityState != 'quarantined' AND endAddress != '' ORDER BY startDate DESC LIMIT 1")
+    suspend fun getLatestWithEndAddressAnyCar(): DriveSummary?
+
+    @Query("SELECT * FROM drives_summary WHERE qualityState != 'quarantined' ORDER BY startDate DESC LIMIT 1")
+    suspend fun getLatestAnyCar(): DriveSummary?
+
+    @Query("SELECT * FROM drives_summary WHERE qualityState != 'quarantined' ORDER BY startDate DESC")
+    fun observeAllAnyCar(): Flow<List<DriveSummary>>
+
+    @Query("SELECT * FROM drives_summary WHERE qualityState != 'quarantined' ORDER BY startDate DESC")
+    suspend fun getAllAnyCar(): List<DriveSummary>
 
     /** Drive ending immediately on or before a given timestamp (e.g. arrival before charge). */
     @Query("SELECT * FROM drives_summary WHERE carId = :carId AND qualityState != 'quarantined' AND endDate <= :beforeDate ORDER BY endDate DESC LIMIT 1")

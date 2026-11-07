@@ -136,7 +136,7 @@ enum class DriveDateFilter(@get:StringRes val labelRes: Int, val days: Long?) {
 }
 
 data class DrivesUiState(
-    val isLoading: Boolean = true,
+    val isLoading: Boolean = false,
     val isRefreshing: Boolean = false,
     val isFilterLoading: Boolean = false,
     val isLoadingMore: Boolean = false,

@@ -15,10 +15,9 @@ internal fun qualifiedChargeMode(
             (charge.chargeType != null && charge.chargeType != contract.chargeMode)) return null
         return contract.chargeMode?.takeIf { it == "ac" || it == "dc" }
     }
-    if (legacyDc && legacyAc) return null
-    return when {
-        legacyDc -> "dc"
-        legacyAc -> "ac"
-        else -> null
-    }
+    if (legacyDc && !legacyAc) return "dc"
+    if (legacyAc && !legacyDc) return "ac"
+    if (charge.chargeType?.equals("dc", ignoreCase = true) == true) return "dc"
+    if (charge.chargeType?.equals("ac", ignoreCase = true) == true) return "ac"
+    return null
 }

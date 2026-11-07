@@ -187,7 +187,9 @@ private fun renderMapContent(handle: AmapMapHandle): Boolean {
                 PolylineOptions()
                     .addAll(segment.map { LatLng(it.first, it.second) })
                     .color(content.polylineColor)
-                    .width(10f)
+                    .width(18f)
+                    .lineJoinType(PolylineOptions.LineJoinType.LineJoinRound)
+                    .lineCapType(PolylineOptions.LineCapType.LineCapRound)
             )
         }
 

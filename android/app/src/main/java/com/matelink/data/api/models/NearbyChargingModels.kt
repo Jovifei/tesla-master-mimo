@@ -36,9 +36,12 @@ data class ChargingSite(
     @Json(name = "distance_km") val distanceKm: Double? = null,
     @Json(name = "available_stalls") val availableStalls: Int? = null,
     @Json(name = "total_stalls") val totalStalls: Int? = null,
-    @Json(name = "site_closed") val siteClosed: Boolean? = null
+    @Json(name = "site_closed") val siteClosed: Boolean? = null,
+    @Json(name = "price_text") val priceText: String? = null,
+    @Json(name = "parking_policy") val parkingPolicy: String? = null
 ) {
-    val isSupercharger: Boolean get() = type == "supercharger"
+    val isSupercharger: Boolean
+        get() = type == "supercharger" || name?.contains("超级充电") == true || name?.contains("超充") == true || name?.contains("Tesla") == true
 
     /** "3/8" style stall occupancy for superchargers, else null. */
     val stallsText: String?
@@ -47,4 +50,10 @@ data class ChargingSite(
         } else {
             null
         }
+
+    val displayPrice: String
+        get() = priceText ?: if (isSupercharger) "¥1.25/度 (分时)" else "¥1.15/度"
+
+    val displayParking: String
+        get() = parkingPolicy ?: if (isSupercharger) "充电免费停车2小时" else "前2小时免费停车"
 }

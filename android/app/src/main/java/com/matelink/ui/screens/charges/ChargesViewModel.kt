@@ -47,6 +47,13 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import java.time.Clock
+import com.matelink.data.local.dao.DriveSummaryDao
+import com.matelink.data.local.entity.DriveSummary
+import com.matelink.data.local.AmapSettingsStore
+import com.matelink.data.local.SecureSettingsDataStore
+import com.matelink.data.repository.AmapReverseGeocoder
+import com.matelink.domain.analytics.HistorySummaryEvidenceCodec
+import com.matelink.data.api.models.DriveData
 import com.matelink.domain.history.LatestHistoryLoad
 import com.matelink.domain.history.historyTimeoutMessage
 import com.matelink.domain.history.refreshedHistoryWindow
@@ -119,20 +126,92 @@ internal fun locationKeyAddress(key: String): String? = when {
 
 internal data class ChargeAddressKey(val chargeId: Int, val session: String, val latitude: Double, val longitude: Double)
 
-internal fun chargeAddressKey(charge: ChargeData): ChargeAddressKey? {
+internal fun effectiveChargeCoordinates(
+    charge: ChargeData,
+    referenceRows: Map<Int, ChargeSummary> = emptyMap(),
+    drives: List<DriveSummary> = emptyList()
+): Pair<Double, Double>? {
+    usableVehicleCoordinates(charge.latitude, charge.longitude)?.let { return it }
+    referenceRows[charge.chargeId]?.let { ref ->
+        usableVehicleCoordinates(ref.latitude, ref.longitude)?.let { return it }
+    }
+    if (drives.isEmpty()) return null
+    val chargeStart = parseIsoInstant(charge.startDate) ?: return null
+    val closestDrive = drives.asSequence()
+        .mapNotNull { drive -> parseIsoInstant(drive.endDate)?.let { it to drive } }
+        .minByOrNull { (driveEnd, _) -> java.time.Duration.between(driveEnd, chargeStart).abs().toMillis() }
+        ?.takeIf { (driveEnd, _) -> java.time.Duration.between(driveEnd, chargeStart).abs().toHours() < 48 }
+        ?.second
+
+    if (closestDrive != null) {
+        val driveData: DriveData? = closestDrive.apiEvidence?.let { HistorySummaryEvidenceCodec.decodeDrive(it) }
+        if (driveData != null) {
+            usableVehicleCoordinates(driveData.endLatitude, driveData.endLongitude)?.let { return it }
+            usableVehicleCoordinates(driveData.startLatitude, driveData.startLongitude)?.let { return it }
+        }
+    }
+    return null
+}
+
+internal fun chargeAddressKey(
+    charge: ChargeData,
+    referenceRows: Map<Int, ChargeSummary> = emptyMap(),
+    drives: List<DriveSummary> = emptyList()
+): ChargeAddressKey? {
     if (charge.qualityState == "quarantined" ||
         charge.source !in setOf(null, "", "teslamate_api", "teslamate_archive", "telemetry_mqtt", "fleet_api") ||
         charge.sourceRecordIdentity.conflicted) return null
     val start = parseIsoInstant(charge.startDate) ?: return null
     val end = parseIsoInstant(charge.endDate) ?: return null
     if (end.isBefore(start)) return null
-    val point = usableVehicleCoordinates(charge.latitude, charge.longitude) ?: return null
+    val point = effectiveChargeCoordinates(charge, referenceRows, drives) ?: return null
     return ChargeAddressKey(charge.chargeId, chargeCostSessionKey(charge), point.first, point.second)
 }
 
-internal fun String?.needsChineseChargeAddress(): Boolean = isNullOrBlank() || none { it in '\u4e00'..'\u9fff' }
+internal fun correlateChargeAddress(
+    chargeStartDate: String?,
+    chargeEndDate: String?,
+    drives: List<DriveSummary>
+): String? {
+    if (drives.isEmpty()) return null
+    val chargeStart = parseIsoInstant(chargeStartDate) ?: return null
+    val chargeEnd = parseIsoInstant(chargeEndDate) ?: return null
+
+    // 1. Arrival drive with valid end address: ended before or around charge start
+    val arrivalWithEnd = drives.asSequence()
+        .filter { it.endAddress.isNotBlank() && !it.endAddress.contains("未知") }
+        .mapNotNull { drive -> parseIsoInstant(drive.endDate)?.let { it to drive.endAddress } }
+        .minByOrNull { (driveEnd, _) -> java.time.Duration.between(driveEnd, chargeStart).abs().toMillis() }
+        ?.takeIf { (driveEnd, _) -> java.time.Duration.between(driveEnd, chargeStart).abs().toHours() < 48 }
+        ?.second
+
+    if (arrivalWithEnd != null) return arrivalWithEnd
+
+    // 2. Departure drive with valid start address: started after or around charge end
+    val departWithStart = drives.asSequence()
+        .filter { it.startAddress.isNotBlank() && !it.startAddress.contains("未知") }
+        .mapNotNull { drive -> parseIsoInstant(drive.startDate)?.let { it to drive.startAddress } }
+        .minByOrNull { (driveStart, _) -> java.time.Duration.between(chargeEnd, driveStart).abs().toMillis() }
+        ?.takeIf { (driveStart, _) -> java.time.Duration.between(chargeEnd, driveStart).abs().toHours() < 48 }
+        ?.second
+
+    if (departWithStart != null) return departWithStart
+
+    // 3. Fallback: closest drive arrival start address (if round trip or nearby)
+    val arrivalWithStart = drives.asSequence()
+        .filter { it.startAddress.isNotBlank() && !it.startAddress.contains("未知") }
+        .mapNotNull { drive -> parseIsoInstant(drive.endDate)?.let { it to drive.startAddress } }
+        .minByOrNull { (driveEnd, _) -> java.time.Duration.between(driveEnd, chargeStart).abs().toMillis() }
+        ?.takeIf { (driveEnd, _) -> java.time.Duration.between(driveEnd, chargeStart).abs().toHours() < 48 }
+        ?.second
+
+    return arrivalWithStart
+}
+
+internal fun String?.needsChineseChargeAddress(): Boolean =
+    isNullOrBlank() || contains("未知") || none { it in '\u4e00'..'\u9fff' }
 internal fun String?.usableChineseChargeAddress(): String? = this?.trim()?.takeIf {
-    it.isNotEmpty() && it.any { character -> character in '\u4e00'..'\u9fff' }
+    it.isNotEmpty() && !it.contains("未知") && it.any { character -> character in '\u4e00'..'\u9fff' }
 }
 
 data class ChargeChartData(
@@ -158,7 +237,7 @@ data class ChargeChartData(
 
 data class ChargesUiState(
     val defaultChargePrice: Double = 1.14,
-    val isLoading: Boolean = true,
+    val isLoading: Boolean = false,
     val isRefreshing: Boolean = false,
     // Set while a filter-driven reload is in flight. Distinct from `isLoading`,
     // which intentionally stays false on filter change to avoid the full-screen
@@ -251,7 +330,8 @@ class ChargesViewModel @Inject constructor(
     private val vehicleContextRepository: VehicleContextRepository,
     private val clock: Clock,
     private val savedStateHandle: SavedStateHandle,
-    private val geocodingRepository: GeocodingRepository? = null
+    private val geocodingRepository: GeocodingRepository? = null,
+    private val driveSummaryDao: DriveSummaryDao? = null
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(restoreInitialState(savedStateHandle))
@@ -265,6 +345,8 @@ class ChargesViewModel @Inject constructor(
     private var activeHistoryProof: VerifiedHistoryReadContext? = null
     private var showShortDrivesCharges: Boolean = false
     private var allCharges: List<ChargeData> = emptyList()
+    private var allDrives: List<DriveSummary> = emptyList()
+    private var drivesJob: Job? = null
     private var allReferenceRows: Map<Int, ChargeSummary> = emptyMap()
     private var referenceIdentityDigest: String? = null
     private var referenceMappingGeneration: Long? = null
@@ -279,6 +361,10 @@ class ChargesViewModel @Inject constructor(
     private val resolvedAddresses = mutableMapOf<ChargeAddressKey, String>()
     internal var addressLookup: suspend (Double, Double) -> String? = { latitude, longitude ->
         geocodingRepository?.reverseGeocode(latitude, longitude)
+            ?: runCatching {
+                AmapReverseGeocoder(appContext, AmapSettingsStore(appContext, SecureSettingsDataStore(appContext)))
+                    .reverse(latitude, longitude)?.address
+            }.getOrNull()
     }
 
     companion object {
@@ -424,6 +510,9 @@ class ChargesViewModel @Inject constructor(
             activeHistoryProof = null
             latestLoad.invalidate()
             allCharges = emptyList()
+            allDrives = emptyList()
+            drivesJob?.cancel()
+            drivesJob = null
             allReferenceRows = emptyMap()
             referenceIdentityDigest = null
             referenceMappingGeneration = null
@@ -631,11 +720,37 @@ class ChargesViewModel @Inject constructor(
         }
     }
 
-    private fun displayAddress(charge: ChargeData): String? =
-        if (!charge.address.needsChineseChargeAddress()) charge.address
-        else chargeAddressKey(charge)?.let(resolvedAddresses::get)
-            ?: charge.address?.toChineseDisplayAddress()
-            ?: charge.address
+    private fun observeDrives(localHistoryCarId: Int) {
+        drivesJob?.cancel()
+        drivesJob = viewModelScope.launch {
+            try {
+                val flow = driveSummaryDao?.observeAllAnyCar()
+                    ?: driveSummaryDao?.observeAll(localHistoryCarId)
+                flow?.collect { drives ->
+                    allDrives = drives
+                    activeHistoryProof?.let(::requestChargeAddresses)
+                    if (allCharges.isNotEmpty()) {
+                        applyFiltersAndUpdateState(preserveLoading = true)
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+    }
+
+    private fun displayAddress(charge: ChargeData): String? {
+        val currentAddr = charge.address?.takeIf { !it.contains("未知") && it.isNotBlank() }
+        if (currentAddr != null) return currentAddr
+        chargeAddressKey(charge, allReferenceRows, allDrives)?.let(resolvedAddresses::get)?.let { return it }
+        val refAddr = allReferenceRows[charge.chargeId]?.address?.takeIf { !it.contains("未知") && it.isNotBlank() }
+        if (refAddr != null) return refAddr
+        val correlated = correlateChargeAddress(charge.startDate, charge.endDate, allDrives)
+        if (correlated != null) return correlated
+        val point = effectiveChargeCoordinates(charge, allReferenceRows, allDrives)
+        if (point != null) {
+            AmapReverseGeocoder.getCached(point.first, point.second)?.address?.let { return it }
+        }
+        return charge.address?.toChineseDisplayAddress() ?: charge.address
+    }
 
     private fun requestChargeAddresses(proof: VerifiedHistoryReadContext) {
         invalidateAddressLookup()
@@ -644,7 +759,7 @@ class ChargesViewModel @Inject constructor(
             .filter { chargeInHistoryWindow(it.startDate, window.startDate, window.endDate, clock.zone) }
             .filter { it.address.needsChineseChargeAddress() }
             .sortedByDescending { parseIsoInstant(it.startDate) }
-            .mapNotNull { chargeAddressKey(it) }
+            .mapNotNull { chargeAddressKey(it, allReferenceRows, allDrives) }
             .filter { it !in resolvedAddresses }
             .groupBy { it.latitude to it.longitude }
             .entries.take(MAX_ADDRESS_LOOKUPS)
@@ -659,15 +774,20 @@ class ChargesViewModel @Inject constructor(
             for ((coordinates, keys) in candidates) {
                 if (!current()) return@launch
                 val address = try {
-                    withTimeoutOrNull(5_000L) { addressLookup(coordinates.first, coordinates.second) }
+                    withTimeoutOrNull(10_000L) { addressLookup(coordinates.first, coordinates.second) }
                 } catch (e: CancellationException) { throw e } catch (_: Exception) { null }
                 if (!current()) return@launch
                 val chinese = address?.toChineseDisplayAddress()?.usableChineseChargeAddress()
                     ?: address?.usableChineseChargeAddress()
                     ?: continue
                 val currentKeys = allCharges.asSequence().filter { it.address.needsChineseChargeAddress() }
-                    .mapNotNull(::chargeAddressKey).toSet()
-                keys.filter { it in currentKeys }.forEach { resolvedAddresses[it] = chinese }
+                    .mapNotNull { chargeAddressKey(it, allReferenceRows, allDrives) }.toSet()
+                for (key in keys.filter { it in currentKeys }) {
+                    resolvedAddresses[key] = chinese
+                    try {
+                        chargeSummaryDao.updateAddressIfMissing(proof.context.localHistoryCarId, key.chargeId, chinese)
+                    } catch (_: Exception) {}
+                }
                 applyFiltersAndUpdateState(preserveLoading = true)
             }
         }
@@ -743,7 +863,13 @@ class ChargesViewModel @Inject constructor(
             } == true }
             referenceMappingGeneration = requestReferenceGeneration.takeIf { referenceIdentityDigest != null }
             allReferenceRows = if (referenceIdentityDigest != null) localRows.associateBy { it.chargeId } else emptyMap()
+            allDrives = try {
+                driveSummaryDao?.getAllForCar(verifiedLocalId ?: id)?.takeIf { it.isNotEmpty() }
+                    ?: driveSummaryDao?.getAllAnyCar()
+                    ?: emptyList()
+            } catch (_: Exception) { emptyList() }
             cachedProof?.let(::observeReferenceRows)
+            cachedProof?.let { observeDrives(it.context.localHistoryCarId) }
             _uiState.update { it.copy(chartGranularity = determineGranularity(startDate, endDate),
                 dcChargeIds = cachedDcIds, acChargeIds = cachedAcIds, processedChargeIds = cachedProcessedIds) }
             applyFiltersAndUpdateState()
@@ -835,7 +961,13 @@ class ChargesViewModel @Inject constructor(
                     historyCarId = result.data.context.localHistoryCarId
                     allCharges = result.data.charges
                     allReferenceRows = if (referenceIdentityDigest != null) referenceRows.associateBy { it.chargeId } else emptyMap()
+                    allDrives = try {
+                        driveSummaryDao?.getAllForCar(proof.context.localHistoryCarId)?.takeIf { it.isNotEmpty() }
+                            ?: driveSummaryDao?.getAllAnyCar()
+                            ?: emptyList()
+                    } catch (_: Exception) { emptyList() }
                     observeReferenceRows(proof)
+                    observeDrives(proof.context.localHistoryCarId)
                     val granularity = determineGranularity(startDate, endDate)
 
                     _uiState.update {
@@ -1061,7 +1193,14 @@ class ChargesViewModel @Inject constructor(
                 isLoading = if (preserveLoading) it.isLoading else false,
                 isFilterLoading = if (preserveLoading) it.isFilterLoading else false,
                 charges = displayChargesFiltered.sortedByDescending { it.startDate }
-                    .map { charge -> charge.copy(address = displayAddress(charge)) },
+                    .map { charge ->
+                        val point = effectiveChargeCoordinates(charge, allReferenceRows, allDrives)
+                        charge.copy(
+                            address = displayAddress(charge),
+                            latitude = charge.latitude ?: point?.first,
+                            longitude = charge.longitude ?: point?.second
+                        )
+                    },
                 availableLocations = locations,
                 locationLabels = labels,
                 selectedLocations = locationFilter,

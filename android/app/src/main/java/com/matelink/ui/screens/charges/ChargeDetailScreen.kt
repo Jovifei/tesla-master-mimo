@@ -20,10 +20,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.unit.sp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.EvStation
 import androidx.compose.material.icons.filled.Paid
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.ShowChart
 import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.DeviceThermostat
@@ -148,7 +151,7 @@ fun ChargeDetailScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer
+                    containerColor = MaterialTheme.colorScheme.surface
                 )
             )
         },
@@ -255,14 +258,24 @@ internal fun ChargeDetailContent(
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         HistoryReadNotices(localArchiveLinkPending, historySyncWarning)
-        // Location header card
-        LocationHeaderCard(
+
+        // Map showing charge location
+        ChargeMapCard(
+            latitude = detail.latitude,
+            longitude = detail.longitude,
+            address = detail.address
+        )
+
+        // Unified Charge Card with Location, Times, and 4 Key Metrics (Energy, SOC, Cost, Power)
+        UnifiedChargeCard(
             detail = detail,
+            stats = stats,
             isDcCharge = isDcCharge,
             costText = costText,
             costSourceText = costSourceText,
             secondaryCostText = secondaryCostText,
             currencyNoticeText = currencyNoticeText,
+            currencySymbol = currencySymbol,
             onEditPrice = { showPriceDialog = true }
         )
 
@@ -276,29 +289,119 @@ internal fun ChargeDetailContent(
             )
         }
 
-        // Map showing charge location
-        ChargeMapCard(
-            latitude = detail.latitude,
-            longitude = detail.longitude,
-            address = detail.address
-        )
+        // ── Group 2: Interactive Telemetry Curves ──────────────────────────────
+        val hasElectricalData = stats?.let { s ->
+            s.voltageMax != null || s.voltageMin != null || s.voltageAvg != null ||
+            s.currentMax != null || s.currentMin != null || s.currentAvg != null
+        } ?: false
 
-        // Stats grid
+        val temperatureStats = stats?.let { s ->
+            buildList {
+                s.tempMax?.let { add(StatItem(stringResource(R.string.maximum), UnitFormatter.formatTemperature(it, units))) }
+                s.tempMin?.let { add(StatItem(stringResource(R.string.minimum), UnitFormatter.formatTemperature(it, units))) }
+                s.tempAvg?.let { add(StatItem(stringResource(R.string.charge_sample_average), UnitFormatter.formatTemperature(it, units))) }
+            }
+        }.orEmpty()
+
+        val hasCurves = series.soc.size >= 1 || (stats?.powerMax != null && series.power.size >= 1) ||
+            (hasElectricalData && (series.voltage.size >= 1 || series.current.size >= 1)) ||
+            (temperatureStats.isNotEmpty() && series.temperature.size >= 1)
+
+        if (hasCurves) {
+            Spacer(modifier = Modifier.height(2.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.ShowChart,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp)
+                )
+                Text(
+                    text = "充电详细曲线",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+
+            if (series.soc.size >= 2) {
+                BatteryChartCard(
+                    samples = series.soc,
+                    is24Hour = is24Hour,
+                    title = stringResource(R.string.battery_level)
+                )
+            } else if (series.soc.size == 1) {
+                val sample = series.soc.single()
+                SingleChargeObservation(stringResource(R.string.battery_level), sample.first,
+                    "${sample.second}%", MaterialTheme.colorScheme.primary, is24Hour)
+            }
+
+            if (stats?.powerMax != null) {
+                if (series.power.size >= 2) {
+                    PowerChartCard(
+                        samples = series.power,
+                        is24Hour = is24Hour,
+                        title = stringResource(R.string.power_profile)
+                    )
+                } else if (series.power.size == 1) {
+                    val sample = series.power.single()
+                    SingleChargeObservation(stringResource(R.string.power_profile), sample.first,
+                        "${sample.second} kW", Color(0xFF4CAF50), is24Hour)
+                }
+            }
+
+            if (hasElectricalData) {
+                if (series.voltage.size >= 2) {
+                    VoltageChartCard(
+                        samples = series.voltage,
+                        is24Hour = is24Hour,
+                        title = stringResource(R.string.voltage_profile)
+                    )
+                } else if (series.voltage.size == 1) {
+                    val sample = series.voltage.single()
+                    SingleChargeObservation(stringResource(R.string.voltage_profile), sample.first,
+                        "${sample.second} V", MaterialTheme.colorScheme.tertiary, is24Hour)
+                }
+                if (series.current.size >= 2) {
+                    CurrentChartCard(
+                        samples = series.current,
+                        is24Hour = is24Hour,
+                        title = stringResource(R.string.current_profile)
+                    )
+                } else if (series.current.size == 1) {
+                    val sample = series.current.single()
+                    SingleChargeObservation(stringResource(R.string.current_profile), sample.first,
+                        "${sample.second} A", MaterialTheme.colorScheme.secondary, is24Hour)
+                }
+            }
+
+            if (temperatureStats.isNotEmpty()) {
+                val temperatureLabel = stringResource(R.string.temperature)
+                if (series.temperature.size >= 2) {
+                    TemperatureChartCard(
+                        samples = series.temperature,
+                        units = units,
+                        is24Hour = is24Hour,
+                        title = temperatureLabel
+                    )
+                } else if (series.temperature.size == 1) {
+                    val sample = series.temperature.single()
+                    SingleChargeObservation(temperatureLabel, sample.first,
+                        UnitFormatter.formatTemperature(sample.second, units),
+                        Color(0xFFFF9800), is24Hour)
+                }
+            }
+        }
+
+        // Supplementary Stats Grid (Electrical samples, Temperature, Efficiency/Cost details)
         stats?.let { s ->
-            // Localized labels
-            val energyLabel = stringResource(R.string.energy)
-            val batteryLabel = stringResource(R.string.battery)
-            val powerLabel = stringResource(R.string.power)
             val chargerLabel = stringResource(R.string.charge_electrical_samples)
             val temperatureLabel = stringResource(R.string.temperature)
             val costLabel = stringResource(R.string.cost)
-            val addedLabel = stringResource(R.string.energy_added)
-            val usedLabel = stringResource(R.string.used)
-            val efficiencyLabel = stringResource(R.string.charging_efficiency)
-            val firstSocLabel = stringResource(R.string.charge_soc_first_observed)
-            val lastSocLabel = stringResource(R.string.charge_soc_last_observed)
-            val observedSocChangeLabel = stringResource(R.string.charge_soc_observed_change)
-            val durationLabel = stringResource(R.string.duration)
             val maximumLabel = stringResource(R.string.maximum)
             val minimumLabel = stringResource(R.string.minimum)
             val averageLabel = stringResource(R.string.charge_sample_average)
@@ -308,51 +411,8 @@ internal fun ChargeDetailContent(
             val currentMaxLabel = stringResource(R.string.current_max)
             val currentMinLabel = stringResource(R.string.current_min)
             val currentAvgLabel = stringResource(R.string.current_avg)
-            val totalLabel = stringResource(R.string.total)
             val perKwhLabel = stringResource(R.string.per_kwh)
-            val partialEnergy = if (s.energyAdded == null) detail.partialBatteryInputKwh else null
 
-            // ── Group 1: Numerical Metric Cards ───────────────────────────────────
-            // Energy section
-            StatsSectionCard(
-                title = energyLabel,
-                icon = Icons.Default.EnergySavingsLeaf,
-                stats = listOf(
-                    StatItem(if (partialEnergy != null) stringResource(R.string.charge_partial_energy) else addedLabel,
-                        s.energyAdded?.let { "%.2f 度".format(it) }
-                            ?: partialEnergy?.let { "≈%.2f 度".format(it) } ?: unavailableLabel),
-                    StatItem(usedLabel, s.energyUsed?.let { "%.2f 度".format(it) } ?: unavailableLabel),
-                    StatItem(efficiencyLabel, s.efficiency?.let { "%.1f%%".format(it) } ?: unavailableLabel)
-                )
-            )
-            // Battery section
-            StatsSectionCard(
-                title = batteryLabel,
-                icon = Icons.Default.BatteryChargingFull,
-                stats = listOf(
-                    StatItem(firstSocLabel, s.batteryStart?.let { "$it%" } ?: unavailableLabel),
-                    StatItem(lastSocLabel, s.batteryEnd?.let { "$it%" } ?: unavailableLabel),
-                    StatItem(observedSocChangeLabel, s.batteryAdded?.let { "%+d%%".format(it) } ?: unavailableLabel),
-                    StatItem(durationLabel, s.durationMin?.let(::formatDurationCompact) ?: unavailableLabel)
-                )
-            )
-
-            // Power section
-            if (s.powerMax != null) {
-                StatsSectionCard(
-                    title = powerLabel,
-                    icon = Icons.Default.Bolt,
-                    stats = listOf(
-                        StatItem(maximumLabel, s.powerMax?.let { "$it kW" } ?: unavailableLabel),
-                        StatItem(minimumLabel, s.powerMin?.let { "$it kW" } ?: unavailableLabel),
-                        StatItem(averageLabel, s.powerAvg?.let { "%.1f kW".format(it) } ?: unavailableLabel)
-                    )
-                )
-            }
-
-            // Voltage and current are observations, not proof of AC/DC mode.
-            val hasElectricalData = s.voltageMax != null || s.voltageMin != null || s.voltageAvg != null ||
-                s.currentMax != null || s.currentMin != null || s.currentAvg != null
             if (hasElectricalData) {
                 StatsSectionCard(
                     title = chargerLabel,
@@ -368,12 +428,6 @@ internal fun ChargeDetailContent(
                 )
             }
 
-            // Temperature section
-            val temperatureStats = buildList {
-                s.tempMax?.let { add(StatItem(maximumLabel, UnitFormatter.formatTemperature(it, units))) }
-                s.tempMin?.let { add(StatItem(minimumLabel, UnitFormatter.formatTemperature(it, units))) }
-                s.tempAvg?.let { add(StatItem(averageLabel, UnitFormatter.formatTemperature(it, units))) }
-            }
             if (temperatureStats.isNotEmpty()) {
                 StatsSectionCard(
                     title = temperatureLabel,
@@ -382,109 +436,19 @@ internal fun ChargeDetailContent(
                 )
             }
 
-            // Cost section
             val rate = chargeUnitCost(costPresentation, detail.batteryInputKwh, detail.partialBatteryInputKwh)
             val costPerKwh = rate?.let {
-                (if (it.estimated) "≈" else "") + "$currencySymbol%.3f".format(it.amount)
+                (if (it.estimated) "≈" else "") + "$currencySymbol%.3f / 度".format(it.amount)
             } ?: unavailableLabel
             StatsSectionCard(
                 title = costLabel,
                 icon = Icons.Default.Paid,
                 stats = listOf(
-                    StatItem(when {
-                        pending != null -> stringResource(R.string.charge_cost_pending_short)
-                        costPresentation.cost == null && sourceUnconfirmedAmount != null ->
-                            stringResource(R.string.charge_cost_currency_pending_short)
-                        else -> totalLabel
-                    }, costText),
+                    StatItem(stringResource(R.string.charging_efficiency), s.efficiency?.let { "%.1f%%".format(it) } ?: unavailableLabel),
                     StatItem(costLabel, secondaryCostText ?: costSourceText),
                     StatItem(perKwhLabel, costPerKwh)
                 )
             )
-
-            // ── Group 2: Interactive Telemetry Curves ──────────────────────────────
-            val hasCurves = series.soc.size >= 1 || (s.powerMax != null && series.power.size >= 1) ||
-                (hasElectricalData && (series.voltage.size >= 1 || series.current.size >= 1)) ||
-                (temperatureStats.isNotEmpty() && series.temperature.size >= 1)
-
-            if (hasCurves) {
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = "充电详细曲线",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-                )
-
-                if (series.soc.size >= 2) {
-                    BatteryChartCard(
-                        samples = series.soc,
-                        is24Hour = is24Hour,
-                        title = stringResource(R.string.battery_level)
-                    )
-                } else if (series.soc.size == 1) {
-                    val sample = series.soc.single()
-                    SingleChargeObservation(stringResource(R.string.battery_level), sample.first,
-                        "${sample.second}%", MaterialTheme.colorScheme.primary, is24Hour)
-                }
-
-                if (s.powerMax != null) {
-                    if (series.power.size >= 2) {
-                        PowerChartCard(
-                            samples = series.power,
-                            is24Hour = is24Hour,
-                            title = stringResource(R.string.power_profile)
-                        )
-                    } else if (series.power.size == 1) {
-                        val sample = series.power.single()
-                        SingleChargeObservation(stringResource(R.string.power_profile), sample.first,
-                            "${sample.second} kW", Color(0xFF4CAF50), is24Hour)
-                    }
-                }
-
-                if (hasElectricalData) {
-                    if (series.voltage.size >= 2) {
-                        VoltageChartCard(
-                            samples = series.voltage,
-                            is24Hour = is24Hour,
-                            title = stringResource(R.string.voltage_profile)
-                        )
-                    } else if (series.voltage.size == 1) {
-                        val sample = series.voltage.single()
-                        SingleChargeObservation(stringResource(R.string.voltage_profile), sample.first,
-                            "${sample.second} V", MaterialTheme.colorScheme.tertiary, is24Hour)
-                    }
-                    if (series.current.size >= 2) {
-                        CurrentChartCard(
-                            samples = series.current,
-                            is24Hour = is24Hour,
-                            title = stringResource(R.string.current_profile)
-                        )
-                    } else if (series.current.size == 1) {
-                        val sample = series.current.single()
-                        SingleChargeObservation(stringResource(R.string.current_profile), sample.first,
-                            "${sample.second} A", MaterialTheme.colorScheme.secondary, is24Hour)
-                    }
-                }
-
-                if (temperatureStats.isNotEmpty()) {
-                    if (series.temperature.size >= 2) {
-                        TemperatureChartCard(
-                            samples = series.temperature,
-                            units = units,
-                            is24Hour = is24Hour,
-                            title = temperatureLabel
-                        )
-                    } else if (series.temperature.size == 1) {
-                        val sample = series.temperature.single()
-                        SingleChargeObservation(temperatureLabel, sample.first,
-                            UnitFormatter.formatTemperature(sample.second, units),
-                            Color(0xFFFF9800), is24Hour)
-                    }
-                }
-            }
-
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -548,208 +512,274 @@ internal fun ChargeDetailContent(
 }
 
 @Composable
-private fun LocationHeaderCard(
+private fun UnifiedChargeCard(
     detail: ChargeDetail,
+    stats: ChargeDetailStats?,
     isDcCharge: Boolean?,
     costText: String,
     costSourceText: String,
     secondaryCostText: String?,
     currencyNoticeText: String?,
+    currencySymbol: String,
     onEditPrice: () -> Unit
 ) {
     val is24Hour = android.text.format.DateFormat.is24HourFormat(LocalContext.current)
-    val locationLabel = stringResource(R.string.location)
     val unknownLocationLabel = stringResource(R.string.unknown_location)
     val startedLabel = stringResource(R.string.started)
     val endedLabel = stringResource(R.string.ended)
-    val energyAddedLabel = stringResource(R.string.energy_added_header)
+    val durationLabel = stringResource(R.string.duration)
     val unknownLabel = stringResource(R.string.unknown)
+    val notAvailableLabel = stringResource(R.string.not_available)
 
     TelemetryPanel(
         modifier = Modifier.fillMaxWidth(),
         accent = MaterialTheme.colorScheme.primary
     ) {
         Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            // Location with duration chip on the right
+            // Header: Title with Charge Type Badge & Price Edit Button
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    modifier = Modifier.weight(1f, fill = false),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.LocationOn,
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column {
-                        Text(
-                            text = locationLabel,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                        )
-                        Text(
-                            text = detail.address.toChineseDisplayAddress() ?: unknownLocationLabel,
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
-                val durationText = detail.durationMin?.let(::formatDurationCompact)
-                    ?: detail.durationStr?.takeIf { it.isNotBlank() }
-                if (durationText != null) {
-                    Surface(
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-                        shape = MaterialTheme.shapes.small
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Timer,
-                                contentDescription = null,
-                                modifier = Modifier.size(14.dp),
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                            Text(
-                                text = durationText,
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    }
-                }
-            }
-
-            HorizontalDivider(
-                modifier = Modifier.padding(start = 36.dp),
-                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.2f)
-            )
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                CompactHeaderValue(
-                    startedLabel,
-                    formatDateTime(detail.startDate, unknownLabel, is24Hour),
-                    Modifier.weight(1f)
-                )
-                CompactHeaderValue(
-                    endedLabel,
-                    formatDateTime(detail.endDate, unknownLabel, is24Hour),
-                    Modifier.weight(1f)
-                )
-            }
-
-            // Price remains editable even when this session has no qualified energy.
-            HorizontalDivider(
-                modifier = Modifier.padding(start = 36.dp),
-                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.2f)
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                val partialEnergy = detail.partialBatteryInputKwh
-                val energy = detail.batteryInputKwh ?: partialEnergy
-                if (energy != null) {
-                    Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.Power,
-                            contentDescription = null,
-                            modifier = Modifier.size(24.dp),
-                            tint = Color(0xFF4CAF50)
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column {
-                            Text(
-                                text = if (detail.batteryInputKwh == null && partialEnergy != null)
-                                    stringResource(R.string.charge_partial_energy) else energyAddedLabel,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                            )
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = (if (detail.batteryInputKwh == null && partialEnergy != null) "≈" else "") +
-                                        "%.2f kWh".format(energy),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF4CAF50)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                ChargeTypeBadge(isDcCharge = isDcCharge)
-                            }
-                        }
-                    }
-                } else {
-                    Spacer(modifier = Modifier.weight(1f))
-                }
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.weight(1f).sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-                        .clickable(onClickLabel = stringResource(R.string.edit_charge_cost),
-                            role = Role.Button, onClick = onEditPrice)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.End) {
-                        Text(
-                            text = costSourceText,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
-                            maxLines = 1, overflow = TextOverflow.Ellipsis
-                        )
-                        Text(
-                            text = costText,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            maxLines = 1, overflow = TextOverflow.Ellipsis
-                        )
-                        currencyNoticeText?.let { Text(it, style = MaterialTheme.typography.labelSmall,
-                            maxLines = 1, overflow = TextOverflow.Ellipsis) }
-                        secondaryCostText?.let { Text(it, style = MaterialTheme.typography.labelSmall,
-                            maxLines = 1, overflow = TextOverflow.Ellipsis) }
-                    }
-                    Spacer(modifier = Modifier.width(8.dp))
                     Icon(
-                        imageVector = Icons.Default.Edit,
+                        imageVector = Icons.Default.EvStation,
                         contentDescription = null,
                         modifier = Modifier.size(20.dp),
                         tint = MaterialTheme.colorScheme.primary
                     )
+                    Text(
+                        text = stringResource(R.string.charge_details_title),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    ChargeTypeBadge(isDcCharge = isDcCharge)
                 }
+                Surface(
+                    onClick = onEditPrice,
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Edit,
+                            contentDescription = null,
+                            modifier = Modifier.size(13.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = stringResource(R.string.edit_charge_cost),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+            }
+
+            // Location with address
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.LocationOn,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                val displayLocation = detail.address?.takeIf { !it.contains("未知") }?.toChineseDisplayAddress()
+                    ?: if (detail.latitude != null && detail.longitude != null) "%.3f°N, %.3f°E".format(detail.latitude, detail.longitude)
+                    else unknownLocationLabel
+                Text(
+                    text = displayLocation,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+            )
+
+            // Times: Started, Ended, Duration
+            val durationText = detail.durationMin?.let(::formatDurationCompact)
+                ?: detail.durationStr?.takeIf { it.isNotBlank() }
+                ?: notAvailableLabel
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                DetailTimeValue(
+                    label = startedLabel,
+                    value = formatDateTime(detail.startDate, unknownLabel, is24Hour),
+                    modifier = Modifier.weight(1f)
+                )
+                DetailTimeValue(
+                    label = endedLabel,
+                    value = formatDateTime(detail.endDate, unknownLabel, is24Hour),
+                    modifier = Modifier.weight(1f)
+                )
+                DetailTimeValue(
+                    label = durationLabel,
+                    value = durationText,
+                    modifier = Modifier.weight(0.8f)
+                )
+            }
+
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+            )
+
+            // 4 Key Metrics Strip:
+            // 1. 充入电量 (度)
+            // 2. 电量变化 (SOC% -> SOC%)
+            // 3. 充电费用 (¥ / 免费)
+            // 4. 充电功率 (最高 kW / 均值 kW)
+            val partialEnergy = detail.partialBatteryInputKwh
+            val energy = stats?.energyAdded ?: detail.batteryInputKwh ?: partialEnergy
+            val energyPrefix = if (stats?.energyAdded == null && partialEnergy != null) "≈" else ""
+            val energyValue = energy?.let { "$energyPrefix%.2f".format(it) } ?: notAvailableLabel
+
+            val startSoc = stats?.batteryStart ?: detail.startBatteryLevel
+            val endSoc = stats?.batteryEnd ?: detail.endBatteryLevel
+            val socAdded = stats?.batteryAdded ?: if (startSoc != null && endSoc != null) (endSoc - startSoc) else null
+            val socValue = when {
+                startSoc != null && endSoc != null -> "$startSoc%→$endSoc%"
+                startSoc != null -> "$startSoc%"
+                endSoc != null -> "$endSoc%"
+                else -> notAvailableLabel
+            }
+            val socUnit = socAdded?.let { if (it > 0) "+$it%" else "$it%" } ?: ""
+
+            val powerMax = stats?.powerMax
+            val powerAvg = stats?.powerAvg
+            val powerValue = when {
+                powerMax != null -> "$powerMax"
+                powerAvg != null -> "%.1f".format(powerAvg)
+                else -> notAvailableLabel
+            }
+            val powerUnit = if (powerMax != null || powerAvg != null) "kW" else ""
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                ChargeStatCapsule(
+                    label = stringResource(R.string.energy),
+                    value = energyValue,
+                    unit = "度",
+                    valueColor = Color(0xFF22C55E),
+                    modifier = Modifier.weight(1f)
+                )
+                ChargeStatCapsule(
+                    label = stringResource(R.string.battery_level),
+                    value = socValue,
+                    unit = socUnit,
+                    valueColor = Color(0xFF0284C7),
+                    modifier = Modifier.weight(1f)
+                )
+                ChargeStatCapsule(
+                    label = stringResource(R.string.cost),
+                    value = costText,
+                    unit = "",
+                    valueColor = Color(0xFFD97706),
+                    modifier = Modifier.weight(1f)
+                )
+                ChargeStatCapsule(
+                    label = stringResource(R.string.power),
+                    value = powerValue,
+                    unit = powerUnit,
+                    valueColor = Color(0xFF8B5CF6),
+                    modifier = Modifier.weight(1f)
+                )
             }
         }
     }
 }
 
 @Composable
-private fun CompactHeaderValue(label: String, value: String, modifier: Modifier = Modifier) {
-    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+private fun ChargeStatCapsule(
+    label: String,
+    value: String,
+    unit: String,
+    valueColor: Color,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Row(
+            verticalAlignment = Alignment.Bottom,
+            horizontalArrangement = Arrangement.spacedBy(1.dp)
+        ) {
+            Text(
+                text = value,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                color = valueColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (unit.isNotBlank()) {
+                Text(
+                    text = unit,
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 1.dp),
+                    maxLines = 1
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DetailTimeValue(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1
         )
         Text(
             text = value,
             style = MaterialTheme.typography.bodySmall,
             fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurface,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
@@ -951,8 +981,9 @@ private fun StatsSectionCard(
 
     Card(
         modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+            containerColor = MaterialTheme.colorScheme.surface
         )
     ) {
         Column(
@@ -1181,6 +1212,7 @@ private fun ChartCard(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface
         )

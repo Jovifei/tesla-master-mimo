@@ -6,6 +6,9 @@ import android.content.Context
 import com.matelink.R
 import com.matelink.data.api.models.ChargeDetail
 import com.matelink.data.api.models.Units
+import com.matelink.data.local.AmapSettingsStore
+import com.matelink.data.local.SecureSettingsDataStore
+import com.matelink.data.repository.AmapReverseGeocoder
 import com.matelink.data.local.ChargeCostOverrideStore
 import com.matelink.data.local.SettingsDataStore
 import com.matelink.data.local.StatsDatabase
@@ -191,6 +194,10 @@ class ChargeDetailViewModel @Inject constructor(
     private var addressJob: Job? = null
     internal var addressLookup: suspend (Double, Double) -> String? = { latitude, longitude ->
         geocodingRepository?.reverseGeocode(latitude, longitude)
+            ?: runCatching {
+                AmapReverseGeocoder(appContext, AmapSettingsStore(appContext, SecureSettingsDataStore(appContext)))
+                    .reverse(latitude, longitude)?.address
+            }.getOrNull()
     }
 
     init {
@@ -417,13 +424,25 @@ class ChargeDetailViewModel @Inject constructor(
                     }
                     val loadedCost = loadCost(localHistoryCarId, detail, settings.currencyCode,
                         isExplicitlyFree, isDcCharge == true)
+                    val correlatedAddr = if (detail.address.needsChineseChargeAddress()) {
+                        coords?.let { AmapReverseGeocoder.getCached(it.first, it.second)?.address }
+                            ?: detail.startDate?.let { start ->
+                                statsDatabase.driveSummaryDao().getDriveEndingBefore(localHistoryCarId, start)
+                                    ?.endAddress?.takeIf { !it.contains("未知") && it.isNotBlank() }
+                            }
+                            ?: detail.endDate?.let { end ->
+                                statsDatabase.driveSummaryDao().getDriveStartingAfter(localHistoryCarId, end)
+                                    ?.startAddress?.takeIf { !it.contains("未知") && it.isNotBlank() }
+                            }
+                    } else null
+                    val effectiveDetail = if (correlatedAddr != null) detail.copy(address = correlatedAddr) else detail
                     checkContext()
                     _uiState.update {
                         it.copy(
                             isLoading = false, isRefreshing = false,
                             historySyncWarning = detailWarning,
-                            chargeDetail = detail,
-                            units = presentChargeTemperature(detail, units).second,
+                            chargeDetail = effectiveDetail,
+                            units = presentChargeTemperature(effectiveDetail, units).second,
                             stats = stats,
                             costPresentation = loadedCost.presentation,
                             isDcCharge = isDcCharge,
@@ -437,7 +456,7 @@ class ChargeDetailViewModel @Inject constructor(
                             error = null
                         )
                     }
-                    requestChargeAddress(resolved, detail)
+                    requestChargeAddress(resolved, effectiveDetail)
                 }
                 is ApiResult.Error -> {
                     _uiState.update { it.copy(historySyncWarning = "history_cached") }
@@ -456,7 +475,22 @@ class ChargeDetailViewModel @Inject constructor(
                         val localDetail = presentChargeTemperature(cachedChargeDetail(localSummary, pointCache?.detail), units).first
                             .let { detail ->
                                 val coords = resolveChargeCoordinates(detail, localHistoryCarId)
-                                if (coords == null) detail else detail.copy(latitude = coords.first, longitude = coords.second)
+                                val correlatedAddr = if (detail.address.needsChineseChargeAddress()) {
+                                    coords?.let { AmapReverseGeocoder.getCached(it.first, it.second)?.address }
+                                        ?: detail.startDate?.let { start ->
+                                            statsDatabase.driveSummaryDao().getDriveEndingBefore(localHistoryCarId, start)
+                                                ?.endAddress?.takeIf { !it.contains("未知") && it.isNotBlank() }
+                                        }
+                                        ?: detail.endDate?.let { end ->
+                                            statsDatabase.driveSummaryDao().getDriveStartingAfter(localHistoryCarId, end)
+                                                ?.startAddress?.takeIf { !it.contains("未知") && it.isNotBlank() }
+                                        }
+                                } else null
+                                detail.copy(
+                                    latitude = coords?.first ?: detail.latitude,
+                                    longitude = coords?.second ?: detail.longitude,
+                                    address = correlatedAddr ?: detail.address
+                                )
                             }
                         val stats = ChargeStatsCalculator.calculateStats(localDetail)
                         val isDcCharge = ChargeStatsCalculator.detectChargeType(localDetail).toDcFlag()
@@ -522,7 +556,7 @@ class ChargeDetailViewModel @Inject constructor(
         val generation = addressGeneration
         addressJob = viewModelScope.launch {
             val address = try {
-                withTimeoutOrNull(5_000L) { addressLookup(key.latitude, key.longitude) }
+                withTimeoutOrNull(10_000L) { addressLookup(key.latitude, key.longitude) }
             } catch (e: CancellationException) { throw e } catch (_: Exception) { null }
             val chinese = address.usableChineseChargeAddress() ?: return@launch
             if (!historyRepository.isContextCurrent(proof) || generation != addressGeneration ||
@@ -532,6 +566,9 @@ class ChargeDetailViewModel @Inject constructor(
                 if (current == null || current.addressKey() != key || !current.address.needsChineseChargeAddress()) state
                 else state.copy(chargeDetail = current.copy(address = chinese))
             }
+            try {
+                chargeSummaryDao.updateAddressIfMissing(proof.context.localHistoryCarId, key.chargeId, chinese)
+            } catch (_: Exception) {}
         }
     }
 

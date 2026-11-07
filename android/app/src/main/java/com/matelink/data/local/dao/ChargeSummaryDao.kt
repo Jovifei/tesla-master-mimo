@@ -108,11 +108,17 @@ interface ChargeSummaryDao {
     @Query("SELECT * FROM charges_summary WHERE carId = :carId AND qualityState != 'quarantined' ORDER BY startDate ASC")
     suspend fun getAllForCar(carId: Int): List<ChargeSummary>
 
+    @Query("UPDATE charges_summary SET address = :address WHERE carId = :carId AND chargeId = :chargeId AND (address IS NULL OR address = '' OR address LIKE '%未知%')")
+    suspend fun updateAddressIfMissing(carId: Int, chargeId: Int, address: String): Int
+
     @Query("SELECT MAX(chargeId) FROM charges_summary WHERE carId = :carId")
     suspend fun getMaxChargeId(carId: Int): Int?
 
     @Query("SELECT MAX(odometer) FROM charges_summary WHERE carId = :carId AND qualityState != 'quarantined' AND odometer >= 0")
     suspend fun getMaxNonNegativeOdometer(carId: Int): Double?
+
+    @Query("SELECT MAX(odometer) FROM charges_summary WHERE qualityState != 'quarantined' AND odometer >= 0")
+    suspend fun getMaxNonNegativeOdometerAnyCar(): Double?
 
     @Query("DELETE FROM charges_summary WHERE carId = :carId")
     suspend fun deleteAllForCar(carId: Int)

@@ -31,6 +31,9 @@ import androidx.compose.material.icons.filled.Landscape
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.ShowChart
 import com.matelink.ui.icons.CustomIcons
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.AlertDialog
@@ -217,6 +220,12 @@ private fun DriveDetailContent(
         { fraction -> timedDriveCurveLabel(projection.speed, fraction, is24Hour) }
     }
     var speedChartFraction by remember { mutableStateOf<Float?>(null) }
+    var showEnergyDialog by remember { mutableStateOf(false) }
+
+    val hasPowerData = (stats?.powerMax != null && stats.powerMax != 0) ||
+        (stats?.powerMin != null && stats.powerMin != 0) ||
+        (stats?.powerAvg != null && stats.powerAvg != 0.0) ||
+        (projection.power.validCount >= 2 && projection.power.values.any { it.isFinite() && it != 0f })
 
     Column(
         modifier = modifier
@@ -235,20 +244,14 @@ private fun DriveDetailContent(
             detail = detail,
             stats = stats,
             units = units,
-            onNavigateToDriveCurves = onNavigateToDriveCurves
+            onNavigateToDriveCurves = onNavigateToDriveCurves,
+            onShowEnergyDialog = { showEnergyDialog = true }
         )
 
-        // Directly embedded real telemetry curves (Power, Speed, Battery)
+        // Directly embedded real telemetry curves (Speed, Power, Battery)
         val receiptUnits = drivePresentationUnits(detail.lengthUnit, units)
         if (hasChartData) {
-            PowerCurveCard(
-                positions = positions,
-                projected = projection.power,
-                timeLabels = timeLabels,
-                externalSelectedFraction = speedChartFraction,
-                onXSelected = { speedChartFraction = it },
-                fractionToTimeLabel = fractionToTimeLabel
-            )
+            // 1. Speed curve is strictly first
             if (detail.hasKnownLengthUnit) {
                 SpeedCurveCard(
                     positions = positions,
@@ -260,14 +263,28 @@ private fun DriveDetailContent(
                     fractionToTimeLabel = fractionToTimeLabel
                 )
             }
-            BatteryCurveCard(
-                positions = positions,
-                projected = projection.battery,
-                timeLabels = timeLabels,
-                externalSelectedFraction = speedChartFraction,
-                onXSelected = { speedChartFraction = it },
-                fractionToTimeLabel = fractionToTimeLabel
-            )
+            // 2. Power curve only shown when power data actually exists
+            if (hasPowerData && projection.power.validCount >= 2) {
+                PowerCurveCard(
+                    positions = positions,
+                    projected = projection.power,
+                    timeLabels = timeLabels,
+                    externalSelectedFraction = speedChartFraction,
+                    onXSelected = { speedChartFraction = it },
+                    fractionToTimeLabel = fractionToTimeLabel
+                )
+            }
+            // 3. Battery SOC curve
+            if (projection.battery.validCount >= 2) {
+                BatteryCurveCard(
+                    positions = positions,
+                    projected = projection.battery,
+                    timeLabels = timeLabels,
+                    externalSelectedFraction = speedChartFraction,
+                    onXSelected = { speedChartFraction = it },
+                    fractionToTimeLabel = fractionToTimeLabel
+                )
+            }
         }
 
         // Part-of-trip banner: link to the containing saved trip + detach action
@@ -283,8 +300,6 @@ private fun DriveDetailContent(
         // Stats grid
         stats?.let { s ->
             val notAvailableLabel = stringResource(R.string.not_available)
-            val energySourceLabel = stringResource(R.string.energy_source)
-            val energyCoverageLabel = stringResource(R.string.energy_coverage)
             val speedAverageLabel = remember(detail) { driveDetailSpeedAverageLabel(detail) }
             val powerAverageLabel = remember(detail) { driveDetailPowerAverageLabel(detail) }
             val reportedSampleSpeedCount = if (detail.speedMax?.takeIf { detail.hasKnownLengthUnit && it >= 0 } != null)
@@ -293,7 +308,7 @@ private fun DriveDetailContent(
                 if (driveDetailSpeedMaximumLabel(detail) == R.string.drive_detail_sample_maximum && reportedSampleSpeedCount != null)
                     " ($reportedSampleSpeedCount)" else ""
 
-            // 2. 速度面板 (Speed section)
+            // Speed section
             StatsSectionCard(
                 title = stringResource(R.string.speed),
                 icon = Icons.Default.Speed,
@@ -304,10 +319,7 @@ private fun DriveDetailContent(
                 )
             )
 
-            var showEnergyDialog by remember { mutableStateOf(false) }
-
-            // 3. 功率面板 (Power section) - only show if there are actual power samples
-            val hasPowerData = (s.powerMax != null && s.powerMax != 0) || (s.powerMin != null && s.powerMin != 0) || s.powerAvg != null
+            // Power section - only show if there are actual power samples
             if (hasPowerData) {
                 StatsSectionCard(
                     title = stringResource(R.string.power),
@@ -320,25 +332,36 @@ private fun DriveDetailContent(
                 )
             }
 
-            // 4. 电量面板 (Battery section) - clean numbers only, with info button for explanation
-            StatsSectionCard(
-                title = stringResource(R.string.battery),
-                icon = Icons.Default.BatteryChargingFull,
-                actionText = "说明 ⓘ",
-                onActionClick = { showEnergyDialog = true },
-                stats = listOf(
-                    StatItem(stringResource(R.string.start), s.batteryStart?.toString() ?: notAvailableLabel, "%"),
-                    StatItem(stringResource(R.string.end), s.batteryEnd?.toString() ?: notAvailableLabel, "%"),
-                    StatItem(
-                        stringResource(R.string.energy),
-                        s.energy.energyKwh?.let { visualTripNumber(it, 2) } ?: notAvailableLabel,
-                        unit = "kWh",
-                        recovered = (s.energy.energyKwh ?: 0.0) < 0.0
+            // Elevation section
+            if (s.elevationMax != null || s.elevationMin != null || s.elevationGain != null || s.elevationLoss != null) {
+                StatsSectionCard(
+                    title = stringResource(R.string.elevation),
+                    icon = Icons.Default.Landscape,
+                    stats = listOf(
+                        StatItem(stringResource(R.string.drive_detail_sample_maximum), UnitFormatter.formatElevation(s.elevationMax, units).removeSuffix(" ${UnitFormatter.getElevationUnit(units)}"), UnitFormatter.getElevationUnit(units)),
+                        StatItem(stringResource(R.string.drive_detail_sample_minimum), UnitFormatter.formatElevation(s.elevationMin, units).removeSuffix(" ${UnitFormatter.getElevationUnit(units)}"), UnitFormatter.getElevationUnit(units)),
+                        StatItem(stringResource(R.string.gain), s.elevationGain?.let { "+${UnitFormatter.formatElevation(it, units).removeSuffix(" ${UnitFormatter.getElevationUnit(units)}")}" } ?: notAvailableLabel, UnitFormatter.getElevationUnit(units)),
+                        StatItem(stringResource(R.string.loss), s.elevationLoss?.let { "-${UnitFormatter.formatElevation(it, units).removeSuffix(" ${UnitFormatter.getElevationUnit(units)}")}" } ?: notAvailableLabel, UnitFormatter.getElevationUnit(units))
                     )
                 )
-            )
+            }
 
-            if (showEnergyDialog) {
+            // Temperature section
+            if (s.outsideTempAvg != null || s.insideTempAvg != null) {
+                StatsSectionCard(
+                    title = stringResource(R.string.temperature),
+                    icon = Icons.Default.DeviceThermostat,
+                    stats = listOfNotNull(
+                        s.outsideTempAvg?.let { StatItem(stringResource(R.string.outside), formatDriveTemperatureC(it, units).removeSuffix(UnitFormatter.getTemperatureUnit(units)), UnitFormatter.getTemperatureUnit(units)) },
+                        s.insideTempAvg?.let { StatItem(stringResource(R.string.inside), formatDriveTemperatureC(it, units).removeSuffix(UnitFormatter.getTemperatureUnit(units)), UnitFormatter.getTemperatureUnit(units)) }
+                    )
+                )
+            }
+        }
+
+        if (showEnergyDialog) {
+            stats?.let { s ->
+                val notAvailableLabel = stringResource(R.string.not_available)
                 AlertDialog(
                     onDismissRequest = { showEnergyDialog = false },
                     title = { Text("电量与能耗计算依据", fontWeight = FontWeight.Bold) },
@@ -387,32 +410,6 @@ private fun DriveDetailContent(
                     }
                 )
             }
-
-            // 6. 海拔面板 (Elevation section)
-            if (s.elevationMax != null || s.elevationMin != null || s.elevationGain != null || s.elevationLoss != null) {
-                StatsSectionCard(
-                    title = stringResource(R.string.elevation),
-                    icon = Icons.Default.Landscape,
-                    stats = listOf(
-                        StatItem(stringResource(R.string.drive_detail_sample_maximum), UnitFormatter.formatElevation(s.elevationMax, units).removeSuffix(" ${UnitFormatter.getElevationUnit(units)}"), UnitFormatter.getElevationUnit(units)),
-                        StatItem(stringResource(R.string.drive_detail_sample_minimum), UnitFormatter.formatElevation(s.elevationMin, units).removeSuffix(" ${UnitFormatter.getElevationUnit(units)}"), UnitFormatter.getElevationUnit(units)),
-                        StatItem(stringResource(R.string.gain), s.elevationGain?.let { "+${UnitFormatter.formatElevation(it, units).removeSuffix(" ${UnitFormatter.getElevationUnit(units)}")}" } ?: notAvailableLabel, UnitFormatter.getElevationUnit(units)),
-                        StatItem(stringResource(R.string.loss), s.elevationLoss?.let { "-${UnitFormatter.formatElevation(it, units).removeSuffix(" ${UnitFormatter.getElevationUnit(units)}")}" } ?: notAvailableLabel, UnitFormatter.getElevationUnit(units))
-                    )
-                )
-            }
-
-            // 6. 温度面板 (Temperature section)
-            if (s.outsideTempAvg != null || s.insideTempAvg != null) {
-                StatsSectionCard(
-                    title = stringResource(R.string.temperature),
-                    icon = Icons.Default.DeviceThermostat,
-                    stats = listOfNotNull(
-                        s.outsideTempAvg?.let { StatItem(stringResource(R.string.outside), formatDriveTemperatureC(it, units).removeSuffix(UnitFormatter.getTemperatureUnit(units)), UnitFormatter.getTemperatureUnit(units)) },
-                        s.insideTempAvg?.let { StatItem(stringResource(R.string.inside), formatDriveTemperatureC(it, units).removeSuffix(UnitFormatter.getTemperatureUnit(units)), UnitFormatter.getTemperatureUnit(units)) }
-                    )
-                )
-            }
         }
 
 
@@ -435,7 +432,8 @@ private fun UnifiedTripCard(
     detail: DriveDetail,
     stats: DriveDetailStats?,
     units: Units?,
-    onNavigateToDriveCurves: () -> Unit
+    onNavigateToDriveCurves: () -> Unit,
+    onShowEnergyDialog: () -> Unit
 ) {
     val is24Hour = true
     val notAvailableLabel = stringResource(R.string.not_available)
@@ -454,10 +452,23 @@ private fun UnifiedTripCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                TelemetrySectionHeader(
-                    icon = CustomIcons.SteeringWheel,
-                    title = stringResource(R.string.trip)
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = CustomIcons.SteeringWheel,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = stringResource(R.string.trip),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
                 Surface(
                     onClick = onNavigateToDriveCurves,
                     shape = RoundedCornerShape(12.dp),
@@ -523,39 +534,62 @@ private fun UnifiedTripCard(
                 HorizontalDivider(
                     color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
                 )
-                val statItems = listOf(
-                    StatItem(
-                        stringResource(R.string.distance),
-                        stats.distance?.let { visualTripNumber(it) } ?: notAvailableLabel,
-                        UnitFormatter.getDistanceUnit(units),
-                        valueColor = Color(0xFF0284C7)
-                    ),
-                    StatItem(
-                        stringResource(R.string.duration),
-                        stats.durationMin?.let { "%,d".format(it) } ?: notAvailableLabel,
-                        stringResource(R.string.visual_trip_duration_unit),
-                        valueColor = Color(0xFFD97706)
-                    ),
-                    StatItem(
-                        stringResource(R.string.efficiency),
-                        stats.energy.efficiencyWhKm?.let { visualTripNumber(it / 10.0) } ?: notAvailableLabel,
-                        unit = "kWh/100km",
-                        recovered = (stats.energy.efficiencyWhKm ?: 0.0) < 0.0,
-                        valueColor = Color(0xFF10B981)
-                    )
-                )
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    statItems.forEach { item ->
-                        StatItemView(
-                            label = item.label,
-                            value = item.value,
-                            unit = item.unit,
-                            recovered = item.recovered,
-                            valueColor = item.valueColor,
-                            modifier = Modifier.weight(1f)
+                    StatItemView(
+                        label = stringResource(R.string.distance),
+                        value = stats.distance?.let { visualTripNumber(it) } ?: notAvailableLabel,
+                        unit = UnitFormatter.getDistanceUnit(units),
+                        valueColor = Color(0xFF0284C7),
+                        modifier = Modifier.weight(1f)
+                    )
+                    StatItemView(
+                        label = stringResource(R.string.duration),
+                        value = stats.durationMin?.let { "%,d".format(it) } ?: notAvailableLabel,
+                        unit = stringResource(R.string.visual_trip_duration_unit),
+                        valueColor = Color(0xFFD97706),
+                        modifier = Modifier.weight(1f)
+                    )
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(3.dp)
+                        ) {
+                            Text(
+                                text = stringResource(R.string.efficiency),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1
+                            )
+                            Icon(
+                                imageVector = Icons.Default.Info,
+                                contentDescription = "能耗说明",
+                                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
+                                modifier = Modifier
+                                    .size(13.dp)
+                                    .clickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = null
+                                    ) { onShowEnergyDialog() }
+                            )
+                        }
+                        Text(
+                            text = stats.energy.efficiencyWhKm?.let { visualTripNumber(it / 10.0) } ?: notAvailableLabel,
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontSize = 20.sp,
+                            color = Color(0xFF10B981),
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = "kWh/100km",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
@@ -591,7 +625,13 @@ private fun DetailTimeValue(
 private fun DriveMapCard(positions: List<DrivePosition>, routeColor: Color, startDate: String? = null, endDate: String? = null) {
     val startLabel = stringResource(R.string.start)
     val endLabel = stringResource(R.string.end)
-    val segments = remember(positions, startDate, endDate) { com.matelink.domain.map.observedDriveRouteSegments(positions, startDate, endDate) }
+    val segments = remember(positions, startDate, endDate) {
+        val observed = com.matelink.domain.map.observedDriveRouteSegments(positions, startDate, endDate)
+        if (observed.any { it.size >= 2 }) observed else {
+            val usable = usableDriveRoutePoints(positions)
+            if (usable.size >= 2) listOf(usable) else observed
+        }
+    }
     val routePoints = segments.flatten()
 
     Card(
@@ -818,201 +858,6 @@ private fun StatItemView(
                 softWrap = true
             )
         }
-    }
-}
-
-@Composable
-private fun SpeedChartCard(
-    positions: List<DrivePosition>,
-    units: Units?,
-    timeLabels: List<String>,
-    externalSelectedFraction: Float? = null,
-    onXSelected: ((Float?) -> Unit)? = null,
-    fractionToTimeLabel: ((Float) -> String)? = null,
-    projected: com.matelink.ui.components.TimedChartSeries? = null
-) {
-    val series = projected ?: projectDriveCurves(DriveDetail(0, positions = positions, lengthUnit = units?.unitOfLength)).speed
-    if (series.validCount < 2) return
-
-    ChartCard(
-        title = stringResource(R.string.speed_profile),
-        icon = Icons.Default.Speed,
-        data = series.values, series = series,
-        color = MaterialTheme.colorScheme.primary,
-        unit = UnitFormatter.getSpeedUnit(units),
-        timeLabels = timeLabels,
-        externalSelectedFraction = externalSelectedFraction,
-        onXSelected = onXSelected,
-        fractionToTimeLabel = fractionToTimeLabel
-    )
-}
-
-@Composable
-private fun PowerChartCard(
-    positions: List<DrivePosition>,
-    timeLabels: List<String>,
-    externalSelectedFraction: Float? = null,
-    onXSelected: ((Float?) -> Unit)? = null,
-    fractionToTimeLabel: ((Float) -> String)? = null,
-    projected: com.matelink.ui.components.TimedChartSeries? = null
-) {
-    val series = projected ?: projectDriveCurves(DriveDetail(0, positions = positions)).power
-    if (series.validCount < 2) return
-
-    ChartCard(
-        title = stringResource(R.string.power_profile),
-        icon = Icons.Default.Bolt,
-        data = series.values, series = series,
-        color = MaterialTheme.colorScheme.tertiary,
-        unit = "kW",
-        showZeroLine = true,
-        timeLabels = timeLabels,
-        externalSelectedFraction = externalSelectedFraction,
-        onXSelected = onXSelected,
-        fractionToTimeLabel = fractionToTimeLabel
-    )
-}
-
-@Composable
-private fun BatteryChartCard(
-    positions: List<DrivePosition>,
-    timeLabels: List<String>,
-    externalSelectedFraction: Float? = null,
-    onXSelected: ((Float?) -> Unit)? = null,
-    fractionToTimeLabel: ((Float) -> String)? = null,
-    projected: com.matelink.ui.components.TimedChartSeries? = null
-) {
-    val series = projected ?: projectDriveCurves(DriveDetail(0, positions = positions)).battery
-    val batteryLevels = series.values.filter(Float::isFinite)
-    if (batteryLevels.size < 2) return
-    val fixedMinMax = remember(batteryLevels) {
-        var yMin = (kotlin.math.floor(batteryLevels.min() / 10.0) * 10).toFloat()
-        var yMax = (kotlin.math.ceil(batteryLevels.max() / 10.0) * 10).toFloat()
-        if (yMin == yMax) { yMin -= 1; yMax += 1 }
-        Pair(yMin, yMax)
-    }
-
-    ChartCard(
-        title = stringResource(R.string.battery_level),
-        icon = Icons.Default.BatteryChargingFull,
-        data = series.values, series = series,
-        color = MaterialTheme.colorScheme.secondary,
-        unit = "%",
-        fixedMinMax = fixedMinMax,
-        timeLabels = timeLabels,
-        externalSelectedFraction = externalSelectedFraction,
-        onXSelected = onXSelected,
-        fractionToTimeLabel = fractionToTimeLabel
-    )
-}
-
-@Composable
-private fun ElevationChartCard(
-    positions: List<DrivePosition>,
-    timeLabels: List<String>,
-    externalSelectedFraction: Float? = null,
-    onXSelected: ((Float?) -> Unit)? = null,
-    fractionToTimeLabel: ((Float) -> String)? = null,
-    projected: com.matelink.ui.components.TimedChartSeries? = null
-) {
-    val series = projected ?: projectDriveCurves(DriveDetail(0, positions = positions)).elevation
-    if (series.validCount < 2) return
-
-    ChartCard(
-        title = stringResource(R.string.elevation_profile),
-        icon = Icons.Default.Landscape,
-        data = series.values, series = series,
-        color = MaterialTheme.colorScheme.primary,
-        unit = "m",
-        timeLabels = timeLabels,
-        externalSelectedFraction = externalSelectedFraction,
-        onXSelected = onXSelected,
-        fractionToTimeLabel = fractionToTimeLabel
-    )
-}
-
-@Composable
-private fun ChartCard(
-    title: String,
-    icon: ImageVector,
-    data: List<Float>,
-    color: Color,
-    unit: String,
-    showZeroLine: Boolean = false,
-    fixedMinMax: Pair<Float, Float>? = null,
-    timeLabels: List<String> = emptyList(),
-    convertValue: (Float) -> Float = { it },
-    externalSelectedFraction: Float? = null,
-    onXSelected: ((Float?) -> Unit)? = null,
-    fractionToTimeLabel: ((Float) -> String)? = null,
-    series: com.matelink.ui.components.TimedChartSeries? = null
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        )
-    ) {
-        Column(
-            modifier = Modifier.padding(12.dp)
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(bottom = 8.dp)
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp),
-                    tint = color
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-
-            FullscreenLineChart(
-                data = data,
-                xFractions = series?.xFractions.orEmpty(),
-                sourceIndices = series?.sourceIndices.orEmpty(),
-                gaps = series?.gaps.orEmpty(),
-                color = color,
-                unit = unit,
-                showZeroLine = showZeroLine,
-                fixedMinMax = fixedMinMax,
-                timeLabels = timeLabels,
-                convertValue = convertValue,
-                externalSelectedFraction = externalSelectedFraction,
-                onXSelected = onXSelected,
-                fractionToTimeLabel = fractionToTimeLabel,
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
-    }
-}
-
-/**
- * Extract 5 time labels from drive positions for X axis display.
- * Returns list of 5 time strings at 0%, 25%, 50%, 75%, and 100% positions.
- * Following the chart guidelines: start, 1st quarter, half, 3rd quarter, end.
- */
-private fun extractTimeLabels(positions: List<DrivePosition>, is24Hour: Boolean? = null): List<String> {
-    if (positions.isEmpty()) return listOf("", "", "", "", "")
-
-    val locale = java.util.Locale.getDefault()
-    val times = positions.mapNotNull { position ->
-        position.date?.let { parseIsoDateTime(it) }
-    }
-
-    if (times.isEmpty()) return listOf("", "", "", "", "")
-
-    // 5 positions: start (0%), 1st quarter (25%), half (50%), 3rd quarter (75%), end (100%)
-    val indices = listOf(0, times.size / 4, times.size / 2, times.size * 3 / 4, times.size - 1)
-    return indices.map { idx ->
-        times.getOrNull(idx.coerceIn(0, times.size - 1))?.formatTime(locale, is24Hour) ?: ""
     }
 }
 

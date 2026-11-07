@@ -13,6 +13,7 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.CheckCircle
@@ -234,24 +235,36 @@ fun TpmsVehicleVisual(readings: Map<TirePosition, VisualWheelReading>, selected:
                                     .fillMaxWidth()
                                     .testTag("interaction-wheel-${wheel.name}")
                                     .selectable(isSelected, role = Role.Button, onClick = { onSelect(if (isSelected) null else wheel) }),
-                                shape = RoundedCornerShape(14.dp),
+                                shape = RoundedCornerShape(16.dp),
                                 color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
-                                    else MaterialTheme.colorScheme.surfaceContainerHigh,
+                                    else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
                                 border = BorderStroke(
-                                    1.dp,
+                                    if (isSelected) 1.5.dp else 1.dp,
                                     if (isSelected) MaterialTheme.colorScheme.primary
                                     else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f)
                                 )
                             ) {
                                 Column(
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
                                     verticalArrangement = Arrangement.spacedBy(2.dp)
                                 ) {
-                                    Text(
-                                        text = label,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = label,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                        Surface(
+                                            shape = CircleShape,
+                                            color = accent.copy(alpha = 0.2f),
+                                            modifier = Modifier.size(6.dp)
+                                        ) {}
+                                    }
                                     Text(
                                         text = value,
                                         style = MaterialTheme.typography.titleMedium,
@@ -259,15 +272,15 @@ fun TpmsVehicleVisual(readings: Map<TirePosition, VisualWheelReading>, selected:
                                         color = accent
                                     )
                                     Surface(
-                                        shape = RoundedCornerShape(4.dp),
+                                        shape = RoundedCornerShape(6.dp),
                                         color = accent.copy(alpha = 0.12f)
                                     ) {
                                         Text(
                                             text = stateLabel,
                                             style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                                            fontWeight = FontWeight.Medium,
+                                            fontWeight = FontWeight.SemiBold,
                                             color = accent,
-                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                         )
                                     }
                                 }
@@ -276,18 +289,58 @@ fun TpmsVehicleVisual(readings: Map<TirePosition, VisualWheelReading>, selected:
                     }
                 }
         }
-        if (profile?.enabled == true && profile.isValid) Text(stringResource(R.string.interaction_evidence_pressure_source),
-            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        val observedAt = if (selected == null) latestVisualWheelObservation(displayReadings.values)
-            else displayReadings[selected]?.observedAt
-        val time = observedAt?.let { DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(it)) }
-            ?: stringResource(R.string.interaction_evidence_time_unknown)
-        Text(
-            text = if (selected == null) time else "${wheelVisualLabel(selected)} · $time",
-            modifier = Modifier.testTag("interaction-wheel-observed-at").padding(top = 4.dp),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        Spacer(modifier = Modifier.height(6.dp))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.AccessTime,
+                        contentDescription = null,
+                        modifier = Modifier.size(12.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    val observedAt = if (selected == null) latestVisualWheelObservation(displayReadings.values)
+                        else displayReadings[selected]?.observedAt
+                    val time = observedAt?.let { DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(it)) }
+                        ?: stringResource(R.string.interaction_evidence_time_unknown)
+                    Text(
+                        text = if (selected == null) "观测时间：$time" else "${wheelVisualLabel(selected)} · $time",
+                        modifier = Modifier.testTag("interaction-wheel-observed-at"),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            if (selected != null) {
+                Surface(
+                    onClick = { onSelect(null) },
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                ) {
+                    Text(
+                        text = "查看全车",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+            }
+        }
     }
 }
 

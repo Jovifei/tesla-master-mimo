@@ -1,5 +1,11 @@
 package com.matelink.ui.screens.dashboard
 
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.LocalParking
+import androidx.compose.material.icons.filled.Paid
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -996,9 +1002,17 @@ private fun formatTemp(value: Float): String =
 @Composable
 internal fun NearbyChargingSection(
     carId: Int,
+    status: CarStatus? = null,
     viewModel: VehicleRemoteViewModel
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val lat = status?.latitude
+    val lon = status?.longitude
+
+    LaunchedEffect(carId, lat, lon) {
+        viewModel.loadNearby(carId, lat, lon)
+    }
+
     TelemetryPanel(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -1025,56 +1039,21 @@ internal fun NearbyChargingSection(
                         fontWeight = FontWeight.Bold
                     )
                 }
-                if (state.nearby is NearbyState.Loaded) {
-                    IconButton(
-                        onClick = { viewModel.loadNearby(carId) },
-                        modifier = Modifier.size(28.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.Refresh,
-                            contentDescription = stringResource(R.string.refresh),
-                            modifier = Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    }
+                IconButton(
+                    onClick = { viewModel.loadNearby(carId, lat, lon) },
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Refresh,
+                        contentDescription = stringResource(R.string.refresh),
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
                 }
             }
 
             when (val nearby = state.nearby) {
-                NearbyState.NotLoaded -> {
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.surface,
-                        border = BorderStroke(0.8.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(16.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            Text(
-                                stringResource(R.string.nearby_hint),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            OutlinedButton(
-                                onClick = { viewModel.loadNearby(carId) },
-                                shape = RoundedCornerShape(10.dp),
-                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.6f))
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Refresh,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(stringResource(R.string.nearby_load))
-                            }
-                        }
-                    }
-                }
-                NearbyState.Loading -> {
+                NearbyState.NotLoaded, NearbyState.Loading -> {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1104,7 +1083,7 @@ internal fun NearbyChargingSection(
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.error
                             )
-                            TextButton(onClick = { viewModel.loadNearby(carId) }) {
+                            TextButton(onClick = { viewModel.loadNearby(carId, lat, lon) }) {
                                 Text(stringResource(R.string.retry))
                             }
                         }
@@ -1119,18 +1098,11 @@ internal fun NearbyChargingSection(
                             modifier = Modifier.padding(vertical = 8.dp)
                         )
                     } else {
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             nearby.sites.take(5).forEach { site ->
                                 ChargingSiteRow(site)
                             }
                         }
-                    }
-                    if (nearby.source == "cache") {
-                        Text(
-                            stringResource(R.string.nearby_cached),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
                     }
                 }
             }
@@ -1140,80 +1112,147 @@ internal fun NearbyChargingSection(
 
 @Composable
 private fun ChargingSiteRow(site: ChargingSite) {
+    val context = LocalContext.current
     val isSuper = site.isSupercharger
     Surface(
-        shape = RoundedCornerShape(10.dp),
+        shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(0.6.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)),
-        modifier = Modifier.fillMaxWidth()
+        border = BorderStroke(0.6.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable {
+                if (site.latitude != null && site.longitude != null) {
+                    runCatching {
+                        val uri = Uri.parse("geo:${site.latitude},${site.longitude}?q=${Uri.encode(site.name.orEmpty())}")
+                        val mapIntent = Intent(Intent.ACTION_VIEW, uri)
+                        context.startActivity(Intent.createChooser(mapIntent, "导航到充电站"))
+                    }
+                }
+            }
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Box(
-                modifier = Modifier
-                    .size(34.dp)
-                    .clip(CircleShape)
-                    .background(
-                        if (isSuper) MaterialTheme.colorScheme.errorContainer
-                        else MaterialTheme.colorScheme.primaryContainer
-                    ),
-                contentAlignment = Alignment.Center
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Icon(
-                    imageVector = Icons.Default.EvStation,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                    tint = if (isSuper) MaterialTheme.colorScheme.error
-                    else MaterialTheme.colorScheme.primary
-                )
-            }
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = site.name ?: stringResource(R.string.nearby_unnamed),
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = stringResource(
-                        if (isSuper) R.string.nearby_supercharger else R.string.nearby_destination
-                    ) + (site.stallsText?.let { " · $it" } ?: ""),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            if (site.siteClosed == true) {
-                Surface(
-                    shape = RoundedCornerShape(4.dp),
-                    color = MaterialTheme.colorScheme.errorContainer
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(
+                            if (isSuper) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.8f)
+                            else MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.8f)
+                        ),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        stringResource(R.string.nearby_closed),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onErrorContainer,
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    Icon(
+                        imageVector = if (isSuper) Icons.Default.Bolt else Icons.Default.EvStation,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                        tint = if (isSuper) MaterialTheme.colorScheme.error
+                        else MaterialTheme.colorScheme.primary
                     )
                 }
-            } else {
-                site.distanceKm?.let { km ->
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = site.name ?: stringResource(R.string.nearby_unnamed),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = stringResource(
+                            if (isSuper) R.string.nearby_supercharger else R.string.nearby_destination
+                        ) + (site.stallsText?.let { " · 空闲 $it" } ?: ""),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                if (site.siteClosed == true) {
                     Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                        shape = RoundedCornerShape(4.dp),
+                        color = MaterialTheme.colorScheme.errorContainer
                     ) {
                         Text(
-                            text = stringResource(R.string.nearby_distance, km),
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                            stringResource(R.string.nearby_closed),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                         )
                     }
+                } else {
+                    site.distanceKm?.let { km ->
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                        ) {
+                            Text(
+                                text = stringResource(R.string.nearby_distance, km),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Price and Parking Strategy Row
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f),
+                thickness = 0.6.dp
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                // Price Tag
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Paid,
+                        contentDescription = null,
+                        tint = Color(0xFF10B981),
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Text(
+                        text = site.displayPrice,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFF047857)
+                    )
+                }
+
+                // Parking Policy Tag
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.LocalParking,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Text(
+                        text = site.displayParking,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
             }
         }

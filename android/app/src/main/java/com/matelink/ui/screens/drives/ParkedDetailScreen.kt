@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Eco
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Surface
 import androidx.compose.material.icons.filled.LocalParking
 import androidx.compose.material.icons.filled.Power
@@ -183,6 +184,9 @@ private fun ParkedDetailContent(
     val unavailable = stringResource(R.string.not_available)
     val context = androidx.compose.ui.platform.LocalContext.current
     val palette = telemetryPalette()
+    var showBatteryDialog by remember { mutableStateOf(false) }
+    var showStandbyDialog by remember { mutableStateOf(false) }
+    var showTelemetryDialog by remember { mutableStateOf(false) }
 
     val startDt = parseIsoInstant(data.startDate)
     val endDt = parseIsoInstant(data.endDate)
@@ -345,19 +349,33 @@ private fun ParkedDetailContent(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Row(
+                    modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Bolt,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = stringResource(R.string.parked_battery_section_title),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                     Icon(
-                        imageVector = Icons.Default.Bolt,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp),
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                    Text(
-                        text = stringResource(R.string.parked_battery_section_title),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
+                        imageVector = Icons.Default.Info,
+                        contentDescription = "电池说明",
+                        modifier = Modifier
+                            .size(16.dp)
+                            .clickable { showBatteryDialog = true },
+                        tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
                     )
                 }
                 Box(
@@ -410,13 +428,6 @@ private fun ParkedDetailContent(
                         maxColumns = 4
                     )
                 }
-                if (startSoc == null || endSoc == null) {
-                    Text(
-                        stringResource(R.string.parked_boundary_missing_note),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
                 socPointsPerHour?.takeUnless { hasChargeEvidence }?.let { rate ->
                     val label = when {
                         rate > 0.0 -> R.string.parked_soc_rate_gain
@@ -435,15 +446,6 @@ private fun ParkedDetailContent(
                         }
                     )
                 }
-                if (socPointsPerHour != null && !hasChargeEvidence && qualifiedEnergy == null) {
-                    Text(stringResource(
-                        if (socPointsPerHour > 0.0)
-                            R.string.parked_soc_gain_unlinked_note
-                        else R.string.parked_soc_only_note
-                    ),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
             }
         }
 
@@ -456,19 +458,33 @@ private fun ParkedDetailContent(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Row(
+                    modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Bolt,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                            tint = Color(0xFF0284C7)
+                        )
+                        Text(
+                            text = "驻车待机能耗分析",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                     Icon(
-                        imageVector = Icons.Default.Bolt,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp),
-                        tint = Color(0xFF0284C7)
-                    )
-                    Text(
-                        text = "驻车待机能耗分析",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
+                        imageVector = Icons.Default.Info,
+                        contentDescription = "待机推算说明",
+                        modifier = Modifier
+                            .size(16.dp)
+                            .clickable { showStandbyDialog = true },
+                        tint = Color(0xFF0284C7).copy(alpha = 0.8f)
                     )
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
@@ -527,11 +543,6 @@ private fun ParkedDetailContent(
                         color = MaterialTheme.colorScheme.primary
                     )
                 }
-                Text(
-                    text = "推算说明：按 Tesla 标准续航版约 60 kWh 电池容量基准，1% 约对应 0.60 kWh 及 3.8 km 额定续航；开启哨兵模式时典型待机功耗为 200~350 W。",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
         }
 
@@ -549,12 +560,35 @@ private fun ParkedDetailContent(
         // historical values to zero or borrowing the current vehicle status.
         TelemetryPanel(modifier = Modifier.fillMaxWidth(), accent = MaterialTheme.colorScheme.tertiary) {
             Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Icon(Icons.Default.Thermostat, contentDescription = null,
-                        modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.tertiary)
-                    Text(stringResource(R.string.parked_cloud_section_title),
-                        style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Thermostat,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                            tint = MaterialTheme.colorScheme.tertiary
+                        )
+                        Text(
+                            text = stringResource(R.string.parked_cloud_section_title),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Icon(
+                        imageVector = Icons.Default.Info,
+                        contentDescription = "遥测说明",
+                        modifier = Modifier
+                            .size(16.dp)
+                            .clickable { showTelemetryDialog = true },
+                        tint = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.8f)
+                    )
                 }
                 val displayEnergy = telemetry.energyKwh?.let { "%.2f".format(it) }
                     ?: batteryDeltaVal?.let { "≈%.2f".format(kotlin.math.abs(it) * 0.60) }
@@ -586,24 +620,72 @@ private fun ParkedDetailContent(
                 ParkedTelemetryRow(Icons.Default.Schedule, stringResource(R.string.parked_sample_count),
                     telemetry.sampleCount?.let { "%,d".format(it) },
                     stringResource(R.string.parked_sample_unit), Color(0xFF64748B), fallback = "0 次 (免打扰)")
-                if (telemetry.hasMissing) {
-                    Text(stringResource(R.string.parked_telemetry_missing_note),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
             }
         }
 
-        Text(
-            text = when (data.source) {
-                "local_room_cache" -> stringResource(R.string.parked_detail_local_source_note)
-                "database_latest", "teslamate_archive" -> stringResource(R.string.parked_detail_archive_source_note)
-                else -> stringResource(R.string.parked_detail_other_source_note)
-            },
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(start = 4.dp)
-        )
+        if (showBatteryDialog) {
+            AlertDialog(
+                onDismissRequest = { showBatteryDialog = false },
+                title = { Text("电池与工况说明", fontWeight = FontWeight.Bold) },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("• 起始与结束电量来源于相邻行程端点观测，保证前后数据连贯。", style = MaterialTheme.typography.bodyMedium)
+                        if (socPointsPerHour != null) {
+                            val rateDesc = if (socPointsPerHour > 0.0) "检测到驻车期间存在电量增加或充电补电行为。" else "检测到驻车期间存在常态待机或哨兵能耗消耗。"
+                            Text("• 变化率：$rateDesc", style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showBatteryDialog = false }) {
+                        Text(stringResource(R.string.close))
+                    }
+                }
+            )
+        }
+
+        if (showStandbyDialog) {
+            AlertDialog(
+                onDismissRequest = { showStandbyDialog = false },
+                title = { Text("待机能耗推算依据", fontWeight = FontWeight.Bold) },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("• 按 Tesla 标准续航版约 60 kWh 电池容量基准测算。", style = MaterialTheme.typography.bodyMedium)
+                        Text("• 1% 电量约对应 0.60 kWh 能耗与 3.8 km 额定续航。", style = MaterialTheme.typography.bodyMedium)
+                        Text("• 车辆在休眠状态下功耗通常低于 50 W；开启哨兵模式或车机活跃保温时待机功耗为 200~350 W。", style = MaterialTheme.typography.bodyMedium)
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showStandbyDialog = false }) {
+                        Text(stringResource(R.string.close))
+                    }
+                }
+            )
+        }
+
+        if (showTelemetryDialog) {
+            AlertDialog(
+                onDismissRequest = { showTelemetryDialog = false },
+                title = { Text("遥测与采样说明", fontWeight = FontWeight.Bold) },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        val sourceDesc = when (data.source) {
+                            "local_room_cache" -> stringResource(R.string.parked_detail_local_source_note)
+                            "database_latest", "teslamate_archive" -> stringResource(R.string.parked_detail_archive_source_note)
+                            else -> stringResource(R.string.parked_detail_other_source_note)
+                        }
+                        Text("• 数据来源: $sourceDesc", style = MaterialTheme.typography.bodyMedium)
+                        Text("• 车辆休眠期间，车机停止高频遥测上报以避免额外电池消耗，温度与气象数据保持最近已知状态。", style = MaterialTheme.typography.bodyMedium)
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showTelemetryDialog = false }) {
+                        Text(stringResource(R.string.close))
+                    }
+                }
+            )
+        }
+
         Spacer(Modifier.height(8.dp))
     }
 }

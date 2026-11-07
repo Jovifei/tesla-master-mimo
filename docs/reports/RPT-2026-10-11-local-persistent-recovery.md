@@ -9,7 +9,7 @@
 ## 2. 已完成的本轮证据
 
 - 原 Owner `c9dea6414b25cff0569bbf2a456454f97953be9e` 与远端 `f0629d8f0a7b02b2b865fd83479a8c12be2f1838` 在原 E 目录合并，尚未提交；初始合成树 `cec358764257558a7259b67859ca3b368415726d`。Owner 功能和 dirty 文档保留，481/481 文件备份 SHA256 核对通过。
-- 当前 branch `codex/local-persistent-recovery-20261011`。远端 PLANv2 来自普通 Chat `6acb8405-88a8-83ea-b126-8339d81ca57a`，实际通过 app_mimo 读取本地方案及执行包。完整合同见 `PLAN-2026-10-11-local-persistent-recovery.md`。
+- 当前 branch `codex/local-persistent-recovery-20261011`。远端 PLANv2 来自普通 Chat `6acb8405-88a8-83ea-b126-8339d81ca57a`，实际通过 app_mimo 读取本地方案及执行包。原计划已在 2026-11-07 按授权归档删除；本报告和固定提交/测试证据保留。
 - 实际 RED：Go true/false warning 丢失；真实编译 Android 的 resolver/prompt/trend/Moshi 共六项失败；磁盘 Room/DataStore 重建的 B/C/E 四项失败；真实 Session/Mode setter ABA 三项失败。不是仅源码文本或 hash 检查。RED 日志与冻结 XML 在 `E:\Claude_allow\Download`。
 - 当前未提交 Go 修复：隔离 PG16 全量 320 项 PASS、0 FAIL/SKIP；隔离 Linux 全量 race PASS。HTTP warning-only 与共用 Android JSON fixture 校验通过，矛盾别名先 RED 后拒绝。
 - Web13 项及构建 PASS。TLS29 项及策略 PASS：只在临时 Linux 副本转换 CRLF，保留转换前后 hash；无生产网络操作。10 个源码主题检查和真实 DAO SQL 语义检查 PASS。

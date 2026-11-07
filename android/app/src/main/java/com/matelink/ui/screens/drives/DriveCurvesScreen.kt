@@ -381,12 +381,17 @@ internal fun SpeedCurveCard(
     val series = projected ?: projectDriveCurves(DriveDetail(0, positions = positions, lengthUnit = units?.unitOfLength)).speed
     if (series.validCount < 2) return
 
+    val validSpeeds = series.values.filter { it.isFinite() && it >= 0f }
+    val maxSpeed = validSpeeds.maxOrNull()?.coerceAtLeast(10f) ?: 50f
+    val fixedMinMax = Pair(0f, maxSpeed * 1.08f)
+
     CurveContainerCard(
         title = stringResource(R.string.speed_profile),
         icon = Icons.Default.Speed,
         data = series.values, series = series,
         color = MaterialTheme.colorScheme.primary,
         unit = UnitFormatter.getSpeedUnit(units),
+        fixedMinMax = fixedMinMax,
         timeLabels = timeLabels,
         externalSelectedFraction = externalSelectedFraction,
         onXSelected = onXSelected,

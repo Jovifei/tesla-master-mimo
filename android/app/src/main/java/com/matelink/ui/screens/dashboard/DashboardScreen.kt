@@ -84,6 +84,12 @@ import com.matelink.ui.components.launchExternalIntentSafely
 import com.matelink.ui.screens.readiness.DataReadinessRows
 import com.matelink.ui.screens.readiness.readinessDashboardValue
 import com.matelink.ui.screens.battery.classifyBatteryCharge
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Eco
+import androidx.compose.material.icons.filled.Timer
+import androidx.compose.ui.unit.sp
+import com.matelink.data.local.entity.DriveSummary
 import kotlinx.coroutines.launch
 import java.util.Locale
 
@@ -107,6 +113,7 @@ fun DashboardScreen(
     onNavigateToTrips: (carId: Int, exteriorColor: String?) -> Unit = { _, _ -> },
     onNavigateToReadiness: (carId: Int) -> Unit = {},
     onNavigateToTeslaLogin: () -> Unit = {},
+    onNavigateToDriveDetail: (carId: Int, driveId: Int) -> Unit = { _, _ -> },
     viewModel: DashboardViewModel = hiltViewModel()
 ) {
     val remoteViewModel: VehicleRemoteViewModel = hiltViewModel()
@@ -209,23 +216,141 @@ fun DashboardScreen(
     }
     val openOpenings = openVehicleOpenings(status)
     val warningTires = warningTires(status.tpmsDetails)
-    var showHeroUnlockConfirm by remember { mutableStateOf(false) }
+    var showLockConfirmDialog by remember { mutableStateOf<Boolean?>(null) }
+    var showPortConfirmDialog by remember { mutableStateOf<Boolean?>(null) }
+    var showClimateDialog by remember { mutableStateOf(false) }
+    var showSentryConfirmDialog by remember { mutableStateOf<Boolean?>(null) }
+    var climateTempTarget by remember(status.driverTempSetting) {
+        mutableStateOf(status.driverTempSetting ?: 22.0)
+    }
 
-    if (showHeroUnlockConfirm) {
+    if (showLockConfirmDialog != null) {
+        val willLock = showLockConfirmDialog == true
         AlertDialog(
-            onDismissRequest = { showHeroUnlockConfirm = false },
-            title = { Text(stringResource(R.string.cmd_unlock_confirm_title)) },
-            text = { Text(stringResource(R.string.cmd_unlock_confirm_body)) },
+            onDismissRequest = { showLockConfirmDialog = null },
+            title = { Text(if (willLock) "确认锁闭车辆" else stringResource(R.string.cmd_unlock_confirm_title), fontWeight = FontWeight.Bold) },
+            text = { Text(if (willLock) "确定要锁闭车辆门锁吗？" else stringResource(R.string.cmd_unlock_confirm_body)) },
             confirmButton = {
-                TextButton(onClick = {
-                    showHeroUnlockConfirm = false
-                    vehicleCommandCatalog.firstOrNull { it.name == "unlock" }?.let {
-                        remoteViewModel.executeCommand(carId, it, confirm = true)
+                Button(
+                    onClick = {
+                        val cmdName = if (willLock) "lock" else "unlock"
+                        vehicleCommandCatalog.firstOrNull { it.name == cmdName }?.let {
+                            remoteViewModel.executeCommand(carId, it, confirm = true)
+                        }
+                        showLockConfirmDialog = null
                     }
-                }) { Text(stringResource(R.string.cmd_confirm)) }
+                ) { Text(stringResource(R.string.cmd_confirm)) }
             },
             dismissButton = {
-                TextButton(onClick = { showHeroUnlockConfirm = false }) { Text(stringResource(R.string.cmd_cancel)) }
+                TextButton(onClick = { showLockConfirmDialog = null }) { Text(stringResource(R.string.cmd_cancel)) }
+            }
+        )
+    }
+
+    if (showPortConfirmDialog != null) {
+        val willClose = showPortConfirmDialog == true
+        AlertDialog(
+            onDismissRequest = { showPortConfirmDialog = null },
+            title = { Text(if (willClose) "关闭充电口" else "打开充电口", fontWeight = FontWeight.Bold) },
+            text = { Text(if (willClose) "确定要关闭车辆充电接口吗？" else "确定要开启车辆充电接口吗？") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val cmdName = if (willClose) "charge_port_close" else "charge_port_open"
+                        vehicleCommandCatalog.firstOrNull { it.name == cmdName }?.let {
+                            remoteViewModel.executeCommand(carId, it, confirm = true)
+                        }
+                        showPortConfirmDialog = null
+                    }
+                ) { Text(stringResource(R.string.cmd_confirm)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showPortConfirmDialog = null }) { Text(stringResource(R.string.cmd_cancel)) }
+            }
+        )
+    }
+
+    if (showClimateDialog) {
+        val isClimateOn = status.isClimateOn == true
+        AlertDialog(
+            onDismissRequest = { showClimateDialog = false },
+            title = { Text("空调温度与控制", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Text(
+                        text = if (isClimateOn) "当前空调已开启 · 目标设定 %.1f°C".format(climateTempTarget)
+                        else "当前空调已关闭 · 预设目标 %.1f°C".format(climateTempTarget),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        IconButton(
+                            onClick = { if (climateTempTarget > 16.0) climateTempTarget -= 0.5 },
+                            enabled = climateTempTarget > 16.0
+                        ) {
+                            Text("-", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                        }
+                        Text(
+                            text = "%.1f°C".format(climateTempTarget),
+                            style = MaterialTheme.typography.headlineMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        IconButton(
+                            onClick = { if (climateTempTarget < 28.0) climateTempTarget += 0.5 },
+                            enabled = climateTempTarget < 28.0
+                        ) {
+                            Text("+", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val cmdName = if (isClimateOn) "climate_off" else "climate_on"
+                        vehicleCommandCatalog.firstOrNull { it.name == cmdName }?.let {
+                            remoteViewModel.executeCommand(
+                                carId,
+                                it,
+                                params = if (!isClimateOn) mapOf("driver_temp" to climateTempTarget) else null,
+                                confirm = true
+                            )
+                        }
+                        showClimateDialog = false
+                    }
+                ) {
+                    Text(if (isClimateOn) "关闭空调" else "开启空调")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClimateDialog = false }) { Text("取消") }
+            }
+        )
+    }
+
+    if (showSentryConfirmDialog != null) {
+        val willTurnOn = showSentryConfirmDialog == true
+        AlertDialog(
+            onDismissRequest = { showSentryConfirmDialog = null },
+            title = { Text(if (willTurnOn) "开启哨兵模式" else "关闭哨兵模式", fontWeight = FontWeight.Bold) },
+            text = { Text(if (willTurnOn) "确定要开启哨兵防盗监控模式吗？" else "确定要关闭哨兵模式吗？") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val cmdName = if (willTurnOn) "sentry_on" else "sentry_off"
+                        vehicleCommandCatalog.firstOrNull { it.name == cmdName }?.let {
+                            remoteViewModel.executeCommand(carId, it, confirm = true)
+                        }
+                        showSentryConfirmDialog = null
+                    }
+                ) { Text(stringResource(R.string.cmd_confirm)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSentryConfirmDialog = null }) { Text(stringResource(R.string.cmd_cancel)) }
             }
         )
     }
@@ -270,38 +395,6 @@ fun DashboardScreen(
                 }
                 IconButton(onClick = onNavigateToSettings) {
                     Icon(Icons.Default.Settings, stringResource(R.string.settings_title), modifier = Modifier.size(20.dp))
-                }
-            }
-        }
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            vehicleProfileSubtitle(heroProfile, car?.carDetails?.trimBadging)?.let { subtitle ->
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false).padding(end = 8.dp)
-                )
-            } ?: Spacer(modifier = Modifier.weight(1f))
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                val isAsleep = dashboardIsAsleep(status.state, uiState.errorKind, uiState.snapshotFreshness)
-                SnapshotBadge(uiState.snapshotFreshness, uiState.snapshotMixedSources, uiState.snapshotSource, isAsleep)
-                uiState.observedAt?.takeIf { it.isNotBlank() }?.let {
-                    formatSnapshotTime(it)?.let { formatted ->
-                        Text(
-                            text = formatted,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
                 }
             }
         }
@@ -392,7 +485,9 @@ fun DashboardScreen(
                             fontWeight = FontWeight.SemiBold
                         )
                     }
-                    status.state?.takeIf { it.isNotBlank() }?.let { state ->
+                    val displayState = status.state?.takeIf { it.isNotBlank() }
+                        ?: if (uiState.snapshotFreshness == SnapshotFreshness.HISTORY) "asleep" else null
+                    displayState?.let { state ->
                         Surface(
                             color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
                             shape = MaterialTheme.shapes.extraLarge
@@ -600,13 +695,7 @@ fun DashboardScreen(
                         isLoading = busyCmd in listOf("lock", "unlock"),
                         onClick = if (canExecute) {
                             {
-                                if (status.locked == true) {
-                                    showHeroUnlockConfirm = true
-                                } else {
-                                    vehicleCommandCatalog.firstOrNull { it.name == "lock" }?.let {
-                                        remoteViewModel.executeCommand(carId, it)
-                                    }
-                                }
+                                showLockConfirmDialog = status.locked != true
                             }
                         } else null,
                         modifier = Modifier.weight(1f)
@@ -622,10 +711,7 @@ fun DashboardScreen(
                         isLoading = busyCmd in listOf("charge_port_open", "charge_port_close", "charge_start", "charge_stop"),
                         onClick = if (canExecute) {
                             {
-                                val cmdName = if (status.chargePortDoorOpen == true) "charge_port_close" else "charge_port_open"
-                                vehicleCommandCatalog.firstOrNull { it.name == cmdName }?.let {
-                                    remoteViewModel.executeCommand(carId, it)
-                                }
+                                showPortConfirmDialog = status.chargePortDoorOpen == true
                             }
                         } else null,
                         modifier = Modifier.weight(1f)
@@ -641,10 +727,7 @@ fun DashboardScreen(
                         isLoading = busyCmd in listOf("climate_on", "climate_off"),
                         onClick = if (canExecute) {
                             {
-                                val cmdName = if (status.isClimateOn == true) "climate_off" else "climate_on"
-                                vehicleCommandCatalog.firstOrNull { it.name == cmdName }?.let {
-                                    remoteViewModel.executeCommand(carId, it)
-                                }
+                                showClimateDialog = true
                             }
                         } else null,
                         modifier = Modifier.weight(1f)
@@ -660,10 +743,7 @@ fun DashboardScreen(
                         isLoading = busyCmd in listOf("sentry_on", "sentry_off"),
                         onClick = if (canExecute) {
                             {
-                                val cmdName = if (status.sentryMode == true) "sentry_off" else "sentry_on"
-                                vehicleCommandCatalog.firstOrNull { it.name == cmdName }?.let {
-                                    remoteViewModel.executeCommand(carId, it)
-                                }
+                                showSentryConfirmDialog = status.sentryMode != true
                             }
                         } else null,
                         modifier = Modifier.weight(1f)
@@ -756,12 +836,7 @@ fun DashboardScreen(
         // controls (hidden until the backend reports command scopes
         // ready), nearby charging (loaded on demand to save Fleet API
         // quota) and named places.
-        VehicleQuickStatusAndControlSheet(
-            carId = carId,
-            status = status,
-            onReauthorize = onNavigateToTeslaLogin,
-            viewModel = remoteViewModel
-        )
+
 
         // Info cards row
         Row(
@@ -805,6 +880,15 @@ fun DashboardScreen(
                     .fillMaxHeight(),
                 icon = Icons.Default.LocationOn,
                 onClick = onLocationClick
+            )
+        }
+
+        // Recent drive card (Apple HIG style)
+        uiState.recentDrive?.let { recent ->
+            DashboardRecentDriveCard(
+                drive = recent,
+                units = uiState.units,
+                onClick = { onNavigateToDriveDetail(carId, recent.driveId) }
             )
         }
 
@@ -889,7 +973,7 @@ fun DashboardScreen(
         }
 
         // Surrounding charging network and saved places
-        NearbyChargingSection(carId = carId, viewModel = remoteViewModel)
+        NearbyChargingSection(carId = carId, status = status, viewModel = remoteViewModel)
         VehiclePlacesSection(carId = carId, status = status, viewModel = remoteViewModel)
 
         // Battery history navigation. No chart is drawn until real history is available.
@@ -1757,6 +1841,206 @@ private fun ActiveChargingHudCard(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun DashboardRecentDriveCard(
+    drive: DriveSummary,
+    units: Units,
+    onClick: () -> Unit
+) {
+    val unknown = stringResource(R.string.unknown)
+    val endpoints = com.matelink.util.formatRouteAddresses(drive.startAddress, drive.endAddress, unknown)
+    val startText = endpoints.first.ifBlank { unknown }
+    val endText = endpoints.second.ifBlank { unknown }
+
+    val distText = if (drive.distance >= 0.0) UnitFormatter.formatDistance(drive.distance, units, 1) else "--"
+    val durText = if (drive.durationMin >= 0) "${drive.durationMin} min" else "--"
+    val effText = drive.efficiency?.let { "%.0f Wh/km".format(it) }
+        ?: drive.energyConsumed?.let { "%.1f kWh".format(it) } ?: "--"
+    val speedText = if (drive.speedMax >= 0) "${drive.speedMax} km/h" else "--"
+
+    val socRange = if (drive.startBatteryLevel > 0 || drive.endBatteryLevel > 0) {
+        UnitFormatter.formatSocRange(
+            drive.startBatteryLevel.takeIf { it > 0 },
+            drive.endBatteryLevel.takeIf { it > 0 },
+            ""
+        )
+    } else ""
+    val routeText = if (startText == unknown && endText != unknown) endText
+        else if (startText != unknown && endText == unknown) startText
+        else if (startText == endText) startText
+        else "$startText → $endText"
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            // Header: Title & Time
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.DirectionsCar,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Text(
+                        text = "最近行程",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = formatSnapshotTime(drive.endDate) ?: drive.endDate.take(16).replace("T", " "),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+
+            // Route & SOC delta
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                    Text(
+                        text = routeText,
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        text = distText,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    if (socRange.isNotBlank()) {
+                        Text(
+                            text = socRange,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
+            // 4 Capsules
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                val capsuleModifier = Modifier.weight(1f)
+                DashboardMetricCapsule(
+                    icon = Icons.Default.Eco,
+                    label = "能耗",
+                    value = effText,
+                    tint = Color(0xFF10B981),
+                    modifier = capsuleModifier
+                )
+                DashboardMetricCapsule(
+                    icon = Icons.Default.Speed,
+                    label = "里程",
+                    value = distText,
+                    tint = Color(0xFF0284C7),
+                    modifier = capsuleModifier
+                )
+                DashboardMetricCapsule(
+                    icon = Icons.Default.Timer,
+                    label = "时长",
+                    value = durText,
+                    tint = Color(0xFFD97706),
+                    modifier = capsuleModifier
+                )
+                DashboardMetricCapsule(
+                    icon = Icons.Default.Speed,
+                    label = "极速",
+                    value = speedText,
+                    tint = Color(0xFF6366F1),
+                    modifier = capsuleModifier
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DashboardMetricCapsule(
+    icon: ImageVector,
+    label: String,
+    value: String,
+    tint: Color,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(10.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
+        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f))
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 6.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = tint,
+                    modifier = Modifier.size(11.dp)
+                )
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Text(
+                text = value,
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 11.sp
+                ),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }

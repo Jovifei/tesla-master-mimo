@@ -160,7 +160,7 @@ data class ParsedChineseAddress(
 
 fun simplifyAddressLandmark(raw: String): String {
     if (raw.isBlank()) return raw
-    val text = raw.trim()
+    var text = raw.trim()
 
     // 1. Check if bracket content contains a major landmark (e.g. 鞠婆婆绵绵冰(美塘广场杭州总店) -> 美塘广场)
     val bracketMatch = Regex("[\\(（]([^\\(\\)（）]+)[\\)）]").find(text)
@@ -173,8 +173,21 @@ fun simplifyAddressLandmark(raw: String): String {
     }
 
     // 2. Strip bracket branch suffixes like (xx店), (xx分店), (xx总店)
-    val clean = text.replace(Regex("[\\(（][^\\(\\)（）]*(?:店|分店|总店|支店|分公司)[^\\(\\)（）]*[\\)）]"), "").trim()
-    return clean
+    text = text.replace(Regex("[\\(（][^\\(\\)（）]*(?:店|分店|总店|支店|分公司)[^\\(\\)（）]*[\\)）]"), "").trim()
+
+    // 3. If text contains complex separator like "、" or "，" or ",", check if one part is a major commercial landmark
+    // e.g. "鞠婆婆绵绵冰、美塘广场" -> "美塘广场"
+    val subParts = text.split("、", ",", "，").map { it.trim() }.filter { it.isNotEmpty() }
+    if (subParts.size > 1) {
+        val majorLandmark = subParts.firstOrNull { part ->
+            Regex("(?:广场|中心|大厦|大楼|园区|科技园|软件园|商城|商业中心|商场|印象城|万达|万象城|银泰|百联|天街|枢纽|站)").containsMatchIn(part)
+        }
+        if (majorLandmark != null) {
+            text = majorLandmark
+        }
+    }
+
+    return text.replace(Regex("[\\(（][^\\(\\)（）]*[\\)）]"), "").trim().ifBlank { raw.trim() }
 }
 
 fun parseChineseAddress(raw: String): ParsedChineseAddress {

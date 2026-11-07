@@ -42,7 +42,9 @@ import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.ElectricBolt
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Paid
+import androidx.compose.material.icons.filled.EvStation
 import androidx.compose.material.icons.filled.PriceCheck
+import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.Card
@@ -746,7 +748,7 @@ internal fun SummaryCard(
                     TelemetryMetricStrip(
                         metrics = listOf(
                             TelemetryMetricSpec(
-                                Icons.Default.ElectricBolt,
+                                Icons.Default.EvStation,
                                 stringResource(R.string.summary_sessions_compact),
                                 summary.totalCharges.toString(),
                                 palette.accent,
@@ -787,7 +789,7 @@ internal fun SummaryCard(
                                 valueFontSize = 18.sp
                             ),
                             TelemetryMetricSpec(
-                                Icons.Default.Paid,
+                                Icons.Default.ReceiptLong,
                                 stringResource(R.string.summary_avg_charge_compact),
                                 summary.avgCostPerCharge?.let { cost ->
                                     val prefix = if (summary.estimatedCostCount > 0 || summary.costCoverage < summary.totalCharges) "≈" else ""
@@ -916,7 +918,10 @@ internal fun ChargeItem(
         charge.endRatedRangeKm!! - charge.startRatedRangeKm!!
     } else null
 
-    val addressText = charge.address?.let { formatParkedAddress(it, unknownLocation) }?.takeIf { it.isNotBlank() }
+    val addressText = charge.address
+        ?.let { formatParkedAddress(it, "") }
+        ?.takeIf { it.isNotBlank() && !it.contains("未知") }
+        ?: charge.address?.takeIf { it.isNotBlank() && !it.contains("未知") }
         ?: if (charge.latitude != null && charge.longitude != null) "%.3f°N, %.3f°E".format(charge.latitude, charge.longitude)
         else unknownLocation
 
@@ -1210,7 +1215,7 @@ private fun ChargesChartPage(
     val icon = when (chartType) {
         ChargesChartType.ENERGY -> Icons.Default.BatteryChargingFull
         ChargesChartType.COST -> Icons.Default.Paid
-        ChargesChartType.COUNT -> Icons.Default.ElectricBolt
+        ChargesChartType.COUNT -> Icons.Default.EvStation
     }
     Column {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1231,45 +1236,45 @@ private fun ChargesChartPage(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        val unitLabel = when (chartType) {
-            ChargesChartType.ENERGY -> "单位：度"
-            ChargesChartType.COST -> "单位：$currencySymbol"
-            ChargesChartType.COUNT -> "单位：次"
+        val axisUnit = when (chartType) {
+            ChargesChartType.ENERGY -> "度"
+            ChargesChartType.COST -> currencySymbol
+            ChargesChartType.COUNT -> stringResource(R.string.charge_sessions_unit)
+        }
+        val missingData = when (chartType) {
+            ChargesChartType.ENERGY -> chartData.any { it.energyCoverage < it.count }
+            ChargesChartType.COST -> chartData.any { it.costCoverage < it.count }
+            ChargesChartType.COUNT -> false
         }
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(24.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = unitLabel,
+                text = stringResource(R.string.visual_trip_chart_unit, axisUnit) +
+                    if (missingData) " · ${stringResource(R.string.history_chart_partial_data)}" else "",
                 style = MaterialTheme.typography.labelMedium,
-                color = palette.onSurfaceVariant
+                color = palette.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
         }
 
         val barData = when (chartType) {
             ChargesChartType.ENERGY -> chartData.map { data ->
-                val hasSplit = (data.energyAc > 0.05 && data.energyDc > 0.05)
                 BarChartData(
                     label = data.label,
                     value = data.totalEnergy,
                     color = palette.accent,
                     displayValue = if (data.energyCoverage > 0) {
                         (if (data.partialEnergyCount > 0) "≈" else "") + "%.1f 度".format(data.totalEnergy)
-                    } else stringResource(R.string.not_available),
-                    segments = if (hasSplit) {
-                        listOf(
-                            BarSegment(data.energyAc, palette.acColor, "AC"),
-                            BarSegment(data.energyDc, palette.dcColor, "DC"),
-                            BarSegment(data.energyUnknown, palette.accent, stringResource(R.string.not_available))
-                        )
-                    } else emptyList()
+                    } else stringResource(R.string.not_available)
                 )
             }
             ChargesChartType.COST -> chartData.map { data ->
-                val hasSplit = (data.costAc > 0.05 && data.costDc > 0.05)
                 BarChartData(
                     label = data.label,
                     value = data.totalCost,
@@ -1277,30 +1282,15 @@ private fun ChargesChartPage(
                     displayValue = if (data.costCoverage > 0) {
                         val value = "$currencySymbol%.2f".format(data.totalCost)
                         if (data.estimatedCostCount > 0) "≈$value" else value
-                    } else stringResource(R.string.not_available),
-                    segments = if (hasSplit) {
-                        listOf(
-                            BarSegment(data.costAc, palette.acColor, "AC"),
-                            BarSegment(data.costDc, palette.dcColor, "DC"),
-                            BarSegment(data.costUnknown, palette.accent, stringResource(R.string.not_available))
-                        )
-                    } else emptyList()
+                    } else stringResource(R.string.not_available)
                 )
             }
             ChargesChartType.COUNT -> chartData.map { data ->
-                val hasSplit = (data.countAc > 0 && data.countDc > 0)
                 BarChartData(
                     label = data.label,
                     value = data.count.toDouble(),
                     color = palette.accent,
-                    displayValue = data.count.toString(),
-                    segments = if (hasSplit) {
-                        listOf(
-                            BarSegment(data.countAc.toDouble(), palette.acColor, "AC"),
-                            BarSegment(data.countDc.toDouble(), palette.dcColor, "DC"),
-                            BarSegment(data.countUnknown.toDouble(), palette.accent, stringResource(R.string.not_available))
-                        )
-                    } else emptyList()
+                    displayValue = data.count.toString()
                 )
             }
         }

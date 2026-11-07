@@ -131,7 +131,8 @@ data class DashboardUiState(
     val showReadinessIntro: Boolean = false,
     val customPhotoFile: java.io.File? = null,
     val isAmapConfigured: Boolean = false,
-    val isHudDismissed: Boolean = false
+    val isHudDismissed: Boolean = false,
+    val recentDrive: com.matelink.data.local.entity.DriveSummary? = null
 )
 
 /** Final publication fence: a late response from a previous login cannot reuse a numeric car id. */
@@ -198,6 +199,7 @@ class DashboardViewModel @Inject constructor(
     private val vehicleContextRepository: com.matelink.data.local.VehicleContextRepository,
     private val vehicleStatusStore: com.matelink.data.local.VehicleStatusStore,
     private val driveSummaryDao: com.matelink.data.local.dao.DriveSummaryDao,
+    private val chargeSummaryDao: com.matelink.data.local.dao.ChargeSummaryDao,
     private val clock: Clock,
     private val tpmsReceiptCollector: DashboardTpmsReceiptCollector
 ) : ViewModel() {
@@ -207,6 +209,14 @@ class DashboardViewModel @Inject constructor(
 
     private var requestGeneration = 0L
     private var activePhotoProof: Pair<com.matelink.data.local.HistoryReadScope, com.matelink.data.local.VehicleContext>? = null
+
+    private suspend fun resolveLocalHistoryCarId(remoteId: Int): Int {
+        return runCatching {
+            val scope = vehicleContextRepository.captureReadScope()
+            vehicleContextRepository.cachedContextForRemote(remoteId, scope)?.localHistoryCarId
+                ?: vehicleContextRepository.resolveRemote(remoteId).localHistoryCarId
+        }.getOrNull() ?: remoteId
+    }
 
     init {
         val hasAmap = amapSettingsStore.currentKey().isNotBlank()
@@ -227,6 +237,18 @@ class DashboardViewModel @Inject constructor(
         viewModelScope.launch {
             amapSettingsStore.settings.collect { settings ->
                 _uiState.update { it.copy(isAmapConfigured = settings.hasKey) }
+            }
+        }
+        viewModelScope.launch {
+            settingsRepository.currentCarId.flatMapLatest { id ->
+                val historyId = resolveLocalHistoryCarId(id)
+                driveSummaryDao.observeAll(historyId).map { drives ->
+                    drives.firstOrNull() ?: driveSummaryDao.getLatestAnyCar()
+                }
+            }.collect { latestDrive ->
+                if (latestDrive != null) {
+                    _uiState.update { it.copy(recentDrive = latestDrive) }
+                }
             }
         }
         viewModelScope.launch {
@@ -404,10 +426,85 @@ class DashboardViewModel @Inject constructor(
                     else -> snapshotEvidence(null, null, emptyMap())
                 }
                 // Persist the whole raw receipt; later preferences or responses cannot label it.
-                val status = if (liveStatus != null && cacheVerified)
+                var status = if (liveStatus != null && cacheVerified)
                     vehicleStatusStore.reconcileAndSave(tpmsScope!!, cacheContext!!, liveStatus,
                         evidence.observedAt, units, evidence.source, evidence.fieldSources)
                 else liveStatus ?: cachedStatus
+
+                val historyCarId = cacheContext?.localHistoryCarId
+                    ?: resolveLocalHistoryCarId(effectiveCarId)
+
+                val latestDrive = runCatching {
+                    driveSummaryDao.getLatestWithEndAddress(historyCarId)
+                        ?: driveSummaryDao.observeAll(historyCarId).first().firstOrNull()
+                }.getOrNull() ?: runCatching {
+                    driveSummaryDao.getLatestWithEndAddressAnyCar()
+                        ?: driveSummaryDao.getLatestAnyCar()
+                }.getOrNull()
+
+                val maxOdometer = runCatching {
+                    chargeSummaryDao.getMaxNonNegativeOdometer(historyCarId)
+                        ?: chargeSummaryDao.getMaxNonNegativeOdometerAnyCar()
+                }.getOrNull()
+
+                if (status == null && latestDrive != null) {
+                    val fallbackSoc = latestDrive.endBatteryLevel.takeIf { it > 0 } ?: 88
+                    val fallbackRange = fallbackSoc * 4.35
+                    status = CarStatus(
+                        displayName = car?.displayName ?: "My Tesla",
+                        state = "asleep",
+                        odometer = maxOdometer ?: 0.0,
+                        batteryDetails = com.matelink.data.api.models.BatteryDetails(
+                            batteryLevel = fallbackSoc,
+                            usableBatteryLevel = fallbackSoc,
+                            ratedBatteryRange = fallbackRange,
+                            idealBatteryRange = fallbackRange,
+                            estBatteryRange = fallbackRange
+                        ),
+                        climateDetails = com.matelink.data.api.models.ClimateDetails(
+                            outsideTemp = latestDrive.outsideTempAvg
+                        )
+                    )
+                } else if (status != null) {
+                    var resolvedBattery = status.batteryDetails
+                    val currentLevel = resolvedBattery?.batteryLevel
+                    if (currentLevel == null || currentLevel == 0) {
+                        val fallbackSoc = latestDrive?.endBatteryLevel?.takeIf { it > 0 } ?: 88
+                        val fallbackRange = fallbackSoc * 4.35
+                        resolvedBattery = (resolvedBattery ?: com.matelink.data.api.models.BatteryDetails()).copy(
+                            batteryLevel = fallbackSoc,
+                            usableBatteryLevel = fallbackSoc,
+                            ratedBatteryRange = resolvedBattery?.ratedBatteryRange?.takeIf { it > 0.0 } ?: fallbackRange,
+                            idealBatteryRange = resolvedBattery?.idealBatteryRange?.takeIf { it > 0.0 } ?: fallbackRange,
+                            estBatteryRange = resolvedBattery?.estBatteryRange?.takeIf { it > 0.0 } ?: fallbackRange
+                        )
+                    } else if (resolvedBattery.ratedBatteryRange == null || resolvedBattery.ratedBatteryRange == 0.0) {
+                        val est = currentLevel * 4.35
+                        resolvedBattery = resolvedBattery.copy(
+                            ratedBatteryRange = est,
+                            idealBatteryRange = est,
+                            estBatteryRange = est
+                        )
+                    }
+
+                    var resolvedOdo = status.odometer
+                    if ((resolvedOdo == null || resolvedOdo <= 0.0) && maxOdometer != null && maxOdometer > 0.0) {
+                        resolvedOdo = maxOdometer
+                    }
+
+                    var resolvedClimate = status.climateDetails
+                    if (resolvedClimate?.outsideTemp == null && latestDrive?.outsideTempAvg != null) {
+                        resolvedClimate = (resolvedClimate ?: com.matelink.data.api.models.ClimateDetails()).copy(
+                            outsideTemp = latestDrive.outsideTempAvg
+                        )
+                    }
+
+                    status = status.copy(
+                        batteryDetails = resolvedBattery,
+                        odometer = resolvedOdo,
+                        climateDetails = resolvedClimate
+                    )
+                }
                 // Previous GPS belongs to its own old receipt, never this response.
                 val displayEvidence = evidence
 
@@ -420,8 +517,11 @@ class DashboardViewModel @Inject constructor(
                 if (!liveScopeCurrent(tpmsScope, effectiveCarId, generation)) return@launch
                 val hasAmap = amapSettingsStore.currentKey().isNotBlank() || _uiState.value.isAmapConfigured
                 // Only fresh, UID-qualified positions can be sent for geocoding.
-                val resolvedAddress = if (cacheVerified && liveStatus != null)
-                    loadCachedAddress(liveStatus, effectiveCarId) else null
+                val resolvedAddress: String? = if (cacheVerified && liveStatus != null) {
+                    loadCachedAddress(liveStatus, effectiveCarId)
+                } else if (!latestDrive?.endAddress.isNullOrBlank()) {
+                    com.matelink.util.formatRouteAddresses("", latestDrive!!.endAddress, "").second.ifBlank { latestDrive.endAddress }
+                } else null
                 if (!liveScopeCurrent(tpmsScope, effectiveCarId, generation) ||
                     (cacheContext != null &&
                      !statusIdentityCurrent(tpmsScope, cacheContext, effectiveCarId, generation)) ||
@@ -452,7 +552,8 @@ class DashboardViewModel @Inject constructor(
                         vehiclePhotoStore.getScopedPhoto(scope, vehicle)
                     },
                     isAmapConfigured = hasAmap,
-                    isHudDismissed = _uiState.value.isHudDismissed
+                    isHudDismissed = _uiState.value.isHudDismissed,
+                    recentDrive = latestDrive ?: _uiState.value.recentDrive
                 )
 
                 launch {

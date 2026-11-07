@@ -6,6 +6,8 @@ import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -529,20 +531,44 @@ fun NavGraph(
             startDestination = startDestination ?: Screen.Dashboard,
             modifier = Modifier.padding(innerPadding).consumeWindowInsets(innerPadding),
             enterTransition = {
-                fadeIn(animationSpec = tween(180)) +
-                    slideInHorizontally(animationSpec = tween(180), initialOffsetX = { it / 12 })
+                val isTabSwitch = currentTopLevelDestination(initialState.destination.route) != null &&
+                        currentTopLevelDestination(targetState.destination.route) != null
+                if (isTabSwitch) {
+                    EnterTransition.None
+                } else {
+                    fadeIn(animationSpec = tween(180)) +
+                        slideInHorizontally(animationSpec = tween(180), initialOffsetX = { it / 12 })
+                }
             },
             exitTransition = {
-                fadeOut(animationSpec = tween(120)) +
-                    slideOutHorizontally(animationSpec = tween(120), targetOffsetX = { -it / 20 })
+                val isTabSwitch = currentTopLevelDestination(initialState.destination.route) != null &&
+                        currentTopLevelDestination(targetState.destination.route) != null
+                if (isTabSwitch) {
+                    ExitTransition.None
+                } else {
+                    fadeOut(animationSpec = tween(120)) +
+                        slideOutHorizontally(animationSpec = tween(120), targetOffsetX = { -it / 20 })
+                }
             },
             popEnterTransition = {
-                fadeIn(animationSpec = tween(180)) +
-                    slideInHorizontally(animationSpec = tween(180), initialOffsetX = { -it / 12 })
+                val isTabSwitch = currentTopLevelDestination(initialState.destination.route) != null &&
+                        currentTopLevelDestination(targetState.destination.route) != null
+                if (isTabSwitch) {
+                    EnterTransition.None
+                } else {
+                    fadeIn(animationSpec = tween(180)) +
+                        slideInHorizontally(animationSpec = tween(180), initialOffsetX = { -it / 12 })
+                }
             },
             popExitTransition = {
-                fadeOut(animationSpec = tween(120)) +
-                    slideOutHorizontally(animationSpec = tween(120), targetOffsetX = { it / 20 })
+                val isTabSwitch = currentTopLevelDestination(initialState.destination.route) != null &&
+                        currentTopLevelDestination(targetState.destination.route) != null
+                if (isTabSwitch) {
+                    ExitTransition.None
+                } else {
+                    fadeOut(animationSpec = tween(120)) +
+                        slideOutHorizontally(animationSpec = tween(120), targetOffsetX = { it / 20 })
+                }
             }
         ) {
         composable<Screen.TeslaLogin> {
@@ -705,6 +731,9 @@ fun NavGraph(
                 },
                 onNavigateToTeslaLogin = {
                     navController.navigate(Screen.TeslaLogin)
+                },
+                onNavigateToDriveDetail = { carId, driveId ->
+                    navController.navigate(Screen.DriveDetail(carId, driveId, null))
                 }
             )
         }

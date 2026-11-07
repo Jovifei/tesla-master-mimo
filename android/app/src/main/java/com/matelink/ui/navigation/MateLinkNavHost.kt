@@ -56,7 +56,7 @@ private fun topLevelRouteName(dest: TopLevelDestination): String = when (dest) {
     TopLevelDestination.More -> Screen.More::class.qualifiedName!!
 }
 
-private fun currentTopLevelDestination(route: String?): TopLevelDestination? {
+internal fun currentTopLevelDestination(route: String?): TopLevelDestination? {
     if (route == null) return null
     val normalizedRoute = route.replace('$', '.')
     val routeLeaf = normalizedRoute
@@ -85,14 +85,12 @@ private fun navigateToTopLevel(
         TopLevelDestination.Charges -> Screen.Charges(currentCarId, null)
         TopLevelDestination.More -> Screen.More(currentCarId, null)
     }
-    // saveState/restoreState are intentionally NOT used here: the Drives,
-    // Charges and More top-level routes carry `carId`, and restoring a saved
-    // back-stack entry would resurrect the previously-selected car's args after
-    // the active car changes. Popping to the start destination and navigating
-    // fresh guarantees the current [currentCarId] is applied on every tab tap.
     navController.navigate(screen) {
-        popUpTo(navController.graph.findStartDestination().id)
+        popUpTo(navController.graph.findStartDestination().id) {
+            saveState = true
+        }
         launchSingleTop = true
+        restoreState = true
     }
 }
 
