@@ -1,6 +1,6 @@
 import { Button, Map as TaroMap, Picker, ScrollView, Text, View } from '@tarojs/components'
 import Taro, { useDidHide, useDidShow, usePageScroll, useUnload } from '@tarojs/taro'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { formatParkedAddress, toChineseDisplayAddress } from '../../domain/address_display'
 import { getAppNavGeometry } from '../../services/nav_geometry'
 import { copy } from '../../i18n/copy'
@@ -15,7 +15,8 @@ import { carSelectionStorageKey, type Car, type Charge, type HistoryPage, type H
 import { readAppSession } from '../../services/session'
 import { useSessionRecoveryReload } from '../../services/use_session_recovery'
 import { historyCacheKey, readHistoryCache, writeHistoryCache } from '../../services/history_cache'
-import LoadingIndicator from '../../components/LoadingIndicator'
+import LoadingIndicator from '../../components/LoadingIndicator'
+import EvidenceCurve from '../../components/EvidenceCurve'
 import HistoryIntervalSummary from '../../components/HistoryIntervalSummary'
 import HistoryDateChips from '../../components/HistoryDateChips'
 import { inspectForegroundEvents, observeForegroundEvents, type ForegroundNotice } from '../../services/foreground_events'
@@ -133,7 +134,12 @@ export default function ChargesPage() {
     setSelectedState(row)
     return nativeTabBar(Boolean(row))
   }
-  const [selectedEvidence, setSelectedEvidence] = useState<ChargeEvidence | null>(null)
+  const [selectedEvidence, setSelectedEvidence] = useState<ChargeEvidence | null>(null)
+  const [curveSampleIndex, setCurveSampleIndex] = useState(0)
+  const selectedIdRef = useRef<string | null>(null)
+  useEffect(() => {
+    selectedIdRef.current = selected?.id ?? null
+  }, [selected])
   const [chartKind, setChartKind] = useState<'energy' | 'cost' | 'count'>('energy')
   const [chargeTypeFilter, setChargeTypeFilter] = useState<'all' | 'ac' | 'dc'>('all')
   const [costFilter, setCostFilter] = useState<'all' | 'has' | 'none'>('all')
@@ -563,7 +569,7 @@ export default function ChargesPage() {
     if (!canonical || canonical.id !== item.id || isHistoryQuarantined(canonical) || isHistoryQuarantined(item)) return
     let ticket: { isCurrent(): boolean }
     try { ticket = scopeGate.current.begin('detail') } catch { return }
-    if (ticket.isCurrent()) { setSelected(canonical); setSelectedEvidence(null); setMapFailed(false) }
+    if (ticket.isCurrent()) { setSelected(canonical); setSelectedEvidence(null); setMapFailed(false); setCurveSampleIndex(0) }
     try {
       if (!verifiedCarRef.current || car.remoteVerified === false) return
       const evidence = await analysisApi.getChargeEvidence(car, item.id, { isCurrent: ticket.isCurrent })
@@ -808,7 +814,13 @@ export default function ChargesPage() {
           <Text className="section-title">温度</Text>
           <View className="telemetry-metric-strip metric-grid"><MetricValue label="报告环境温度" value={selectedEvidence?.summary.outsideTempC ?? null} unit="°C" /><MetricValue label="样本最高温度" value={temperatureStats.max} unit="°C" /><MetricValue label="样本最低温度" value={temperatureStats.min} unit="°C" /><MetricValue label="样本平均温度" value={temperatureStats.average} unit="°C" /></View>
           <Text className="muted">仅基于本次响应的有效采样：功率 {powerStats.count} / 电压 {voltageStats.count} / 电流 {currentStats.count} / 温度 {temperatureStats.count} 点；缺失不补0，均值为样本均值。</Text>
-          <Button className="button-secondary" disabled={offline || !verifiedCarRef.current} onClick={() => Taro.navigateTo({ url: `/pages/analysis/index?kind=chargeCurves&chargeId=${encodeURIComponent(selected.id)}` })}>查看SOC、功率、电压、电流、温度曲线</Button>
+          {selectedEvidence ? <>
+            <EvidenceCurve id="charge-detail-soc" title="充电电量变化" unit="%" points={selectedEvidence.points} valueOf={point => point.batteryLevel} selected={curveSampleIndex} onSelect={setCurveSampleIndex} isCurrent={() => selectedIdRef.current === selected.id} />
+            <EvidenceCurve id="charge-detail-power" title="充电功率" unit="kW" points={selectedEvidence.points} valueOf={point => point.powerKw} selected={curveSampleIndex} onSelect={setCurveSampleIndex} isCurrent={() => selectedIdRef.current === selected.id} />
+            <EvidenceCurve id="charge-detail-voltage" title="充电电压" unit="V" points={selectedEvidence.points} valueOf={point => point.voltageV} selected={curveSampleIndex} onSelect={setCurveSampleIndex} isCurrent={() => selectedIdRef.current === selected.id} />
+            <EvidenceCurve id="charge-detail-current" title="充电电流" unit="A" points={selectedEvidence.points} valueOf={point => point.currentA} selected={curveSampleIndex} onSelect={setCurveSampleIndex} isCurrent={() => selectedIdRef.current === selected.id} />
+            <EvidenceCurve id="charge-detail-temperature" title="充电温度" unit="°C" points={selectedEvidence.points} valueOf={point => point.temperatureC} selected={curveSampleIndex} onSelect={setCurveSampleIndex} isCurrent={() => selectedIdRef.current === selected.id} />
+          </> : null}
           {selected.qualityState ? <Text className="muted">记录质量：{qualityLabel(selected.qualityState)}</Text> : null}
           {cacheWarning ? <Text className="error">当前详情尚未保存到本机。</Text> : null}
           {error ? <Text className="error">{error}</Text> : null}

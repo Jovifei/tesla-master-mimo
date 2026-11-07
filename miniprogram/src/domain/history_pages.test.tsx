@@ -127,8 +127,14 @@ describe('history pages consume canonical data across layers', () => {
     }
     await act(async () => { platform.show() }); await flush()
     expect(page.root.findByProps({ className: 'history-detail-overlay' }).findByProps({ ariaLabel: `${kind === 'drives' ? '总电耗' : '电池充入'} 2 kWh` })).toBeDefined()
-    await click(page, kind === 'drives' ? '行程曲线' : '查看SOC、功率、电压、电流、温度曲线')
-    expect(platform.navigateTo).toHaveBeenLastCalledWith({ url: kind === 'drives' ? '/pages/analysis/index?kind=curves&id=2' : '/pages/analysis/index?kind=chargeCurves&chargeId=2' })
+    if (kind === 'drives') {
+      await click(page, '行程曲线')
+      expect(platform.navigateTo).toHaveBeenLastCalledWith({ url: '/pages/analysis/index?kind=curves&id=2' })
+    } else {
+      // Charge curves render inline in the detail now (App parity); the
+      // old jump-to-analysis entry no longer exists.
+      expect(page.root.findAllByType('button' as React.ElementType).some(node => node.children.join('') === '查看SOC、功率、电压、电流、温度曲线')).toBe(false)
+    }
     await click(page, '‹ 返回')
     expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(1)
   })
@@ -183,8 +189,12 @@ describe('history pages consume canonical data across layers', () => {
        expect(panel.findByProps({ ariaLabel: `${kind === 'drives' ? '总电耗' : '电池充入'} ${amount === '暂无数据' ? amount : `${amount} kWh`}` })).toBeDefined()
       expect(panel.props.scrollTop).toBe(180)
       if (change === 'aliasUnknown') {
-        await click(page, kind === 'drives' ? '行程曲线' : '查看SOC、功率、电压、电流、温度曲线')
-        expect(platform.navigateTo).toHaveBeenLastCalledWith({ url: kind === 'drives' ? '/pages/analysis/index?kind=curves&id=11' : '/pages/analysis/index?kind=chargeCurves&chargeId=11' })
+        if (kind === 'drives') {
+          await click(page, '行程曲线')
+          expect(platform.navigateTo).toHaveBeenLastCalledWith({ url: '/pages/analysis/index?kind=curves&id=11' })
+        } else {
+          expect(page.root.findAllByType('button' as React.ElementType).some(node => node.children.join('') === '查看SOC、功率、电压、电流、温度曲线')).toBe(false)
+        }
       }
       await click(page, '‹ 返回')
       expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(2)

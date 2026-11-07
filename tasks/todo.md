@@ -4419,3 +4419,11 @@ Review: 小程序开发本阶段收口，后续改动应另开阶段。所有代
 - [x] 位置卡地址对齐：围栏名优先 → 车仍停在最近行程终点 300 米内时显示该终点中文地址 → 否则保留简洁占位「已获取位置 · 点击查看地图」（小程序既有刻意设计：原始坐标留给地图页，此点与 App 的坐标兜底分支不同，属有意保留）。
 - [x] 验证（阶段门禁）：tsc 0 错误；定点测试全过（domain/nearby 4、domain/recent_drive 6、diagnostic 13、VehicleRemoteSections 5、vehicle_page 55——含加载请求数契约 4→5 的更新：仪表盘新增最近行程拉取，与 App 一致）。
 - [x] 全量门禁：npm test 81 文件 / 1008 项全过（exit 0）；build:weapp 成功（197 文件，资产校验通过）。
+
+## 2026-11-08 小程序对齐 App v2.1.87 · 阶段二（充电）— 分支 muse/mini-align-20261108
+
+- [x] 筛选维度复核：审计称小程序缺 AC/DC 与费用筛选、App 无地点筛选——经代码核实两项均不成立：小程序已有 AC/DC（按能量契约 chargeMode 判定）+ 有/无费用 + 地点三组次级筛选，App 同样有地点筛选。不作改动。
+- [x] 充电详情曲线内联（对齐 App ChargeDetailScreen）：原「查看曲线」按钮跳分析页，现将 SOC/功率/电压/电流/温度五曲线直接渲染在详情内（数据为详情已加载的同一份采样证据，统计值与曲线同源）。
+- [x] EvidenceCurve 抽为共享组件 src/components/EvidenceCurve.tsx（原在分析页内定义），分析页改为引用，行为不变；充电页补齐曲线样式（与分析页同规则）。
+- [x] 测试更新：charge_detail 详情顺序断言纳入五曲线标题并断言无跳转入口、五画布存在（补 Canvas/Slider 组件 mock）；history_pages 两处 charges 流程改断言旧跳转入口不存在（drives 分支不变）。
+- [x] 验证（阶段门禁）：tsc 0 错误；定点 128 项全过；npm test 全量 81 文件 / 1008 项全过（首跑有 1 项在与 ETF 测试并行负载下抖动，复跑全绿）；build:weapp 成功。
