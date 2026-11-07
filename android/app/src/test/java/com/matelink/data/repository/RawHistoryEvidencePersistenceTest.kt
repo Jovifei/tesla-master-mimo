@@ -108,6 +108,27 @@ class RawHistoryEvidencePersistenceTest {
         assertEquals(51, stored.speedMax)
     }
 
+    @Test fun weakForeignDriveDoesNotEraseQualifiedTrueZeroOrNegativeRegeneration() {
+        for (net in listOf(0.0, -0.5)) {
+            val original = rawFleet().copy(energyConsumedNet = net, energyContract =
+                EnergyContract(netEnergy = EnergyMetric(
+                    valueKwh = net, source = "telemetry_mqtt", quality = "estimated",
+                    method = "drive_power_integral", measurementPoint = "drive_power",
+                    timeBasis = "collector_received_at", startDate = start, endDate = end,
+                    coverageKind = "time", coverageRatio = 1.0, coverageSeconds = 1800.0
+                ))).toSyncSummary(30)!!
+            val weak = rawFleet().copy(
+                energyConsumedNet = null, consumptionNet = null,
+                energyContract = null, source = "local_import",
+                qualityState = "incomplete", qualityReason = "local_import_unverified"
+            ).toSyncSummary(30)!!
+            val merged = mergeStoredDrive(weak, original)
+            assertEquals(net, merged.toAnalysisDriveData().netEnergyKwh!!, 0.0)
+            assertEquals(original.apiEvidence, merged.apiEvidence)
+            assertEquals("telemetry_mqtt", merged.toRawAnalysisDriveData().source)
+        }
+    }
+
     @Test fun sameNumericDriveIdCannotMergeAcrossCarsAndValidSignedProofSurvives() = runBlocking {
         fun verified(value: Double) = rawFleet().copy(
             energyConsumedNet = value,

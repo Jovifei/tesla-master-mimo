@@ -1,0 +1,19 @@
+<resources>
+    <string name="interaction_vehicle_illustration">内置车辆示意，不表示已绑定车辆</string>
+    <string name="interaction_vehicle_schematic">车辆位置示意，不用于识别车型</string>
+    <string name="interaction_link_idle">等待你确认授权</string>
+    <string name="interaction_link_pending">正在核验连接…</string>
+    <string name="interaction_link_action">仍需完成确认</string>
+    <string name="interaction_link_confirmed">连接已确认</string>
+    <string name="interaction_link_unavailable">连接尚未确认</string>
+    <string name="interaction_route_schematic">仅示意起终点顺序 · 非实际轨迹</string>
+    <string name="interaction_observed">已观测</string>
+    <string name="interaction_stale">旧观测</string>
+    <string name="interaction_warning">已有规则提醒</string>
+    <string name="interaction_unknown">未核验 / 无数据</string>
+    <string name="interaction_wheel_select">点选轮位查看该轮已存趋势，再次点选显示全部。</string>
+    <string name="interaction_openings_aggregate">车门/车窗是汇总报告，无法确定具体哪一扇。</string>
+    <string name="interaction_openings_show">查看车身位置示意</string>
+    <string name="interaction_openings_hide">收起车身位置示意</string>
+    <string name="interaction_recorded_interval">仅展示已记录充电区间；空隙不证明期间没有充电。</string>
+</resources>

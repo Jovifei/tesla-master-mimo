@@ -5,6 +5,8 @@ import android.content.SharedPreferences
 import com.matelink.data.api.models.CarData
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.security.MessageDigest
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -14,6 +16,16 @@ import javax.inject.Singleton
  */
 @Singleton
 class VehicleContextStore internal constructor(private val preferences: SharedPreferences) {
+    private val _verifiedMappingChanges = MutableStateFlow<Map<String, Long>>(emptyMap())
+    internal val verifiedMappingChanges = _verifiedMappingChanges.asStateFlow()
+
+    internal fun verifiedMappingVersion(accountNamespace: String, apiOrigin: String, remoteApiCarId: Int): Long {
+        val account = accountNamespace.trim()
+        if (account.isEmpty() || remoteApiCarId < 0) return 0L
+        val key = originCloudRemoteKey(account, requireSelfHostedServerIdentity(apiOrigin), remoteApiCarId)
+        return _verifiedMappingChanges.value[key] ?: 0L
+    }
+
     @Inject constructor(@ApplicationContext context: Context) : this(
         context.getSharedPreferences("vehicle_history_identity", Context.MODE_PRIVATE)
     )
@@ -66,12 +78,26 @@ class VehicleContextStore internal constructor(private val preferences: SharedPr
 
     /** Only written after an authenticated origin-specific vehicle identity has been resolved. */
     @Synchronized
-    fun rememberOriginCloudRemoteMapping(accountNamespace: String, apiOrigin: String, remoteApiCarId: Int, localHistoryCarId: Int) {
+    fun rememberOriginCloudRemoteMapping(
+        accountNamespace: String, apiOrigin: String, remoteApiCarId: Int,
+        localHistoryCarId: Int, verifiedStableIdentity: String
+    ) {
         val account = accountNamespace.trim()
         if (account.isEmpty() || remoteApiCarId < 0 || localHistoryCarId >= 0) return
         val origin = requireSelfHostedServerIdentity(apiOrigin)
-        check(preferences.edit().putInt(originCloudRemoteKey(account, origin, remoteApiCarId), localHistoryCarId).commit()) {
+        val expectedPrefix = "cloud-origin:${sha256Hex("origin:$origin\u0000account:$account")}:vehicle:"
+        check(verifiedStableIdentity.startsWith(expectedPrefix)) { "cloud vehicle identity does not match its account and origin" }
+        val remoteKey = originCloudRemoteKey(account, origin, remoteApiCarId)
+        val digest = sha256Hex(verifiedStableIdentity)
+        val changed = preferences.getInt(remoteKey, Int.MIN_VALUE) != localHistoryCarId ||
+            preferences.getString("$remoteKey:verified-identity", null) != digest
+        check(preferences.edit().putInt(remoteKey, localHistoryCarId)
+            .putString("$remoteKey:verified-identity", digest).commit()) {
             "unable to persist origin-scoped history mapping"
+        }
+        if (changed) {
+            val versions = _verifiedMappingChanges.value
+            _verifiedMappingChanges.value = versions + (remoteKey to ((versions[remoteKey] ?: 0L) + 1L))
         }
     }
 
@@ -82,6 +108,21 @@ class VehicleContextStore internal constructor(private val preferences: SharedPr
         val origin = requireSelfHostedServerIdentity(apiOrigin)
         return preferences.getInt(originCloudRemoteKey(account, origin, remoteApiCarId), Int.MIN_VALUE)
             .takeUnless { it == Int.MIN_VALUE }
+    }
+
+    /** A digest of the last UID-verified binding, never an unverified numeric-ID guess. */
+    @Synchronized
+    fun findVerifiedOriginCloudIdentityDigest(
+        accountNamespace: String, apiOrigin: String, remoteApiCarId: Int, expectedLocalId: Int
+    ): String? {
+        val account = accountNamespace.trim()
+        if (account.isEmpty() || remoteApiCarId <= 0 || expectedLocalId >= 0) return null
+        val origin = requireSelfHostedServerIdentity(apiOrigin)
+        val remoteKey = originCloudRemoteKey(account, origin, remoteApiCarId)
+        if (preferences.getInt(remoteKey, Int.MIN_VALUE) != expectedLocalId) return null
+        val digest = preferences.getString("$remoteKey:verified-identity", null)
+            ?.takeIf { it.matches(Regex("[0-9a-f]{64}")) } ?: return null
+        return digest.takeIf { preferences.getInt("identity:$it", Int.MIN_VALUE) == expectedLocalId }
     }
 
     fun originCloudRemoteOpaqueIdentity(accountNamespace: String, apiOrigin: String, remoteApiCarId: Int): String =
@@ -137,7 +178,8 @@ class VehicleContextStore internal constructor(private val preferences: SharedPr
         }
         val context = getOrAllocate(stableIdentity, car.carId, connectionSource, serverIdentity)
         if (connectionSource == HistoryConnectionSource.CLOUD && !accountNamespace.isNullOrBlank()) {
-            rememberOriginCloudRemoteMapping(accountNamespace, effectiveApiOrigin, car.carId, context.localHistoryCarId)
+            rememberOriginCloudRemoteMapping(accountNamespace, effectiveApiOrigin, car.carId,
+                context.localHistoryCarId, stableIdentity)
         }
         return context
     }

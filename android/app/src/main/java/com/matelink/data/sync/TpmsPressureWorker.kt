@@ -22,6 +22,7 @@ import androidx.work.WorkerParameters
 import com.matelink.BuildConfig
 import com.matelink.R
 import com.matelink.data.local.SettingsDataStore
+import com.matelink.data.local.HistoryIdentityUnavailableException
 import com.matelink.data.local.TirePosition
 import com.matelink.data.local.TpmsAlertProfile
 import com.matelink.data.local.TpmsCustomAlertStateStore
@@ -91,15 +92,17 @@ class TpmsPressureWorker @AssistedInject constructor(
          * so in debug mode we use a self-rescheduling OneTimeWorkRequest pattern
          * to achieve shorter intervals.
          */
-        fun schedulePeriodicWork(context: Context) {
+        fun schedulePeriodicWork(context: Context, appendAfterCurrent: Boolean = false) {
             val constraints = Constraints.Builder()
-                .setRequiredNetworkType(NetworkType.CONNECTED)
+                // Cloud recovery consumes durable local receipts, including offline.
+                // Self-hosted reads return WorkManager retry when their server is unavailable.
+                .setRequiredNetworkType(NetworkType.NOT_REQUIRED)
                 .build()
 
             if (BuildConfig.DEBUG) {
                 // Debug: Use OneTimeWorkRequest with delay for shorter intervals
-                // Append the successor to the currently running work. KEEP would discard
-                // this request while the current worker is still running.
+                // Application/boot registration is idempotent. Only a completed
+                // worker pass appends its delayed successor to the live chain.
                 val request = OneTimeWorkRequestBuilder<TpmsPressureWorker>()
                     .setConstraints(constraints)
                     .setInitialDelay(INTERVAL_MINUTES, TimeUnit.MINUTES)
@@ -108,23 +111,26 @@ class TpmsPressureWorker @AssistedInject constructor(
 
                 WorkManager.getInstance(context).enqueueUniqueWork(
                     WORK_NAME,
-                    ExistingWorkPolicy.APPEND_OR_REPLACE,
+                    if (appendAfterCurrent) ExistingWorkPolicy.APPEND_OR_REPLACE else ExistingWorkPolicy.KEEP,
                     request
                 )
 
                 Log.d(TAG, "Scheduled TPMS monitoring (debug mode, ${INTERVAL_MINUTES}min interval)")
             } else {
-                // Release: Use PeriodicWorkRequest (15-minute minimum)
+                // Release: first read after 15 minutes, then a 15-minute periodic cadence.
                 val request = PeriodicWorkRequestBuilder<TpmsPressureWorker>(
                     INTERVAL_MINUTES, TimeUnit.MINUTES
                 )
                     .setConstraints(constraints)
+                    .setInitialDelay(INTERVAL_MINUTES, TimeUnit.MINUTES)
                     .addTag(TAG)
                     .build()
 
                 WorkManager.getInstance(context).enqueueUniquePeriodicWork(
                     WORK_NAME,
-                    ExistingPeriodicWorkPolicy.KEEP,
+                    // Replace an older network-constrained spec after an app update;
+                    // the local-only cloud recovery must also run while offline.
+                    ExistingPeriodicWorkPolicy.UPDATE,
                     request
                 )
 
@@ -145,7 +151,7 @@ class TpmsPressureWorker @AssistedInject constructor(
          */
         fun runNow(context: Context) {
             val constraints = Constraints.Builder()
-                .setRequiredNetworkType(NetworkType.CONNECTED)
+                .setRequiredNetworkType(NetworkType.NOT_REQUIRED)
                 .build()
 
             val request = OneTimeWorkRequestBuilder<TpmsPressureWorker>()
@@ -165,19 +171,37 @@ class TpmsPressureWorker @AssistedInject constructor(
     override suspend fun doWork(): Result {
         Log.d(TAG, "Starting TPMS pressure check")
 
-        // Check if server is configured
-        val settings = settingsDataStore.settings.first()
-        if (!settings.isConfigured) {
-            Log.d(TAG, "Server not configured, skipping TPMS check")
+        // The scoped identity validates the active cloud session or self-hosted
+        // origin. A cloud account does not need a self-hosted server URL.
+        val readScope = try {
+            vehicleContextRepository.captureReadScope()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: HistoryIdentityUnavailableException) {
+            Log.d(TAG, "History identity unavailable, skipping TPMS check")
             return Result.success()
+        } catch (_: Exception) {
+            Log.e(TAG, "event=history_identity_read_failed category=local_error")
+            return Result.retry()
         }
 
         // Create notification channel
         ensureTpmsNotificationChannel(appContext)
 
         try {
+            if (readScope.source == com.matelink.data.local.HistoryConnectionSource.CLOUD) {
+                // Background cloud work consumes only trusted local receipts. A
+                // selected numeric ID alone is not identity proof and never causes
+                // discovery, namespace allocation or a live provider request.
+                val selectedCarId = settingsRepository.currentCarId.first()
+                val cached = vehicleContextRepository.cachedContextForRemote(selectedCarId, readScope)
+                if (cached != null && vehicleContextRepository.isHistoryContextCurrent(readScope, cached)) {
+                    checkCarTpms(cached, appContext.getString(R.string.app_name), readScope)
+                }
+                if (BuildConfig.DEBUG) schedulePeriodicWork(appContext, appendAfterCurrent = true)
+                return Result.success()
+            }
             // Get list of cars
-            val readScope = vehicleContextRepository.captureReadScope()
             val carsResult = teslamateRepository.getCars()
             if (vehicleContextRepository.captureReadScope() != readScope) return Result.retry()
             val cars = when (carsResult) {
@@ -217,7 +241,7 @@ class TpmsPressureWorker @AssistedInject constructor(
 
             // In debug mode, reschedule the next check (self-rescheduling pattern)
             if (BuildConfig.DEBUG) {
-                schedulePeriodicWork(appContext)
+                schedulePeriodicWork(appContext, appendAfterCurrent = true)
             }
 
             return Result.success()
@@ -226,11 +250,8 @@ class TpmsPressureWorker @AssistedInject constructor(
         } catch (e: Exception) {
             Log.e(TAG, "event=tpms_worker_failed category=unexpected")
 
-            // In debug mode, reschedule even on failure
-            if (BuildConfig.DEBUG) {
-                schedulePeriodicWork(appContext)
-            }
-
+            // WorkManager retries this same request; do not append another delayed
+            // successor for every failed attempt while the current request is live.
             return Result.retry()
         }
     }
@@ -258,11 +279,17 @@ class TpmsPressureWorker @AssistedInject constructor(
         // Durable intent recovery does not depend on a new status response.
         recoverTpmsAdmissionIntents(historyCarId,tpmsHistoryRepository,changeRuleStore,::ensureScope)
         ensureScope()
-        val statusResult=teslamateRepository.getCarStatus(vehicle.remoteApiCarId)
-        ensureScope()
-        val details=when(statusResult) {
-            is ApiResult.Success -> statusResult.data.status.tpmsDetails
-            is ApiResult.Error -> null
+        // Cloud acquisition belongs to already requested foreground responses;
+        // this guard also protects future callers of the local recovery path.
+        val details = if (readScope.source == com.matelink.data.local.HistoryConnectionSource.CLOUD) {
+            null
+        } else {
+            val statusResult=teslamateRepository.getCarStatus(vehicle.remoteApiCarId)
+            ensureScope()
+            when(statusResult) {
+                is ApiResult.Success -> statusResult.data.status.tpmsDetails
+                is ApiResult.Error -> null
+            }
         }
         val profile=settingsDataStore.getTpmsAlertProfile(historyCarId)
         ensureScope()
@@ -282,9 +309,9 @@ class TpmsPressureWorker @AssistedInject constructor(
             processSuccessfulTpmsStatus(
                 carId=historyCarId,carName=carName,tpmsDetails=evidence,observedAt=at,profile=profile,
                 saveObservation={ _ -> },
-                pruneOlderThan90Days={ _, _ ->
-                    ensureScope(); tpmsHistoryRepository.pruneOlderThan90DaysForHistoryCarId(historyCarId,executionNow)
-                },
+                // The 7/30-day trend is a query window, not permission to
+                // delete the owner's only verified pressure history.
+                pruneOlderThan90Days={ _, _ -> ensureScope() },
                 detectTeslaStateChange={ _, d -> tpmsStateRepository.detectStateChangeForHistoryCarId(historyCarId,d) },
                 updateTeslaState={ _, d -> tpmsStateRepository.updateStateForHistoryCarId(historyCarId,d) },
                 resetCustomState=tpmsCustomAlertStateStore::resetForProfile,

@@ -17,7 +17,7 @@ class TaskCCompositeHistoryContractTest {
 
         assertTrue(entitySources.contains("primaryKeys = [\"carId\", \"driveId\"]"))
         assertTrue(entitySources.contains("primaryKeys = [\"carId\", \"chargeId\"]"))
-        assertTrue(databaseSource.contains("version = 21"))
+        // Room migration tests validate the current version; this audit guards the composite-key history chain.
         assertTrue(databaseSource.contains("MIGRATION_17_18"))
         assertTrue(databaseSource.contains("MIGRATION_18_19"))
         assertTrue(databaseSource.contains("MIGRATION_19_20"))

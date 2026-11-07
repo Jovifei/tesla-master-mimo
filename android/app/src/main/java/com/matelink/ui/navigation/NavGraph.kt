@@ -6,7 +6,14 @@ import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Scaffold
@@ -21,6 +28,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -38,11 +46,13 @@ import androidx.navigation.toRoute
 import com.matelink.R
 import com.matelink.ui.components.launchBrowserChooser
 import com.matelink.ui.components.launchExternalIntentSafely
+import com.matelink.ui.components.MateLinkLoadingPlaceholder
 import com.matelink.ui.screens.readiness.officialTeslaVirtualKeyUrlOrNull
 import com.matelink.data.local.ConnectionMode
 import com.matelink.ui.screens.auth.TeslaLoginScreen
 import com.matelink.ui.screens.auth.TeslaLoginOnboardingState
 import com.matelink.ui.screens.auth.TeslaLoginViewModel
+import com.matelink.ui.screens.archive.ArchiveEnrollmentDialogHost
 import com.matelink.ui.screens.about.AboutScreen
 import com.matelink.ui.screens.battery.BatteryScreen
 import com.matelink.ui.screens.charges.ChargeDetailScreen
@@ -151,7 +161,8 @@ sealed interface Screen {
         val carId: Int,
         val olderDriveId: Int,
         val newerDriveId: Int,
-        val exteriorColor: String? = null
+        val exteriorColor: String? = null,
+        val location: String? = null
     ) : Screen
 
     @Serializable
@@ -188,7 +199,8 @@ sealed interface Screen {
     data class Trips(val carId: Int, val exteriorColor: String? = null) : Screen
 
     @Serializable
-    data class TripDetail(val carId: Int, val tripStartDate: String, val exteriorColor: String? = null) : Screen
+    data class TripDetail(val carId: Int, val tripStartDate: String, val exteriorColor: String? = null,
+        val savedTripId: Long? = null) : Screen
 
     @Serializable
     data class CreateTrip(val carId: Int, val exteriorColor: String? = null) : Screen
@@ -254,7 +266,7 @@ internal fun shouldRedirectToTeslaLogin(
     currentRoute: String,
     suppressAutoRedirect: Boolean = false
 ): Boolean = !suppressAutoRedirect &&
-    startDestination == Screen.Dashboard &&
+    startDestination != null &&
     connectionMode == ConnectionMode.TESLA_CLOUD &&
     !isAuthenticated &&
     !currentRoute.contains("TeslaLogin")
@@ -300,6 +312,7 @@ fun NavGraph(
     val currentCarId by startViewModel.currentCarId.collectAsState()
     val notificationPermissionAsked by startViewModel.notificationPermissionAsked.collectAsState()
     val teslaLoginViewModel: TeslaLoginViewModel = hiltViewModel()
+    val notificationTargets: NotificationTargetViewModel = hiltViewModel()
     val isTeslaSessionAuthenticated by teslaLoginViewModel.isAuthenticated.collectAsState()
     val sessionAccountId by teslaLoginViewModel.accountId.collectAsState()
     val openDashboardAfterLogin by teslaLoginViewModel.openDashboardAfterLogin.collectAsState()
@@ -309,9 +322,11 @@ fun NavGraph(
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = currentBackStackEntry?.destination?.route.orEmpty()
     var suppressLoginRedirect by rememberSaveable { mutableStateOf(false) }
+    var notificationPermissionDeferred by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val lifecycleOwner = LocalLifecycleOwner.current
+    ArchiveEnrollmentDialogHost(intent = intent)
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) {
@@ -319,7 +334,13 @@ fun NavGraph(
     }
 
     if (startDestination == null) {
-        return // Wait for determination
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            MateLinkLoadingPlaceholder()
+        }
+        return
     }
 
     LaunchedEffect(connectionMode, sessionAccountId, currentCarId) {
@@ -394,11 +415,12 @@ fun NavGraph(
     // One-time notification permission dialog (Android 13+)
     if (startDestination == Screen.Dashboard &&
         !notificationPermissionAsked &&
+        !notificationPermissionDeferred &&
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
     ) {
         AlertDialog(
             onDismissRequest = {
-                coroutineScope.launch { startViewModel.markNotificationPermissionAsked() }
+                notificationPermissionDeferred = true
             },
             title = { Text(stringResource(R.string.notification_permission_title)) },
             text = { Text(stringResource(R.string.notification_permission_message)) },
@@ -420,6 +442,9 @@ fun NavGraph(
             val carId = it.getIntExtra("EXTRA_CAR_ID", -1)
             val exteriorColor = it.getStringExtra("EXTRA_EXTERIOR_COLOR")
             val driveId = it.getIntExtra("EXTRA_DRIVE_ID", -1)
+            val owner = if (it.hasExtra("EXTRA_LOCAL_HISTORY_CAR_ID")) it.getIntExtra("EXTRA_LOCAL_HISTORY_CAR_ID", 0) else null
+            if ((owner != null || navigateTo in setOf("current_charge", "sentry_history")) &&
+                !notificationTargets.isCurrentTarget(carId, owner)) return@let
             notificationScreen(navigateTo, carId, exteriorColor, driveId)?.let { screen ->
                 navController.navigate(screen) {
                     launchSingleTop = true
@@ -502,7 +527,23 @@ fun NavGraph(
         NavHost(
             navController = navController,
             startDestination = startDestination ?: Screen.Dashboard,
-            modifier = Modifier.padding(innerPadding).consumeWindowInsets(innerPadding)
+            modifier = Modifier.padding(innerPadding).consumeWindowInsets(innerPadding),
+            enterTransition = {
+                fadeIn(animationSpec = tween(180)) +
+                    slideInHorizontally(animationSpec = tween(180), initialOffsetX = { it / 12 })
+            },
+            exitTransition = {
+                fadeOut(animationSpec = tween(120)) +
+                    slideOutHorizontally(animationSpec = tween(120), targetOffsetX = { -it / 20 })
+            },
+            popEnterTransition = {
+                fadeIn(animationSpec = tween(180)) +
+                    slideInHorizontally(animationSpec = tween(180), initialOffsetX = { -it / 12 })
+            },
+            popExitTransition = {
+                fadeOut(animationSpec = tween(120)) +
+                    slideOutHorizontally(animationSpec = tween(120), targetOffsetX = { it / 20 })
+            }
         ) {
         composable<Screen.TeslaLogin> {
             TeslaLoginScreen(
@@ -661,6 +702,9 @@ fun NavGraph(
                 },
                 onNavigateToReadiness = { carId ->
                     navController.navigate(Screen.DataReadiness(carId))
+                },
+                onNavigateToTeslaLogin = {
+                    navController.navigate(Screen.TeslaLogin)
                 }
             )
         }
@@ -722,9 +766,9 @@ fun NavGraph(
                 onNavigateToDriveDetail = { driveId ->
                     navController.navigate(Screen.DriveDetail(route.carId, driveId, route.exteriorColor))
                 },
-                onNavigateToParkedDetail = { olderDriveId, newerDriveId ->
+                onNavigateToParkedDetail = { olderDriveId, newerDriveId, location ->
                     navController.navigate(
-                        Screen.ParkedDetail(route.carId, olderDriveId, newerDriveId, route.exteriorColor)
+                        Screen.ParkedDetail(route.carId, olderDriveId, newerDriveId, route.exteriorColor, location)
                     )
                 }
             )
@@ -737,6 +781,7 @@ fun NavGraph(
                 olderDriveId = route.olderDriveId,
                 newerDriveId = route.newerDriveId,
                 onNavigateBack = { navController.popBackStack() },
+                initialLocation = route.location,
                 onNavigateToChargeDetail = { chargeId ->
                     navController.navigate(Screen.ChargeDetail(route.carId, chargeId, route.exteriorColor))
                 }
@@ -884,8 +929,8 @@ fun NavGraph(
                 carId = route.carId,
                 exteriorColor = route.exteriorColor,
                 onNavigateBack = { navController.popBackStack() },
-                onNavigateToTripDetail = { tripStartDate ->
-                    navController.navigate(Screen.TripDetail(route.carId, tripStartDate, route.exteriorColor))
+                onNavigateToTripDetail = { tripStartDate, savedTripId ->
+                    navController.navigate(Screen.TripDetail(route.carId, tripStartDate, route.exteriorColor, savedTripId))
                 },
                 onNavigateToCreateTrip = {
                     navController.navigate(Screen.CreateTrip(route.carId, route.exteriorColor))
@@ -899,8 +944,8 @@ fun NavGraph(
                 carId = route.carId,
                 exteriorColor = route.exteriorColor,
                 onNavigateBack = { navController.popBackStack() },
-                onTripCreated = { startDate ->
-                    navController.navigate(Screen.TripDetail(route.carId, startDate, route.exteriorColor)) {
+                onTripCreated = { startDate, savedTripId ->
+                    navController.navigate(Screen.TripDetail(route.carId, startDate, route.exteriorColor, savedTripId)) {
                         popUpTo<Screen.CreateTrip> { inclusive = true }
                     }
                 }
@@ -912,6 +957,7 @@ fun NavGraph(
             TripDetailScreen(
                 carId = route.carId,
                 tripStartDate = route.tripStartDate,
+                savedTripId = route.savedTripId,
                 exteriorColor = route.exteriorColor,
                 onNavigateBack = { navController.popBackStack() },
                 onNavigateToDriveDetail = { driveId ->
@@ -962,8 +1008,8 @@ fun NavGraph(
                 carId = route.carId,
                 year = route.year,
                 onBack = { navController.popBackStack() },
-                onNavigateToPDF = {
-                    navController.navigate(Screen.AnnualReportPDF(route.carId, route.year))
+                onNavigateToPDF = { selectedYear ->
+                    navController.navigate(Screen.AnnualReportPDF(route.carId, selectedYear))
                 }
             )
         }
@@ -1020,6 +1066,7 @@ fun NavGraph(
         composable<Screen.Vampire> { backStackEntry ->
             val route = backStackEntry.toRoute<Screen.Vampire>()
             VampireScreen(
+                carId = route.carId,
                 onNavigateBack = { navController.popBackStack() }
             )
         }

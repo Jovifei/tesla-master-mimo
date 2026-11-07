@@ -233,7 +233,9 @@ func TestParkedUsesStableAdjacentDriveIDs(t *testing.T) {
 
 func TestParkedResponsePreservesLinkedChargeWhenIntervalsOverlap(t *testing.T) {
 	value := testParkedDetail()
-	value.LinkedCharge = &linkedCharge{ChargeID: 41}
+	value.LinkedCharges = []linkedCharge{{ChargeID: 41}, {ChargeID: 42}}
+	value.ChargeSessionsComplete = true
+	value.LinkedCharge = &value.LinkedCharges[0]
 	store := &recordingStore{parkedValue: value}
 	res, logs := serve(t, testServer(store), "/api/matelink/v1/cars/7/parked/11/12", validTestSecret)
 	if res.Code != http.StatusOK {
@@ -241,6 +243,21 @@ func TestParkedResponsePreservesLinkedChargeWhenIntervalsOverlap(t *testing.T) {
 	}
 	if !containsAll(res.Body.String(), "linked_charge", "charge_id", "41") {
 		t.Fatal("parked response lost its linked charge")
+	}
+	var body struct {
+		Data struct {
+			LinkedCharge           *linkedCharge  `json:"linked_charge"`
+			LinkedCharges          []linkedCharge `json:"linked_charges"`
+			ChargeSessionsComplete bool           `json:"charge_sessions_complete"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(res.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Data.LinkedCharge == nil || body.Data.LinkedCharge.ChargeID != 41 ||
+		len(body.Data.LinkedCharges) != 2 || body.Data.LinkedCharges[0].ChargeID != 41 ||
+		body.Data.LinkedCharges[1].ChargeID != 42 || !body.Data.ChargeSessionsComplete {
+		t.Fatalf("parked multi-charge wire contract changed: %+v", body.Data)
 	}
 	assertNoSyntheticCredentials(t, res.Body.String(), logs.String())
 }

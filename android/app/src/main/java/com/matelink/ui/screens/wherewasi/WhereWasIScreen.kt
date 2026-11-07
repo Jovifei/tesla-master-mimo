@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.EvStation
 import androidx.compose.material.icons.filled.LocalParking
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.HelpOutline
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -548,6 +549,7 @@ private fun stateIcon(state: CarActivityState): ImageVector = when (state) {
 }
 
 private fun weatherIcon(condition: WeatherCondition): ImageVector = when (condition) {
+    WeatherCondition.UNKNOWN -> Icons.Default.HelpOutline
     WeatherCondition.CLEAR -> CustomIcons.WeatherSunny
     WeatherCondition.PARTLY_CLOUDY -> CustomIcons.WeatherPartlyCloudy
     WeatherCondition.FOG -> CustomIcons.WeatherFog
@@ -558,6 +560,7 @@ private fun weatherIcon(condition: WeatherCondition): ImageVector = when (condit
 }
 
 private fun weatherIconColor(condition: WeatherCondition): Color = when (condition) {
+    WeatherCondition.UNKNOWN -> Color(0xFF78909C)
     WeatherCondition.CLEAR -> Color(0xFFFFC107)
     WeatherCondition.PARTLY_CLOUDY -> Color(0xFF78909C)
     WeatherCondition.FOG -> Color(0xFF90A4AE)
@@ -569,6 +572,7 @@ private fun weatherIconColor(condition: WeatherCondition): Color = when (conditi
 
 @Composable
 private fun weatherDescription(condition: WeatherCondition): String = when (condition) {
+    WeatherCondition.UNKNOWN -> stringResource(R.string.status_unknown)
     WeatherCondition.CLEAR -> stringResource(R.string.weather_clear)
     WeatherCondition.PARTLY_CLOUDY -> stringResource(R.string.weather_partly_cloudy)
     WeatherCondition.FOG -> stringResource(R.string.weather_fog)

@@ -1,5 +1,9 @@
 package com.matelink.ui.screens.tpms
 
+import com.matelink.ui.components.TpmsVehicleVisual
+import com.matelink.domain.model.visualWheelReading
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -76,6 +80,7 @@ fun TpmsTrendScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     LaunchedEffect(carId) { viewModel.load(carId) }
+    var focusedWheel by remember(carId, state.selectedWindow) { mutableStateOf<TirePosition?>(null) }
 
     Scaffold(
         topBar = {
@@ -163,7 +168,13 @@ fun TpmsTrendScreen(
                     }
                 }
             } else {
-                TpmsTrendChart(state.series)
+                val now = System.currentTimeMillis()
+                val readings = TirePosition.entries.associateWith { wheel ->
+                    val point = state.series[wheel]?.lastOrNull { it.pressureBar != null }
+                    visualWheelReading(point?.pressureBar, point?.observedAt, now, verified = point != null)
+                }
+                TpmsVehicleVisual(readings, focusedWheel, onSelect = { focusedWheel = it }, profile = state.alertProfile)
+                TpmsTrendChart(if (focusedWheel == null) state.series else state.series.filterKeys { it == focusedWheel })
                 TpmsSummary(state)
             }
 
@@ -269,13 +280,15 @@ private fun TpmsTrendChart(series: Map<TirePosition, List<com.matelink.domain.an
                     )
                 }
 
+                val firstT = firstTime ?: 0L
+                val lastT = lastTime ?: firstT
+                val timeRange = (lastT - firstT).toFloat().takeIf { it > 0f } ?: 1f
+
                 series.forEach { (wheel, points) ->
                     val color = TpmsWheelColors.getValue(wheel)
-                    nullableSegments(points).forEach { segment ->
-                        val firstT = points.firstOrNull()?.observedAt ?: return@forEach
-                        val lastT = points.lastOrNull()?.observedAt ?: firstT
-                        val timeRange = (lastT - firstT).toFloat().takeIf { it > 0f } ?: 1f
-                        segment.zipWithNext().forEach { (first, last) ->
+                    val validPoints = points.filter { it.pressureBar != null }
+                    if (validPoints.size >= 2) {
+                        validPoints.zipWithNext().forEach { (first, last) ->
                             val x1 = left + width * ((first.observedAt - firstT) / timeRange)
                             val x2 = left + width * ((last.observedAt - firstT) / timeRange)
                             val y1 = bottom - height * ((first.pressureBar!! - paddedMin) / range).toFloat()
@@ -288,11 +301,11 @@ private fun TpmsTrendChart(series: Map<TirePosition, List<com.matelink.domain.an
                                 cap = StrokeCap.Round
                             )
                         }
-                        segment.forEach { point ->
-                            val x = left + width * ((point.observedAt - firstT) / timeRange)
-                            val y = bottom - height * ((point.pressureBar!! - paddedMin) / range).toFloat()
-                            drawCircle(color, radius = 3.5.dp.toPx(), center = Offset(x, y))
-                        }
+                    }
+                    validPoints.forEach { point ->
+                        val x = left + width * ((point.observedAt - firstT) / timeRange)
+                        val y = bottom - height * ((point.pressureBar!! - paddedMin) / range).toFloat()
+                        drawCircle(color, radius = 3.5.dp.toPx(), center = Offset(x, y))
                     }
                 }
             }

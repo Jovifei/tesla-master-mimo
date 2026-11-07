@@ -65,6 +65,7 @@ class TpmsPressureWorkerRepositoryIntegrationAndroidTest {
         var customDeliveries = 0
         runWorkerPass(
             profile = profile,
+            executionNow = 4_001L,
             notifyTesla = { deferredTeslaDeliveries++ },
             captureDeferral = { deferred = it },
             notifyCustom = { customDeliveries++ }
@@ -77,6 +78,7 @@ class TpmsPressureWorkerRepositoryIntegrationAndroidTest {
 
     private suspend fun runWorkerPass(
         profile: TpmsAlertProfile?,
+        executionNow: Long = 3_000L,
         notifyTesla: () -> Unit = {},
         captureDeferral: (Boolean) -> Unit = {},
         notifyCustom: () -> Unit = {}
@@ -85,7 +87,8 @@ class TpmsPressureWorkerRepositoryIntegrationAndroidTest {
             carId = carId,
             carName = "Integration car",
             tpmsDetails = details,
-            observedAt = 4_001L,
+            observedAt = executionNow,
+            executionNow = executionNow,
             profile = profile,
             saveObservation = {},
             pruneOlderThan90Days = { _, _ -> },

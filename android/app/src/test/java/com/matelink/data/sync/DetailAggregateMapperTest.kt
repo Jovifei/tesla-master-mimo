@@ -18,6 +18,7 @@ class DetailAggregateMapperTest {
     fun driveDetail_persistsComputedExtremesAndCoordinates() {
         val aggregate = DriveDetail(
             driveId = 17,
+            temperatureUnit = "C",
             positions = listOf(
                 DrivePosition(
                     latitude = 30.1,
@@ -61,6 +62,7 @@ class DetailAggregateMapperTest {
     fun chargeDetail_marksKnownDcSessionAndCapturesChargerExtremes() {
         val aggregate = ChargeDetail(
             chargeId = 23,
+            temperatureUnit = "C",
             chargePoints = listOf(
                 ChargePoint(
                     outsideTemp = 16.0,

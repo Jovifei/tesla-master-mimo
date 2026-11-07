@@ -1,0 +1,56 @@
+{
+  "layer": "actual DAO SQL / synthetic minimal SQLite; not Android Room/provider",
+  "source_sha256": "66661dbdedf8a83ae75b7e5cf119348dacf8f40217ed597245b8974c234b1af8",
+  "tests": 7,
+  "failures": 4,
+  "cases": [
+    {
+      "name": "control_qualified_map_records",
+      "expected": [
+        1,
+        2
+      ],
+      "actual": [
+        1,
+        2
+      ],
+      "result": "PASS"
+    },
+    {
+      "name": "quarantined_charge_marker_must_not_join_qualified_country",
+      "expected": 0,
+      "actual": 1,
+      "result": "FAIL"
+    },
+    {
+      "name": "quarantined_drive_marker_must_not_join_qualified_country",
+      "expected": 1,
+      "actual": 2,
+      "result": "FAIL"
+    },
+    {
+      "name": "control_country_summary_rejects_quarantined_drives",
+      "expected": [],
+      "actual": [],
+      "result": "PASS"
+    },
+    {
+      "name": "local_2026_country_must_include_utc_previous_day",
+      "expected": 1,
+      "actual": 0,
+      "result": "FAIL"
+    },
+    {
+      "name": "missing_distance_evidence_must_not_be_reported_as_observed_zero",
+      "expected": null,
+      "actual": 0.0,
+      "result": "FAIL"
+    },
+    {
+      "name": "control_explicit_zero_distance_stays_zero",
+      "expected": 0.0,
+      "actual": 0.0,
+      "result": "PASS"
+    }
+  ]
+}

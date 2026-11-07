@@ -64,8 +64,7 @@ class LocalNotificationAndroidTest {
     private fun grantNotificationPermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             InstrumentationRegistry.getInstrumentation().uiAutomation
-                .executeShellCommand("pm grant ${context.packageName} ${Manifest.permission.POST_NOTIFICATIONS}")
-                .close()
+                .grantRuntimePermission(context.packageName, Manifest.permission.POST_NOTIFICATIONS)
         }
         assertTrue(
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==

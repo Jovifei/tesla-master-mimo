@@ -1,12 +1,15 @@
 package com.matelink.ui.screens.cost
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -32,12 +35,14 @@ import com.matelink.ui.components.CachedHistoryBanner
 import com.matelink.ui.components.MetricPanelKind
 import com.matelink.ui.components.MetricStatusPanel
 import com.matelink.ui.components.HistoryStatusPanel
+import com.matelink.ui.components.HistoryForegroundRefreshEffect
 import com.matelink.ui.theme.SwissOutline
 import kotlin.math.max
 import java.util.Locale
 
 private val AcColor = Color(0xFF2196F3)   // Blue
 private val DcColor = Color(0xFFFF9800)   // Orange
+private val UnknownCostColor = Color(0xFF94A3B8)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -50,6 +55,7 @@ fun CostScreen(
         viewModel.load(carId)
     }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    HistoryForegroundRefreshEffect { viewModel.refresh() }
 
     Scaffold(
         topBar = {
@@ -66,14 +72,21 @@ fun CostScreen(
             )
         }
     ) { padding ->
-        if (uiState.loading) {
-            MateLinkLoadingPlaceholder(modifier = Modifier.padding(padding))
-            return@Scaffold
+        PullToRefreshBox(
+            isRefreshing = uiState.isRefreshing,
+            onRefresh = viewModel::refresh,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+        ) {
+        if (uiState.loading && uiState.totalCost == null && uiState.totalCharges == 0) {
+            MateLinkLoadingPlaceholder()
+            return@PullToRefreshBox
         }
 
         if (uiState.error != null) {
-            Box(
-                modifier = Modifier.fillMaxSize().padding(padding),
+                Box(
+                modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
             ) {
                 MetricStatusPanel(
@@ -83,16 +96,17 @@ fun CostScreen(
                         stringResource(R.string.history_identity_unavailable_message)
                     } else {
                         uiState.error ?: stringResource(R.string.no_data)
-                    }
+                    },
+                    actionLabel = stringResource(R.string.metric_state_retry),
+                    onAction = viewModel::refresh
                 )
             }
-            return@Scaffold
+            return@PullToRefreshBox
         }
 
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -104,11 +118,51 @@ fun CostScreen(
                 modifier = Modifier.fillMaxWidth()
             )
 
-            if (uiState.historyFreshness == HistoryFreshness.STALE) {
-                CachedHistoryBanner(
-                    title = stringResource(R.string.metric_state_cached_title),
-                    body = stringResource(R.string.metric_state_cached_body)
+            var showCachedNoticeDialog by remember { mutableStateOf(false) }
+            if (showCachedNoticeDialog) {
+                AlertDialog(
+                    onDismissRequest = { showCachedNoticeDialog = false },
+                    title = { Text(stringResource(R.string.metric_state_cached_title)) },
+                    text = { Text(stringResource(R.string.metric_state_cached_body)) },
+                    confirmButton = {
+                        TextButton(onClick = { showCachedNoticeDialog = false }) {
+                            Text(stringResource(android.R.string.ok))
+                        }
+                    }
                 )
+            }
+            if (uiState.historyFreshness == HistoryFreshness.STALE) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showCachedNoticeDialog = true },
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    border = BorderStroke(
+                        0.5.dp,
+                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(15.dp)
+                        )
+                        Text(
+                            text = "历史缓存 · 仅供离线查看 ⓘ",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
             }
 
             if (uiState.totalCharges == 0) {
@@ -137,9 +191,17 @@ fun CostScreen(
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    LegendDot(color = AcColor, label = stringResource(R.string.cost_ac))
-                    Spacer(modifier = Modifier.width(16.dp))
-                    LegendDot(color = DcColor, label = stringResource(R.string.cost_dc))
+                    if (uiState.monthlyCosts.any { it.acCost > 0.0 }) {
+                        LegendDot(color = AcColor, label = stringResource(R.string.cost_ac))
+                        Spacer(modifier = Modifier.width(12.dp))
+                    }
+                    if (uiState.monthlyCosts.any { it.dcCost > 0.0 }) {
+                        LegendDot(color = DcColor, label = stringResource(R.string.cost_dc))
+                        Spacer(modifier = Modifier.width(12.dp))
+                    }
+                    if (uiState.monthlyCosts.any { it.unknownCost > 0.0 }) {
+                        LegendDot(color = UnknownCostColor, label = stringResource(R.string.cost_mode_unknown))
+                    }
                 }
             }
 
@@ -157,56 +219,68 @@ fun CostScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
         }
+        }
     }
 }
 
 @Composable
-private fun SummarySection(uiState: CostUiState, currencySymbol: String) {
-    val hasCost = uiState.costCoverage > 0
-    val hasEnergy = uiState.energyCoverage > 0
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
+internal fun SummarySection(uiState: CostUiState, currencySymbol: String) {
+    val hasCost = uiState.costCoverage > 0 && uiState.totalCost != null
+    val hasEstimate = uiState.estimatedCoverage > 0 && uiState.estimatedCost != null
+    val hasPartial = uiState.partialEstimatedCoverage > 0 && uiState.partialEstimatedCost != null
+    val hasEnergy = uiState.energyCoverage > 0 && uiState.totalEnergy != null
+    val hasPair = uiState.pairedCoverage > 0 && uiState.pairedUnitCost != null
+    if (hasCost || hasEstimate) Row(
+        modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        SummaryCard(
-            modifier = Modifier.weight(1f),
-            title = stringResource(R.string.cost_total),
-            value = if (hasCost) formatMoney(currencySymbol, uiState.totalCost, 2) else stringResource(R.string.analysis_no_records),
-            subtitle = stringResource(R.string.cost_charges_count, uiState.totalCharges)
-        )
-        SummaryCard(
-            modifier = Modifier.weight(1f),
-            title = stringResource(R.string.cost_energy_added),
-            value = if (hasEnergy) String.format(Locale.getDefault(), "%.1f kWh", uiState.totalEnergy) else stringResource(R.string.analysis_no_records),
-            subtitle = if (hasCost && hasEnergy && uiState.totalEnergy > 0) {
-                formatMoney(currencySymbol, uiState.totalCost / uiState.totalEnergy, 2) + "/kWh"
-            } else {
-                ""
-            }
-        )
+        uiState.totalCost?.takeIf { hasCost }?.let { total ->
+            SummaryCard(Modifier.weight(1f), stringResource(R.string.cost_recorded_manual_total),
+                formatMoney(currencySymbol, total, 2),
+                uiState.averageSessionCost?.let { avg ->
+                    "${stringResource(R.string.cost_average_session)} ${formatMoney(currencySymbol, avg, 2)}"
+                }.orEmpty())
+        }
+        uiState.estimatedCost?.takeIf { hasEstimate }?.let { estimate ->
+            SummaryCard(Modifier.weight(1f), stringResource(R.string.cost_default_rate_estimate),
+                "≈" + formatMoney(currencySymbol, estimate, 2),
+                stringResource(R.string.cost_estimate_coverage, uiState.estimatedCoverage))
+        }
     }
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    if (hasPartial) {
+        SummaryCard(Modifier.fillMaxWidth(), stringResource(R.string.cost_partial_observation_estimate),
+            "≈" + formatMoney(currencySymbol, uiState.partialEstimatedCost!!, 2),
+            stringResource(R.string.cost_partial_observation_coverage, uiState.partialEstimatedCoverage))
+    }
+    if (hasEnergy || hasPair) Row(
+        modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        SummaryCard(
-            modifier = Modifier.weight(1f),
-            title = stringResource(R.string.cost_average_session),
-            value = uiState.averageSessionCost?.let { formatMoney(currencySymbol, it, 2) }
-                ?: stringResource(R.string.analysis_no_records),
-            subtitle = if (uiState.manualCostCount > 0) {
-                stringResource(R.string.cost_manual_count, uiState.manualCostCount)
-            } else stringResource(R.string.cost_average_session_hint)
-        )
-        SummaryCard(
-            modifier = Modifier.weight(1f),
-            title = stringResource(R.string.cost_average_kwh),
-            value = if (hasCost && hasEnergy && uiState.totalEnergy > 0) {
-                formatMoney(currencySymbol, uiState.totalCost / uiState.totalEnergy, 2) + "/kWh"
-            } else stringResource(R.string.analysis_no_records),
-            subtitle = stringResource(R.string.cost_average_kwh_hint)
-        )
+        uiState.totalEnergy?.takeIf { hasEnergy }?.let { energy ->
+            SummaryCard(Modifier.weight(1f), stringResource(R.string.cost_energy_added),
+                String.format(Locale.getDefault(), "%.1f kWh", energy), "")
+        }
+        uiState.pairedUnitCost?.takeIf { hasPair }?.let { paired ->
+            SummaryCard(Modifier.weight(1f), stringResource(R.string.cost_paired_battery_unit),
+                formatMoney(currencySymbol, paired, 2) + "/kWh", "")
+        }
     }
+    if (!hasCost && !hasEstimate && !hasPartial && !hasEnergy) {
+        Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))) {
+            Text(stringResource(R.string.cost_no_paired_values), Modifier.padding(16.dp),
+                style = MaterialTheme.typography.bodyMedium)
+        }
+    } else if (!hasPair && hasCost && hasEnergy) {
+        Text(stringResource(R.string.cost_no_paired_values),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+    Text(stringResource(R.string.cost_coverage_counts, uiState.costCoverage,
+        uiState.totalCharges, uiState.energyCoverage, uiState.pairedCoverage),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant)
+    if (hasCost || hasEstimate || hasPartial) Text(stringResource(R.string.cost_current_currency_assumption),
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
 @Composable
@@ -249,7 +323,7 @@ private fun SummaryCard(
 @Composable
 private fun MonthlyCostChart(monthlyCosts: List<MonthlyCost>) {
     val maxValue = max(
-        monthlyCosts.maxOfOrNull { it.acCost + it.dcCost } ?: 1.0,
+        monthlyCosts.maxOfOrNull { it.acCost + it.dcCost + it.unknownCost } ?: 1.0,
         1.0
     )
 
@@ -269,25 +343,14 @@ private fun MonthlyCostChart(monthlyCosts: List<MonthlyCost>) {
 
                 monthlyCosts.forEachIndexed { index, monthly ->
                     val x = index * (barWidth + 8.dp.toPx())
-                    val totalHeight = ((monthly.acCost + monthly.dcCost) / maxValue * chartHeight).toFloat()
-                    val acHeight = (monthly.acCost / maxValue * chartHeight).toFloat()
-
-                    // DC bar (bottom)
-                    if (monthly.dcCost > 0) {
-                        drawRect(
-                            color = DcColor,
-                            topLeft = Offset(x, chartHeight - totalHeight),
-                            size = Size(barWidth, totalHeight)
-                        )
-                    }
-
-                    // AC bar (top of stacked)
-                    if (monthly.acCost > 0) {
-                        drawRect(
-                            color = AcColor,
-                            topLeft = Offset(x, chartHeight - acHeight),
-                            size = Size(barWidth, acHeight)
-                        )
+                    var top = chartHeight
+                    listOf(monthly.dcCost to DcColor, monthly.acCost to AcColor,
+                        monthly.unknownCost to UnknownCostColor).forEach { (cost, color) ->
+                        if (cost > 0) {
+                            val height = (cost / maxValue * chartHeight).toFloat()
+                            top -= height
+                            drawRect(color, topLeft = Offset(x, top), size = Size(barWidth, height))
+                        }
                     }
                 }
 

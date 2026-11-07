@@ -19,6 +19,16 @@ internal class TripsHistoryRefresher(
     private val loadTrips: suspend (Int) -> List<Trip>,
     private val loadDcChargeIds: suspend (Int) -> Set<Int>
 ) {
+    suspend fun cached(remoteApiCarId: Int): TripsRefreshResult? {
+        val localHistoryCarId = runCatching { resolveCachedLocalId(remoteApiCarId) }.getOrNull() ?: return null
+        return TripsRefreshResult(
+            localHistoryCarId = localHistoryCarId,
+            trips = runCatching { loadTrips(localHistoryCarId) }.getOrDefault(emptyList()),
+            dcChargeIds = runCatching { loadDcChargeIds(localHistoryCarId) }.getOrDefault(emptySet()),
+            historySyncWarning = null
+        )
+    }
+
     suspend fun refresh(remoteApiCarId: Int): TripsRefreshResult {
         val history = refreshHistory(remoteApiCarId)
         val localHistoryCarId = when (history) {

@@ -40,8 +40,9 @@ data class SyncState(
  * records with older versions will be reprocessed.
  */
 object SchemaVersion {
-    const val CURRENT = 5
-    const val DRIVE_ENERGY = 6
+    const val CURRENT = 7
+    const val DRIVE_ENERGY = 7
+    const val TEMPERATURE_C = 7
 
     // Changelog:
     // V1 (initial): elevation, temp extremes, power, climate, charger info
@@ -50,4 +51,5 @@ object SchemaVersion {
     // V4: startRegionName, startCity for drives; countryCode, countryName, regionName, city for charges
     // V5: endLatitude, endLongitude for trip country resolution without API call
     // V6: Re-evaluate drive energy and persist its capacity/source evidence once.
+    // V7: Normalize detail-point temperatures to C and re-evaluate conflict-safe charge mode hints.
 }

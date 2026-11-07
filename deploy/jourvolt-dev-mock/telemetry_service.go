@@ -54,6 +54,8 @@ type telemetryService struct {
 	finalizerMu              sync.Mutex
 	finalizerCancel          context.CancelFunc
 	finalizerDone            chan struct{}
+	grayMu                   sync.Mutex
+	grayCounts               map[string]map[string]*telemetryFieldAvailability
 	authorizationFollowup    sync.Map
 }
 
@@ -257,10 +259,17 @@ func (s *telemetryService) ingest(ctx context.Context, record telemetryRecord) (
 	if s == nil {
 		return 0, nil
 	}
+	var accepted int
+	var err error
 	if s.memory != nil {
-		return s.memory.ingest(record, s.stopDebounceOrDefault())
+		accepted, err = s.memory.ingest(record, s.stopDebounceOrDefault())
+	} else {
+		accepted, err = s.ingestPostgres(ctx, record)
 	}
-	return s.ingestPostgres(ctx, record)
+	if err == nil && accepted > 0 {
+		s.countGrayDelivery(record)
+	}
+	return accepted, err
 }
 
 func (s *telemetryService) stopDebounceOrDefault() time.Duration {
@@ -591,6 +600,7 @@ type telemetryPairing struct {
 
 type telemetryPairingResponse struct {
 	Status         string `json:"status"`
+	Phase          string `json:"phase,omitempty"`
 	VirtualKeyURL  string `json:"virtual_key_url"`
 	UpdatedAt      string `json:"updated_at,omitempty"`
 	ConfigSynced   *bool  `json:"config_synced"`
@@ -646,8 +656,15 @@ func (s *telemetryService) pairing(ctx context.Context, userID string, vehicleID
 		}
 	}
 	status = s.refreshConfirmedVehicleKey(ctx, userID, vehicleID, status)
+	hasData := false
+	if onboardingPhaseNeedsData(status.Status) {
+		if _, ok, err := s.latest(ctx, userID, vehicleID); err == nil && ok {
+			hasData = true
+		}
+	}
 	response := telemetryPairingResponse{
 		Status:         status.Status,
+		Phase:          onboardingPhase(status.Status, status.ConfigSynced, hasData),
 		VirtualKeyURL:  "https://tesla.com/_ak/" + s.config.PartnerDomain,
 		ConfigSynced:   status.ConfigSynced,
 		ErrorClass:     status.ErrorClass,
@@ -725,7 +742,15 @@ type telemetryFieldConfiguration struct {
 	MinimumDelta    *float64 `json:"minimum_delta,omitempty"`
 }
 
+// desiredTelemetryConfiguration is the production desired set. Gray
+// candidate fields are never part of it (design 2026-11-05 §7).
 func desiredTelemetryConfiguration() telemetryDesiredConfiguration {
+	return desiredTelemetryConfigurationFor(false)
+}
+
+// desiredTelemetryConfigurationFor builds the desired set, optionally
+// including gray-release candidate fields for allowlisted vehicles.
+func desiredTelemetryConfigurationFor(includeGray bool) telemetryDesiredConfiguration {
 	fields := make(map[string]telemetryFieldConfiguration, len(telemetryFieldSpecs))
 	for name := range telemetryFieldSpecs {
 		spec := telemetryFieldSpecs[name]
@@ -738,6 +763,17 @@ func desiredTelemetryConfiguration() telemetryDesiredConfiguration {
 			field.MinimumDelta = &delta
 		}
 		fields[name] = field
+	}
+	if includeGray {
+		for name := range grayTelemetryFieldSpecs {
+			spec := grayTelemetryFieldSpecs[name]
+			field := telemetryFieldConfiguration{IntervalSeconds: int(spec.Interval.Seconds())}
+			if spec.Kind == "number" {
+				delta := 0.1
+				field.MinimumDelta = &delta
+			}
+			fields[name] = field
+		}
 	}
 	return telemetryDesiredConfiguration{
 		Fields: fields, VehicleSpeedIntervalSeconds: 10, LocationIntervalSeconds: 10,
@@ -819,7 +855,7 @@ func (s *telemetryService) configure(ctx context.Context, userID string, vehicle
 		_ = s.setPairingDiagnostic(ctx, userID, vehicleID, "telemetry_error", "ca_unavailable", "telemetry_ca", 0, correlationID)
 		return errTelemetryCommand
 	}
-	desired := desiredTelemetryConfiguration()
+	desired := desiredTelemetryConfigurationFor(s.grayVehicle(vehicleID))
 	official := officialFleetTelemetryConfiguration{
 		Hostname: s.config.PublicHost, Port: s.config.PublicPort, CA: string(ca),
 		Fields: desired.Fields, AlertTypes: []string{"service"},
@@ -1260,6 +1296,17 @@ func telemetryReadinessItem(status string) dataReadinessItem {
 	return item
 }
 
+func chargeLocationWithinSession(session telemetrySession, point telemetryChargePoint) bool {
+	if !validFleetCoordinates(point.Latitude, point.Longitude) {
+		return false
+	}
+	if session.Source != "telemetry_mqtt" {
+		return true
+	}
+	return !session.StartAt.IsZero() && !point.ObservedAt.IsZero() && !point.ObservedAt.Before(session.StartAt) &&
+		(session.EndAt == nil || (!session.EndAt.Before(session.StartAt) && !point.ObservedAt.After(*session.EndAt)))
+}
+
 func historySessionMap(session telemetrySession, kind string, index int) map[string]any {
 	end := session.EndAt
 	source := session.Source
@@ -1360,7 +1407,11 @@ func historySessionMap(session telemetrySession, kind string, index int) map[str
 		var lastPower *float64
 		var firstLatitude, firstLongitude *float64
 		for _, point := range session.ChargePoints {
-			item := map[string]any{"date": point.ObservedAt.UTC().Format(time.RFC3339Nano)}
+			var date any = point.ObservedAt.UTC().Format(time.RFC3339Nano)
+			if session.Source == "telemetry_mqtt" && point.ObservedAt.IsZero() {
+				date = nil
+			}
+			item := map[string]any{"date": date}
 			if level := observedRouteBatteryLevel(point.BatteryLevel); level != nil {
 				item["battery_level"] = *level
 				if firstBattery == nil {
@@ -1378,7 +1429,7 @@ func historySessionMap(session telemetrySession, kind string, index int) map[str
 				item["charger_details"] = map[string]any{"charger_power": point.ChargerPower}
 				lastPower = cloneFloat(point.ChargerPower)
 			}
-			if point.Latitude != nil && point.Longitude != nil {
+			if chargeLocationWithinSession(session, point) {
 				item["latitude"], item["longitude"] = point.Latitude, point.Longitude
 				if firstLatitude == nil {
 					firstLatitude, firstLongitude = cloneFloat(point.Latitude), cloneFloat(point.Longitude)

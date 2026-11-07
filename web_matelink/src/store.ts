@@ -4,7 +4,7 @@ import type { Car, FlatCar } from './api/types';
 import { flattenCar } from './api/types';
 import mockData from './mock_data.json';
 
-const cars = (mockData.cars as Car[]).map(flattenCar);
+const mockCars = (mockData.cars as Car[]).map(flattenCar);
 
 interface Store {
   currentCarId: number;
@@ -30,7 +30,7 @@ export const useStore = create<Store>()(
   persist(
     (set) => ({
       currentCarId: 1,
-      cars,
+      cars: [],
       theme: 'system',
       mockMode: false,
       serverUrl: '',
@@ -38,7 +38,7 @@ export const useStore = create<Store>()(
       onboardingDone: false,
       setCarId: (id) => set({ currentCarId: id }),
       setCars: (items) => set((state) => ({
-        cars: items.length > 0 ? items : state.cars,
+        cars: items,
         currentCarId: items.length > 0 && !items.some(car => car.id === state.currentCarId)
           ? items[0].id
           : state.currentCarId,
@@ -49,7 +49,7 @@ export const useStore = create<Store>()(
       },
       setMockMode: (m) => set((state) => ({
         mockMode: m,
-        cars: m ? cars : state.cars,
+        cars: m ? mockCars : [],
         onboardingDone: m ? true : Boolean(state.serverUrl),
       })),
       setOnboardingDone: (d) => set({ onboardingDone: d }),
@@ -57,6 +57,7 @@ export const useStore = create<Store>()(
         serverUrl: normalizeServerUrl(url),
         apiToken: token,
         mockMode: false,
+        cars: [],
         onboardingDone: true,
       }),
     }),

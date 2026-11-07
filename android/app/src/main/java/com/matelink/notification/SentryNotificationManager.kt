@@ -28,6 +28,7 @@ class SentryNotificationManager @Inject constructor(
         private const val TAG = "SentryNotificationManager"
         const val CHANNEL_ID = "sentry_alerts_channel"
         const val NOTIFICATION_ID_BASE = 4000
+        private const val NOTIFICATION_TYPE_TAG = "matelink_sentry"
         private const val TESLA_PACKAGE_NAME = "com.teslamotors.tesla"
     }
 
@@ -41,7 +42,8 @@ class SentryNotificationManager @Inject constructor(
      *   a debounce window). If false, the notification content is updated silently (counter
      *   changed but no new sound).
      */
-    fun showSentryAlert(carName: String, carId: Int, eventCount: Int, shouldAlert: Boolean = true) {
+    fun showSentryAlert(carName: String, carId: Int, eventCount: Int, shouldAlert: Boolean = true,
+        remoteApiCarId: Int = carId) {
         createNotificationChannel()
         val notificationId = NOTIFICATION_ID_BASE + carId
 
@@ -57,7 +59,7 @@ class SentryNotificationManager @Inject constructor(
             .setOngoing(false)
             .setAutoCancel(true)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .setContentIntent(createContentIntent(carId))
+            .setContentIntent(createContentIntent(remoteApiCarId, carId))
 
         // Add "Open Tesla" action button if the Tesla app is installed
         createTeslaAppIntent()?.let { teslaIntent ->
@@ -81,7 +83,8 @@ class SentryNotificationManager @Inject constructor(
 
         val notification = builder.build()
 
-        notificationManager.notify(notificationId, notification)
+        clearMatchingLegacyNotification(notificationId)
+        notificationManager.notify(NOTIFICATION_TYPE_TAG, notificationId, notification)
         Log.d(TAG, "Sentry alert for car $carId: $eventCount events (alert=$shouldAlert)")
     }
 
@@ -90,7 +93,8 @@ class SentryNotificationManager @Inject constructor(
      */
     fun cancelNotification(carId: Int) {
         val notificationId = NOTIFICATION_ID_BASE + carId
-        notificationManager.cancel(notificationId)
+        notificationManager.cancel(NOTIFICATION_TYPE_TAG, notificationId)
+        clearMatchingLegacyNotification(notificationId)
         Log.d(TAG, "Cancelled sentry notification for car $carId")
     }
 
@@ -101,18 +105,30 @@ class SentryNotificationManager @Inject constructor(
         createNotificationChannel()
     }
 
-    private fun createContentIntent(carId: Int): PendingIntent {
+    private fun createContentIntent(remoteApiCarId: Int, localHistoryCarId: Int): PendingIntent {
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            putExtra("EXTRA_CAR_ID", carId)
+            data = android.net.Uri.parse("matelink://notification/sentry/$localHistoryCarId")
+            putExtra("EXTRA_CAR_ID", remoteApiCarId)
+            putExtra("EXTRA_LOCAL_HISTORY_CAR_ID", localHistoryCarId)
             putExtra("EXTRA_NAVIGATE_TO", "sentry_history")
         }
         return PendingIntent.getActivity(
             context,
-            NOTIFICATION_ID_BASE + carId,
+            NOTIFICATION_ID_BASE + localHistoryCarId,
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
+    }
+
+    /** Retire only our old untagged alert; 3999 may be the charging service. */
+    private fun clearMatchingLegacyNotification(id: Int) {
+        if (android.os.Build.VERSION.SDK_INT < 26) return
+        runCatching {
+            if (notificationManager.activeNotifications.any {
+                it.id == id && it.tag == null && it.notification.channelId == CHANNEL_ID
+            }) notificationManager.cancel(id)
+        }
     }
 
     private fun createTeslaAppIntent(): Intent? {

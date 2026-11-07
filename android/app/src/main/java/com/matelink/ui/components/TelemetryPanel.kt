@@ -195,7 +195,7 @@ private fun TelemetryMetricCell(
     ) {
         Box(
             modifier = Modifier
-                .size(if (compact) 22.dp else if (adaptive) 30.dp else 26.dp)
+                .size(if (compact) 26.dp else if (adaptive) 30.dp else 26.dp)
                 .clip(CircleShape)
                 .background(metric.tint.copy(alpha = 0.12f)),
             contentAlignment = Alignment.Center
@@ -204,15 +204,16 @@ private fun TelemetryMetricCell(
                 imageVector = metric.icon,
                 contentDescription = null,
                 tint = metric.tint,
-                modifier = Modifier.size(if (compact) 13.dp else if (adaptive) 18.dp else 15.dp)
+                modifier = Modifier.size(if (compact) 16.dp else if (adaptive) 18.dp else 15.dp)
             )
         }
         if (compact) {
+            val baseSize = metric.valueFontSize ?: 18.sp
             val calcFontSize = when {
-                number.length >= 7 -> 12.sp
-                number.length >= 6 -> 13.5.sp
-                number.length >= 5 -> 14.5.sp
-                else -> metric.valueFontSize ?: 16.sp
+                number.length >= 9 -> (baseSize.value - 3f).sp
+                number.length >= 8 -> (baseSize.value - 2f).sp
+                number.length >= 7 -> (baseSize.value - 1f).sp
+                else -> baseSize
             }
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -229,7 +230,7 @@ private fun TelemetryMetricCell(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                displayedUnit?.takeIf(String::isNotBlank)?.let { unit ->
+                displayedUnit?.takeIf { compactUnitLine(it) == CompactUnitLine.INLINE }?.let { unit ->
                     Spacer(Modifier.width(1.5.dp))
                     Text(
                         text = unit,
@@ -240,6 +241,16 @@ private fun TelemetryMetricCell(
                         modifier = Modifier.padding(bottom = 1.dp)
                     )
                 }
+            }
+            displayedUnit?.takeIf { compactUnitLine(it) == CompactUnitLine.BELOW }?.let { unit ->
+                Text(
+                    text = unit,
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.5.sp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    softWrap = false,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
             Text(
                 text = metric.label,

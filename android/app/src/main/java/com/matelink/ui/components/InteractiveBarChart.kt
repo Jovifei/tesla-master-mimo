@@ -1,5 +1,7 @@
 package com.matelink.ui.components
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -19,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -72,6 +75,10 @@ fun InteractiveBarChart(
 
     val textMeasurer = rememberTextMeasurer()
     val maxValue = data.maxOfOrNull { it.value } ?: 1.0
+    val revealProgress = remember(data) { Animatable(0f) }
+    LaunchedEffect(data) {
+        revealProgress.animateTo(1f, animationSpec = tween(durationMillis = 420))
+    }
     val axisWidth = with(LocalDensity.current) {
         val measured = textMeasurer.measure(yAxisFormatter(maxValue), TextStyle(fontSize = 12.sp)).size.width.toDp()
         maxOf(48.dp, measured + 8.dp)
@@ -149,15 +156,20 @@ fun InteractiveBarChart(
                     var currentY = maxBarHeight // Start at the top of the chart
                     barData.segments.forEach { segment ->
                         val segmentHeight = if (maxValue > 0) {
-                            (segment.value / maxValue * maxBarHeight).toFloat()
+                            (segment.value / maxValue * maxBarHeight * revealProgress.value).toFloat()
                         } else 0f
 
                         if (segmentHeight > 0) {
                             val baseColor = segment.color
-                            val currentSegmentColor = baseColor.copy(alpha = if (isSelected) 1f else 0.6f)
-
-                            drawRect(
-                                color = currentSegmentColor,
+                            drawRoundRect(
+                                brush = Brush.verticalGradient(
+                                    colors = listOf(
+                                        baseColor.copy(alpha = if (isSelected) 1f else 0.9f),
+                                        baseColor.copy(alpha = if (isSelected) 0.82f else 0.52f)
+                                    ),
+                                    startY = currentY - segmentHeight,
+                                    endY = currentY
+                                ),
                                 topLeft = Offset(
                                     x = xPosition,
                                     y = currentY - segmentHeight // Substract the segment height
@@ -165,7 +177,8 @@ fun InteractiveBarChart(
                                 size = Size(
                                     width = barWidthRect,
                                     height = segmentHeight
-                                )
+                                ),
+                                cornerRadius = CornerRadius(4.dp.toPx(), 4.dp.toPx())
                             )
                             // Update the "floor" for the next segment (AC or DC)
                             currentY -= segmentHeight
@@ -174,7 +187,7 @@ fun InteractiveBarChart(
                 } else {
                     // Non stacked bars
                     val barHeight = if (maxValue > 0) {
-                        (barData.value / maxValue * maxBarHeight).toFloat()
+                        (barData.value / maxValue * maxBarHeight * revealProgress.value).toFloat()
                     } else 0f
 
                     if (barHeight > 0) {

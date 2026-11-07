@@ -17,7 +17,8 @@ data class CarStats(
     val deepStats: DeepStats?,
     val syncProgress: SyncProgress?,
     val recommendations: List<Recommendation> = emptyList(),
-    val analysisCoverage: AnalysisCoverage? = null
+    val analysisCoverage: AnalysisCoverage? = null,
+    val currencyCode: String? = null
 )
 
 /**
@@ -124,8 +125,12 @@ data class DeepStats(
 
     // === Sync Progress ===
     val driveDetailsProcessed: Int,
-    val chargeDetailsProcessed: Int
+    val chargeDetailsProcessed: Int,
+    val acEnergySampleCount: Int = acChargeCount,
+    val dcEnergySampleCount: Int = dcChargeCount
 ) {
+    val qualifiedAcChargeEnergyKwh: Double? get() = acChargeEnergyKwh.takeIf { acEnergySampleCount > 0 && it.isFinite() && it >= 0.0 }
+    val qualifiedDcChargeEnergyKwh: Double? get() = dcChargeEnergyKwh.takeIf { dcEnergySampleCount > 0 && it.isFinite() && it >= 0.0 }
     val acDcRatio: String
         get() {
             val total = acChargeCount + dcChargeCount
@@ -229,8 +234,13 @@ data class CountryRecord(
     val driveCount: Int,            // Number of drives in this country
     val totalDistanceKm: Double,    // Total km driven (approx, from drives starting in this country)
     val totalChargeEnergyKwh: Double, // Total kWh charged in this country
-    val chargeCount: Int            // Number of charges in this country
-)
+    val chargeCount: Int,            // Number of charges in this country
+    val distanceSampleCount: Int = driveCount,
+    val chargeEnergySampleCount: Int = chargeCount
+) {
+    val qualifiedDistanceKm: Double? get() = totalDistanceKm.takeIf { distanceSampleCount > 0 && it.isFinite() && it >= 0.0 }
+    val qualifiedChargeEnergyKwh: Double? get() = totalChargeEnergyKwh.takeIf { chargeEnergySampleCount > 0 && it.isFinite() && it >= 0.0 }
+}
 
 /**
  * Record for a region/state visited within a country.
@@ -243,8 +253,13 @@ data class RegionRecord(
     val driveCount: Int,            // Number of drives in this region
     val totalDistanceKm: Double,    // Total km driven in this region
     val totalChargeEnergyKwh: Double, // Total kWh charged in this region
-    val chargeCount: Int            // Number of charges in this region
-)
+    val chargeCount: Int,            // Number of charges in this region
+    val distanceSampleCount: Int = driveCount,
+    val chargeEnergySampleCount: Int = chargeCount
+) {
+    val qualifiedDistanceKm: Double? get() = totalDistanceKm.takeIf { distanceSampleCount > 0 && it.isFinite() && it >= 0.0 }
+    val qualifiedChargeEnergyKwh: Double? get() = totalChargeEnergyKwh.takeIf { chargeEnergySampleCount > 0 && it.isFinite() && it >= 0.0 }
+}
 
 /**
  * A charge location for map display with relevant metadata.
@@ -256,7 +271,8 @@ data class ChargeLocation(
     val energyAddedKwh: Double,     // Energy added in this charge
     val date: String,               // ISO date of the charge
     val isDcCharge: Boolean,        // DC (fast) or AC (slow) charge
-    val address: String             // Location address
+    val address: String,             // Location address
+    val chargeMode: String? = if (isDcCharge) "dc" else null
 )
 
 /**

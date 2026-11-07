@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -162,6 +163,18 @@ fun SentryHistoryScreen(
                     text = "...",
                     color = palette.onSurfaceVariant
                 )
+            }
+        } else if (uiState.identityUnavailable) {
+            Column(
+                modifier = Modifier.fillMaxSize().padding(paddingValues).padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Icon(Icons.Default.Info, contentDescription = null, tint = palette.onSurfaceVariant)
+                Spacer(Modifier.height(12.dp))
+                Text(stringResource(R.string.sentry_history_identity_unavailable),
+                    color = palette.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium)
             }
         } else {
             LazyColumn(

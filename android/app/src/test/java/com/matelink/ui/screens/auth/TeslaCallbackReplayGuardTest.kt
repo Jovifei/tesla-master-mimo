@@ -77,10 +77,15 @@ class TeslaCallbackReplayGuardTest {
     }
 
     @Test
-    fun usedTicketAfterSessionIsTreatedAsSuccess() {
-        assertTrue(shouldTreatTeslaExchangeFailureAsSuccess(401, hasSession = true))
-        assertTrue(shouldTreatTeslaExchangeFailureAsSuccess(403, hasSession = true))
-        assertFalse(shouldTreatTeslaExchangeFailureAsSuccess(401, hasSession = false))
-        assertFalse(shouldTreatTeslaExchangeFailureAsSuccess(500, hasSession = true))
+    fun newTicketWithAnExistingSessionStillRequiresExchange() {
+        assertEquals(
+            TeslaCallbackReplayDecision.Process,
+            teslaCallbackReplayDecision(
+                ticket = "ticket-new",
+                inFlightTicket = null,
+                handledTicket = "ticket-old",
+                hasSession = true
+            )
+        )
     }
 }

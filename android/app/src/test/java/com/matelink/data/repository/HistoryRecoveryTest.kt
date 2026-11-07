@@ -1,6 +1,7 @@
 package com.matelink.data.repository
 
 import com.matelink.data.api.models.ChargeData
+import com.matelink.data.api.models.ChargeBatteryDetails
 import com.matelink.data.api.models.DriveData
 import com.matelink.data.api.models.EnergyContract
 import com.matelink.data.api.models.EnergyMetric
@@ -116,10 +117,26 @@ class HistoryRecoveryTest {
         assertEquals(listOf(local), UnifiedHistoryRepository.mergeCharges(emptyList(), listOf(local)))
     }
 
-    @Test fun normalizedSessionTimesDeduplicateButMissingTimesDoNot() {
+    @Test fun equalInstantsDoNotMergeDifferentIdsButSameIdRemainsIdempotent() {
         val cached = DriveData(1, startDate = "2026-09-01T08:00:00+08:00", endDate = "2026-09-01T09:00:00+08:00")
         val remote = DriveData(2, startDate = "2026-09-01T00:00:00Z", endDate = "2026-09-01T01:00:00Z")
-        assertEquals(1, UnifiedHistoryRepository.mergeDrives(listOf(remote), listOf(cached)).size)
+        assertEquals(setOf(1, 2), UnifiedHistoryRepository.mergeDrives(listOf(remote), listOf(cached)).map { it.driveId }.toSet())
+        val sameDrive = remote.copy(driveId = cached.driveId, endAddress = "Updated end")
+        val priorDrive = cached.copy(startAddress = "Saved start")
+        val mergedDrive = UnifiedHistoryRepository.mergeDrives(listOf(sameDrive), listOf(priorDrive)).single()
+        assertEquals("Saved start", mergedDrive.startAddress)
+        assertEquals("Updated end", mergedDrive.endAddress)
+        val cachedCharge = ChargeData(10, startDate = cached.startDate, endDate = cached.endDate,
+            source = "teslamate_archive", batteryDetails = ChargeBatteryDetails(startBatteryLevel = 0))
+        val otherCharge = ChargeData(11, startDate = remote.startDate, endDate = remote.endDate,
+            source = "teslamate_archive")
+        assertEquals(setOf(10, 11), UnifiedHistoryRepository.mergeCharges(listOf(otherCharge), listOf(cachedCharge))
+            .map { it.chargeId }.toSet())
+        val sameCharge = otherCharge.copy(chargeId = cachedCharge.chargeId,
+            batteryDetails = ChargeBatteryDetails(endBatteryLevel = 79))
+        val mergedCharge = UnifiedHistoryRepository.mergeCharges(listOf(sameCharge), listOf(cachedCharge)).single()
+        assertEquals(0, mergedCharge.startBatteryLevel)
+        assertEquals(79, mergedCharge.endBatteryLevel)
         assertFalse(sameHistorySession(null, null, null, null))
     }
 
@@ -139,13 +156,15 @@ class HistoryRecoveryTest {
         assertFalse(historyInRange("2026-09-02T00:00:00Z", "2026-09-01T00:00:00Z", "2026-09-02T00:00:00Z"))
     }
 
-    @Test fun offlineAliasesAreMergedWithoutErasingTheStrongerRecord() {
+    @Test fun sameWindowOfflineRecordsWithDifferentIdsRemainSeparate() {
         val measured = strongMeasuredDrive(1)
         val alias = measured.copy(driveId = 2, energyConsumedNet = null,
             energyContract = null, source = "local_import", qualityState = "incomplete")
         assertNull(alias.netEnergyKwh)
-        val result = UnifiedHistoryRepository.mergeDrives(emptyList(), listOf(alias, measured)).single()
-        assertEquals("observed", result.qualityState)
-        assertEquals(8.0, result.energyConsumedNet!!, 0.0)
+        val result = UnifiedHistoryRepository.mergeDrives(emptyList(), listOf(alias, measured)).associateBy { it.driveId }
+        assertEquals(setOf(1, 2), result.keys)
+        assertEquals("observed", result.getValue(1).qualityState)
+        assertEquals(8.0, result.getValue(1).energyConsumedNet!!, 0.0)
+        assertNull(result.getValue(2).netEnergyKwh)
     }
 }

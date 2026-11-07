@@ -46,6 +46,41 @@ class DriveResponseUnitsConsumerTest {
         assertEquals(HistorySummaryEvidenceCodec.sourceJson(original.apiEvidence),
             HistorySummaryEvidenceCodec.sourceJson(rows[9 to 7]!!.apiEvidence))
     }
+
+    @Test fun newUnknownTemperatureStaysRawWithoutErasingQualifiedSameSessionEnergy() = runBlocking {
+        val original = list(unit = "km", distance = 10.0).copy(lengthUnit = null).toSyncSummary(9)!!
+        val next = list(unit = "km", distance = 10.0).copy(odometerDetails = null,
+            energyConsumedNet = null, outsideTempAvg = 15.0, temperatureUnit = "").toSyncSummary(9)!!
+        val rows = mutableMapOf((9 to 7) to original)
+        persistDriveRowsWithoutEvidenceLoss(listOf(next),
+            { car, id -> rows[car to id] }, { rows[it.carId to it.driveId] = it })
+        val saved = rows.getValue(9 to 7)
+        assertEquals(10.0, saved.toAnalysisDriveData().netEnergyKwh!!, 0.0)
+        assertEquals(1000.0, saved.toAnalysisDriveData().efficiencyWhKm!!, 0.0)
+        assertNull(saved.toAnalysisDriveData().outsideTempC)
+        assertEquals(HistorySummaryEvidenceCodec.sourceJson(next.apiEvidence),
+            HistorySummaryEvidenceCodec.sourceJson(saved.apiEvidence))
+        assertEquals(15.0, saved.toRawAnalysisDriveData().outsideTempAvg!!, 0.0)
+    }
+
+    @Test fun explicitUnknownAndUncontractedFleetStillRevokeUnprovenEnergy() = runBlocking {
+        val original = list(unit = "km", distance = 10.0).copy(lengthUnit = null)
+        val explicit = original.copy(odometerDetails = null, energyConsumedNet = null,
+            energyContract = EnergyContract(netEnergy = EnergyMetric(quality = "unknown",
+                source = original.source, startDate = original.startDate, endDate = original.endDate)))
+        val fleet = original.copy(source = "telemetry_mqtt")
+        val fleetSparse = fleet.copy(odometerDetails = null, energyConsumedNet = null,
+            outsideTempAvg = 15.0, temperatureUnit = "")
+        val untrusted = original.copy(qualityState = "incomplete")
+        val untrustedSparse = untrusted.copy(odometerDetails = null, energyConsumedNet = null,
+            outsideTempAvg = 15.0, temperatureUnit = "")
+        for ((old, next) in listOf(original to explicit, fleet to fleetSparse, untrusted to untrustedSparse)) {
+            val rows = mutableMapOf((9 to 7) to old.toSyncSummary(9)!!)
+            persistDriveRowsWithoutEvidenceLoss(listOf(next.toSyncSummary(9)!!),
+                { car, id -> rows[car to id] }, { rows[it.carId to it.driveId] = it })
+            assertNull(rows.getValue(9 to 7).toAnalysisDriveData().netEnergyKwh)
+        }
+    }
     @Test fun moshiMissingNullEmptyMetricAndImperialUnitsStayDistinctThroughRoomAndDetail() {
         val cases = listOf(
             "" to "km",

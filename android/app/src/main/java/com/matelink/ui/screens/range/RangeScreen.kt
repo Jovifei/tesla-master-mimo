@@ -58,6 +58,7 @@ import com.matelink.domain.analytics.PersonalizedRangeSource
 import com.matelink.domain.analytics.RangeSpeedBand
 import com.matelink.domain.analytics.RangeTemperatureBand
 import com.matelink.ui.components.MateLinkLoadingPlaceholder
+import com.matelink.ui.components.HistoryForegroundRefreshEffect
 import com.matelink.ui.components.AnalysisWindowSelector
 import com.matelink.ui.components.CachedHistoryBanner
 import com.matelink.ui.components.MetricPanelKind
@@ -84,6 +85,7 @@ fun RangeScreen(
     viewModel: RangeViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    HistoryForegroundRefreshEffect { viewModel.refresh() }
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(carId) {
@@ -311,13 +313,13 @@ private fun PersonalizedRangeCard(uiState: RangeUiState) {
                 }
                 else -> {
                     Text(
-                        text = if (model.sampleCount == 0) {
+                        text = if (model.candidateSampleCount == 0) {
                             stringResource(R.string.range_personalized_no_recent_data)
                         } else {
                             stringResource(
                                 R.string.range_personalized_insufficient,
-                                model.sampleCount,
-                                model.distanceKm
+                                model.candidateSampleCount,
+                                model.candidateDistanceKm
                             )
                         },
                         style = MaterialTheme.typography.bodyMedium,

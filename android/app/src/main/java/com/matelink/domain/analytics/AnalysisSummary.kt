@@ -54,9 +54,6 @@ fun AnalysisConclusions.withHistoryCollectionState(
     ),
     averageChargeEnergyKwh = averageChargeEnergyKwh.collectingWhenUnavailable(chargesCollecting),
     costPer100Km = costPer100Km.collectingWhenUnavailable(drivesCollecting || chargesCollecting),
-    chargedToDrivingEnergyPercent = chargedToDrivingEnergyPercent.collectingWhenUnavailable(
-        drivesCollecting || chargesCollecting
-    ),
     chargingLossPercent = chargingLossPercent.collectingWhenUnavailable(chargesCollecting)
 )
 
@@ -71,18 +68,18 @@ fun buildAnalysisSummary(
     val driveEnergySamples = coverage?.driveEnergySampleCount ?: driveCount
     val chargeEnergySamples = coverage?.chargeEnergySampleCount ?: chargeCount
     val costSamples = coverage?.chargeCostSampleCount ?: chargeCount
-    val distance = stats.totalDistanceKm.takeIf {
+    val distance = (if (coverage == null) stats.totalDistanceKm else coverage.qualifiedDistanceTotalKm)?.takeIf {
         distanceSamples > 0 && it.isFinite() && it >= 0.0
     }
-    val drivingEnergy = stats.totalEnergyConsumedKwh
+    val drivingEnergy = (if (coverage == null) stats.totalEnergyConsumedKwh else coverage.qualifiedDriveEnergyTotalKwh)
         ?.takeIf { driveEnergySamples > 0 && it.isFinite() }
-    val chargedEnergy = stats.totalEnergyAddedKwh
+    val chargedEnergy = (if (coverage == null) stats.totalEnergyAddedKwh else coverage.qualifiedChargeEnergyTotalKwh)
         ?.takeIf { chargeEnergySamples > 0 && it.isFinite() && it >= 0.0 }
-    val efficiency = stats.avgEfficiencyWhKm
+    val efficiency = (if (coverage == null) stats.avgEfficiencyWhKm else coverage.pairedEfficiency?.efficiencyWhKm)
         ?.takeIf {
-            distanceSamples > 0 && driveEnergySamples > 0 && it.isFinite()
+            (coverage?.pairedEfficiency?.sampleCount ?: minOf(distanceSamples, driveEnergySamples)) > 0 && it.isFinite()
         }
-    val efficiencySamples = minOf(distanceSamples, driveEnergySamples)
+    val efficiencySamples = coverage?.pairedEfficiency?.sampleCount ?: minOf(distanceSamples, driveEnergySamples)
     val cost = stats.totalCost?.takeIf { costSamples > 0 && it.isFinite() && it >= 0.0 }
 
     return AnalysisSummary(
@@ -91,12 +88,13 @@ fun buildAnalysisSummary(
             coverage?.driveEnergyEstimatedSampleCount ?: 0),
         efficiencyWhKm = efficiency.toDerived(
             MetricSource.LOCAL_CALCULATION, efficiencySamples,
-            if ((coverage?.driveEnergyEstimatedSampleCount ?: 0) > 0)
+            if ((coverage?.pairedEstimatedEnergySampleCount ?: 0) > 0)
                 MetricEvidence.ESTIMATED else MetricEvidence.DERIVED
         ),
         chargedEnergyKwh = chargedEnergy.toObserved(MetricSource.TESLAMATE, chargeEnergySamples),
         totalCost = cost.toObserved(MetricSource.TESLAMATE, costSamples),
-        sourceRecordCount = driveCount + chargeCount
+        sourceRecordCount = if (coverage != null) coverage.driveRecordCount + coverage.chargeRecordCount
+            else driveCount + chargeCount
     )
 }
 
@@ -105,24 +103,25 @@ fun buildAnalysisConclusions(
     coverage: AnalysisCoverage? = null
 ): AnalysisConclusions {
     val distanceSamples = coverage?.driveDistanceSampleCount ?: stats.totalDrives
-    val driveEnergySamples = coverage?.driveEnergySampleCount ?: stats.totalDrives
     val chargeEnergySamples = coverage?.chargeEnergySampleCount ?: stats.totalCharges
     val costSamples = coverage?.chargeCostSampleCount ?: stats.totalCharges
-    val distance = stats.totalDistanceKm.takeIf {
+    val distance = (if (coverage == null) stats.totalDistanceKm else coverage.qualifiedDistanceTotalKm)?.takeIf {
         distanceSamples > 0 && it.isFinite() && it >= 0.0
     }
-    val drivingEnergy = stats.totalEnergyConsumedKwh?.takeIf {
-        driveEnergySamples > 0 && it.isFinite()
-    }
-    val chargedEnergy = stats.totalEnergyAddedKwh?.takeIf {
+    val chargedEnergy = (if (coverage == null) stats.totalEnergyAddedKwh else coverage.qualifiedChargeEnergyTotalKwh)?.takeIf {
         chargeEnergySamples > 0 && it.isFinite() && it >= 0.0
     }
-    val drivingDays = stats.totalDrivingDays?.takeIf { it > 0 }
+    val drivingDays = (if (coverage == null) stats.totalDrivingDays else coverage.driveDistanceDayCount)
+        ?.takeIf { it > 0 }
     val cost = stats.totalCost?.takeIf {
         costSamples > 0 && it.isFinite() && it >= 0.0
     }
+    // Leave the cost metric on its existing QuickStats basis; pricing is
+    // reconciled separately from this energy/coverage change.
+    val costDistance = stats.totalDistanceKm.takeIf {
+        distanceSamples > 0 && it.isFinite() && it > 0.0
+    }
     val costMetricSamples = minOf(distanceSamples, costSamples)
-    val energyRatioSamples = minOf(driveEnergySamples, chargeEnergySamples)
     val chargeLossSampleCount = coverage?.chargeLossSampleCount ?: 0
     val chargeEnergyUsed = coverage?.chargeEnergyUsedForLossKwh
     val chargeEnergyAddedForLoss = coverage?.chargeEnergyAddedForLossKwh
@@ -148,22 +147,18 @@ fun buildAnalysisConclusions(
             unavailableReason = "No valid charge energy"
         ),
         costPer100Km = derivedMetric(
-            value = if (cost != null && distance != null && distance > 0.0) {
-                cost / distance * 100.0
+            value = if (cost != null && costDistance != null) {
+                cost / costDistance * 100.0
             } else {
                 null
             },
             sampleCount = costMetricSamples,
             unavailableReason = "Cost or distance is unavailable"
         ),
-        chargedToDrivingEnergyPercent = derivedMetric(
-            value = if (chargedEnergy != null && drivingEnergy != null && drivingEnergy > 0.0) {
-                chargedEnergy / drivingEnergy * 100.0
-            } else {
-                null
-            },
-            sampleCount = energyRatioSamples,
-            unavailableReason = "Driving or charging energy is unavailable"
+        // Charging sessions and drives are independent sets, not a closed
+        // battery-energy balance. Their total ratio has no qualified denominator.
+        chargedToDrivingEnergyPercent = MetricState.Unavailable(
+            "Charging and driving energy are independent history totals"
         ),
         chargingLossPercent = derivedMetric(
             value = if (

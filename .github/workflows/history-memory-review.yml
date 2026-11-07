@@ -1,7 +1,7 @@
 name: History memory isolated verification
 on:
   push:
-    branches: [main, fix/20261002-history-metadata-memory, codex/history-resource-stage2-20261002, codex/reliable-data-stage-20261007, codex/per-drive-energy-20261012, 'codex/miniprogram-*', 'codex/apk-*']
+    branches: [main, fix/20261002-history-metadata-memory, codex/history-resource-stage2-20261002, codex/reliable-data-stage-20261007, codex/per-drive-energy-20261012, codex/app-foundation-ui-integrate-20261025, 'codex/miniprogram-*', 'codex/apk-*']
   workflow_dispatch:
 permissions:
   contents: read
@@ -149,13 +149,14 @@ jobs:
         env:
           POSTGRES_USER: matelink_test
           POSTGRES_PASSWORD: isolated-only
-          POSTGRES_DB: matelink_test
+          POSTGRES_DB: matelink_partial_test_ci
         ports: ['5432:5432']
         options: >-
-          --health-cmd "pg_isready -U matelink_test -d matelink_test"
+          --health-cmd "pg_isready -U matelink_test -d matelink_partial_test_ci"
           --health-interval 5s --health-timeout 5s --health-retries 10
     env:
-      JOURVOLT_TEST_DATABASE_URL: postgres://matelink_test:isolated-only@localhost:5432/matelink_test?sslmode=disable
+      JOURVOLT_TEST_DATABASE_URL: postgres://matelink_test:isolated-only@localhost:5432/matelink_partial_test_ci?sslmode=disable
+      MATELINK_TEST_ISOLATED_POSTGRES: '1'
       JOURVOLT_REQUIRE_HISTORY_PG: '1'
       JOURVOLT_RUN_LEGACY_MEMORY_BENCH: '1'
     steps:
@@ -196,13 +197,18 @@ jobs:
           python3 -m unittest discover -s deploy/teslamate-home-docker/qualification -p 'test_*.py' -v 2>&1 | tee evidence/upstream-qualification-tests.log
           (cd deploy/teslamate-home-docker/adapter && go test ./... -count=1) 2>&1 | tee evidence/upstream-adapter-tests.log
           (cd deploy/teslamate-home-docker/archive-bridge && go test ./... -count=1) 2>&1 | tee evidence/upstream-bridge-tests.log
+          (cd deploy/teslamate-home-docker/archive-bridge && go test -race -v -count=1 -run '^TestExistingBridge.*Pending503' ./cmd/battery-trend) 2>&1 | tee evidence/upstream-bridge-race.log
+          grep -Fq -- '--- PASS: TestExistingBridgeRetriesArchivePending503WithoutAdvancing' evidence/upstream-bridge-race.log
+          grep -Fq -- '--- PASS: TestExistingBridgeRestartsPending503FromFrozenState' evidence/upstream-bridge-race.log
       - name: Race regression for history and energy queries
         working-directory: deploy/jourvolt-dev-mock
         env:
           JOURVOLT_RUN_LEGACY_MEMORY_BENCH: '0'
         run: |
           set -euo pipefail
-          go test -race -count=1 -run 'Test(Independent|Energy|BoundedHistory|ChargeEnergy|Parked|CompactTelemetry|NativeShadow|History(Sample|Energy|Summary|MetadataMemory|ReadCancellation|MemoryHTTP|QueriesPostgresScope|MetadataSQL|ReadBudget|ResourceAdmission|HeavyBudget|Import|Archive|DecodeAdmission)|ArchiveImport|Telemetry(PostgresCompactBootstrap|PostgresCompactAdmissionReference|History|PostgresNativeIdentity|PostgresIdleDriveFinalization|PostgresNativeShadow))' ./... 2>&1 | tee "$GITHUB_WORKSPACE/evidence/go-race.log"
+          go test -race -v -count=1 -run 'Test(Independent|Energy|BatteryTrend|BoundedHistory|ChargeEnergy|Parked|CompactTelemetry|NativeShadow|History(Sample|Energy|Summary|MetadataMemory|ReadCancellation|MemoryHTTP|QueriesPostgresScope|MetadataSQL|ReadBudget|ResourceAdmission|HeavyBudget|Import|Archive|DecodeAdmission)|ArchiveImport|Telemetry(PostgresCompactBootstrap|PostgresCompactAdmissionReference|History|PostgresNativeIdentity|PostgresIdleDriveFinalization|PostgresNativeShadow))' ./... 2>&1 | tee "$GITHUB_WORKSPACE/evidence/go-race.log"
+          grep -Fq -- '--- PASS: TestBatteryTrendPendingLocksVehicleBeforeRecheckingBinding' "$GITHUB_WORKSPACE/evidence/go-race.log"
+          grep -Fq -- '--- PASS: TestArchiveImportBindingChangesDuringBodyPostgres' "$GITHUB_WORKSPACE/evidence/go-race.log"
       - name: Verify mandatory PostgreSQL evidence
         run: |
           python3 - <<'PY'
@@ -274,7 +280,7 @@ jobs:
           retention-days: 14
           path: evidence/
   android:
-    if: github.ref == 'refs/heads/codex/reliable-data-stage-20261007' || github.ref == 'refs/heads/codex/per-drive-energy-20261012' || github.ref == 'refs/heads/main' || (startsWith(github.ref, 'refs/heads/codex/miniprogram-') || startsWith(github.ref, 'refs/heads/codex/apk-'))
+    if: github.ref == 'refs/heads/codex/reliable-data-stage-20261007' || github.ref == 'refs/heads/codex/per-drive-energy-20261012' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/codex/app-foundation-ui-integrate-20261025' || (startsWith(github.ref, 'refs/heads/codex/miniprogram-') || startsWith(github.ref, 'refs/heads/codex/apk-'))
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -290,6 +296,9 @@ jobs:
         with:
           packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
           log-accepted-android-sdk-licenses: false
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
       - name: Independent DAO SQL semantics against real Room query text
         run: python3 tools/energy-stage/verify-energy-dao-sql.py
       - name: Isolated Debug and Release regression, lint and R8
@@ -307,7 +316,7 @@ jobs:
             android/app/build/outputs/apk/
             android/app/schemas/
   android-summary:
-    if: always() && (github.ref == 'refs/heads/codex/reliable-data-stage-20261007' || github.ref == 'refs/heads/codex/per-drive-energy-20261012' || github.ref == 'refs/heads/main' || (startsWith(github.ref, 'refs/heads/codex/miniprogram-') || startsWith(github.ref, 'refs/heads/codex/apk-')))
+    if: always() && (github.ref == 'refs/heads/codex/reliable-data-stage-20261007' || github.ref == 'refs/heads/codex/per-drive-energy-20261012' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/codex/app-foundation-ui-integrate-20261025' || (startsWith(github.ref, 'refs/heads/codex/miniprogram-') || startsWith(github.ref, 'refs/heads/codex/apk-')))
     needs: android
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -335,7 +344,7 @@ jobs:
           print('COUNTS',counts)
           PY
   source-audit:
-    if: github.ref == 'refs/heads/codex/reliable-data-stage-20261007' || github.ref == 'refs/heads/codex/per-drive-energy-20261012' || github.ref == 'refs/heads/main' || (startsWith(github.ref, 'refs/heads/codex/miniprogram-') || startsWith(github.ref, 'refs/heads/codex/apk-'))
+    if: github.ref == 'refs/heads/codex/reliable-data-stage-20261007' || github.ref == 'refs/heads/codex/per-drive-energy-20261012' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/codex/app-foundation-ui-integrate-20261025' || (startsWith(github.ref, 'refs/heads/codex/miniprogram-') || startsWith(github.ref, 'refs/heads/codex/apk-'))
     strategy:
       fail-fast: false
       max-parallel: 3

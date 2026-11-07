@@ -25,6 +25,11 @@ class VehicleContextRepository @Inject constructor(
     private val teslamateRepository: TeslamateRepository,
     private val legacyHistoryMigrationRepository: LegacyHistoryMigrationRepository
 ) : HistoryCarIdResolver, VehicleContextResolver {
+    internal val verifiedMappingChanges get() = contextStore.verifiedMappingChanges
+    internal fun verifiedMappingVersion(remoteApiCarId: Int, scope: HistoryReadScope): Long =
+        if (scope.source == HistoryConnectionSource.CLOUD)
+            contextStore.verifiedMappingVersion(scope.accountNamespace.orEmpty(), scope.effectiveApiOrigin, remoteApiCarId)
+        else 0L
     internal val historyScopeChanges get() = combine(
         connectionModeStore.mode, sessionStore.session, settingsDataStore.settings
     ) { _, _, _ ->
@@ -199,6 +204,16 @@ class VehicleContextRepository @Inject constructor(
         val stableIdentity = selfHostedVehicleStableIdentity(scope.serverIdentity, remoteApiCarId)
         val localId = contextStore.findLocalHistoryCarId(stableIdentity) ?: return null
         return VehicleContext(remoteApiCarId, stableIdentity, localId, scope.source, scope.serverIdentity)
+    }
+
+    /** Only a previously UID-verified cloud binding may reopen a saved status offline. */
+    internal fun cachedVerifiedStatusIdentityDigest(
+        remoteApiCarId: Int, scope: HistoryReadScope, context: VehicleContext
+    ): String? {
+        if (scope.source != HistoryConnectionSource.CLOUD || context.remoteApiCarId != remoteApiCarId ||
+            !isHistoryContextCurrentNow(scope, context)) return null
+        return contextStore.findVerifiedOriginCloudIdentityDigest(scope.accountNamespace.orEmpty(),
+            scope.effectiveApiOrigin, remoteApiCarId, context.localHistoryCarId)
     }
 
     /** All current history consumers share this namespace; unknown-origin legacy data stays unlinked. */

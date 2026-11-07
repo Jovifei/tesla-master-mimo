@@ -1,19 +1,29 @@
 import { useParams, Link } from 'react-router-dom';
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
-import mockData from '../mock_data.json';
+import { useEffect, useState } from 'react';
+import { api, getApiErrorMessage } from '../api/client';
+import { useStore } from '../store';
+import type { Charge } from '../api/types';
 
 export default function ChargeDetail() {
   const { id } = useParams();
-  const charge = mockData.charges.find(c => c.id === Number(id));
+  const carId = useStore(s => s.currentCarId);
+  const [charge, setCharge] = useState<Charge | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  if (!charge) return <div>Charge not found</div>;
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setError('');
+    api.getCharge(carId, Number(id))
+      .then(value => { if (active) { setCharge(value ?? null); setLoading(false); } })
+      .catch(err => { if (active) { setError(getApiErrorMessage(err)); setLoading(false); } });
+    return () => { active = false; };
+  }, [carId, id]);
 
-  const chartData = Array.from({ length: 20 }, (_, i) => ({
-    time: `${i * 5}min`,
-    power: charge.charging_type === 'DC' ? 100 + Math.random() * 60 : 7 + Math.random() * 5,
-    voltage: charge.charging_type === 'DC' ? 350 + Math.random() * 100 : 220 + Math.random() * 20,
-    temperature: 25 + Math.random() * 15,
-  }));
+  if (loading) return <div className="animate-pulse text-gray-400">Loading charge detail...</div>;
+  if (error) return <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-700 dark:border-red-900 dark:bg-red-900/20 dark:text-red-200">TeslaMate charge detail unavailable: {error}</div>;
+  if (!charge) return <div className="rounded-xl border border-gray-200 dark:border-gray-700 p-6 text-center text-sm text-gray-500">Charge not found for this vehicle.</div>;
 
   return (
     <div className="space-y-6">
@@ -55,14 +65,7 @@ export default function ChargeDetail() {
       {/* Power Chart */}
       <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm">
         <h2 className="font-semibold mb-4">Power Curve</h2>
-        <ResponsiveContainer width="100%" height={250}>
-          <AreaChart data={chartData}>
-            <XAxis dataKey="time" />
-            <YAxis />
-            <Tooltip />
-            <Area type="monotone" dataKey="power" stroke="#FB8C00" fill="#FFF3E0" />
-          </AreaChart>
-        </ResponsiveContainer>
+        <div className="h-48 flex items-center justify-center text-sm text-gray-400">Power telemetry is not available for this charge.</div>
       </div>
 
       {/* Stats */}

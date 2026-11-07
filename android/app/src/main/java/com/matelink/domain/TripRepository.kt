@@ -12,6 +12,7 @@ import com.matelink.data.local.entity.SavedTripLeg
 import com.matelink.data.local.entity.SavedTripWithLegs
 import com.matelink.domain.model.Trip
 import com.matelink.util.parseIsoDateTime
+import com.matelink.util.parseIsoInstant
 import java.security.MessageDigest
 import java.time.LocalDateTime
 import java.time.temporal.ChronoUnit
@@ -41,49 +42,33 @@ class TripRepository @Inject constructor(
     private val tripDetector: TripDetector
 ) {
 
+    suspend fun withCurrentOwner(isCurrent: () -> Boolean, action: suspend () -> Unit): Boolean =
+        savedTripDao.mutateIfCurrent(isCurrent, action)
+
     /** Returns all trips for a car (saved + newly auto-detected this call), newest first. */
-    suspend fun getTrips(carId: Int): List<Trip> {
+    suspend fun getTrips(carId: Int, isCurrent: () -> Boolean = { true }): List<Trip> {
+        check(isCurrent()) { "history_identity_unavailable" }
         val drives = driveSummaryDao.getAllChronological(carId)
         val dcCharges = aggregateDao.getDcChargeSummaries(carId)
         val allCharges = chargeSummaryDao.getAllForCar(carId)
 
-        autoPersistNewTrips(carId, drives, dcCharges)
-        cleanupDuplicateSavedTrips(carId)
+        autoPersistNewTrips(carId, drives, dcCharges, isCurrent)
 
         val saved = savedTripDao.getAllWithLegs(carId)
+        check(isCurrent()) { "history_identity_unavailable" }
         return buildTripsFromSaved(saved, drives, allCharges)
-            .sortedByDescending { it.startDate }
+            .sortedByDescending { parseIsoInstant(it.startDate) }
     }
 
-    /**
-     * Heal DBs polluted by beta1's detection bug, which could persist several saved trips
-     * with the same drive set. When duplicates exist, keep the one most worth preserving
-     * (user-merged > user-edited > auto-detected, tiebreak: named over unnamed, then lowest id)
-     * and delete the rest.
-     */
-    private suspend fun cleanupDuplicateSavedTrips(carId: Int) {
+    /** Detail fallback: show saved and newly detectable trips without changing saved rows. */
+    suspend fun getSavedTripsReadOnly(carId: Int): List<Trip> {
+        val drives = driveSummaryDao.getAllChronological(carId)
+        val charges = chargeSummaryDao.getAllForCar(carId)
         val saved = savedTripDao.getAllWithLegs(carId)
-        if (saved.size < 2) return
-        val byFingerprint = saved.groupBy { computeFingerprint(it.driveIds()) }
-        for ((_, group) in byFingerprint) {
-            if (group.size <= 1) continue
-            val ranked = group.sortedWith(
-                compareBy(
-                    { sourcePriority(it.trip.source) },
-                    { if (it.trip.name.isNullOrBlank()) 1 else 0 },
-                    { it.trip.id }
-                )
-            )
-            for (duplicate in ranked.drop(1)) {
-                savedTripDao.deleteTrip(duplicate.trip.id)
-            }
-        }
-    }
-
-    private fun sourcePriority(source: String): Int = when (source) {
-        SavedTrip.SOURCE_USER_MERGED -> 0
-        SavedTrip.SOURCE_USER_EDITED -> 1
-        else -> 2  // AUTO_DETECTED (and any future sources)
+        val detected = detectUnsavedTrips(carId, drives,
+            aggregateDao.getDcChargeSummaries(carId), saved)
+        return (buildTripsFromSaved(saved, drives, charges) + detected)
+            .sortedByDescending { parseIsoInstant(it.startDate) }
     }
 
     /** Fingerprint for a list of drive IDs. Stable regardless of order. */
@@ -127,7 +112,7 @@ class TripRepository @Inject constructor(
         val charges = chargeSummaryDao.getAllForCar(carId).associateBy { it.chargeId }
 
         val combined = (existing.legs.map { LegRef(it.legType, it.legId) } + newLegs).distinct()
-        val sorted = combined.sortedBy { ref -> legStartDate(ref, drives, charges) ?: "" }
+        val sorted = combined.sortedBy { ref -> parseIsoInstant(legStartDate(ref, drives, charges)) }
         val legsToWrite = sorted.mapIndexed { index, ref ->
             SavedTripLeg(tripId = tripId, position = index, legType = ref.type, legId = ref.id)
         }
@@ -186,7 +171,7 @@ class TripRepository @Inject constructor(
             kept.legs.map { LegRef(it.legType, it.legId) } +
                 consumed.legs.map { LegRef(it.legType, it.legId) } +
                 gapDrives + gapCharges
-            ).distinct().sortedBy { ref -> legStartDate(ref, drives, charges) ?: "" }
+            ).distinct().sortedBy { ref -> parseIsoInstant(legStartDate(ref, drives, charges)) }
 
         val inheritedFingerprints = (
             savedTripDao.getConsumedFingerprints(keptTripId) +
@@ -239,13 +224,13 @@ class TripRepository @Inject constructor(
             val fitsAfter = afterGap != null && afterGap in 0..windowDays.toLong()
             val fitsBefore = beforeGap != null && beforeGap in 0..windowDays.toLong()
             if (!fitsAfter && !fitsBefore) continue
-            val trip = TripAggregator.buildTrip(
+            val trip = TripAggregator.buildQualifiedTrip(
                 tripDrivesIn(swl, drives),
                 tripChargesIn(swl, charges)
             ) ?: continue
             candidates.add(swl.trip.id to trip)
         }
-        return candidates.sortedBy { it.second.startDate }
+        return candidates.sortedBy { parseIsoInstant(it.second.startDate) }
     }
 
     /** Drives and charges near [tripId]'s time range, not already part of any saved trip on [carId]. */
@@ -325,13 +310,13 @@ class TripRepository @Inject constructor(
      * apply to manual creation — the only requirement is ≥1 drive (so [TripAggregator] can build it).
      * Returns the new trip id, or null if no drive was provided.
      */
-    suspend fun createTrip(carId: Int, legs: List<LegRef>, name: String?): Long? {
+    suspend fun createTrip(
+        carId: Int, legs: List<LegRef>, name: String?,
+        expected: EligibleLegs? = null, isCurrent: () -> Boolean = { true }
+    ): Long? {
         if (legs.none { it.type == SavedTripLeg.TYPE_DRIVE }) return null
-        val drives = driveSummaryDao.getAllChronological(carId).associateBy { it.driveId }
-        val charges = chargeSummaryDao.getAllForCar(carId).associateBy { it.chargeId }
-        val sorted = legs.distinct().sortedBy { ref -> legStartDate(ref, drives, charges) ?: "" }
         val now = System.currentTimeMillis()
-        return savedTripDao.insertTripWithLegs(
+        return savedTripDao.insertValidatedTripWithLegs(
             trip = SavedTrip(
                 carId = carId,
                 name = name?.trim()?.takeIf { it.isNotEmpty() },
@@ -339,11 +324,27 @@ class TripRepository @Inject constructor(
                 createdAt = now,
                 updatedAt = now
             ),
-            legs = { tripId ->
-                sorted.mapIndexed { index, ref ->
-                    SavedTripLeg(tripId = tripId, position = index, legType = ref.type, legId = ref.id)
-                }
-            }
+            resolveLegs = {
+                val drives = driveSummaryDao.getAllChronological(carId).associateBy { it.driveId }
+                val charges = chargeSummaryDao.getAllForCar(carId).associateBy { it.chargeId }
+                val usedDrives = savedTripDao.getUsedLegIds(carId, SavedTripLeg.TYPE_DRIVE).toSet()
+                val usedCharges = savedTripDao.getUsedLegIds(carId, SavedTripLeg.TYPE_CHARGE).toSet()
+                val unique = legs.distinct()
+                val valid = unique.all { ref -> when (ref.type) {
+                    SavedTripLeg.TYPE_DRIVE -> drives[ref.id]?.let { row ->
+                        ref.id !in usedDrives && (expected == null || expected.drives.any { it == row })
+                    } == true
+                    SavedTripLeg.TYPE_CHARGE -> charges[ref.id]?.let { row ->
+                        ref.id !in usedCharges && (expected == null || expected.charges.any { it == row })
+                    } == true
+                    else -> false
+                } }
+                if (!valid) null else unique.sortedWith { a, b ->
+                    compareDates(legStartDate(a, drives, charges).orEmpty(),
+                        legStartDate(b, drives, charges).orEmpty())
+                }.map { it.type to it.id }
+            },
+            isCurrent = isCurrent
         )
     }
 
@@ -368,8 +369,8 @@ class TripRepository @Inject constructor(
                 SavedTripLeg.TYPE_CHARGE -> charges[leg.legId]?.let { dates += it.startDate; dates += it.endDate }
             }
         }
-        val start = dates.minOrNull() ?: return null
-        val end = dates.maxOrNull() ?: return null
+        val start = dates.minWithOrNull(::compareDates) ?: return null
+        val end = dates.maxWithOrNull(::compareDates) ?: return null
         return start to end
     }
 
@@ -383,7 +384,11 @@ class TripRepository @Inject constructor(
         else -> null
     }
 
-    private fun compareDates(a: String, b: String): Int = a.compareTo(b)
+    private fun compareDates(a: String, b: String): Int {
+        val first = parseIsoInstant(a)
+        val second = parseIsoInstant(b)
+        return if (first != null && second != null) first.compareTo(second) else a.compareTo(b)
+    }
 
     private fun parseDate(s: String): LocalDateTime? =
         parseIsoDateTime(s)
@@ -402,9 +407,40 @@ class TripRepository @Inject constructor(
     private suspend fun autoPersistNewTrips(
         carId: Int,
         drives: List<DriveSummary>,
-        dcCharges: List<ChargeSummary>
+        dcCharges: List<ChargeSummary>,
+        isCurrent: () -> Boolean
     ) {
         val existing = savedTripDao.getAllWithLegs(carId)
+        val detected = detectUnsavedTrips(carId, drives, dcCharges, existing)
+        if (detected.isEmpty()) return
+
+        val now = System.currentTimeMillis()
+        for (trip in detected) {
+            savedTripDao.insertValidatedTripWithLegs(
+                trip = SavedTrip(
+                    carId = carId,
+                    name = null,
+                    source = SavedTrip.SOURCE_AUTO_DETECTED,
+                    createdAt = now,
+                    updatedAt = now
+                ),
+                resolveLegs = {
+                    val usedDrives = savedTripDao.getUsedLegIds(carId, SavedTripLeg.TYPE_DRIVE).toSet()
+                    val usedCharges = savedTripDao.getUsedLegIds(carId, SavedTripLeg.TYPE_CHARGE).toSet()
+                    if (trip.drives.any { it.driveId in usedDrives } ||
+                        trip.charges.any { it.chargeId in usedCharges }) null
+                    else buildChronologicalLegs(0, trip).map { it.legType to it.legId }
+                },
+                isCurrent = isCurrent
+            )
+        }
+    }
+
+    /** Identical suppression/leg rules for list persistence and detail's memory-only read. */
+    private suspend fun detectUnsavedTrips(
+        carId: Int, drives: List<DriveSummary>, dcCharges: List<ChargeSummary>,
+        existing: List<SavedTripWithLegs>
+    ): List<Trip> {
         val existingFingerprints = existing.map { swl ->
             computeFingerprint(swl.driveIds())
         }.toSet()
@@ -421,25 +457,8 @@ class TripRepository @Inject constructor(
         val freeDrives = drives.filter { it.driveId !in usedDriveIds }
         val freeDcCharges = dcCharges.filter { it.chargeId !in usedChargeIds }
 
-        val detected = tripDetector.detectTrips(freeDrives, freeDcCharges)
-        if (detected.isEmpty()) return
-
-        val now = System.currentTimeMillis()
-        for (trip in detected) {
-            val fp = computeFingerprint(trip)
-            if (fp in suppressed) continue
-
-            savedTripDao.insertTripWithLegs(
-                trip = SavedTrip(
-                    carId = carId,
-                    name = null,
-                    source = SavedTrip.SOURCE_AUTO_DETECTED,
-                    createdAt = now,
-                    updatedAt = now
-                ),
-                legs = { tripId -> buildChronologicalLegs(tripId, trip) }
-            )
-        }
+        return tripDetector.detectTrips(freeDrives, freeDcCharges)
+            .filter { computeFingerprint(it) !in suppressed }
     }
 
     private fun buildChronologicalLegs(tripId: Long, trip: Trip): List<SavedTripLeg> {
@@ -448,7 +467,7 @@ class TripRepository @Inject constructor(
         val events = buildList {
             trip.drives.forEach { add(Event(it.startDate, SavedTripLeg.TYPE_DRIVE, it.driveId)) }
             trip.charges.forEach { add(Event(it.startDate, SavedTripLeg.TYPE_CHARGE, it.chargeId)) }
-        }.sortedBy { it.date }
+        }.sortedWith { a, b -> compareDates(a.date, b.date) }
 
         return events.mapIndexed { index, e ->
             SavedTripLeg(tripId = tripId, position = index, legType = e.type, legId = e.id)
@@ -472,7 +491,14 @@ class TripRepository @Inject constructor(
             val tripCharges = orderedLegs
                 .filter { it.legType == SavedTripLeg.TYPE_CHARGE }
                 .mapNotNull { chargesById[it.legId] }
-            TripAggregator.buildTrip(tripDrives, tripCharges, name = swl.trip.name)
+            TripAggregator.buildQualifiedTrip(tripDrives, tripCharges, name = swl.trip.name)
+                ?.let { trip ->
+                    val expectedDrives = orderedLegs.count { it.legType == SavedTripLeg.TYPE_DRIVE }
+                    trip.copy(savedTripId = swl.trip.id, expectedDriveCount = expectedDrives,
+                        expectedChargeCount = orderedLegs.count { it.legType == SavedTripLeg.TYPE_CHARGE },
+                        efficiencyRecordCoveragePercent = expectedDrives.takeIf { it > 0 }
+                            ?.let { (trip.efficiencySampleCount ?: 0) * 100.0 / it })
+                }
         }
     }
 
@@ -481,10 +507,14 @@ class TripRepository @Inject constructor(
 
     /** Look up the saved-trip id that matches this trip's current drive set. */
     suspend fun findSavedTripId(carId: Int, trip: Trip): Long? {
-        val targetFp = computeFingerprint(trip)
-        return savedTripDao.getAllWithLegs(carId)
-            .firstOrNull { computeFingerprint(it.driveIds()) == targetFp }
-            ?.trip?.id
+        val rows = savedTripDao.getAllWithLegs(carId)
+        trip.savedTripId?.let { id -> return rows.singleOrNull { it.trip.id == id }?.trip?.id }
+        val drives = trip.drives.map { it.driveId }.toSet()
+        val charges = trip.charges.map { it.chargeId }.toSet()
+        return rows.singleOrNull { row ->
+            row.trip.name == trip.name && row.driveIds().toSet() == drives &&
+                row.legs.filter { it.legType == SavedTripLeg.TYPE_CHARGE }.map { it.legId }.toSet() == charges
+        }?.trip?.id
     }
 
     /** The saved trip (if any) that currently includes the given drive/charge leg. */
@@ -496,11 +526,11 @@ class TripRepository @Inject constructor(
 
         val drives = driveSummaryDao.getAllChronological(carId).associateBy { it.driveId }
         val charges = chargeSummaryDao.getAllForCar(carId).associateBy { it.chargeId }
-        val trip = TripAggregator.buildTrip(
+        val trip = TripAggregator.buildQualifiedTrip(
             tripDrivesIn(match, drives),
             tripChargesIn(match, charges)
         ) ?: return null
-        return match.trip.id to trip
+        return match.trip.id to trip.copy(savedTripId = match.trip.id)
     }
 
     /**

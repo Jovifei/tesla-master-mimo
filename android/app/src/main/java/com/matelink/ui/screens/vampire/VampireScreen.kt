@@ -39,11 +39,12 @@ import java.util.Locale
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VampireScreen(
+    carId: Int,
     onNavigateBack: () -> Unit = {},
     viewModel: VampireViewModel = hiltViewModel()
 ) {
-    LaunchedEffect(Unit) {
-        viewModel.load()
+    LaunchedEffect(carId) {
+        viewModel.load(carId)
     }
 
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -185,7 +186,8 @@ fun VampireScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        text = if (uiState.idlePeriods.isNotEmpty()) "${uiState.totalDrainPercent}%"
+                        text = if (uiState.idlePeriods.isNotEmpty())
+                            stringResource(R.string.standby_soc_points, uiState.totalDrainPercent)
                         else stringResource(R.string.analysis_no_records),
                         style = MaterialTheme.typography.displaySmall,
                         fontWeight = FontWeight.Bold,
