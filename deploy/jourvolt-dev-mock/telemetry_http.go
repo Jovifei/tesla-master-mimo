@@ -362,6 +362,16 @@ func (a *app) currentVehicleStatus(ctx context.Context, userID string, vehicleID
 					merged.FieldSources = mergeStringMaps(base.FieldSources, snapshot.FieldSources)
 					return merged, nil
 				}
+				// The provider could not reach the vehicle (asleep; the
+				// wake attempt in the Fleet provider already ran). Serve
+				// the latest telemetry snapshot as an explicitly cached
+				// status instead of failing the refresh outright.
+				if providerErr != nil && errors.Is(providerErr, errTeslaUnavailable) {
+					if cached, ok := staleTelemetryCacheStatus(base, snapshot, time.Now().UTC()); ok {
+						cached.FieldSources = mergeStringMaps(base.FieldSources, snapshot.FieldSources)
+						return cached, nil
+					}
+				}
 			}
 		}
 	}
