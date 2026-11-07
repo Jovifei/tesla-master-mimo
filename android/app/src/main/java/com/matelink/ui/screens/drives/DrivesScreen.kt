@@ -768,125 +768,110 @@ private fun DriveRowItem(
     val (startCity, endCity) = formatRouteAddresses(drive.startAddress, drive.endAddress, unknown)
 
     val energyPres = drive.historyEnergy(metrics)
-    val start = drive.startBatteryLevel
-    val end = drive.endBatteryLevel
-    val socRange = UnitFormatter.formatSocRange(start, end, "")
-    val distanceText = drive.distance
-        ?.takeIf { it.isFinite() && it >= 0.0 }
-        ?.let { visualTripNumber(it) }
+    val unavailable = stringResource(R.string.not_available)
 
-    Row(
+    // Build 4-metric strip: 能耗 | 里程 | 时长 | 极速
+    val effText = driveHistoryEfficiencyText(energyPres) ?: unavailable
+    val distText = drive.distance
+        ?.takeIf { it.isFinite() && it >= 0.0 }
+        ?.let { visualTripNumber(it) } ?: unavailable
+    val durText = drive.durationMin?.takeIf { it >= 0 }?.let { "%,d".format(it) } ?: unavailable
+    val speedText = drive.speedMax?.takeIf { drive.hasKnownLengthUnit && it >= 0 }
+        ?.let { "%,d".format(it) } ?: unavailable
+
+    val stripMetrics = listOf(
+        TelemetryMetricSpec(
+            icon = Icons.Default.Eco,
+            label = "能耗",
+            value = effText,
+            tint = Color(0xFF10B981),
+            unit = if (effText != unavailable) "kWh/100km" else null,
+            valueFontSize = 14.sp
+        ),
+        TelemetryMetricSpec(
+            icon = CustomIcons.SteeringWheel,
+            label = "里程",
+            value = distText,
+            tint = Color(0xFF0284C7),
+            unit = if (distText != unavailable) UnitFormatter.getDistanceUnit(receiptUnits) else null,
+            valueFontSize = 14.sp
+        ),
+        TelemetryMetricSpec(
+            icon = Icons.Default.Timer,
+            label = "时长",
+            value = durText,
+            tint = Color(0xFFD97706),
+            unit = if (durText != unavailable) "min" else null,
+            valueFontSize = 14.sp
+        ),
+        TelemetryMetricSpec(
+            icon = Icons.Default.Speed,
+            label = stringResource(R.string.max_speed),
+            value = speedText,
+            tint = Color(0xFF6366F1),
+            unit = if (speedText != unavailable) UnitFormatter.getSpeedUnit(receiptUnits) else null,
+            valueFontSize = 14.sp
+        )
+    )
+
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = AppleTokens.rowHorizontal, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .padding(horizontal = AppleTokens.rowHorizontal, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        Surface(
-            color = palette.accent.copy(alpha = 0.12f),
-            shape = CircleShape,
-            modifier = Modifier.size(32.dp)
+        // ── Top row: icon + route + chevron ──────────────────────────────────
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    imageVector = CustomIcons.SteeringWheel,
-                    contentDescription = null,
-                    tint = palette.accent,
-                    modifier = Modifier.size(16.dp)
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.width(12.dp))
-
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            RouteIndicator(
-                start = startCity,
-                end = endCity,
-                accent = palette.accent
-            )
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            Surface(
+                color = palette.accent.copy(alpha = 0.12f),
+                shape = CircleShape,
+                modifier = Modifier.size(32.dp)
             ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = CustomIcons.SteeringWheel,
+                        contentDescription = null,
+                        tint = palette.accent,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(10.dp))
+
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                RouteIndicator(
+                    start = startCity,
+                    end = endCity,
+                    accent = palette.accent
+                )
                 Text(
                     text = formatEditorialDate(drive.startDate, true),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                drive.durationMin?.takeIf { it >= 0 }?.let { dur ->
-                    Text(
-                        text = "·",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = "${dur}m",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
             }
 
-            val effText = driveHistoryEfficiencyText(energyPres)
-            val speedText = drive.speedMax?.takeIf { drive.hasKnownLengthUnit && it >= 0 }?.let { "%,d".format(it) }
-            if (effText != null || speedText != null) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    if (effText != null) {
-                        Text(
-                            text = "$effText kWh/100km",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color(0xFF10B981)
-                        )
-                    }
-                    if (speedText != null) {
-                        Text(
-                            text = "${stringResource(R.string.max_speed)} $speedText ${UnitFormatter.getSpeedUnit(receiptUnits)}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
+            Spacer(modifier = Modifier.width(4.dp))
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                modifier = Modifier.size(16.dp)
+            )
         }
 
-        Spacer(modifier = Modifier.width(10.dp))
-
-        Column(
-            horizontalAlignment = Alignment.End,
-            verticalArrangement = Arrangement.spacedBy(2.dp)
-        ) {
-            if (distanceText != null) {
-                Text(
-                    text = "$distanceText ${UnitFormatter.getDistanceUnit(receiptUnits)}",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = palette.onSurface
-                )
-            }
-            if (socRange.isNotBlank()) {
-                Text(
-                    text = socRange,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = palette.accent
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.width(4.dp))
-
-        Icon(
-            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-            modifier = Modifier.size(16.dp)
+        // ── Bottom row: 4-metric grid ─────────────────────────────────────────
+        CompactHistoryMetricStrip(
+            metrics = stripMetrics,
+            numberFontSize = 14.sp
         )
     }
 }
@@ -917,76 +902,84 @@ private fun ParkedRowItem(
     val batteryStart = item.olderDrive.endBatteryLevel
     val batteryEnd = item.newerDrive.startBatteryLevel
 
-    Row(
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = AppleTokens.rowHorizontal, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
     ) {
-        Surface(
-            color = MaterialTheme.colorScheme.surfaceContainerHighest,
-            shape = CircleShape,
-            modifier = Modifier.size(32.dp)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onClick)
+                .padding(horizontal = 12.dp, vertical = 11.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    imageVector = Icons.Default.LocalParking,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(16.dp)
-                )
+            Surface(
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                shape = CircleShape,
+                modifier = Modifier.size(32.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Default.LocalParking,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
             }
-        }
 
-        Spacer(modifier = Modifier.width(12.dp))
+            Spacer(modifier = Modifier.width(12.dp))
 
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(2.dp)
-        ) {
-            Text(
-                text = stringResource(R.string.drive_history_parked_at, formatParkedAddress(item.location, unknown)),
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = formatEditorialDate(item.startDate, true),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-
-        Spacer(modifier = Modifier.width(10.dp))
-
-        Column(
-            horizontalAlignment = Alignment.End,
-            verticalArrangement = Arrangement.spacedBy(2.dp)
-        ) {
-            Text(
-                text = durationText,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold
-            )
-            if (batteryStart != null && batteryEnd != null) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
                 Text(
-                    text = UnitFormatter.formatSocRange(batteryStart, batteryEnd, ""),
+                    text = stringResource(R.string.drive_history_parked_at, formatParkedAddress(item.location, unknown)),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = formatEditorialDate(item.startDate, true),
                     style = MaterialTheme.typography.labelSmall,
-                    color = palette.accent
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+
+            Spacer(modifier = Modifier.width(10.dp))
+
+            Column(
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Text(
+                    text = durationText,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold
+                )
+                if (batteryStart != null && batteryEnd != null) {
+                    Text(
+                        text = UnitFormatter.formatSocRange(batteryStart, batteryEnd, ""),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = palette.accent
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(4.dp))
+
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                modifier = Modifier.size(16.dp)
+            )
         }
-
-        Spacer(modifier = Modifier.width(4.dp))
-
-        Icon(
-            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-            modifier = Modifier.size(16.dp)
-        )
     }
 }
 

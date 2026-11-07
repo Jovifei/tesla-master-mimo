@@ -293,13 +293,14 @@ fun formatRouteAddresses(
     val sameProv = !provConflict && (sameCity || (provA != null && provB != null && provA == provB))
     val sameStreet = sameDist && !streetConflict && (streetA != null && streetB != null && streetA == streetB)
 
-    return when {
+    val (resA, resB) = when {
         sameStreet -> compA.detailOnly to compB.detailOnly
         sameDist -> compA.streetAndBeyond to compB.streetAndBeyond
         sameCity -> compA.districtAndBeyond to compB.districtAndBeyond
         sameProv -> compA.cityAndBeyond to compB.cityAndBeyond
         else -> cleanStart to cleanEnd
     }
+    return simplifyAddressLandmark(resA) to simplifyAddressLandmark(resB)
 }
 
 /**

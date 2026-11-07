@@ -33,8 +33,10 @@ import androidx.compose.material.icons.filled.ShowChart
 import com.matelink.ui.icons.CustomIcons
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -302,69 +304,89 @@ private fun DriveDetailContent(
                 )
             )
 
-            // 3. 功率面板 (Power section)
-            StatsSectionCard(
-                title = stringResource(R.string.power),
-                icon = Icons.Default.Bolt,
-                stats = listOf(
-                    StatItem(stringResource(if (detail.powerMax == null) R.string.drive_detail_sample_maximum else R.string.max_accel), s.powerMax?.toString() ?: notAvailableLabel, "kW"),
-                    StatItem(stringResource(if (detail.powerMin == null) R.string.drive_detail_sample_minimum else R.string.min_regen), s.powerMin?.toString() ?: notAvailableLabel, "kW"),
-                    StatItem(stringResource(powerAverageLabel), s.powerAvg?.let { visualTripNumber(it) } ?: notAvailableLabel, "kW")
-                )
-            )
+            var showEnergyDialog by remember { mutableStateOf(false) }
 
-            // 4. 电量面板 (Battery section)
+            // 3. 功率面板 (Power section) - only show if there are actual power samples
+            val hasPowerData = (s.powerMax != null && s.powerMax != 0) || (s.powerMin != null && s.powerMin != 0) || s.powerAvg != null
+            if (hasPowerData) {
+                StatsSectionCard(
+                    title = stringResource(R.string.power),
+                    icon = Icons.Default.Bolt,
+                    stats = listOf(
+                        StatItem(stringResource(if (detail.powerMax == null) R.string.drive_detail_sample_maximum else R.string.max_accel), s.powerMax?.toString() ?: notAvailableLabel, "kW"),
+                        StatItem(stringResource(if (detail.powerMin == null) R.string.drive_detail_sample_minimum else R.string.min_regen), s.powerMin?.toString() ?: notAvailableLabel, "kW"),
+                        StatItem(stringResource(powerAverageLabel), s.powerAvg?.let { visualTripNumber(it) } ?: notAvailableLabel, "kW")
+                    )
+                )
+            }
+
+            // 4. 电量面板 (Battery section) - clean numbers only, with info button for explanation
             StatsSectionCard(
                 title = stringResource(R.string.battery),
                 icon = Icons.Default.BatteryChargingFull,
+                actionText = "说明 ⓘ",
+                onActionClick = { showEnergyDialog = true },
                 stats = listOf(
                     StatItem(stringResource(R.string.start), s.batteryStart?.toString() ?: notAvailableLabel, "%"),
                     StatItem(stringResource(R.string.end), s.batteryEnd?.toString() ?: notAvailableLabel, "%"),
-                    StatItem(stringResource(R.string.used), s.batteryUsed?.toString() ?: notAvailableLabel, "%"),
                     StatItem(
                         stringResource(R.string.energy),
                         s.energy.energyKwh?.let { visualTripNumber(it, 2) } ?: notAvailableLabel,
                         unit = "kWh",
                         recovered = (s.energy.energyKwh ?: 0.0) < 0.0
-                    ),
-                    StatItem(
-                        energySourceLabel,
-                        when {
-                            s.energy.energyKwh == null -> notAvailableLabel
-                            s.energy.source == DriveDetailEnergySource.API -> stringResource(R.string.energy_source_api_reported)
-                            s.energy.source == DriveDetailEnergySource.POWER_SAMPLES -> {
-                                val coverage = if ((s.energy.coverageRatio ?: 0.0) > 0.0) {
-                                    " (${"%.0f".format(s.energy.coverageRatio!! * 100)}%)"
-                                } else ""
-                                "${stringResource(R.string.energy_source_power_samples)}$coverage"
-                            }
-                            s.energy.source == DriveDetailEnergySource.ENERGY_REMAINING_DELTA -> stringResource(R.string.energy_nominal_estimate)
-                            s.energy.source == DriveDetailEnergySource.SOC_CAPACITY_ESTIMATE -> {
-                                val basis = when (s.energy.evidence?.capacityBasis) {
-                                    "model_trim_assumption" -> stringResource(R.string.energy_capacity_model_trim)
-                                    "model_assumption" -> stringResource(R.string.energy_capacity_model)
-                                    "api_reported_current_capacity" -> stringResource(R.string.energy_capacity_api_report)
-                                    "provided_capacity" -> stringResource(R.string.energy_capacity_provided)
-                                    else -> stringResource(R.string.energy_capacity_default)
-                                }
-                                s.energy.evidence?.capacityKwh?.let {
-                                    stringResource(R.string.energy_capacity_description, it, basis)
-                                } ?: stringResource(R.string.energy_source_soc_estimate)
-                            }
-                            s.energy.isEstimated -> stringResource(R.string.range_estimated)
-                            else -> notAvailableLabel
-                        }
-                    ),
-                    StatItem(
-                        energyCoverageLabel,
-                        if (s.energy.evidence?.coverageKind == "endpoints") stringResource(R.string.energy_endpoint_coverage)
-                        else s.energy.coverageRatio?.let { ratio ->
-                            val seconds = s.energy.coverageSeconds?.let { "$it s" } ?: notAvailableLabel
-                            "%.0f%% · %s".format(ratio * 100, seconds)
-                        } ?: notAvailableLabel
                     )
                 )
             )
+
+            if (showEnergyDialog) {
+                AlertDialog(
+                    onDismissRequest = { showEnergyDialog = false },
+                    title = { Text("电量与能耗计算依据", fontWeight = FontWeight.Bold) },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            val energySourceText = when {
+                                s.energy.energyKwh == null -> notAvailableLabel
+                                s.energy.source == DriveDetailEnergySource.API -> stringResource(R.string.energy_source_api_reported)
+                                s.energy.source == DriveDetailEnergySource.POWER_SAMPLES -> {
+                                    val coverage = if ((s.energy.coverageRatio ?: 0.0) > 0.0) " (${"%.0f".format(s.energy.coverageRatio!! * 100)}%)" else ""
+                                    "${stringResource(R.string.energy_source_power_samples)}$coverage"
+                                }
+                                s.energy.source == DriveDetailEnergySource.ENERGY_REMAINING_DELTA -> stringResource(R.string.energy_nominal_estimate)
+                                s.energy.source == DriveDetailEnergySource.SOC_CAPACITY_ESTIMATE -> {
+                                    val basis = when (s.energy.evidence?.capacityBasis) {
+                                        "model_trim_assumption" -> stringResource(R.string.energy_capacity_model_trim)
+                                        "model_assumption" -> stringResource(R.string.energy_capacity_model)
+                                        "api_reported_current_capacity" -> stringResource(R.string.energy_capacity_api_report)
+                                        "provided_capacity" -> stringResource(R.string.energy_capacity_provided)
+                                        else -> stringResource(R.string.energy_capacity_default)
+                                    }
+                                    s.energy.evidence?.capacityKwh?.let {
+                                        stringResource(R.string.energy_capacity_description, it, basis)
+                                    } ?: stringResource(R.string.energy_source_soc_estimate)
+                                }
+                                s.energy.isEstimated -> stringResource(R.string.range_estimated)
+                                else -> notAvailableLabel
+                            }
+                            val coverageText = if (s.energy.evidence?.coverageKind == "endpoints") stringResource(R.string.energy_endpoint_coverage)
+                            else s.energy.coverageRatio?.let { ratio ->
+                                val seconds = s.energy.coverageSeconds?.let { "$it s" } ?: notAvailableLabel
+                                "%.0f%% · %s".format(ratio * 100, seconds)
+                            } ?: notAvailableLabel
+
+                            Text("• 能量来源: $energySourceText", style = MaterialTheme.typography.bodyMedium)
+                            Text("• 采样覆盖: $coverageText", style = MaterialTheme.typography.bodyMedium)
+                            s.batteryUsed?.let {
+                                Text("• 电池差值: 已用 $it%", style = MaterialTheme.typography.bodyMedium)
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { showEnergyDialog = false }) {
+                            Text(stringResource(R.string.close))
+                        }
+                    }
+                )
+            }
 
             // 6. 海拔面板 (Elevation section)
             if (s.elevationMax != null || s.elevationMin != null || s.elevationGain != null || s.elevationLoss != null) {
@@ -393,31 +415,7 @@ private fun DriveDetailContent(
             }
         }
 
-        // Keep the numeric overview together; the detailed charts follow it.
-        if (hasChartData) {
-            SpeedChartCard(
-                positions = positions, projected = projection.speed,
-                units = units,
-                timeLabels = timeLabels,
-                externalSelectedFraction = speedChartFraction,
-                onXSelected = { speedChartFraction = it },
-                fractionToTimeLabel = fractionToTimeLabel
-            )
-            PowerChartCard(
-                positions = positions, projected = projection.power,
-                timeLabels = timeLabels,
-                externalSelectedFraction = speedChartFraction,
-                onXSelected = { speedChartFraction = it },
-                fractionToTimeLabel = fractionToTimeLabel
-            )
-            BatteryChartCard(
-                positions = positions, projected = projection.battery,
-                timeLabels = timeLabels,
-                externalSelectedFraction = speedChartFraction,
-                onXSelected = { speedChartFraction = it },
-                fractionToTimeLabel = fractionToTimeLabel
-            )
-        }
+
 
         // Weather along the way - shown when loading or has data
         if (isLoadingWeather || weatherPoints.isNotEmpty()) {
@@ -529,18 +527,21 @@ private fun UnifiedTripCard(
                     StatItem(
                         stringResource(R.string.distance),
                         stats.distance?.let { visualTripNumber(it) } ?: notAvailableLabel,
-                        UnitFormatter.getDistanceUnit(units)
+                        UnitFormatter.getDistanceUnit(units),
+                        valueColor = Color(0xFF0284C7)
                     ),
                     StatItem(
                         stringResource(R.string.duration),
                         stats.durationMin?.let { "%,d".format(it) } ?: notAvailableLabel,
-                        stringResource(R.string.visual_trip_duration_unit)
+                        stringResource(R.string.visual_trip_duration_unit),
+                        valueColor = Color(0xFFD97706)
                     ),
                     StatItem(
                         stringResource(R.string.efficiency),
                         stats.energy.efficiencyWhKm?.let { visualTripNumber(it / 10.0) } ?: notAvailableLabel,
                         unit = "kWh/100km",
-                        recovered = (stats.energy.efficiencyWhKm ?: 0.0) < 0.0
+                        recovered = (stats.energy.efficiencyWhKm ?: 0.0) < 0.0,
+                        valueColor = Color(0xFF10B981)
                     )
                 )
                 Row(
@@ -553,6 +554,7 @@ private fun UnifiedTripCard(
                             value = item.value,
                             unit = item.unit,
                             recovered = item.recovered,
+                            valueColor = item.valueColor,
                             modifier = Modifier.weight(1f)
                         )
                     }
@@ -622,7 +624,7 @@ private fun DriveMapCard(positions: List<DrivePosition>, routeColor: Color, star
                 Box(modifier = Modifier.fillMaxWidth().height(250.dp)
                     .clip(RoundedCornerShape(8.dp))) {
                     AmapRouteView(modifier = Modifier.fillMaxSize(), routePoints = routePoints, routeSegments = segments,
-                        startTitle = startLabel, endTitle = endLabel, routeColor = routeColor, drawRoutePath = false)
+                        startTitle = startLabel, endTitle = endLabel, routeColor = routeColor, drawRoutePath = true)
                 }
             }
         }
@@ -646,7 +648,8 @@ data class StatItem(
     val label: String,
     val value: String,
     val unit: String? = null,
-    val recovered: Boolean = false
+    val recovered: Boolean = false,
+    val valueColor: Color? = null
 )
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -780,6 +783,7 @@ private fun StatItemView(
     value: String,
     unit: String? = null,
     recovered: Boolean = false,
+    valueColor: Color? = null,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -797,7 +801,11 @@ private fun StatItemView(
             text = value,
             style = MaterialTheme.typography.bodyLarge,
             fontSize = if (unit != null) 20.sp else 16.sp,
-            color = if (recovered) Color(0xFF10B981) else MaterialTheme.colorScheme.onSurface,
+            color = when {
+                valueColor != null -> valueColor
+                recovered -> Color(0xFF10B981)
+                else -> MaterialTheme.colorScheme.onSurface
+            },
             fontWeight = FontWeight.SemiBold
         )
         unit?.let {

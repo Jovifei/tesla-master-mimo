@@ -761,8 +761,8 @@ internal fun SummaryCard(
                                 summary.totalEnergyAdded?.let { energy ->
                                     val value = when {
                                         energy > 999 -> "%.2f MWh".format(energy / 1000)
-                                        energy < 10 -> "%.1f kWh".format(energy)
-                                        else -> "%.1f kWh".format(energy)
+                                        energy < 10 -> "%.1f 度".format(energy)
+                                        else -> "%.1f 度".format(energy)
                                     }
                                     if (summary.partialEnergyCount > 0 || summary.energyCoverage < summary.totalCharges) "≈$value" else value
                                 } ?: stringResource(R.string.not_available),
@@ -822,7 +822,7 @@ internal fun SummaryCard(
                             )
                             Text(
                                 text = "${stringResource(R.string.charge_unit_price)}: " +
-                                    (avgPricePerKwh?.let { "$currencySymbol%.2f / kWh".format(it) } ?: stringResource(R.string.not_available)),
+                                    (avgPricePerKwh?.let { "$currencySymbol%.2f / 度".format(it) } ?: stringResource(R.string.not_available)),
                                 style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.onSurface
@@ -840,7 +840,7 @@ internal fun SummaryCard(
                             )
                             Text(
                                 text = "${stringResource(R.string.charge_avg_energy)}: " +
-                                    (avgEnergyPerCharge?.let { "%.1f kWh / 次".format(it) } ?: stringResource(R.string.not_available)),
+                                    (avgEnergyPerCharge?.let { "%.1f 度 / 次".format(it) } ?: stringResource(R.string.not_available)),
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -1234,7 +1234,7 @@ private fun ChargesChartPage(
                     label = data.label,
                     value = data.totalEnergy,
                     displayValue = if (data.energyCoverage > 0) {
-                        (if (data.partialEnergyCount > 0) "≈" else "") + "%.1f kWh".format(data.totalEnergy)
+                        (if (data.partialEnergyCount > 0) "≈" else "") + "%.1f 度".format(data.totalEnergy)
                     } else stringResource(R.string.not_available),
                     segments = listOf(
                         BarSegment(data.energyAc, palette.acColor, "AC"),
@@ -1273,7 +1273,7 @@ private fun ChargesChartPage(
         }
 
         val valueFormatter: (Double) -> String = when (chartType) {
-            ChargesChartType.ENERGY -> { v -> "%.1f kWh".format(v) }
+            ChargesChartType.ENERGY -> { v -> "%.1f 度".format(v) }
             ChargesChartType.COST -> { v -> "$currencySymbol%.2f".format(v) }
             ChargesChartType.COUNT -> { v -> v.toInt().toString() }
         }
@@ -1285,13 +1285,19 @@ private fun ChargesChartPage(
             else -> ((barData.size + 5) / 6).coerceAtLeast(1)
         }
 
+        val yAxisFormatter: (Double) -> String = when (chartType) {
+            ChargesChartType.COUNT -> { v -> "%,d".format(v.toInt()) }
+            else -> { v -> if (v >= 1000) "%.0fk".format(v / 1000) else "%.0f".format(v) }
+        }
+
         InteractiveBarChart(
             data = barData,
             modifier = Modifier.fillMaxWidth(),
             barColor = palette.accent,
             labelColor = palette.onSurfaceVariant,
             showEveryNthLabel = labelInterval,
-            valueFormatter = valueFormatter
+            valueFormatter = valueFormatter,
+            yAxisFormatter = yAxisFormatter
         )
     }
 }

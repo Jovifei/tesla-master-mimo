@@ -312,15 +312,16 @@ internal fun ChargeDetailContent(
             val perKwhLabel = stringResource(R.string.per_kwh)
             val partialEnergy = if (s.energyAdded == null) detail.partialBatteryInputKwh else null
 
+            // ── Group 1: Numerical Metric Cards ───────────────────────────────────
             // Energy section
             StatsSectionCard(
                 title = energyLabel,
                 icon = Icons.Default.EnergySavingsLeaf,
                 stats = listOf(
                     StatItem(if (partialEnergy != null) stringResource(R.string.charge_partial_energy) else addedLabel,
-                        s.energyAdded?.let { "%.2f kWh".format(it) }
-                            ?: partialEnergy?.let { "≈%.2f kWh".format(it) } ?: unavailableLabel),
-                    StatItem(usedLabel, s.energyUsed?.let { "%.2f kWh".format(it) } ?: unavailableLabel),
+                        s.energyAdded?.let { "%.2f 度".format(it) }
+                            ?: partialEnergy?.let { "≈%.2f 度".format(it) } ?: unavailableLabel),
+                    StatItem(usedLabel, s.energyUsed?.let { "%.2f 度".format(it) } ?: unavailableLabel),
                     StatItem(efficiencyLabel, s.efficiency?.let { "%.1f%%".format(it) } ?: unavailableLabel)
                 )
             )
@@ -335,17 +336,6 @@ internal fun ChargeDetailContent(
                     StatItem(durationLabel, s.durationMin?.let(::formatDurationCompact) ?: unavailableLabel)
                 )
             )
-            if (series.soc.size >= 2) {
-                BatteryChartCard(
-                    samples = series.soc,
-                    is24Hour = is24Hour,
-                    title = stringResource(R.string.battery_level)
-                )
-            } else if (series.soc.size == 1) {
-                val sample = series.soc.single()
-                SingleChargeObservation(stringResource(R.string.battery_level), sample.first,
-                    "${sample.second}%", MaterialTheme.colorScheme.primary, is24Hour)
-            }
 
             // Power section
             if (s.powerMax != null) {
@@ -358,17 +348,6 @@ internal fun ChargeDetailContent(
                         StatItem(averageLabel, s.powerAvg?.let { "%.1f kW".format(it) } ?: unavailableLabel)
                     )
                 )
-                if (series.power.size >= 2) {
-                    PowerChartCard(
-                        samples = series.power,
-                        is24Hour = is24Hour,
-                        title = stringResource(R.string.power_profile)
-                    )
-                } else if (series.power.size == 1) {
-                    val sample = series.power.single()
-                    SingleChargeObservation(stringResource(R.string.power_profile), sample.first,
-                        "${sample.second} kW", Color(0xFF4CAF50), is24Hour)
-                }
             }
 
             // Voltage and current are observations, not proof of AC/DC mode.
@@ -387,28 +366,6 @@ internal fun ChargeDetailContent(
                         StatItem(currentAvgLabel, s.currentAvg?.let { "%.1f A".format(it) } ?: unavailableLabel)
                     )
                 )
-                if (series.voltage.size >= 2) {
-                    VoltageChartCard(
-                        samples = series.voltage,
-                        is24Hour = is24Hour,
-                        title = stringResource(R.string.voltage_profile)
-                    )
-                } else if (series.voltage.size == 1) {
-                    val sample = series.voltage.single()
-                    SingleChargeObservation(stringResource(R.string.voltage_profile), sample.first,
-                        "${sample.second} V", MaterialTheme.colorScheme.tertiary, is24Hour)
-                }
-                if (series.current.size >= 2) {
-                    CurrentChartCard(
-                        samples = series.current,
-                        is24Hour = is24Hour,
-                        title = stringResource(R.string.current_profile)
-                    )
-                } else if (series.current.size == 1) {
-                    val sample = series.current.single()
-                    SingleChargeObservation(stringResource(R.string.current_profile), sample.first,
-                        "${sample.second} A", MaterialTheme.colorScheme.secondary, is24Hour)
-                }
             }
 
             // Temperature section
@@ -423,19 +380,6 @@ internal fun ChargeDetailContent(
                     icon = Icons.Default.DeviceThermostat,
                     stats = temperatureStats
                 )
-                if (series.temperature.size >= 2) {
-                    TemperatureChartCard(
-                        samples = series.temperature,
-                        units = units,
-                        is24Hour = is24Hour,
-                        title = temperatureLabel
-                    )
-                } else if (series.temperature.size == 1) {
-                    val sample = series.temperature.single()
-                    SingleChargeObservation(temperatureLabel, sample.first,
-                        UnitFormatter.formatTemperature(sample.second, units),
-                        Color(0xFFFF9800), is24Hour)
-                }
             }
 
             // Cost section
@@ -457,6 +401,89 @@ internal fun ChargeDetailContent(
                     StatItem(perKwhLabel, costPerKwh)
                 )
             )
+
+            // ── Group 2: Interactive Telemetry Curves ──────────────────────────────
+            val hasCurves = series.soc.size >= 1 || (s.powerMax != null && series.power.size >= 1) ||
+                (hasElectricalData && (series.voltage.size >= 1 || series.current.size >= 1)) ||
+                (temperatureStats.isNotEmpty() && series.temperature.size >= 1)
+
+            if (hasCurves) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "充电详细曲线",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                )
+
+                if (series.soc.size >= 2) {
+                    BatteryChartCard(
+                        samples = series.soc,
+                        is24Hour = is24Hour,
+                        title = stringResource(R.string.battery_level)
+                    )
+                } else if (series.soc.size == 1) {
+                    val sample = series.soc.single()
+                    SingleChargeObservation(stringResource(R.string.battery_level), sample.first,
+                        "${sample.second}%", MaterialTheme.colorScheme.primary, is24Hour)
+                }
+
+                if (s.powerMax != null) {
+                    if (series.power.size >= 2) {
+                        PowerChartCard(
+                            samples = series.power,
+                            is24Hour = is24Hour,
+                            title = stringResource(R.string.power_profile)
+                        )
+                    } else if (series.power.size == 1) {
+                        val sample = series.power.single()
+                        SingleChargeObservation(stringResource(R.string.power_profile), sample.first,
+                            "${sample.second} kW", Color(0xFF4CAF50), is24Hour)
+                    }
+                }
+
+                if (hasElectricalData) {
+                    if (series.voltage.size >= 2) {
+                        VoltageChartCard(
+                            samples = series.voltage,
+                            is24Hour = is24Hour,
+                            title = stringResource(R.string.voltage_profile)
+                        )
+                    } else if (series.voltage.size == 1) {
+                        val sample = series.voltage.single()
+                        SingleChargeObservation(stringResource(R.string.voltage_profile), sample.first,
+                            "${sample.second} V", MaterialTheme.colorScheme.tertiary, is24Hour)
+                    }
+                    if (series.current.size >= 2) {
+                        CurrentChartCard(
+                            samples = series.current,
+                            is24Hour = is24Hour,
+                            title = stringResource(R.string.current_profile)
+                        )
+                    } else if (series.current.size == 1) {
+                        val sample = series.current.single()
+                        SingleChargeObservation(stringResource(R.string.current_profile), sample.first,
+                            "${sample.second} A", MaterialTheme.colorScheme.secondary, is24Hour)
+                    }
+                }
+
+                if (temperatureStats.isNotEmpty()) {
+                    if (series.temperature.size >= 2) {
+                        TemperatureChartCard(
+                            samples = series.temperature,
+                            units = units,
+                            is24Hour = is24Hour,
+                            title = temperatureLabel
+                        )
+                    } else if (series.temperature.size == 1) {
+                        val sample = series.temperature.single()
+                        SingleChargeObservation(temperatureLabel, sample.first,
+                            UnitFormatter.formatTemperature(sample.second, units),
+                            Color(0xFFFF9800), is24Hour)
+                    }
+                }
+            }
 
         }
 

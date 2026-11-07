@@ -271,6 +271,8 @@ internal fun VehicleQuickStatusAndControlSheet(
     viewModel: VehicleRemoteViewModel
 ) {
     var showSheet by remember { mutableStateOf(false) }
+    var confirmCommand by remember { mutableStateOf<String?>(null) }
+    var confirmTitle by remember { mutableStateOf("") }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     val isLocked = status.locked ?: true
@@ -286,12 +288,20 @@ internal fun VehicleQuickStatusAndControlSheet(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Lock Pill
+        // Lock Pill - directly toggles with confirmation
         Surface(
             shape = RoundedCornerShape(20.dp),
             color = if (isLocked) MaterialTheme.colorScheme.surfaceContainerHigh else Color(0xFFEF4444).copy(alpha = 0.15f),
             border = BorderStroke(0.5.dp, if (isLocked) MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f) else Color(0xFFEF4444).copy(alpha = 0.4f)),
-            onClick = { showSheet = true }
+            onClick = {
+                if (isLocked) {
+                    confirmTitle = "确定要解锁车辆吗？"
+                    confirmCommand = "unlock"
+                } else {
+                    confirmTitle = "确定要锁闭车辆吗？"
+                    confirmCommand = "lock"
+                }
+            }
         ) {
             Row(
                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
@@ -313,12 +323,20 @@ internal fun VehicleQuickStatusAndControlSheet(
             }
         }
 
-        // Climate Pill
+        // Climate Pill - directly toggles with confirmation
         Surface(
             shape = RoundedCornerShape(20.dp),
             color = if (isClimateOn) Color(0xFF0284C7).copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceContainerHigh,
             border = BorderStroke(0.5.dp, if (isClimateOn) Color(0xFF0284C7).copy(alpha = 0.4f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-            onClick = { showSheet = true }
+            onClick = {
+                if (isClimateOn) {
+                    confirmTitle = "确定要关闭车内空调吗？"
+                    confirmCommand = "climate_off"
+                } else {
+                    confirmTitle = "确定要开启车内空调吗？(设定目标 %.1f°C)".format(climateTarget)
+                    confirmCommand = "climate_on"
+                }
+            }
         ) {
             Row(
                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
@@ -340,12 +358,20 @@ internal fun VehicleQuickStatusAndControlSheet(
             }
         }
 
-        // Sentry Pill
+        // Sentry Pill - directly toggles with confirmation
         Surface(
             shape = RoundedCornerShape(20.dp),
             color = if (isSentryOn) Color(0xFF10B981).copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceContainerHigh,
             border = BorderStroke(0.5.dp, if (isSentryOn) Color(0xFF10B981).copy(alpha = 0.4f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-            onClick = { showSheet = true }
+            onClick = {
+                if (isSentryOn) {
+                    confirmTitle = "确定要关闭哨兵模式吗？"
+                    confirmCommand = "sentry_off"
+                } else {
+                    confirmTitle = "确定要开启哨兵模式吗？"
+                    confirmCommand = "sentry_on"
+                }
+            }
         ) {
             Row(
                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
@@ -396,6 +422,32 @@ internal fun VehicleQuickStatusAndControlSheet(
     }
 
     // 2. Apple-Style Modal Bottom Sheet (Prevents accidental clicks on homepage)
+        if (confirmCommand != null) {
+        AlertDialog(
+            onDismissRequest = { confirmCommand = null },
+            title = { Text(confirmTitle, fontWeight = FontWeight.Bold) },
+            text = { Text("防误触保护已就绪，点击确认后指令将立即送达车辆。") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val cmdName = confirmCommand!!
+                        vehicleCommandCatalog.firstOrNull { it.name == cmdName }?.let { cmd ->
+                            viewModel.executeCommand(carId, cmd)
+                        }
+                        confirmCommand = null
+                    }
+                ) {
+                    Text("确认执行")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmCommand = null }) {
+                    Text("取消")
+                }
+            }
+        )
+    }
+
     if (showSheet) {
         ModalBottomSheet(
             onDismissRequest = { showSheet = false },
@@ -475,7 +527,7 @@ internal fun VehicleControlsSection(
     }
     if (offered.isEmpty()) return
 
-    fun findCommand(name: String) = offered.firstOrNull { it.name == name }
+    fun findCommand(name: String) = vehicleCommandCatalog.firstOrNull { it.name == name } ?: offered.firstOrNull { it.name == name }
 
     var confirmUnlock by remember { mutableStateOf(false) }
     var showClimateDialog by remember { mutableStateOf(false) }
