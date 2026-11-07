@@ -3,7 +3,8 @@ import Taro, { useDidHide, useDidShow, usePageScroll, useUnload } from '@tarojs/
 import { useEffect, useRef, useState } from 'react'
 import { historyRowKey, isHistoryIdentityAmbiguous, isHistoryQuarantined, pageCanContinue, sameHistoryIdentity, sortHistoryByStartDate } from '../../domain/history'
 import { buildDriveHistoryItems, parkedAddressLabel, verifiedParkedPairs, type DriveHistoryItem } from '../../domain/drive_history'
-import { mapCoordinate } from '../../domain/map_coordinate'
+import { mapCoordinate } from '../../domain/map_coordinate'
+import { elevationStats } from '../../domain/drive_elevation'
 import { formatParkedAddress, formatRouteAddresses, toChineseDisplayAddress } from '../../domain/address_display'
 import { getAppNavGeometry } from '../../services/nav_geometry'
 import { copy } from '../../i18n/copy'
@@ -801,7 +802,24 @@ export default function DrivesPage() {
             </View>
           })()}
 
-          {/* 7. 分组面板：环境温度 */}
+          {/* 7. 分组面板：海拔（App DriveDetailScreen 同组） */}
+          {(() => {
+            const stats = elevationStats(selectedEvidence?.points ?? [])
+            if (!stats) return null
+            return <View className="section-card">
+              <View className="section-card-header">
+                <View className="section-card-title"><VisualIcon name="route" /><Text>海拔</Text></View>
+              </View>
+              <View className="telemetry-metric-strip">
+                <MetricValue label="样本最高" value={stats.max} unit="m" digits={0} />
+                <MetricValue label="样本最低" value={stats.min} unit="m" digits={0} />
+                <MetricValue label="累计爬升" value={stats.gain != null ? `+${stats.gain}` : null} unit="m" />
+                <MetricValue label="累计下降" value={stats.loss != null ? `-${stats.loss}` : null} unit="m" />
+              </View>
+            </View>
+          })()}
+
+          {/* 8. 分组面板：环境温度 */}
           {selected.outsideTempC != null ? (
             <View className="section-card">
               <View className="section-card-header">
@@ -904,7 +922,7 @@ export default function DrivesPage() {
                   <Text className="analysis-value highlight-status">{statusText}</Text>
                 </View>
                 <Text className="muted parked-analysis-note">
-                  推算说明：按 Tesla 标准续航版约 60 kWh 电池容量基准，1% 约对应 0.60 kWh 及 3.8 km 额定续航；开启哨兵模式时典型待机功耗为 200~350 W。
+                  推算说明：按 Tesla 标准续航版约 60 kWh 电池容量基准，1% 约对应 0.60 kWh 及 3.8 km 额定续航；车辆休眠状态功耗通常低于 50 W，开启哨兵模式或车机活跃保温时待机功耗为 200~350 W。
                 </Text>
               </View>
             </>
