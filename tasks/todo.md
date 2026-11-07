@@ -4435,3 +4435,9 @@ Review: 小程序开发本阶段收口，后续改动应另开阶段。所有代
 - [x] 驻车推算说明补齐 App 对话框的休眠功耗一行（<50 W）；核实结论：推算公式与 60 kWh 基准与 App 逐字一致（|ΔSOC|×3.8 km、×0.60 kWh），差异仅在 App 把说明放在弹窗、小程序内联展示，不改数值。
 - [x] 复核判定（不改动）：沿途天气卡——App 依赖外部天气数据源，小程序与后端均无天气数据合同，缺数据源不可对齐，待后端/服务合同另行立项；胎压"服务端历史"——经查 App 的 TpmsHistoryRepository 同为本机 Room 持久化（非服务端 API），小程序本机缓存架构相同，差异仅为小程序前台采集的平台限制，页面已自述，无后端工作可做。
 - [x] 验证（阶段门禁）：tsc 0 错误；定点 51 项 + 新增 9 项单测全过；全量 83 文件 / 1017 项全过（并行跑与 ETF 云端测试争抢 CPU 时有计时类抖动，单 worker 复跑全绿，抖动文件单独跑均全过）；build:weapp 成功。
+
+## 2026-11-08 小程序对齐 App v2.1.87 · 阶段四（远程控制门控）— 分支 muse/mini-align-20261108
+
+- [x] 复核判定（不改动）：审计称"授权未评估（null）时 App 不展示命令、小程序展示全量目录"。逐行核对 App 代码后不成立：VehicleCommandCatalog.offeredCommands 的注释虽称未评估不出，但 VehicleControlsSection 实际有兜底——offeredCommands 为空且 commandAuthorization == null 时回退全量目录（VehicleRemoteSections.kt:531-533），与小程序 offeredCommands 对 null 返回全目录、且 needsCommandReauthorization 口径一致的行为完全相同；小程序单测亦明确钉住"ready 或 null 时给目录"。以可观察行为为准，两端已对齐（命令执行仍由后端逐条授权 + 全局开关兜底）。
+- [x] 快捷控制底部表（App QuickStatusAndControlSheet）：仅形态差异、功能可达（审计同判），小程序沿用页内分区形态，不复制弹层。
+- [x] 本阶段无代码变更，仅记录复核结论。
