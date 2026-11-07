@@ -5,6 +5,8 @@ import { useRef, useState } from 'react'
 import MetricValue from '../../components/MetricValue'
 import SectionHeading from '../../components/SectionHeading'
 import TpmsPanel from '../../components/TpmsPanel'
+import EvidenceCurve from '../../components/EvidenceCurve'
+import { temperatureTrendPoints } from '../../domain/temperature_trend'
 import SubpageHeader from '../../components/SubpageHeader'
 import { ApiError, ensureWechatSession, getApiOrigin, getApiSessionGeneration, matelinkApi } from '../../services/api'
 import { analysisApi } from '../../services/analysis_api'
@@ -44,6 +46,7 @@ export default function ToolsPage() {
   const [updates, setUpdates] = useState<SoftwareUpdate[]>([]), [page, setPage] = useState(1), [updatesHasMore, setUpdatesHasMore] = useState(false)
   const [complete, setComplete] = useState(false), [loading, setLoading] = useState(false), [error, setError] = useState<string | null>(null)
   const [year, setYear] = useState(new Date().getFullYear()), [angle, setAngle] = useState(0)
+  const [temperatureWindow, setTemperatureWindow] = useState<7 | 30>(30), [temperatureSampleIndex, setTemperatureSampleIndex] = useState(0)
   const [zoom, setZoom] = useState(1), [pan, setPan] = useState({ x: 0, y: 0 })
   const [previewOpen, setPreviewOpen] = useState({ doors: false, frunk: false, port: false })
   const gesture = useRef({ x: 0, y: 0, distance: 0, zoom: 1, pan: { x: 0, y: 0 } })
@@ -94,15 +97,16 @@ export default function ToolsPage() {
         const result = await matelinkApi.getCarStatus(selected.id, selected)
         if (!valid()) return
         setStatus(result)
-        if (kind === 'tpms') {
-          // Highway-factor evidence for the TPMS trend conclusion (App
-          // parity). Failure leaves drives empty; the factor then
-          // simply never fires and other factors still evaluate.
+        if (kind === 'tpms' || kind === 'temperature') {
+          // TPMS: highway-factor evidence for the trend conclusion.
+          // Temperature: drive records are the historical temperature
+          // authority (App parity). Failure leaves drives empty and
+          // both surfaces degrade honestly.
           try {
             const tripResult = await analysisApi.getHistory(selected, 'drives', { isCurrent: valid })
             if (!valid()) return
             setDrives(tripResult.items)
-          } catch { /* trend conclusion degrades to sample-only evidence */ }
+          } catch { /* dependent surfaces degrade to current-only data */ }
         }
       } else {
         const [tripResult, chargeResult] = await Promise.all([analysisApi.getHistory(selected, 'drives', { isCurrent: valid }), analysisApi.getHistory(selected, 'charges', { isCurrent: valid })])
@@ -236,7 +240,7 @@ export default function ToolsPage() {
     {kind === 'whereWasI' ? <View className="card"><SectionHeading icon="clock" title="当时在哪里" /><Text className="muted">查询时刻使用本机显示时区；仅展示已有报告和实际采样，不插值或生成未知位置。{complete ? '已读历史已翻页完成。' : '当前为有界部分历史。'}</Text><View className="tools-actions"><Picker mode="date" value={targetDate} onChange={event => setTargetDate(event.detail.value)}><Text>{targetDate} ⌄</Text></Picker><Picker mode="time" value={targetTime} onChange={event => setTargetTime(event.detail.value)}><Text>{targetTime} ⌄</Text></Picker></View><Button className="button" loading={loading} disabled={!car} onClick={() => { void findHistoricPosition() }}>查询这个时刻</Button>{historicReason ? <Text className="muted">{historicReason}</Text> : null}{historicCoordinate && historicPosition ? <><Map className="vehicle-map" onError={() => setError('地图暂时不可用，位置报告已保留')} latitude={historicCoordinate.latitude} longitude={historicCoordinate.longitude} scale={14} markers={[{ id: 1, ...historicCoordinate, iconPath: '/assets/tabs/vehicle-selected.png', width: 24, height: 24 }]} /><Text className="muted">{historicPosition.label}</Text><Text className="metric-source">{historicPosition.at || '独立位置观测时间未知'} · {historicPosition.source || '来源未标明'}</Text></> : null}</View> : null}
     {kind === 'tpmsSettings' && car && session?.userId ? <TpmsSettingsPanel scope={{ origin: getApiOrigin(), userId: session.userId, stableId: car.stableId }} snapshot={status?.tpms} history={readTpmsCache(Taro, session.userId, getApiOrigin(), car.stableId)} isCurrent={() => { try { return epoch.current === profileEpoch && owner.current === scopeKey() } catch { return false } }} /> : null}
     {kind === 'tpms' ? <TpmsPanel snapshot={status?.tpms} report={status?.tpmsReport} history={car && session?.userId ? readTpmsCache(Taro, session.userId, getApiOrigin(), car.stableId) : null} trendDrives={drives.map(drive => ({ endDate: drive.endDate ?? null, speedMaxKmh: drive.speedMaxKmh ?? null }))} /> : null}
-    {kind === 'temperature' ? <View className="card"><SectionHeading icon="cloud" title="温度趋势" /><View className="metric-grid"><MetricValue label="车内温度" value={status?.insideTemp} unit="°C" /><MetricValue label="车外温度" value={status?.outsideTemp} unit="°C" /></View><Text className="muted">当前接口未提供逐点温度历史与独立观测时间，不能以状态报告时间生成历史曲线。</Text></View> : null}
+    {kind === 'temperature' ? <View className="card"><SectionHeading icon="cloud" title="温度趋势" /><View className="metric-grid"><MetricValue label="车内温度" value={status?.insideTemp} unit="°C" /><MetricValue label="车外温度" value={status?.outsideTemp} unit="°C" /></View>{(() => { const trend = temperatureTrendPoints(drives, temperatureWindow, Date.now()); return <><View className="tools-actions"><Button className={temperatureWindow === 7 ? 'button' : 'button-secondary'} onClick={() => { setTemperatureWindow(7); setTemperatureSampleIndex(0) }}>近7天</Button><Button className={temperatureWindow === 30 ? 'button' : 'button-secondary'} onClick={() => { setTemperatureWindow(30); setTemperatureSampleIndex(0) }}>近30天</Button></View>{trend.points.length ? <><EvidenceCurve id="temperature-history-outside" title="车外温度历史" unit="°C" points={trend.points} valueOf={point => point.outsideTempC} selected={temperatureSampleIndex} onSelect={setTemperatureSampleIndex} isCurrent={() => true} /><Text className="muted">每点为一次行程开始时报告的车外温度；窗口内行程 {trend.drivesInWindow} 条，合格温度点 {trend.points.length} 个。逐点车内温度历史不在行程记录中，未生成。</Text></> : <Text className="muted">{trend.unavailableReason === 'no_history_in_window' ? `近${temperatureWindow}天内暂无行程记录，无法生成温度历史。` : '窗口内行程未提供合格的车外温度记录，无法生成温度历史。'}历史温度只取自已记录行程，不以状态报告时间伪造曲线。</Text>}</> })()}</View> : null}
     {kind === 'sentry' ? <View className="card"><SectionHeading icon="shield" title="哨兵历史" /><MetricValue label="当前哨兵状态" value={status?.sentryMode == null ? null : status.sentryMode ? '开启' : '关闭'} /><Text className="muted">当前状态不能还原告警事件。App 本机保存的哨兵历史未通过服务端共享，当前小程序没有已验证事件历史。</Text></View> : null}
     {kind === 'updates' ? <View className="card"><SectionHeading icon="update" title="软件更新" />{updates.length ? updates.map(update => <View className="status" key={update.id}><Text>{update.version || '版本未提供'}</Text><Text>{historyDateTime(update.startDate)}</Text></View>) : <Text>当前页暂无已记录的软件更新</Text>}<Text className="muted">仅当前响应记录，不代表全部软件历史。</Text><View className="tools-actions">{page > 1 ? <Button onClick={() => { void load(page - 1) }}>上一页</Button> : null}{updatesHasMore ? <Button onClick={() => { void load(page + 1) }}>下一页</Button> : null}</View></View> : null}
     {(kind === 'report' || kind === 'export') && car && !error && !loading ? <View className="card"><SectionHeading icon={kind === 'report' ? 'chart' : 'update'} title={kind === 'report' ? '年度报告' : '数据导出'} /><Text className="muted">{complete ? '当前历史响应翻页完成' : '部分历史覆盖 · 自动读取最多500条/25页'}；日期按本机显示时区分组。</Text>
