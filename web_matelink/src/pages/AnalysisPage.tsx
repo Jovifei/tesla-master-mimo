@@ -1,41 +1,26 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { ApiError, getAllHistory, getCarStatus } from '../api/matelink'
 import type { WebCarStatus, WebCharge, WebDriveSummary } from '../api/matelink-types'
 import { annualSummary, availableYears, historyCsv, historyJson, monthlyRows, type Covered } from '../api/analysis'
-import { readTpmsSamples, recordTpmsSample, tpmsTrend, type WheelTrend } from '../api/tpms-store'
+import { readTpmsSamples, recordTpmsSample, tpmsTrend, type TpmsSample, type WheelTrend } from '../api/tpms-store'
 import { useCar } from './useCar'
-import { AreaSeries, Bars, Icon, Kpi, SegControl, Skeleton, TpmsCar, TONES, type IconName, type Tone } from '../components/viz'
+import { Icon, SegControl, Skeleton, TpmsCar, TONES } from '../components/viz'
+import { Panel, V3 } from '../components/v3'
+import { BarsPanel, DATA_COLORS, StatTile, fmtNum } from '../components/panels'
+
+/**
+ * Analysis v4 — TeslaMate "stats" composition: an annual big-number
+ * tile row first, then monthly bar charts （里程 / 充入电量 / 费用）
+ * as the visual body, the monthly list as support. Months whose value
+ * is unknown are omitted from a chart, never drawn as zero. TPMS keeps
+ * the verdict list as protagonist and adds points-only small
+ * multiples (never a line — V3 honesty law for sparse samples).
+ */
 
 const num = (value: number | null, digits = 1): string => (value == null ? '--' : value.toFixed(digits))
 
 function coverageNote(covered: Covered): string | null {
   return covered.total > 0 && covered.known < covered.total ? `基于 ${covered.known}/${covered.total} 条有数据的记录` : null
-}
-
-function KpiCell({ label, value, unit, icon, tone = 'teal', spark, caption }: {
-  label: string
-  value: string
-  unit?: string
-  icon: IconName
-  tone?: Tone
-  spark?: number[]
-  caption?: string | null
-}) {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0 }}>
-      <Kpi label={label} value={value} unit={unit} icon={icon} tone={tone} spark={spark} />
-      {caption ? <div className="text-tertiary tabular" style={{ fontSize: 11, paddingLeft: 3 }}>{caption}</div> : null}
-    </div>
-  )
-}
-
-function CardTitle({ icon, children }: { icon: IconName; children: ReactNode }) {
-  return (
-    <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
-      <span style={{ color: TONES.teal, display: 'inline-flex' }}><Icon name={icon} size={18} /></span>
-      {children}
-    </h2>
-  )
 }
 
 function download(filename: string, content: string, type: string) {
@@ -48,13 +33,6 @@ function download(filename: string, content: string, type: string) {
   URL.revokeObjectURL(url)
 }
 
-const WHEELS = [
-  { key: 'fl', label: '左前' },
-  { key: 'fr', label: '右前' },
-  { key: 'rl', label: '左后' },
-  { key: 'rr', label: '右后' },
-] as const
-
 function trendDot(item: WheelTrend): string {
   if (item.deltaBar == null) return TONES.gray
   if (item.deltaBar <= -0.2) return TONES.red
@@ -65,6 +43,54 @@ function trendDot(item: WheelTrend): string {
 const monthParts = (month: string): { year: string; mon: string } => {
   const [year, mon] = month.split('-')
   return { year: year ?? '', mon: `${Number(mon)} 月` }
+}
+
+const WHEELS = [
+  { key: 'fl', label: '左前' },
+  { key: 'fr', label: '右前' },
+  { key: 'rl', label: '左后' },
+  { key: 'rr', label: '右后' },
+] as const
+
+/** Points-only TPMS history: four wheels share the time axis and one bar domain. */
+function TpmsPoints({ samples }: { samples: TpmsSample[] }) {
+  const t0 = samples[0].at
+  const t1 = samples[samples.length - 1].at
+  const values = samples.flatMap(sample => [sample.fl, sample.fr, sample.rl, sample.rr])
+  if (values.length < 2 || t1 <= t0) return null
+  const yMin = Math.floor((Math.min(...values) - 0.2) * 10) / 10
+  const yMax = Math.ceil((Math.max(...values) + 0.2) * 10) / 10
+  const W = 320
+  const H = 46
+  return (
+    <div style={{ marginTop: 16 }}>
+      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>历史采样点</div>
+      {WHEELS.map(wheel => (
+        <div key={wheel.key} style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 6 }}>
+          <span style={{ width: 34, fontSize: 12.5, color: V3.label2, flexShrink: 0 }}>{wheel.label}</span>
+          <svg viewBox={`0 0 ${W} ${H}`} style={{ flex: 1, height: H, display: 'block' }} role="img" aria-label={`${wheel.label}胎压历史采样点`}>
+            <line x1={0} y1={H - 4} x2={W} y2={H - 4} stroke={V3.separator} strokeWidth={1} />
+            {samples.map((sample, index) => (
+              <circle
+                key={index}
+                cx={((sample.at - t0) / (t1 - t0)) * (W - 8) + 4}
+                cy={4 + (1 - (sample[wheel.key] - yMin) / (yMax - yMin)) * (H - 12)}
+                r={3}
+                fill={DATA_COLORS.teal}
+                opacity={0.85}
+              />
+            ))}
+          </svg>
+          <span className="tabular" style={{ width: 92, fontSize: 11.5, color: V3.label3, flexShrink: 0, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+            {samples.length} 点 · {yMin.toFixed(1)}–{yMax.toFixed(1)} bar
+          </span>
+        </div>
+      ))}
+      <p style={{ fontSize: 12, color: V3.label3, marginTop: 8 }}>
+        四轮共用同一纵轴；仅绘制采样点、不连线，避免把稀疏采样误读为连续趋势。
+      </p>
+    </div>
+  )
 }
 
 export default function AnalysisPage() {
@@ -117,21 +143,23 @@ export default function AnalysisPage() {
   const annual = useMemo(() => (year != null ? annualSummary(drives, charges, year) : null), [drives, charges, year])
   const months = useMemo(() => monthlyRows(drives, charges), [drives, charges])
   const chronoMonths = useMemo(() => [...months].reverse(), [months])
-  const distanceBars = useMemo(
-    () => chronoMonths.map(row => ({ label: row.month.slice(2), value: row.distanceKm ?? 0 })),
-    [chronoMonths],
-  )
-  const chargedPoints = useMemo(
-    () => chronoMonths.map(row => ({ x: row.month.slice(2), y: row.chargedKwh ?? 0 })),
-    [chronoMonths],
-  )
-  const trend = useMemo(() => (carId != null ? tpmsTrend(readTpmsSamples(carId)) : null), [carId, sampleCount])
+  const samples = useMemo(() => (carId != null ? readTpmsSamples(carId) : []), [carId, sampleCount])
+  const trend = useMemo(() => tpmsTrend(samples), [samples])
   const tpms = status?.tpms ?? null
 
+  const distanceBars = chronoMonths.flatMap(row => (row.distanceKm != null ? [{ label: monthParts(row.month).mon, value: Math.round(row.distanceKm) }] : []))
+  const chargedBars = chronoMonths.flatMap(row => (row.chargedKwh != null ? [{ label: monthParts(row.month).mon, value: Math.round(row.chargedKwh * 10) / 10 }] : []))
+  const costRows = chronoMonths.filter(row => row.cost != null)
+  const costBars = costRows.map(row => ({ label: monthParts(row.month).mon, value: Math.round((row.cost as number) * 100) / 100 }))
+  const costExcluded = chronoMonths.length - costRows.length
+  const rangeText = chronoMonths.length
+    ? `${monthParts(chronoMonths[0].month).year}年${monthParts(chronoMonths[0].month).mon} – ${monthParts(chronoMonths[chronoMonths.length - 1].month).year}年${monthParts(chronoMonths[chronoMonths.length - 1].month).mon}`
+    : ''
+
   return (
-    <div className="page-in" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
-        <h1 className="hero-title">分析</h1>
+        <h1 style={{ fontSize: 28, fontWeight: 700 }}>分析</h1>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
           {cars.length > 1 ? (
             <select className="apple-input" style={{ width: 'auto' }} value={carId ?? ''} onChange={event => setCarId(Number(event.target.value))}>
@@ -156,121 +184,115 @@ export default function AnalysisPage() {
         </div>
       </div>
 
-      {carError ? <div className="apple-card"><p className="text-error">{carError}</p></div> : null}
-      {error ? <div className="apple-card"><p className="text-error">{error}</p></div> : null}
+      {carError ? <Panel><p style={{ color: V3.errorText, fontSize: 14.5 }}>{carError}</p></Panel> : null}
+      {error ? <Panel><p style={{ color: V3.errorText, fontSize: 14.5 }}>{error}</p></Panel> : null}
+      {!complete ? (
+        <p style={{ fontSize: 12.5, color: V3.label3 }}>记录较多，本次汇总基于最近读取的部分历史（每类上限 600 条），数字可能不完整。</p>
+      ) : null}
+
       {loading ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }} aria-label="正在汇总历史数据">
           <Skeleton height={196} />
-          <Skeleton height={150} />
+          <Skeleton height={220} />
         </div>
-      ) : null}
-      {!complete ? (
-        <p className="text-tertiary" style={{ fontSize: 12 }}>记录较多，本次汇总基于最近读取的部分历史（每类上限 600 条），数字可能不完整。</p>
-      ) : null}
-
-      {annual ? (
-        <div className="apple-card">
-          <CardTitle icon="chart">{annual.year} 年度汇总</CardTitle>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(168px, 1fr))', gap: 12 }}>
-            <KpiCell
-              label="总里程"
-              value={num(annual.distance.value)}
-              unit="km"
-              icon="route"
-              tone="teal"
-              spark={chronoMonths.map(row => row.distanceKm ?? 0)}
-              caption={coverageNote(annual.distance)}
-            />
-            <KpiCell label="行程次数" value={String(annual.tripCount)} unit="次" icon="pin" tone="purple" />
-            <KpiCell label="驾驶净耗电" value={num(annual.driveEnergy.value)} unit="kWh" icon="bolt" tone="blue" caption={coverageNote(annual.driveEnergy)} />
-            <KpiCell label="平均能耗" value={num(annual.efficiencyKwhPer100km)} unit="kWh/100km" icon="gauge" tone="amber" />
-            <KpiCell label="充电次数" value={String(annual.sessionCount)} unit="次" icon="plug" tone="green" />
-            <KpiCell
-              label="充入电量"
-              value={num(annual.chargedEnergy.value)}
-              unit="kWh"
-              icon="battery"
-              tone="green"
-              spark={chronoMonths.map(row => row.chargedKwh ?? 0)}
-              caption={coverageNote(annual.chargedEnergy)}
-            />
-            {annual.costs.map(cost => (
-              <KpiCell
-                key={cost.currency}
-                label="充电费用"
-                value={cost.value.toFixed(2)}
-                unit={cost.currency}
-                icon="wallet"
-                tone="teal"
-                caption={coverageNote({ value: cost.value, known: cost.count, total: annual.sessionCount })}
-              />
-            ))}
-          </div>
-          <div style={{ display: 'flex', gap: 10, marginTop: 20, flexWrap: 'wrap', alignItems: 'center' }}>
-            <button className="apple-btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }} onClick={() => download('matelink-history.csv', historyCsv(drives, charges), 'text/csv;charset=utf-8')}>
-              <Icon name="download" size={15} />
-              导出 CSV
-            </button>
-            <button className="apple-btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }} onClick={() => download('matelink-history.json', historyJson(drives, charges, complete), 'application/json')}>
-              <Icon name="download" size={15} />
-              导出 JSON
-            </button>
-            <span className="text-tertiary" style={{ fontSize: 12 }}>导出不含地点信息。</span>
-          </div>
-        </div>
-      ) : null}
-
-      {months.length ? (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(330px, 1fr))', gap: 16 }}>
-          <div className="apple-card">
-            <CardTitle icon="route">每月里程</CardTitle>
-            <Bars data={distanceBars} unit="km" tone="teal" height={190} />
-          </div>
-          <div className="apple-card">
-            <CardTitle icon="plug">每月充入电量</CardTitle>
-            <AreaSeries points={chargedPoints} unit="kWh" tone="blue" height={190} />
-          </div>
-        </div>
-      ) : null}
-
-      {months.length ? (
-        <div className="apple-card" style={{ padding: 0, overflow: 'hidden' }}>
-          <h2 style={{ fontSize: 16, fontWeight: 600, padding: '16px 16px 8px', display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ color: TONES.teal, display: 'inline-flex' }}><Icon name="calendar" size={18} /></span>
-            月度概览
-          </h2>
-          {months.map(row => {
-            const parts = monthParts(row.month)
-            return (
-              <div key={row.month} style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '11px 16px', borderTop: '0.5px solid var(--apple-separator)', flexWrap: 'wrap' }}>
-                <div style={{ background: 'var(--apple-surface-secondary)', borderRadius: 14, padding: '6px 0', width: 58, textAlign: 'center', flexShrink: 0 }}>
-                  <div style={{ fontSize: 15, fontWeight: 700, lineHeight: 1.15 }}>{parts.mon}</div>
-                  <div className="text-tertiary tabular" style={{ fontSize: 10.5 }}>{parts.year}</div>
-                </div>
-                <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', fontSize: 13 }} className="tabular">
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ color: TONES.teal, display: 'inline-flex' }}><Icon name="route" size={15} /></span>
-                    {row.trips} 次 · {num(row.distanceKm)} km
-                  </span>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ color: TONES.blue, display: 'inline-flex' }}><Icon name="plug" size={15} /></span>
-                    {row.sessions} 次 · {num(row.chargedKwh)} kWh
-                  </span>
-                  {row.cost != null ? (
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                      <span style={{ color: TONES.amber, display: 'inline-flex' }}><Icon name="wallet" size={15} /></span>
-                      {row.cost.toFixed(2)} {row.currency ?? ''}
-                    </span>
-                  ) : null}
-                </div>
+      ) : (
+        <>
+          {annual ? (
+            <Panel title={`${annual.year} 年度汇总`}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
+                <StatTile label="总里程" value={num(annual.distance.value)} unit="km" caption={coverageNote(annual.distance) ?? undefined} />
+                <StatTile label="行程次数" value={String(annual.tripCount)} unit="次" />
+                <StatTile label="驾驶净耗电" value={num(annual.driveEnergy.value)} unit="kWh" accent={V3.teal} caption={coverageNote(annual.driveEnergy) ?? undefined} />
+                <StatTile label="平均能耗" value={annual.efficiencyKwhPer100km != null ? fmtNum(annual.efficiencyKwhPer100km, 1) : '--'} unit="kWh/100km" />
+                <StatTile label="充电次数" value={String(annual.sessionCount)} unit="次" />
+                <StatTile label="充入电量" value={num(annual.chargedEnergy.value)} unit="kWh" accent={V3.teal} caption={coverageNote(annual.chargedEnergy) ?? undefined} />
+                {annual.costs.map(cost => (
+                  <StatTile
+                    key={cost.currency}
+                    label="充电费用"
+                    value={fmtNum(cost.value, 2)}
+                    unit={cost.currency}
+                    caption={coverageNote({ value: cost.value, known: cost.count, total: annual.sessionCount }) ?? undefined}
+                  />
+                ))}
               </div>
-            )
-          })}
-        </div>
-      ) : null}
+              <div style={{ display: 'flex', gap: 10, marginTop: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+                <button className="apple-btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }} onClick={() => download('matelink-history.csv', historyCsv(drives, charges), 'text/csv;charset=utf-8')}>
+                  <Icon name="download" size={15} />
+                  导出 CSV
+                </button>
+                <button className="apple-btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }} onClick={() => download('matelink-history.json', historyJson(drives, charges, complete), 'application/json')}>
+                  <Icon name="download" size={15} />
+                  导出 JSON
+                </button>
+                <span className="text-tertiary" style={{ fontSize: 12 }}>导出不含地点信息。</span>
+              </div>
+            </Panel>
+          ) : null}
 
-      <div className="apple-card">
-        <CardTitle icon="gauge">胎压</CardTitle>
+          {distanceBars.length ? (
+            <Panel title="每月里程">
+              <BarsPanel data={distanceBars} unit="km" color={DATA_COLORS.graphite} height={180} summary={<span>{rangeText} · 合计 <span className="tabular" style={{ fontWeight: 600, color: V3.label }}>{fmtNum(chronoMonths.reduce((sum, row) => sum + (row.distanceKm ?? 0), 0))} km</span></span>} />
+            </Panel>
+          ) : null}
+          {chargedBars.length ? (
+            <Panel title="每月充入电量">
+              <BarsPanel data={chargedBars} unit="kWh" color={DATA_COLORS.teal} height={180} summary={<span>{rangeText} · 合计 <span className="tabular" style={{ fontWeight: 600, color: V3.label }}>{fmtNum(chronoMonths.reduce((sum, row) => sum + (row.chargedKwh ?? 0), 0))} kWh</span></span>} />
+            </Panel>
+          ) : null}
+          {costBars.length ? (
+            <Panel title="每月费用">
+              <BarsPanel
+                data={costBars}
+                unit="元"
+                digits={2}
+                color={DATA_COLORS.graphite}
+                height={180}
+                summary={
+                  <span>
+                    合计 <span className="tabular" style={{ fontWeight: 600, color: V3.label }}>{fmtNum(costRows.reduce((sum, row) => sum + (row.cost ?? 0), 0), 2)} 元</span>
+                    {costExcluded > 0 ? ` · 另有 ${costExcluded} 个月费用不完整（多币种或缺失），未计入` : ''}
+                  </span>
+                }
+              />
+            </Panel>
+          ) : null}
+
+          {months.length ? (
+            <Panel title="月度概览">
+              {months.map((row, index) => {
+                const parts = monthParts(row.month)
+                return (
+                  <div key={row.month} style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '11px 0', borderTop: index === 0 ? 'none' : `0.5px solid ${V3.separator}`, flexWrap: 'wrap' }}>
+                    <div style={{ background: 'var(--apple-surface-secondary)', borderRadius: 14, padding: '6px 0', width: 58, textAlign: 'center', flexShrink: 0 }}>
+                      <div style={{ fontSize: 15, fontWeight: 700, lineHeight: 1.15 }}>{parts.mon}</div>
+                      <div className="text-tertiary tabular" style={{ fontSize: 10.5 }}>{parts.year}</div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', fontSize: 13 }} className="tabular">
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ color: TONES.teal, display: 'inline-flex' }}><Icon name="route" size={15} /></span>
+                        {row.trips} 次 · {num(row.distanceKm)} km
+                      </span>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ color: DATA_COLORS.teal, display: 'inline-flex' }}><Icon name="plug" size={15} /></span>
+                        {row.sessions} 次 · {num(row.chargedKwh)} kWh
+                      </span>
+                      {row.cost != null ? (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ color: TONES.amber, display: 'inline-flex' }}><Icon name="wallet" size={15} /></span>
+                          {row.cost.toFixed(2)} {row.currency ?? ''}
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                )
+              })}
+            </Panel>
+          ) : null}
+        </>
+      )}
+
+      <Panel title="胎压">
         {tpms ? (
           <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
             <div style={{ flex: '0 1 220px', minWidth: 190, margin: '0 auto' }}>
@@ -278,7 +300,7 @@ export default function AnalysisPage() {
             </div>
             <div style={{ flex: '1 1 300px', minWidth: 260 }}>
               {WHEELS.map(wheel => (
-                <div key={wheel.key} style={{ display: 'flex', alignItems: 'baseline', gap: 10, padding: '7px 0', borderBottom: '0.5px solid var(--apple-separator)' }}>
+                <div key={wheel.key} style={{ display: 'flex', alignItems: 'baseline', gap: 10, padding: '7px 0', borderBottom: `0.5px solid ${V3.separator}` }}>
                   <span style={{ fontSize: 13, fontWeight: 600, width: 34 }}>{wheel.label}</span>
                   <span className="tabular" style={{ fontSize: 17, fontWeight: 700 }}>
                     {tpms[wheel.key] != null ? tpms[wheel.key]!.toFixed(2) : '--'}
@@ -293,9 +315,9 @@ export default function AnalysisPage() {
               ))}
               <div style={{ marginTop: 14 }}>
                 <div className="text-tertiary" style={{ fontSize: 12, marginBottom: 8 }}>
-                  趋势（基于本浏览器累计的 {sampleCount} 个样本{trend && trend.spanHours > 0 ? `，跨度 ${trend.spanHours.toFixed(1)} 小时` : ''}）
+                  趋势（基于本浏览器累计的 {sampleCount} 个样本{trend.spanHours > 0 ? `，跨度 ${trend.spanHours.toFixed(1)} 小时` : ''}）
                 </div>
-                {trend?.wheels.map(item => (
+                {trend.wheels.map(item => (
                   <div key={item.wheel} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '3px 0' }}>
                     <span style={{ width: 8, height: 8, borderRadius: 4, background: trendDot(item), flexShrink: 0, marginTop: 6 }} />
                     <span className="text-secondary" style={{ fontSize: 13, lineHeight: 1.7 }}>{item.verdict}。</span>
@@ -310,7 +332,8 @@ export default function AnalysisPage() {
         ) : (
           <p className="text-secondary" style={{ fontSize: 14 }}>当前状态未提供胎压数据（需要明确的 bar 单位才会显示）。</p>
         )}
-      </div>
+        {samples.length >= 2 ? <TpmsPoints samples={samples} /> : null}
+      </Panel>
     </div>
   )
 }

@@ -9,6 +9,7 @@ import {
   type CommandUi,
 } from '../api/vehicle-commands'
 import { Icon, Tile, TONES, type IconName } from '../components/viz'
+import { Panel, V3 } from '../components/v3'
 import { useCar } from './useCar'
 
 type Outcome = { kind: 'accepted'; command: string; verified: boolean } | { kind: 'failed'; command: string; errorClass: string }
@@ -64,10 +65,9 @@ function MiniButton({
 
 function TileSection({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="apple-card">
-      <h2 style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>{title}</h2>
+    <Panel title={title}>
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">{children}</div>
-    </div>
+    </Panel>
   )
 }
 
@@ -199,36 +199,40 @@ export default function ControlsPage() {
         ) : null}
       </div>
 
-      {carError ? <div className="apple-card"><p className="text-error">{carError}</p></div> : null}
+      {carError ? <Panel><p style={{ color: V3.errorText, fontSize: 14.5 }}>{carError}</p></Panel> : null}
 
       {reauth ? (
-        <div className="apple-card">
+        <Panel>
           <p style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>车辆控制需要重新授权</p>
           <p className="text-secondary" style={{ fontSize: 13, lineHeight: 1.7 }}>
             当前授权范围不足{missing.length ? `（缺失：${missing.join('、')}）` : ''}。请在 MateLink App 或小程序中重新完成 Tesla 授权后再使用网页控制；这一步必须由车主在官方授权页确认，网页不会索取你的 Tesla 密码。
           </p>
-        </div>
+        </Panel>
       ) : null}
 
       {outcome ? (
-        <div className="apple-card banner-in" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{ color: outcome.kind === 'accepted' ? TONES.green : TONES.red, display: 'inline-flex', flexShrink: 0 }}>
-            <Icon name={outcome.kind === 'accepted' ? 'shield' : 'bolt'} size={20} />
-          </span>
-          {outcome.kind === 'accepted' ? (
-            <p style={{ fontSize: 14 }}>
-              {commandLabel(outcome.command)}：已受理{outcome.verified ? '，并已回读确认生效' : ''}。
-            </p>
-          ) : (
-            <p className="text-error" style={{ fontSize: 14 }}>
-              {commandLabel(outcome.command)}：{commandErrorMessage(outcome.errorClass)}
-            </p>
-          )}
+        <div className="banner-in">
+          <Panel>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ color: outcome.kind === 'accepted' ? TONES.green : TONES.red, display: 'inline-flex', flexShrink: 0 }}>
+                <Icon name={outcome.kind === 'accepted' ? 'shield' : 'bolt'} size={20} />
+              </span>
+              {outcome.kind === 'accepted' ? (
+                <p style={{ fontSize: 14 }}>
+                  {commandLabel(outcome.command)}：已受理{outcome.verified ? '，并已回读确认生效' : ''}。
+                </p>
+              ) : (
+                <p className="text-error" style={{ fontSize: 14 }}>
+                  {commandLabel(outcome.command)}：{commandErrorMessage(outcome.errorClass)}
+                </p>
+              )}
+            </div>
+          </Panel>
         </div>
       ) : null}
 
       {!reauth && status && !offered.length ? (
-        <div className="apple-card"><p className="text-secondary">正在评估命令授权…</p></div>
+        <Panel><p className="text-secondary">正在评估命令授权…</p></Panel>
       ) : null}
 
       {/* While any command is in flight the whole grid is inert, preserving

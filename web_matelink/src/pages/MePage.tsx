@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { ApiError, claimInvite, getCars, loadSession, logout } from '../api/matelink'
 import type { WebCar } from '../api/matelink-types'
 import { Icon, TONES, type IconName } from '../components/viz'
+import { Panel, V3 } from '../components/v3'
 
 export const CONSENT_VERSION = '2026-08-21'
 
@@ -97,14 +98,14 @@ export default function MePage() {
     <div className="page-in" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <h1 className="hero-title">我的</h1>
 
-      <div className="apple-card">
+      <Panel>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 6 }}>
           <span
             style={{
               width: 60,
               height: 60,
               borderRadius: 30,
-              background: 'linear-gradient(135deg, #157a86, #34c759)',
+              background: V3.teal,
               color: '#fff',
               display: 'inline-flex',
               alignItems: 'center',
@@ -112,7 +113,6 @@ export default function MePage() {
               fontSize: 24,
               fontWeight: 700,
               flexShrink: 0,
-              boxShadow: '0 6px 18px rgba(21, 122, 134, 0.28)',
             }}
           >
             {avatarChar ?? <Icon name="person" size={28} />}
@@ -128,9 +128,9 @@ export default function MePage() {
         <InfoRow icon="key" label="登录方式" value="Tesla 官方授权（OAuth）" />
         <InfoRow icon="shield" label="隐私" value="不会收集或保存你的 Tesla 密码" />
         <InfoRow icon="calendar" label="已同意条款版本" value={`${CONSENT_VERSION}（用户协议与隐私政策）`} />
-      </div>
+      </Panel>
 
-      <div className="apple-card">
+      <Panel>
         <CardTitle icon="car">我的车辆</CardTitle>
         {cars.length ? (
           cars.map((car, index) => (
@@ -158,9 +158,9 @@ export default function MePage() {
         ) : (
           <p className="text-secondary" style={{ fontSize: 14 }}>暂无车辆。</p>
         )}
-      </div>
+      </Panel>
 
-      <div className="apple-card">
+      <Panel>
         <CardTitle icon="key">邀请码</CardTitle>
         <p className="text-secondary" style={{ fontSize: 13, lineHeight: 1.7, marginBottom: 12 }}>
           如果你有邀请码，可以在这里领取绑定到当前账号。
@@ -183,9 +183,9 @@ export default function MePage() {
             {inviteState.text}
           </p>
         ) : null}
-      </div>
+      </Panel>
 
-      <div className="apple-card" style={{ padding: '10px 16px' }}>
+      <Panel style={{ padding: '10px 17px' }}>
         <button
           onClick={() => void handleLogout()}
           style={{
@@ -206,7 +206,7 @@ export default function MePage() {
           <Icon name="logout" size={19} />
           退出登录
         </button>
-      </div>
+      </Panel>
     </div>
   )
 }

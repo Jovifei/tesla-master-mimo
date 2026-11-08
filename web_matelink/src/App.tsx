@@ -92,7 +92,7 @@ function Shell({ children }: { children: ReactNode }) {
       {isDashboard ? (
         <main style={{ flex: 1, width: '100%' }}>{children}</main>
       ) : (
-        <main style={{ flex: 1, padding: '26px 30px 40px', maxWidth: 1160, margin: '0 auto', width: '100%' }}>{children}</main>
+        <main style={{ flex: 1, padding: '20px 32px 44px', maxWidth: 1400, margin: '0 auto', width: '100%' }}>{children}</main>
       )}
     </div>
   )

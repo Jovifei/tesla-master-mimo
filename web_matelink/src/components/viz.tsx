@@ -139,7 +139,7 @@ export function BatteryPill({ from, to, width = 92 }: { from: number | null; to:
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
       <span style={{ position: 'relative', display: 'inline-block', width, height: 10, borderRadius: 5, background: 'var(--apple-surface-tertiary)', overflow: 'hidden' }}>
-        <span style={{ position: 'absolute', inset: 0, width: `${Math.min(100, Math.max(0, to))}%`, background: delta >= 0 ? 'linear-gradient(90deg, #157a86, #34c759)' : '#ff9f0a', borderRadius: 5, transition: 'width 600ms ease' }} />
+        <span style={{ position: 'absolute', inset: 0, width: `${Math.min(100, Math.max(0, to))}%`, background: delta >= 0 ? '#157a86' : '#ff9f0a', borderRadius: 5, transition: 'width 600ms ease' }} />
         <span style={{ position: 'absolute', top: 0, bottom: 0, left: `${Math.min(100, Math.max(0, from))}%`, width: 2, background: 'rgba(255,255,255,0.85)' }} />
       </span>
       <span className="tabular text-secondary" style={{ fontSize: 12.5 }}>

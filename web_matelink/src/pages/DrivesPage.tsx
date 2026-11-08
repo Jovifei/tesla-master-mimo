@@ -1,10 +1,19 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ApiError, getDriveDetail, getDrivesPage, getParkedBetween, type DriveDetail } from '../api/matelink'
 import type { WebDriveSummary, WebParked } from '../api/matelink-types'
 import { recentDriveModel } from '../api/recent-drive'
 import { elevationStats } from '../api/drive-elevation'
-import { AreaSeries, BatteryPill, Icon, Kpi, Skeleton, TONES, type IconName, type Tone } from '../components/viz'
+import { BatteryPill, Icon, Skeleton, TONES, type IconName, type Tone } from '../components/viz'
+import { Panel, V3 } from '../components/v3'
+import { DATA_COLORS, StackChart, StatTile, fmtDuration, fmtNum, type ChartRow, type StackSeriesDef } from '../components/panels'
 import { useCar } from './useCar'
+
+/**
+ * Drives v4 — TeslaMate composition: the detail view leads with a route
+ * panel and a big-number tile row, then one stacked chart group
+ * （功率/速度/电量/海拔 sharing the time axis, no dual axes) built from
+ * the drive's real samples. The list stays the supporting table.
+ */
 
 const num = (value: number | null, digits = 0): string => (value == null ? '--' : value.toFixed(digits))
 
@@ -12,13 +21,6 @@ function formatTime(iso: string | null): string {
   if (!iso) return '--'
   const date = new Date(iso)
   return Number.isNaN(date.getTime()) ? '--' : date.toLocaleString('zh-CN', { hour12: false })
-}
-
-function timeLabel(iso: string): string {
-  const date = new Date(iso)
-  if (Number.isNaN(date.getTime())) return ''
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
 /* ------------------------- Route visual ------------------------- */
@@ -31,7 +33,7 @@ function RouteVisual({ start, end, large = false }: { start: string; end: string
     <div style={{ display: 'flex', gap: 11, minWidth: 0 }}>
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 4, flexShrink: 0 }}>
         <span style={{ width: dot, height: dot, borderRadius: '50%', border: `2.5px solid ${TONES.teal}`, background: 'var(--apple-surface)', boxSizing: 'border-box' }} />
-        <span style={{ width: 2, flex: 1, minHeight: large ? 22 : 15, margin: '3px 0', borderRadius: 1, background: `linear-gradient(180deg, ${TONES.teal}66, ${TONES.teal})` }} />
+        <span style={{ width: 2, flex: 1, minHeight: large ? 22 : 15, margin: '3px 0', borderRadius: 1, background: TONES.teal, opacity: 0.55 }} />
         <span style={{ width: dot, height: dot, borderRadius: '50%', background: TONES.teal, boxSizing: 'border-box' }} />
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: large ? 14 : 9, minWidth: 0, padding: '1px 0' }}>
@@ -50,69 +52,6 @@ function Chip({ icon, tone, text }: { icon: IconName; tone: Tone; text: string }
       <span style={{ color: TONES[tone], display: 'inline-flex' }}><Icon name={icon} size={13} /></span>
       <span className="tabular">{text}</span>
     </span>
-  )
-}
-
-/* --------------------------- Sections ---------------------------- */
-
-function Section({ title, icon, children }: { title: string; icon: IconName; children: ReactNode }) {
-  return (
-    <div className="apple-card">
-      <h3 style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 16, fontWeight: 600, marginBottom: 14 }}>
-        <span style={{ color: TONES.teal, display: 'inline-flex' }}><Icon name={icon} size={17} /></span>
-        {title}
-      </h3>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>{children}</div>
-    </div>
-  )
-}
-
-/** Kpi-shaped tile that hosts the BatteryPill visual instead of a plain number. */
-function BatteryTile({ from, to }: { from: number | null; to: number | null }) {
-  return (
-    <div style={{ background: 'var(--apple-surface-secondary)', borderRadius: 20, padding: '15px 17px', minWidth: 0 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--apple-label-secondary)', fontSize: 12.5, fontWeight: 600 }}>
-        <span style={{ color: TONES.teal, display: 'inline-flex' }}><Icon name="battery" size={15} /></span>
-        电量变化
-      </div>
-      <div style={{ marginTop: 12 }}>
-        <BatteryPill from={from} to={to} width={104} />
-      </div>
-    </div>
-  )
-}
-
-function CurveCard({
-  title,
-  icon,
-  tone,
-  unit,
-  digits = 0,
-  points,
-}: {
-  title: string
-  icon: IconName
-  tone: Tone
-  unit: string
-  digits?: number
-  points: { x: string; y: number }[]
-}) {
-  const max = points.length ? Math.max(...points.map(point => point.y)) : null
-  return (
-    <div className="apple-card">
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 6 }}>
-        <h3 style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 16, fontWeight: 600 }}>
-          <span style={{ color: TONES[tone], display: 'inline-flex' }}><Icon name={icon} size={17} /></span>
-          {title}
-        </h3>
-        {max != null ? (
-          <span className="tabular text-secondary" style={{ fontSize: 12.5, fontWeight: 600 }}>
-            最高 <span style={{ color: 'var(--apple-label)', fontSize: 15 }}>{num(max, digits)}</span> {unit}
-          </span>
-        ) : null}
-      </div>
-      <AreaSeries points={points} unit={unit} tone={tone} height={170} />
-    </div>
   )
 }
 
@@ -135,6 +74,21 @@ function PowerBar({ watts }: { watts: number }) {
       </div>
     </div>
   )
+}
+
+/** BatteryPill hosted in a StatTile-shaped cell. */
+function BatteryTile({ from, to }: { from: number | null; to: number | null }) {
+  return (
+    <StatTile label="电量变化">
+      <div style={{ marginTop: 12 }}>
+        <BatteryPill from={from} to={to} width={104} />
+      </div>
+    </StatTile>
+  )
+}
+
+function countOf(rows: ChartRow[], key: string): number {
+  return rows.reduce((count, row) => (row[key] != null ? count + 1 : count), 0)
 }
 
 /* --------------------------- Detail view --------------------------- */
@@ -168,20 +122,36 @@ function DriveDetailView({ carId, drive, newerDriveId, onBack }: { carId: number
   }, [carId, drive.id, newerDriveId])
 
   const current = detail?.drive ?? drive
-  const points = detail?.points ?? []
+  const points = useMemo(() => detail?.points ?? [], [detail])
   const elevation = elevationStats(points)
   const efficiency =
     current.energyConsumedKwh != null && current.distanceKm != null && current.distanceKm > 0
       ? (current.energyConsumedKwh / current.distanceKm) * 100
       : null
-  const series = (pick: (point: (typeof points)[number]) => number | null, digits = 0) =>
-    points.flatMap(point => {
-      const value = pick(point)
-      return value == null ? [] : [{ x: timeLabel(point.date), y: Math.round(value * 10 ** digits) / 10 ** digits }]
-    })
-  const speedValues = points.flatMap(point => (point.speedKmh == null ? [] : [point.speedKmh]))
-  const elevationValues = points.flatMap(point => (point.elevationM == null ? [] : [point.elevationM]))
   const parkedMinutes = parked?.startDate && parked?.endDate ? Math.round((Date.parse(parked.endDate) - Date.parse(parked.startDate)) / 60000) : null
+
+  const rows: ChartRow[] = useMemo(
+    () =>
+      points.map(point => ({
+        t: Date.parse(point.date),
+        power: point.powerKw,
+        speed: point.speedKmh,
+        soc: point.batteryLevel,
+        elev: point.elevationM,
+      })),
+    [points]
+  )
+  const insufficient = (key: string, name: string): string | undefined => {
+    const count = countOf(rows, key)
+    if (count >= 2) return undefined
+    return count === 1 ? `仅 1 个采样点，无法绘制${name}曲线` : `无${name}采样数据`
+  }
+  const series: StackSeriesDef[] = [
+    { key: 'power', title: '功率', unit: 'kW', color: DATA_COLORS.teal, height: 148, digits: 1, emptyReason: insufficient('power', '功率') },
+    { key: 'speed', title: '速度', unit: 'km/h', color: DATA_COLORS.graphite, height: 108, domain: [0, 'auto'], emptyReason: insufficient('speed', '速度') },
+    { key: 'soc', title: '电量', unit: '%', color: DATA_COLORS.tealDeep, height: 70, domain: [0, 100], emptyReason: insufficient('soc', '电量') },
+    { key: 'elev', title: '海拔', unit: 'm', color: DATA_COLORS.graphiteLight, height: 80, emptyReason: insufficient('elev', '海拔') },
+  ]
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -192,7 +162,7 @@ function DriveDetailView({ carId, drive, newerDriveId, onBack }: { carId: number
         </button>
       </div>
 
-      <div className="apple-card">
+      <Panel style={{ borderRadius: 24 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
           <div style={{ flex: '1 1 320px', minWidth: 0 }}>
             <RouteVisual start={current.startAddress ?? '未知地点'} end={current.endAddress ?? '未知地点'} large />
@@ -209,78 +179,61 @@ function DriveDetailView({ carId, drive, newerDriveId, onBack }: { carId: number
           <span style={{ color: TONES.blue, display: 'inline-flex' }}><Icon name="clock" size={14} /></span>
           {formatTime(current.startDate)} → {formatTime(current.endDate)}
         </p>
+        <p style={{ fontSize: 12, color: V3.label3, marginTop: 10, lineHeight: 1.6 }}>
+          本次行程记录未包含可绘制的路线轨迹坐标，路线以起终点文字呈现。
+        </p>
+      </Panel>
+
+      {error ? <Panel><p style={{ color: V3.errorText, fontSize: 14.5 }}>{error}</p></Panel> : null}
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
+        <StatTile label="距离" value={num(current.distanceKm, 1)} unit="km" />
+        <StatTile label="时长" value={fmtDuration(current.durationMinutes)} />
+        <StatTile label="耗电量" value={num(current.energyConsumedKwh, 1)} unit="kWh" accent={V3.teal} />
+        <StatTile label="平均能耗" value={efficiency != null ? fmtNum(efficiency, 1) : '--'} unit="kWh/100km" />
+        <StatTile label="平均速度" value={num(current.speedAvgKmh)} unit="km/h" />
+        <StatTile label="最高速度" value={num(current.speedMaxKmh)} unit="km/h" caption="本段行程记录值" />
+        <BatteryTile from={current.startBatteryLevel} to={current.endBatteryLevel} />
+        <StatTile label="车外平均温度" value={num(current.outsideTempAvgC, 1)} unit="°C" />
       </div>
 
-      {error ? <div className="apple-card"><p className="text-error">{error}</p></div> : null}
-
-      <Section title="行程" icon="route">
-        <Kpi label="距离" value={num(current.distanceKm, 1)} unit="km" icon="route" tone="teal" />
-        <Kpi label="时长" value={num(current.durationMinutes)} unit="分钟" icon="clock" tone="blue" />
-        <Kpi label="平均速度" value={num(current.speedAvgKmh)} unit="km/h" icon="gauge" tone="teal" />
-        <Kpi label="最高速度" value={num(current.speedMaxKmh)} unit="km/h" icon="zap" tone="amber" spark={speedValues.length >= 2 ? speedValues : undefined} />
-      </Section>
-      <Section title="电量与能耗" icon="battery">
-        <BatteryTile from={current.startBatteryLevel} to={current.endBatteryLevel} />
-        <Kpi label="净耗电" value={num(current.energyConsumedKwh, 1)} unit="kWh" icon="bolt" tone="teal" />
-        <Kpi label="平均能耗" value={num(efficiency, 1)} unit="kWh/100km" icon="chart" tone="blue" />
-        <Kpi label="车外平均温度" value={num(current.outsideTempAvgC, 1)} unit="°C" icon="thermo" tone="amber" />
-      </Section>
-      {elevation ? (
-        <Section title="海拔" icon="nav">
-          <Kpi label="样本最高" value={num(elevation.maxM)} unit="m" icon="nav" tone="purple" spark={elevationValues.length >= 2 ? elevationValues : undefined} />
-          <Kpi label="样本最低" value={num(elevation.minM)} unit="m" icon="nav" tone="purple" />
-          <Kpi label="累计爬升" value={elevation.gainM != null ? `+${num(elevation.gainM)}` : '--'} unit="m" icon="chart" tone="purple" />
-          <Kpi label="累计下降" value={elevation.lossM != null ? `-${num(elevation.lossM)}` : '--'} unit="m" icon="chart" tone="purple" />
-        </Section>
-      ) : null}
-
       {detail && detail.reason === 'quarantined_history' ? (
-        <div className="apple-card"><p className="text-secondary" style={{ fontSize: 14 }}>这条记录处于隔离状态，曲线不可用。</p></div>
+        <Panel><p style={{ fontSize: 14, color: V3.label2 }}>这条记录处于隔离状态，曲线不可用。</p></Panel>
       ) : detail && points.length ? (
-        <>
-          <CurveCard title="速度" icon="gauge" tone="blue" unit="km/h" points={series(p => p.speedKmh)} />
-          <CurveCard title="功率" icon="bolt" tone="teal" unit="kW" digits={1} points={series(p => p.powerKw, 1)} />
-          <CurveCard title="电量" icon="battery" tone="green" unit="%" points={series(p => p.batteryLevel)} />
-          <CurveCard title="海拔" icon="nav" tone="purple" unit="m" points={series(p => p.elevationM)} />
-        </>
+        <Panel title="采样曲线">
+          <StackChart data={rows} series={series} syncKey={`drive-${drive.id}`} />
+          {elevation ? (
+            <p className="tabular" style={{ fontSize: 12.5, color: V3.label3, marginTop: 10, fontVariantNumeric: 'tabular-nums' }}>
+              海拔采样：最高 {fmtNum(elevation.maxM)} m · 最低 {fmtNum(elevation.minM)} m
+              {elevation.gainM != null ? ` · 累计爬升 +${fmtNum(elevation.gainM)} m` : ''}
+              {elevation.lossM != null ? ` · 累计下降 −${fmtNum(elevation.lossM)} m` : ''}
+            </p>
+          ) : null}
+        </Panel>
       ) : detail ? (
-        <div className="apple-card"><p className="text-secondary" style={{ fontSize: 14 }}>这段行程没有可用的采样曲线。</p></div>
+        <Panel><p style={{ fontSize: 14, color: V3.label2 }}>这段行程没有可用的采样曲线。</p></Panel>
       ) : (
-        <Skeleton height={220} />
+        <Skeleton height={420} />
       )}
 
       {parked ? (
-        <div className="apple-card">
-          <h3 style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 16, fontWeight: 600, marginBottom: 14 }}>
-            <span style={{ width: 34, height: 34, borderRadius: 17, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: `${TONES.purple}1f`, color: TONES.purple }}>
-              <Icon name="clock" size={18} />
-            </span>
-            之后驻车
-          </h3>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
-            <Kpi label="驻车时长" value={num(parkedMinutes)} unit="分钟" icon="clock" tone="purple" />
+        <Panel title="之后驻车">
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
+            <StatTile label="驻车时长" value={fmtDuration(parkedMinutes)} />
             {parked.startBatteryLevel != null && parked.endBatteryLevel != null ? (
               <BatteryTile from={parked.startBatteryLevel} to={parked.endBatteryLevel} />
             ) : (
-              <Kpi label="电量变化" value={parked.batteryDelta != null ? `${num(parked.batteryDelta, 1)}%` : '--'} icon="battery" tone="teal" />
+              <StatTile label="电量变化" value={parked.batteryDelta != null ? `${num(parked.batteryDelta, 1)}%` : '--'} />
             )}
-            <Kpi label="车外温度" value={num(parked.outsideTempC, 1)} unit="°C" icon="thermo" tone="amber" />
+            <StatTile label="车外温度" value={num(parked.outsideTempC, 1)} unit="°C" />
+            {parked.energyKwh != null ? <StatTile label="待机能耗" value={num(parked.energyKwh, 2)} unit="kWh" accent={V3.teal} /> : null}
+            {parked.averagePowerW != null ? <StatTile label="平均待机功率" value={num(parked.averagePowerW)} unit="W" /> : null}
           </div>
-          {parked.energyKwh != null ? (
-            <>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginTop: 12 }}>
-                <Kpi label="待机能耗" value={num(parked.energyKwh, 2)} unit="kWh" icon="bolt" tone="teal" />
-                {parked.averagePowerW != null ? <Kpi label="平均待机功率" value={num(parked.averagePowerW)} unit="W" icon="zap" tone="amber" /> : null}
-              </div>
-              {parked.averagePowerW != null ? <PowerBar watts={parked.averagePowerW} /> : null}
-            </>
-          ) : null}
-        </div>
-      ) : null}
-      {parked ? (
-        <p className="text-tertiary" style={{ fontSize: 12, lineHeight: 1.6 }}>
-          驻车地点：{parked.address ?? '未知地点'}。待机能耗仅在后端能量证据完整时给出估算；车辆休眠状态功耗通常低于 50 W。
-        </p>
+          {parked.averagePowerW != null ? <PowerBar watts={parked.averagePowerW} /> : null}
+          <p className="text-tertiary" style={{ fontSize: 12, lineHeight: 1.6, marginTop: 12 }}>
+            驻车地点：{parked.address ?? '未知地点'}。待机能耗仅在后端能量证据完整时给出估算；车辆休眠状态功耗通常低于 50 W。
+          </p>
+        </Panel>
       ) : null}
     </div>
   )
@@ -335,8 +288,8 @@ export default function DrivesPage() {
           </select>
         ) : null}
       </div>
-      {carError ? <div className="apple-card"><p className="text-error">{carError}</p></div> : null}
-      {error ? <div className="apple-card"><p className="text-error">{error}</p></div> : null}
+      {carError ? <Panel><p style={{ color: V3.errorText, fontSize: 14.5 }}>{carError}</p></Panel> : null}
+      {error ? <Panel><p style={{ color: V3.errorText, fontSize: 14.5 }}>{error}</p></Panel> : null}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         {rows.map((drive, index) => {
@@ -373,7 +326,7 @@ export default function DrivesPage() {
           )
         })}
         {!rows.length && !loading ? (
-          <div className="apple-card"><p className="text-secondary" style={{ fontSize: 14 }}>暂无行程记录。</p></div>
+          <Panel><p style={{ fontSize: 14, color: V3.label2 }}>暂无行程记录。</p></Panel>
         ) : null}
         {loading ? (
           <>
