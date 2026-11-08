@@ -4,6 +4,8 @@ import { loadSession, logout } from './api/matelink'
 import Login from './pages/Login'
 import AuthComplete from './pages/AuthComplete'
 import WebDashboard from './pages/WebDashboard'
+import ChargesPage from './pages/ChargesPage'
+import DrivesPage from './pages/DrivesPage'
 
 /**
  * MateLink Web shell (W1). The previous TeslaMate-style shell and its
@@ -106,7 +108,7 @@ export default function App() {
           path="/charges"
           element={
             <RequireSession>
-              <Placeholder title="充电" stage="W2" />
+              <ChargesPage />
             </RequireSession>
           }
         />
@@ -114,7 +116,7 @@ export default function App() {
           path="/drives"
           element={
             <RequireSession>
-              <Placeholder title="行程" stage="W2" />
+              <DrivesPage />
             </RequireSession>
           }
         />
