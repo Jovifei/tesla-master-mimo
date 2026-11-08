@@ -77,6 +77,7 @@ CREATE TABLE IF NOT EXISTS jourvolt_auth_transactions (
     nonce TEXT NOT NULL,
     terms_version TEXT,
     privacy_version TEXT,
+    return_to TEXT,
     expires_at TIMESTAMPTZ NOT NULL,
     consumed_at TIMESTAMPTZ
 );
@@ -114,7 +115,8 @@ CREATE TABLE IF NOT EXISTS jourvolt_vehicles (
     UNIQUE (user_id, provider_vehicle_id)
 );
 ALTER TABLE jourvolt_auth_transactions ADD COLUMN IF NOT EXISTS terms_version TEXT;
-ALTER TABLE jourvolt_auth_transactions ADD COLUMN IF NOT EXISTS privacy_version TEXT;`)
+ALTER TABLE jourvolt_auth_transactions ADD COLUMN IF NOT EXISTS privacy_version TEXT;
+ALTER TABLE jourvolt_auth_transactions ADD COLUMN IF NOT EXISTS return_to TEXT;`)
 	if err != nil {
 		pool.Close()
 		return nil, err

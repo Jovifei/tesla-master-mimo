@@ -22,17 +22,20 @@ const (
 )
 
 type teslaConfig struct {
-	ClientID      string
-	ClientSecret  string
-	RedirectURI   string
-	AppLinkURI    string
-	TokenKey      []byte
-	Authorization string
-	TokenEndpoint string
-	Issuer        string
-	JWKSURL       string
-	FleetAPIBase  string
-	PartnerDomain string
+	ClientID     string
+	ClientSecret string
+	RedirectURI  string
+	AppLinkURI   string
+	// WebReturnAllowlist holds the exact web URLs the OAuth callback
+	// may deliver a login ticket to (JOURVOLT_WEB_RETURN_ALLOWLIST).
+	WebReturnAllowlist []string
+	TokenKey           []byte
+	Authorization      string
+	TokenEndpoint      string
+	Issuer             string
+	JWKSURL            string
+	FleetAPIBase       string
+	PartnerDomain      string
 }
 
 func loadTeslaConfig(getenv func(string) string) (*teslaConfig, error) {
@@ -114,6 +117,18 @@ func loadTeslaConfig(getenv func(string) string) (*teslaConfig, error) {
 	} {
 		if err := requireHTTPSURL(name, value); err != nil {
 			return nil, err
+		}
+	}
+	if raw := strings.TrimSpace(getenv("JOURVOLT_WEB_RETURN_ALLOWLIST")); raw != "" {
+		for _, entry := range strings.Split(raw, ",") {
+			entry = strings.TrimSpace(entry)
+			if entry == "" {
+				continue
+			}
+			if err := validateWebReturnEntry(entry); err != nil {
+				return nil, fmt.Errorf("JOURVOLT_WEB_RETURN_ALLOWLIST: %w", err)
+			}
+			config.WebReturnAllowlist = append(config.WebReturnAllowlist, entry)
 		}
 	}
 	return config, nil

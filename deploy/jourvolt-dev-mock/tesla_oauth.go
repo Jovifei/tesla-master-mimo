@@ -152,7 +152,65 @@ func (o *teslaOAuth) verifyIDToken(ctx context.Context, rawIDToken, callbackIssu
 	return nil, errors.New("id token verify failed")
 }
 
-func (o *teslaOAuth) start(ctx context.Context, consent oauthConsent) (authStart, error) {
+// validateWebReturnEntry checks one allowlist entry at config load:
+// an absolute https URL (http only for loopback development origins),
+// with a host, and no userinfo or fragment.
+func validateWebReturnEntry(entry string) error {
+	parsed, err := url.Parse(entry)
+	if err != nil || parsed.Hostname() == "" || parsed.User != nil || parsed.Fragment != "" {
+		return fmt.Errorf("invalid web return URL %q", entry)
+	}
+	if parsed.Scheme == "https" {
+		return nil
+	}
+	if parsed.Scheme == "http" {
+		switch parsed.Hostname() {
+		case "localhost", "127.0.0.1", "::1":
+			return nil
+		}
+	}
+	return fmt.Errorf("web return URL %q must use https (http is allowed only for localhost)", entry)
+}
+
+// validateReturnTo accepts a start-request return_to only when it is
+// an exact verbatim match of an allowlisted entry. Exact matching is
+// deliberate: the login ticket is a credential, so no prefix, suffix
+// or parse-normalization equivalence is ever trusted.
+func (o *teslaOAuth) validateReturnTo(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", nil
+	}
+	for _, allowed := range o.config.WebReturnAllowlist {
+		if raw == allowed {
+			return raw, nil
+		}
+	}
+	return "", errors.New("return_to_not_allowlisted")
+}
+
+// returnLink builds the web callback target: the allowlisted return
+// URL with the ticket (or error) as a query parameter, mirroring
+// appLink for the app client.
+func returnLink(returnTo, ticket, errorCode string) string {
+	parsed, err := url.Parse(returnTo)
+	if err != nil {
+		return returnTo
+	}
+	query := parsed.Query()
+	query.Del("ticket")
+	query.Del("error")
+	if ticket != "" {
+		query.Set("ticket", ticket)
+	}
+	if errorCode != "" {
+		query.Set("error", errorCode)
+	}
+	parsed.RawQuery = query.Encode()
+	return parsed.String()
+}
+
+func (o *teslaOAuth) start(ctx context.Context, consent oauthConsent, returnTo string) (authStart, error) {
 	if _, err := currentOAuthConsent(consent.TermsVersion, consent.PrivacyVersion); err != nil {
 		return authStart{}, err
 	}
@@ -169,7 +227,7 @@ func (o *teslaOAuth) start(ctx context.Context, consent oauthConsent) (authStart
 		return authStart{}, err
 	}
 	expiresAt := time.Now().UTC().Add(authTransactionLifetime)
-	if err := o.store.createAuthTransaction(ctx, state, transactionID, nonce, consent, expiresAt); err != nil {
+	if err := o.store.createAuthTransaction(ctx, state, transactionID, nonce, consent, returnTo, expiresAt); err != nil {
 		return authStart{}, err
 	}
 	authorizationURL := o.oauth2.AuthCodeURL(
@@ -192,21 +250,21 @@ func (o *teslaOAuth) start(ctx context.Context, consent oauthConsent) (authStart
 	}, nil
 }
 
-func (o *teslaOAuth) callback(ctx context.Context, values url.Values) (string, error) {
+func (o *teslaOAuth) callback(ctx context.Context, values url.Values) (string, string, error) {
 	state := strings.TrimSpace(values.Get("state"))
 	if state == "" {
-		return "", errOAuthCallbackRejected
+		return "", "", errOAuthCallbackRejected
 	}
 	transaction, err := o.store.consumeAuthState(ctx, state)
 	if err != nil {
-		return "", errOAuthCallbackRejected
+		return "", transaction.ReturnTo, errOAuthCallbackRejected
 	}
 	if values.Get("error") != "" {
-		return "", errOAuthCallbackRejected
+		return "", transaction.ReturnTo, errOAuthCallbackRejected
 	}
 	code := strings.TrimSpace(values.Get("code"))
 	if code == "" {
-		return "", errOAuthCallbackRejected
+		return "", transaction.ReturnTo, errOAuthCallbackRejected
 	}
 
 	exchangeContext := context.WithValue(ctx, oauth2.HTTPClient, o.client)
@@ -217,37 +275,37 @@ func (o *teslaOAuth) callback(ctx context.Context, values url.Values) (string, e
 	)
 	if err != nil {
 		log.Printf("tesla oauth token exchange failed: %s", teslaCallbackLogError(err))
-		return "", err
+		return "", transaction.ReturnTo, err
 	}
 	if token.AccessToken == "" || token.RefreshToken == "" || token.Expiry.IsZero() {
 		log.Printf("tesla oauth token incomplete: has_refresh=%t expiry_zero=%t", token.RefreshToken != "", token.Expiry.IsZero())
-		return "", errOAuthCallbackRejected
+		return "", transaction.ReturnTo, errOAuthCallbackRejected
 	}
 	rawIDToken, ok := token.Extra("id_token").(string)
 	if !ok || rawIDToken == "" {
 		log.Printf("tesla oauth token missing id_token")
-		return "", errOAuthCallbackRejected
+		return "", transaction.ReturnTo, errOAuthCallbackRejected
 	}
 	callbackIssuer := strings.TrimSpace(values.Get("issuer"))
 	idToken, err := o.verifyIDToken(exchangeContext, rawIDToken, callbackIssuer)
 	if err != nil {
 		logTeslaIDTokenVerificationFailure(callbackIssuer, rawIDToken, err)
-		return "", fmt.Errorf("tesla id_token: %w", err)
+		return "", transaction.ReturnTo, fmt.Errorf("tesla id_token: %w", err)
 	}
 	var claims struct {
 		Subject string `json:"sub"`
 		Nonce   string `json:"nonce"`
 	}
 	if err := idToken.Claims(&claims); err != nil || claims.Subject == "" || claims.Nonce != transaction.Nonce {
-		return "", errOAuthCallbackRejected
+		return "", transaction.ReturnTo, errOAuthCallbackRejected
 	}
 	accessCiphertext, err := o.cipher.encrypt(token.AccessToken)
 	if err != nil {
-		return "", err
+		return "", transaction.ReturnTo, err
 	}
 	refreshCiphertext, err := o.cipher.encrypt(token.RefreshToken)
 	if err != nil {
-		return "", err
+		return "", transaction.ReturnTo, err
 	}
 	_, ticket, err := o.store.saveTeslaGrantAndLoginTicket(
 		ctx,
@@ -257,7 +315,7 @@ func (o *teslaOAuth) callback(ctx context.Context, values url.Values) (string, e
 		transaction.Consent,
 		token.Expiry.UTC(),
 	)
-	return ticket, err
+	return ticket, transaction.ReturnTo, err
 }
 
 func logTeslaIDTokenVerificationFailure(callbackIssuer, rawIDToken string, verifierErr error) {
@@ -332,7 +390,12 @@ func (a *app) authRoute(w http.ResponseWriter, r *http.Request) bool {
 			a.json(w, http.StatusBadRequest, map[string]string{"error": "consent_required"})
 			return true
 		}
-		started, err := a.oauth.start(r.Context(), consent)
+		returnTo, err := a.oauth.validateReturnTo(r.URL.Query().Get("return_to"))
+		if err != nil {
+			a.json(w, http.StatusBadRequest, map[string]string{"error": "invalid_return_to"})
+			return true
+		}
+		started, err := a.oauth.start(r.Context(), consent, returnTo)
 		if err != nil {
 			a.json(w, http.StatusInternalServerError, map[string]string{"error": "oauth_start_failed"})
 			return true
@@ -344,12 +407,20 @@ func (a *app) authRoute(w http.ResponseWriter, r *http.Request) bool {
 			a.json(w, http.StatusServiceUnavailable, map[string]string{"error": "oauth_not_configured"})
 			return true
 		}
-		ticket, err := a.oauth.callback(r.Context(), r.URL.Query())
+		ticket, returnTo, err := a.oauth.callback(r.Context(), r.URL.Query())
 		if err != nil {
-			http.Redirect(w, r, a.oauth.appLink("", teslaAppLinkError(err)), http.StatusSeeOther)
+			target := a.oauth.appLink("", teslaAppLinkError(err))
+			if returnTo != "" {
+				target = returnLink(returnTo, "", teslaAppLinkError(err))
+			}
+			http.Redirect(w, r, target, http.StatusSeeOther)
 			return true
 		}
-		http.Redirect(w, r, a.oauth.appLink(ticket, ""), http.StatusSeeOther)
+		target := a.oauth.appLink(ticket, "")
+		if returnTo != "" {
+			target = returnLink(returnTo, ticket, "")
+		}
+		http.Redirect(w, r, target, http.StatusSeeOther)
 		return true
 	case r.Method == http.MethodPost && r.URL.Path == "/v1/auth/exchange":
 		if a.oauth == nil {
