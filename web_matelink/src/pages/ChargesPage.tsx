@@ -101,7 +101,7 @@ function ChargeDetailView({ carId, charge, onBack }: { carId: number; charge: We
       {error ? <div className="apple-card"><p className="text-error">{error}</p></div> : null}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
         <Kpi label="充入电量" value={num(current.energyAddedKwh, 1)} unit="kWh" icon="bolt" tone="teal" />
-        <div style={{ background: 'var(--apple-surface-secondary)', borderRadius: 16, padding: '14px 16px', minWidth: 0 }}>
+        <div style={{ background: 'var(--apple-surface-secondary)', borderRadius: 20, padding: '15px 17px', minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--apple-label-secondary)', fontSize: 12.5, fontWeight: 600, marginBottom: 10 }}>
             <span style={{ color: TONES.green, display: 'inline-flex' }}><Icon name="battery" size={15} /></span>
             电量变化

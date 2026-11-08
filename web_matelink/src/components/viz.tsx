@@ -175,7 +175,7 @@ function ChartTooltip({ active, payload, unit }: { active?: boolean; payload?: {
   if (!active || !payload?.length) return null
   const point = payload[0].payload
   return (
-    <div style={{ background: 'rgba(28,28,30,0.92)', color: '#fff', borderRadius: 10, padding: '6px 10px', fontSize: 12.5 }}>
+    <div style={{ background: 'rgba(28,28,30,0.92)', color: '#fff', borderRadius: 14, padding: '7px 11px', fontSize: 12.5 }}>
       <span className="tabular">{point.y} {unit}</span>
       <span style={{ opacity: 0.65, marginLeft: 6 }}>{point.x}</span>
     </div>
@@ -233,13 +233,13 @@ export function Bars({ data, unit, tone = 'teal', height = 180 }: { data: { labe
 
 export function Kpi({ label, value, unit, icon, tone = 'teal', spark }: { label: string; value: string; unit?: string; icon?: IconName; tone?: Tone; spark?: number[] }) {
   return (
-    <div className="hover-lift" style={{ background: 'var(--apple-surface-secondary)', borderRadius: 16, padding: '14px 16px', minWidth: 0 }}>
+    <div className="hover-lift" style={{ background: 'var(--apple-surface-secondary)', borderRadius: 20, padding: '15px 17px', minWidth: 0 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--apple-label-secondary)', fontSize: 12.5, fontWeight: 600 }}>
         {icon ? <span style={{ color: TONES[tone], display: 'inline-flex' }}><Icon name={icon} size={15} /></span> : null}
         {label}
       </div>
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 8, marginTop: 7 }}>
-        <div className="tabular" style={{ fontSize: 24, fontWeight: 700, lineHeight: 1.05 }}>
+        <div className="tabular" style={{ fontSize: 28, fontWeight: 800, lineHeight: 1.05 }}>
           {value}
           {unit ? <span className="text-secondary" style={{ fontSize: 12, fontWeight: 500, marginLeft: 4 }}>{unit}</span> : null}
         </div>
@@ -275,8 +275,8 @@ export function Tile({
     <div
       className="hover-lift"
       style={{
-        borderRadius: 18,
-        padding: '14px 16px',
+        borderRadius: 20,
+        padding: '15px 17px',
         background: active ? `linear-gradient(135deg, ${accent}1f, ${accent}0d)` : 'var(--apple-surface-secondary)',
         border: active ? `1px solid ${accent}55` : '1px solid transparent',
         display: 'flex',
@@ -319,13 +319,13 @@ export function Tile({
 
 export function SegControl<T extends string>({ options, value, onChange }: { options: { value: T; label: string }[]; value: T; onChange: (value: T) => void }) {
   return (
-    <div style={{ display: 'inline-flex', background: 'var(--apple-surface-tertiary)', borderRadius: 11, padding: 2, gap: 2 }}>
+    <div style={{ display: 'inline-flex', background: 'var(--apple-surface-tertiary)', borderRadius: 999, padding: 3, gap: 2 }}>
       {options.map(option => (
         <button
           key={option.value}
           onClick={() => onChange(option.value)}
           style={{
-            border: 'none', cursor: 'pointer', borderRadius: 9, padding: '5px 14px', fontSize: 13, fontWeight: 600,
+            border: 'none', cursor: 'pointer', borderRadius: 999, padding: '5px 14px', fontSize: 13, fontWeight: 600,
             background: value === option.value ? 'var(--apple-surface)' : 'transparent',
             color: value === option.value ? 'var(--apple-label)' : 'var(--apple-label-secondary)',
             boxShadow: value === option.value ? '0 1px 4px rgba(0,0,0,0.12)' : 'none',

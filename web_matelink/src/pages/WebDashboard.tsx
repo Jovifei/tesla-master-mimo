@@ -131,7 +131,7 @@ export default function WebDashboard() {
             ) : null}
 
             {/* Hero: SOC + estimated range + the Charge Ruler */}
-            <section style={{ background: V3.surface, borderRadius: 16, padding: 24, boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: `0.5px solid ${V3.separator}` }}>
+            <section style={{ background: V3.surface, borderRadius: 20, padding: 24, boxShadow: V3.cardShadow, border: `0.5px solid ${V3.separator}` }}>
               {statusError ? (
                 <>
                   <p style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>读取车辆状态失败</p>
@@ -181,7 +181,7 @@ export default function WebDashboard() {
 
             {/* Security + location conclusions */}
             {status ? (
-              <section style={{ background: V3.surface, borderRadius: 16, padding: '8px 16px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: `0.5px solid ${V3.separator}` }}>
+              <section style={{ background: V3.surface, borderRadius: 20, padding: '8px 16px', boxShadow: V3.cardShadow, border: `0.5px solid ${V3.separator}` }}>
                 <StatusLine icon={status.locked ? 'lock' : 'unlock'} label="车锁" value={status.locked == null ? '未知' : status.locked ? '已锁定' : '未锁定'} abnormal={unlocked} />
                 <div style={{ borderTop: `0.5px solid ${V3.separator}` }}>
                   <StatusLine icon="eye" label="哨兵模式" value={status.sentryMode == null ? '未知' : status.sentryMode ? '已开启' : '未开启'} />
@@ -215,7 +215,7 @@ export default function WebDashboard() {
 
             {/* Charging block — exists only while charging */}
             {status && charging ? (
-              <section style={{ background: V3.surface, borderRadius: 16, padding: 16, boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: `0.5px solid ${V3.separator}` }}>
+              <section style={{ background: V3.surface, borderRadius: 20, padding: 17, boxShadow: V3.cardShadow, border: `0.5px solid ${V3.separator}` }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 7, height: 24, marginBottom: 10 }}>
                   <span style={{ display: 'inline-flex', color: V3.teal }}><Icon name="bolt" size={17} /></span>
                   <h2 style={{ fontSize: 17, fontWeight: 600 }}>正在充电</h2>
@@ -317,7 +317,7 @@ export default function WebDashboard() {
               parked === undefined ? (
                 <Skeleton height={40} radius={12} />
               ) : parked && parked.energyKwh != null ? (
-                <section style={{ background: V3.surface, borderRadius: 16, padding: '0 16px', height: 52, display: 'flex', alignItems: 'center', gap: 10, boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: `0.5px solid ${V3.separator}` }}>
+                <section style={{ background: V3.surface, borderRadius: 20, padding: '0 16px', height: 52, display: 'flex', alignItems: 'center', gap: 10, boxShadow: V3.cardShadow, border: `0.5px solid ${V3.separator}` }}>
                   <span style={{ display: 'inline-flex', color: V3.teal }}><Icon name="moon" size={16} /></span>
                   <span style={{ fontSize: 14.5, fontWeight: 500 }}>驻车耗电</span>
                   <span className="tabular" style={{ fontSize: 15, fontWeight: 600 }}>
@@ -331,13 +331,13 @@ export default function WebDashboard() {
                   </span>
                 </section>
               ) : (
-                <div style={{ height: 36, display: 'flex', alignItems: 'center', gap: 8, padding: '0 12px', background: V3.surface2, borderRadius: 12, fontSize: 13, color: V3.label2 }}>
+                <div style={{ height: 36, display: 'flex', alignItems: 'center', gap: 8, padding: '0 12px', background: V3.surface2, borderRadius: 16, fontSize: 13, color: V3.label2 }}>
                   <Icon name="info" size={14} />
                   驻车耗电：本次驻车的证据条件不完整，未显示数值。
                 </div>
               )
             ) : drives != null ? (
-              <div style={{ height: 36, display: 'flex', alignItems: 'center', gap: 8, padding: '0 12px', background: V3.surface2, borderRadius: 12, fontSize: 13, color: V3.label2 }}>
+              <div style={{ height: 36, display: 'flex', alignItems: 'center', gap: 8, padding: '0 12px', background: V3.surface2, borderRadius: 16, fontSize: 13, color: V3.label2 }}>
                 <Icon name="info" size={14} />
                 驻车耗电：尚无相邻行程可供计算。
               </div>

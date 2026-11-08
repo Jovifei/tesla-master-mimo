@@ -49,7 +49,7 @@ export function NearbySection({ carId }: { carId: number }) {
             const nav = amapMarkerUrl(site)
             const barWidth = site.distanceKm != null && maxDistance > 0 ? Math.max(5, (site.distanceKm / maxDistance) * 100) : 0
             return (
-              <div key={index} className="hover-lift" style={{ borderRadius: 14, padding: '10px 12px', margin: '0 -12px' }}>
+              <div key={index} className="hover-lift" style={{ borderRadius: 16, padding: '10px 12px', margin: '0 -12px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                   <span
                     style={{
@@ -191,7 +191,7 @@ export function PlacesSection({ carId, status }: { carId: number; status: WebCar
             <div
               key={place.id ?? place.name ?? ''}
               className="hover-lift"
-              style={{ background: 'var(--apple-surface-secondary)', borderRadius: 16, padding: '13px 15px', display: 'flex', flexDirection: 'column', gap: 9 }}
+              style={{ background: 'var(--apple-surface-secondary)', borderRadius: 20, padding: '15px 17px', display: 'flex', flexDirection: 'column', gap: 9 }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <span

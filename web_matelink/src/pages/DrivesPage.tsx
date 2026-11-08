@@ -70,7 +70,7 @@ function Section({ title, icon, children }: { title: string; icon: IconName; chi
 /** Kpi-shaped tile that hosts the BatteryPill visual instead of a plain number. */
 function BatteryTile({ from, to }: { from: number | null; to: number | null }) {
   return (
-    <div style={{ background: 'var(--apple-surface-secondary)', borderRadius: 16, padding: '14px 16px', minWidth: 0 }}>
+    <div style={{ background: 'var(--apple-surface-secondary)', borderRadius: 20, padding: '15px 17px', minWidth: 0 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--apple-label-secondary)', fontSize: 12.5, fontWeight: 600 }}>
         <span style={{ color: TONES.teal, display: 'inline-flex' }}><Icon name="battery" size={15} /></span>
         电量变化

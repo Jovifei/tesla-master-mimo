@@ -4808,3 +4808,10 @@ Review：6 个已授权计划/交接文档已删除，引用已改写，docs 链
 - [x] 集成：修复组件库三处小问题（渐变 id 唯一化、Bars 工具提示、moon 图标）；门禁 npm test 26/26、构建通过、七路由冒烟 200。
 - [x] 重新部署至 https://web.teslalink.joviluma.com（静态包替换，接口零变化）。
 - [ ] 待所有者：刷新线上页面做视觉验收；如需微调（密度/配色/某页布局）按页反馈即可。
+
+## 2026-11-08 Web 风格统一（家庭健康台基线 → MateLink，分支 muse/web-redesign-20261108）
+
+- [x] 所有者指令：特斯拉控制面板展示风格按家庭健康台 UI 基线（`health-system/app/docs/UI-EXPERIENCE-20261108.md`）优化——圆角更软、暖纸面、克制暖调阴影、胶囊导航、大数字+小灰标签；数据语义与 V3 仪表盘信息架构（分诊栏/Charge Ruler/前提条）不动，青色数据强调与蓝色可点强调保留。
+- [x] 落地：`index.css` 令牌换暖纸面（--apple-bg #ede9e3、内嵌面 #f5f1ea/#e7e0d2、卡片圆角 20px、暖调阴影，深色令牌同步暖化）；外壳顶栏暖玻璃+胶囊导航；v3 Panel/异常横幅圆角 20/18 与暖阴影；仪表盘五处分区圆角 16→20；Kpi 大数字 28/800、Tile/SegControl 胶囊化；充电/行程/总览分区/分析页内嵌卡圆角对齐。其余页面经 .apple-card 与令牌自动统一。
+- [x] 门禁（本源码树实测）：npm test 26/26、npm run lint 0 errors（5 warnings 为既有）、npm run build 通过、vite preview 七路由（/、/charges、/drives、/controls、/analysis、/me、/login）全部 200。
+- [ ] 待所有者视觉验收后再决定是否部署；本次未部署、未合并。

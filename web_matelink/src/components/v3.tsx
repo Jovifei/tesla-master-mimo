@@ -17,8 +17,11 @@ export const V3 = {
   tealDeep: '#0f5c66',
   graphite: '#48484a',
   surface: '#ffffff',
-  surface2: '#f5f5f7',
-  separator: 'rgba(0, 0, 0, 0.08)',
+  /* Warm surfaces (v4 unification with the 家庭健康台 baseline). */
+  pageBg: '#ede9e3',
+  surface2: '#f5f1ea',
+  separator: 'rgba(60, 50, 35, 0.10)',
+  cardShadow: '0 1px 2px rgba(43,36,28,0.04), 0 10px 28px rgba(43,36,28,0.05)',
   success: '#1d7a35',
   warningText: '#6e4200',
   warningSoft: '#fff6e0',
@@ -72,7 +75,7 @@ export function PremiseStrip({
         gap: 16,
         padding: '0 32px',
         fontSize: 12.5,
-        background: snapshot ? V3.warningSoft : 'color-mix(in srgb, #ffffff 72%, transparent)',
+        background: snapshot ? V3.warningSoft : 'color-mix(in srgb, #fffdf8 72%, transparent)',
         backdropFilter: snapshot ? undefined : 'blur(14px) saturate(180%)',
         color: snapshot ? V3.warningText : V3.label2,
         borderBottom: `0.5px solid ${V3.separator}`,
@@ -114,7 +117,7 @@ export function AnomalyBand({ title, detail }: { title: string; detail?: string 
       style={{
         display: 'flex', gap: 12, alignItems: 'flex-start',
         background: V3.errorSoft, color: V3.errorText,
-        borderRadius: 12, padding: '14px 16px',
+        borderRadius: 18, padding: '15px 17px',
       }}
     >
       <span style={{ display: 'inline-flex', marginTop: 1 }}><Icon name="alert" size={24} /></span>
@@ -185,8 +188,8 @@ export function Panel({ title, action, children, style }: { title?: string; acti
   return (
     <section
       style={{
-        background: V3.surface, borderRadius: 16, padding: 16,
-        boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: `0.5px solid ${V3.separator}`,
+        background: V3.surface, borderRadius: 20, padding: 17,
+        boxShadow: V3.cardShadow, border: `0.5px solid ${V3.separator}`,
         ...style,
       }}
     >

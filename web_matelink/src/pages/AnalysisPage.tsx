@@ -243,7 +243,7 @@ export default function AnalysisPage() {
             const parts = monthParts(row.month)
             return (
               <div key={row.month} style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '11px 16px', borderTop: '0.5px solid var(--apple-separator)', flexWrap: 'wrap' }}>
-                <div style={{ background: 'var(--apple-surface-secondary)', borderRadius: 12, padding: '6px 0', width: 58, textAlign: 'center', flexShrink: 0 }}>
+                <div style={{ background: 'var(--apple-surface-secondary)', borderRadius: 14, padding: '6px 0', width: 58, textAlign: 'center', flexShrink: 0 }}>
                   <div style={{ fontSize: 15, fontWeight: 700, lineHeight: 1.15 }}>{parts.mon}</div>
                   <div className="text-tertiary tabular" style={{ fontSize: 10.5 }}>{parts.year}</div>
                 </div>

@@ -28,10 +28,11 @@ const NAV = [
 
 /**
  * Shell v3 (docs/WEB-DESIGN-V3.md §2.1): 56px glass top bar, no sidebar.
- * The dashboard (pilot page) renders its own premise strip and content
- * frame; the remaining v2 pages keep the legacy padded frame until the
- * full rollout. Shell-level car switching and the live charging pill
- * need page state lifted into the shell — scheduled with the rollout.
+ * The dashboard renders its own premise strip and content frame; the
+ * other pages keep the padded frame. Surfaces, radii and type follow
+ * the v4 warm-baseline unification (see index.css). Shell-level car
+ * switching and the live charging pill need page state lifted into
+ * the shell — scheduled with the rollout.
  */
 function Shell({ children }: { children: ReactNode }) {
   const navigate = useNavigate()
@@ -42,18 +43,18 @@ function Shell({ children }: { children: ReactNode }) {
   }
   const isDashboard = location.pathname === '/'
   return (
-    <div style={{ minHeight: '100vh', background: '#f2f2f7', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ minHeight: '100vh', background: '#ede9e3', display: 'flex', flexDirection: 'column' }}>
       <header
         style={{
           height: 56, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 28,
           padding: '0 32px', position: 'sticky', top: 0, zIndex: 40,
-          background: 'color-mix(in srgb, #ffffff 72%, transparent)',
+          background: 'color-mix(in srgb, #fffdf8 72%, transparent)',
           backdropFilter: 'blur(14px) saturate(180%)',
-          borderBottom: '0.5px solid rgba(0,0,0,0.08)',
+          borderBottom: '0.5px solid rgba(60,50,35,0.10)',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 16, fontWeight: 700, color: '#1c1c1e' }}>
-          <span style={{ width: 26, height: 26, borderRadius: 8, background: '#157a86', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>
+          <span style={{ width: 26, height: 26, borderRadius: 10, background: '#157a86', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>
             <Icon name="bolt" size={15} />
           </span>
           MateLink
@@ -66,10 +67,11 @@ function Shell({ children }: { children: ReactNode }) {
               end={item.path === '/'}
               style={({ isActive }) => ({
                 display: 'inline-flex', alignItems: 'center', gap: 7,
-                padding: '7px 12px', borderRadius: 9, textDecoration: 'none',
+                padding: '7px 14px', borderRadius: 999, textDecoration: 'none',
                 fontSize: 14, fontWeight: isActive ? 600 : 400,
                 color: isActive ? '#0071e3' : '#1c1c1e',
-                background: isActive ? 'rgba(0,113,227,0.08)' : 'transparent',
+                background: isActive ? 'rgba(0,113,227,0.09)' : 'transparent',
+                transition: 'background 160ms ease',
               })}
             >
               <Icon name={item.icon as IconName} size={18} />
@@ -80,7 +82,7 @@ function Shell({ children }: { children: ReactNode }) {
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
           <button
             onClick={() => void signOut()}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', cursor: 'pointer', color: '#3a3a3c', fontSize: 13.5, fontWeight: 500, padding: '7px 10px' }}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', cursor: 'pointer', color: '#3a3a3c', fontSize: 13.5, fontWeight: 500, padding: '7px 12px', borderRadius: 999 }}
           >
             <Icon name="logout" size={17} />
             退出登录
