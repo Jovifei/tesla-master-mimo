@@ -1,0 +1,8 @@
+// Adds isolated audit invariants only when this exact init script is requested.
+gradle.projectsEvaluated {
+    def app = gradle.rootProject.findProject(':app')
+    if (app != null) {
+        app.android.sourceSets.getByName('test').java.srcDir(
+            new File(gradle.rootProject.projectDir, '../docs/audits/2026-10-26/full-data-chain/testsrc'))
+    }
+}

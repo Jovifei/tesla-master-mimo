@@ -10,14 +10,25 @@ import com.matelink.data.api.models.CarData
 import com.matelink.data.api.models.CarStatus
 import com.matelink.data.api.models.ChargeData
 import com.matelink.data.api.models.ChargeDetail
+import com.matelink.data.api.models.ChargeDetailResponse
 import com.matelink.data.api.models.DriveData
 import com.matelink.data.api.models.DriveDetail
 import com.matelink.data.api.models.receivedDrives
 import com.matelink.data.api.models.receivedDrive
+import com.matelink.data.api.models.receivedCharges
+import com.matelink.data.api.models.receivedCharge
 import com.matelink.data.api.models.DataReadiness
 import com.matelink.data.api.models.DataReadinessItem
 import com.matelink.data.api.models.DataReadinessResponse
+import com.matelink.data.api.models.FleetTelemetryDiagnostics
+import com.matelink.data.api.models.FleetTelemetryDiagnosticsResponse
 import com.matelink.data.api.models.GlobalSettingsData
+import com.matelink.data.api.models.NearbyChargingData
+import com.matelink.data.api.models.VehicleCommandRequest
+import com.matelink.data.api.models.VehicleCommandResponse
+import com.matelink.data.api.models.VehicleCommandResult
+import com.matelink.data.api.models.VehiclePlace
+import com.matelink.data.api.models.VehiclePlaceRequest
 import com.matelink.data.api.models.Units
 import com.matelink.data.api.models.AdapterSnapshot
 import com.matelink.data.api.models.ParkedDetailData
@@ -35,6 +46,8 @@ import com.matelink.di.TeslamateApiFactory
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.net.ConnectException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
@@ -51,6 +64,42 @@ enum class ApiErrorKind {
     CONFIGURATION,
     INVALID_RESPONSE,
     UNKNOWN
+}
+
+internal fun chargeDetailResultForResponse(
+    response: Response<ChargeDetailResponse>, requestedCarId: Int, requestedChargeId: Int
+): ApiResult<ChargeDetail> {
+    if (!response.isSuccessful) return ApiResult.Error(
+        "Failed to fetch charge detail: ${response.code()}", response.code())
+    val data = response.body()?.data
+    val detail = data?.charge ?: return ApiResult.Error(
+        "No charge detail returned", response.code(), kind = ApiErrorKind.INVALID_RESPONSE)
+    if (detail.chargeId != requestedChargeId ||
+        data.car?.carId?.let { it != requestedCarId } == true) {
+        return ApiResult.Error("charge_detail_identity_invalid", response.code(),
+            kind = ApiErrorKind.INVALID_RESPONSE)
+    }
+    return ApiResult.Success(requireNotNull(data.receivedCharge()))
+}
+
+internal fun currentChargeResultForResponse(response: Response<ChargeDetailResponse>, requestedCarId: Int): ApiResult<CurrentChargeOutcome> {
+    return if (response.isSuccessful) {
+        val body = response.body()
+        val detail = body?.data?.charge
+        when {
+            body?.data?.car?.carId?.let { it != requestedCarId } == true -> ApiResult.Error(
+                "current_charge_identity_invalid", response.code(), kind = ApiErrorKind.INVALID_RESPONSE)
+            detail != null -> ApiResult.Success(CurrentChargeOutcome.Active(requireNotNull(body?.data?.receivedCharge())))
+            // TeslamateAPI answers 200 + {"error": "..."} (or 204) when there is
+            // no active charge — an authoritative answer, not a failure. At charge
+            // start this is returned for a short while before the charge appears.
+            body?.error != null || response.code() == 204 ->
+                ApiResult.Success(CurrentChargeOutcome.NoActiveCharge)
+            else -> ApiResult.Error("No current charge data returned")
+        }
+    } else {
+        ApiResult.Error("Failed to fetch current charge: ${response.code()}", response.code())
+    }
 }
 
 fun apiErrorKindFor(code: Int?, message: String? = null): ApiErrorKind = when {
@@ -105,6 +154,15 @@ internal fun dataReadinessResultForResponse(
     else -> ApiResult.Error("Failed to fetch data readiness: ${response.code()}", response.code())
 }
 
+internal fun fleetTelemetryDiagnosticsResultForResponse(
+    response: Response<FleetTelemetryDiagnosticsResponse>
+): ApiResult<FleetTelemetryDiagnostics> = when {
+    response.isSuccessful -> response.body()?.data?.let { ApiResult.Success(it) }
+        ?: ApiResult.Error("Fleet diagnostics unavailable", response.code())
+    // A legacy 404 is unavailable, never a compatibility success or setup request.
+    else -> ApiResult.Error("Fleet diagnostics unavailable", response.code())
+}
+
 private val telemetryErrorCodes = setOf(
     "pairing_required",
     "permission_required",
@@ -131,6 +189,57 @@ internal fun telemetryPairingResultForResponse(
         code = response.code(),
         details = telemetryErrorCodeForBody(response.errorBody()?.string()) ?: "telemetry_error"
     )
+}
+
+/** Error taxonomy of POST /commands/{command} (design 2026-11-05 §6.3). */
+internal val vehicleCommandErrorCodes = setOf(
+    "commands_disabled",
+    "unknown_command",
+    "scope_missing",
+    "confirmation_required",
+    "invalid_params",
+    "rate_limited",
+    "vehicle_moving",
+    "not_plugged_in",
+    "vehicle_not_found",
+    "key_not_paired",
+    "tesla_error",
+    "command_failed"
+)
+
+internal fun vehicleCommandErrorCodeForBody(body: String?): String? {
+    val code = Regex("\\\"error\\\"\\s*:\\s*\\\"([a-z_]+)\\\"")
+        .find(body.orEmpty())
+        ?.groupValues
+        ?.getOrNull(1)
+    return code?.takeIf(vehicleCommandErrorCodes::contains)
+}
+
+internal fun vehicleCommandResultForResponse(
+    response: Response<VehicleCommandResponse>
+): ApiResult<VehicleCommandResult> = when {
+    response.isSuccessful -> response.body()?.data?.let { ApiResult.Success(it) }
+        ?: ApiResult.Error("Vehicle command returned no result", response.code(), details = "command_failed")
+    else -> ApiResult.Error(
+        message = "Vehicle command failed",
+        code = response.code(),
+        details = vehicleCommandErrorCodeForBody(response.errorBody()?.string()) ?: "command_failed"
+    )
+}
+
+internal fun nearbyChargingResultForResponse(
+    response: Response<com.matelink.data.api.models.NearbyChargingResponse>
+): ApiResult<NearbyChargingData> = when {
+    response.isSuccessful -> response.body()?.data?.let { ApiResult.Success(it) }
+        ?: ApiResult.Error("Nearby charging returned no data", response.code())
+    else -> ApiResult.Error("Nearby charging unavailable", response.code())
+}
+
+internal fun vehiclePlacesResultForResponse(
+    response: Response<com.matelink.data.api.models.VehiclePlacesResponse>
+): ApiResult<List<VehiclePlace>> = when {
+    response.isSuccessful -> ApiResult.Success(response.body()?.data?.places ?: emptyList())
+    else -> ApiResult.Error("Vehicle places unavailable", response.code())
 }
 
 internal const val STANDBY_ENDPOINT_UNAVAILABLE = "standby_endpoint_unavailable"
@@ -202,6 +311,8 @@ class TeslamateRepository @Inject constructor(
 
     // Cache: true = endpoint exists (API 1.24+), false = 404 (older API)
     private val currentChargeApiAvailable = mutableMapOf<Int, Boolean>()
+    private val batteryEvidenceAdapter = com.squareup.moshi.Moshi.Builder().build()
+        .adapter(com.matelink.data.api.models.BatteryTrendEvidenceResponse::class.java)
 
     /**
      * Check whether the current charge endpoint is available for the given car.
@@ -224,18 +335,23 @@ class TeslamateRepository @Inject constructor(
 
     private suspend fun getSettings(): AppSettings = settingsDataStore.settings.first()
 
-    private suspend fun getApiForUrl(url: String): TeslamateApi? {
+    private suspend fun getApiForUrl(url: String, requiredCloudMode: Boolean? = null, noRetry: Boolean = false): TeslamateApi? {
         if (url.isBlank()) return null
-        return apiFactory.create(url)
+        return apiFactory.create(url, requiredCloudMode = requiredCloudMode, noRetry = noRetry)
     }
 
     /** Executes requests only against the explicitly saved primary server. */
     private suspend fun <T> executeWithFallback(
+        requiredCloudMode: Boolean? = null,
+        noRetry: Boolean = false,
         apiCall: suspend (TeslamateApi) -> ApiResult<T>
     ): ApiResult<T> {
         return try {
             val settings = getSettings()
             val mode = connectionModeStore.mode.first()
+            if (requiredCloudMode != null && (mode == ConnectionMode.TESLA_CLOUD) != requiredCloudMode) {
+                return ApiResult.Error("Connection source changed", details = "source_changed")
+            }
             val serverUrl = if (mode == ConnectionMode.TESLA_CLOUD) {
                 BuildConfig.JOURVOLT_API_BASE_URL
             } else {
@@ -244,7 +360,7 @@ class TeslamateRepository @Inject constructor(
             if (serverUrl.isBlank()) {
                 return ApiResult.Error("Server not configured")
             }
-            val primaryApi = getApiForUrl(serverUrl)
+            val primaryApi = getApiForUrl(serverUrl, requiredCloudMode, noRetry)
                 ?: return ApiResult.Error("Server not configured")
             apiCall(primaryApi)
         } catch (e: CancellationException) {
@@ -440,7 +556,7 @@ class TeslamateRepository @Inject constructor(
                     val status = data?.status
                     val units = data?.units ?: Units()
                     if (status != null) {
-                        ApiResult.Success(CarStatusWithUnits(status, units))
+                        ApiResult.Success(CarStatusWithUnits(status, units), data?.meta?.toApiResponseMetadata())
                     } else {
                         ApiResult.Error(body?.error ?: "No status data returned")
                     }
@@ -503,7 +619,7 @@ class TeslamateRepository @Inject constructor(
     ): ApiResult<List<ChargeData>> {
         if (isMockMode()) {
             return ApiResult.Success(
-                MockDataProvider.getCharges(),
+                com.matelink.data.api.models.ChargesData(MockDataProvider.getCharges(), units = MockDataProvider.getUnits()).receivedCharges(),
                 ApiResponseMetadata(availability = "available", source = BuildConfig.JOURVOLT_MOCK_SOURCE, coveragePercent = 100.0)
             )
         }
@@ -512,10 +628,9 @@ class TeslamateRepository @Inject constructor(
                 val response = api.getCharges(carId, startDate, endDate, page = page, show = show)
                 if (response.isSuccessful) {
                     val body = response.body()?.data
-                    ApiResult.Success(
-                        body?.charges ?: emptyList(),
-                        body?.meta?.toApiResponseMetadata()
-                    )
+                    if (body == null || body.charges == null) {
+                        ApiResult.Error("Charges response invalid", response.code(), kind = ApiErrorKind.INVALID_RESPONSE)
+                    } else ApiResult.Success(body.receivedCharges(), body.meta?.toApiResponseMetadata())
                 } else {
                     ApiResult.Error("Failed to fetch charges: ${response.code()}", response.code())
                 }
@@ -530,21 +645,7 @@ class TeslamateRepository @Inject constructor(
         return executeWithFallback { api ->
             try {
                 val response = api.getCurrentCharge(carId)
-                if (response.isSuccessful) {
-                    val body = response.body()
-                    val detail = body?.data?.charge
-                    when {
-                        detail != null -> ApiResult.Success(CurrentChargeOutcome.Active(detail))
-                        // TeslamateAPI answers 200 + {"error": "..."} (or 204) when there is
-                        // no active charge — an authoritative answer, not a failure. At charge
-                        // start this is returned for a short while before the charge appears.
-                        body?.error != null || response.code() == 204 ->
-                            ApiResult.Success(CurrentChargeOutcome.NoActiveCharge)
-                        else -> ApiResult.Error("No current charge data returned")
-                    }
-                } else {
-                    ApiResult.Error("Failed to fetch current charge: ${response.code()}", response.code())
-                }
+                currentChargeResultForResponse(response, carId)
             } catch (e: Exception) {
                 throw e
             }
@@ -552,21 +653,13 @@ class TeslamateRepository @Inject constructor(
     }
 
     suspend fun getChargeDetail(carId: Int, chargeId: Int): ApiResult<ChargeDetail> {
-        if (isMockMode()) return ApiResult.Success(MockDataProvider.getChargeDetail(chargeId))
+        if (isMockMode()) return ApiResult.Success(requireNotNull(com.matelink.data.api.models.ChargeDetailData(
+            charge = MockDataProvider.getChargeDetail(chargeId), units = MockDataProvider.getUnits()).receivedCharge()))
         val requestedAt = java.time.Instant.now()
         return executeWithFallback { api ->
             try {
                 val response = api.getChargeDetail(carId, chargeId)
-                if (response.isSuccessful) {
-                    val detail = response.body()?.data?.charge
-                    if (detail != null) {
-                        ApiResult.Success(detail)
-                    } else {
-                        ApiResult.Error("No charge detail returned", response.code(), kind = ApiErrorKind.INVALID_RESPONSE)
-                    }
-                } else {
-                    ApiResult.Error("Failed to fetch charge detail: ${response.code()}", response.code())
-                }
+                chargeDetailResultForResponse(response, carId, chargeId)
             } catch (e: Exception) {
                 throw e
             }
@@ -588,7 +681,7 @@ class TeslamateRepository @Inject constructor(
     ): ApiResult<List<DriveData>> {
         if (isMockMode()) {
             return ApiResult.Success(
-                MockDataProvider.getDrives(),
+                com.matelink.data.api.models.DrivesData(MockDataProvider.getDrives(), units = MockDataProvider.getUnits()).receivedDrives(),
                 ApiResponseMetadata(availability = "available", source = BuildConfig.JOURVOLT_MOCK_SOURCE, coveragePercent = 100.0)
             )
         }
@@ -597,10 +690,9 @@ class TeslamateRepository @Inject constructor(
                 val response = api.getDrives(carId, startDate, endDate, page = page, show = show)
                 if (response.isSuccessful) {
                     val body = response.body()?.data
-                    ApiResult.Success(
-                        body?.receivedDrives() ?: emptyList(),
-                        body?.meta?.toApiResponseMetadata()
-                    )
+                    if (body == null || body.drives == null) {
+                        ApiResult.Error("Drives response invalid", response.code(), kind = ApiErrorKind.INVALID_RESPONSE)
+                    } else ApiResult.Success(body.receivedDrives(), body.meta?.toApiResponseMetadata())
                 } else {
                     ApiResult.Error("Failed to fetch drives: ${response.code()}", response.code())
                 }
@@ -611,7 +703,8 @@ class TeslamateRepository @Inject constructor(
     }
 
     suspend fun getDriveDetail(carId: Int, driveId: Int): ApiResult<DriveDetail> {
-        if (isMockMode()) return ApiResult.Success(MockDataProvider.getDriveDetail(driveId))
+        if (isMockMode()) return ApiResult.Success(requireNotNull(com.matelink.data.api.models.DriveDetailData(
+            drive = MockDataProvider.getDriveDetail(driveId), units = MockDataProvider.getUnits()).receivedDrive()))
         val requestedAt = java.time.Instant.now()
         return executeWithFallback { api ->
             try {
@@ -651,8 +744,12 @@ class TeslamateRepository @Inject constructor(
                 if (response.isSuccessful) {
                     val body = response.body()?.data
                     val health = body?.batteryHealth
+                    val metadata = body?.meta?.toApiResponseMetadata()
                     if (health != null) {
-                        ApiResult.Success(health, body?.meta?.toApiResponseMetadata())
+                        ApiResult.Success(health, metadata)
+                    } else if (metadata?.availability.equals("unsupported", ignoreCase = true) ||
+                        metadata?.availability.equals("collecting", ignoreCase = true)) {
+                        ApiResult.Success(BatteryHealth(), metadata)
                     } else {
                         ApiResult.Error("Battery health unavailable")
                     }
@@ -665,6 +762,40 @@ class TeslamateRepository @Inject constructor(
         }
     }
 
+    /** This evidence endpoint exists only for the authenticated cloud source. */
+    suspend fun getBatteryTrendEvidence(
+        carId: Int, cursor: String?, snapshotMaxSeq: Long?,
+        fence: com.matelink.data.api.ArchiveEnrollmentRequestFence
+    ): ApiResult<com.matelink.data.api.models.BatteryTrendEvidencePage> =
+        executeWithFallback(requiredCloudMode = true) { api ->
+            val response = api.getBatteryTrendEvidence(carId, cursor, snapshotMaxSeq, 50, fence)
+            if (!response.isSuccessful) {
+                response.errorBody()?.close()
+                ApiResult.Error("Battery trend evidence unavailable", response.code())
+            }
+            else {
+                val body = response.body()
+                val page = body?.use {
+                    withContext(Dispatchers.IO) {
+                        val maximum = 1024L * 1024L
+                        if (it.contentLength() > maximum) null else {
+                            val source = it.source()
+                            source.timeout().deadline(20L, java.util.concurrent.TimeUnit.SECONDS)
+                            val buffer = okio.Buffer()
+                            while (buffer.size <= maximum) {
+                                val read = source.read(buffer, minOf(8192L, maximum + 1L - buffer.size))
+                                if (read == -1L) break
+                            }
+                            if (buffer.size > maximum) null else
+                                runCatching { batteryEvidenceAdapter.fromJson(buffer.readUtf8())?.data }.getOrNull()
+                        }
+                    }
+                }
+                page?.let { ApiResult.Success(it) }
+                    ?: ApiResult.Error("Battery trend evidence response invalid", kind = ApiErrorKind.INVALID_RESPONSE)
+            }
+        }
+
     override suspend fun getDataReadiness(carId: Int): ApiResult<DataReadiness> {
         if (isMockMode()) return ApiResult.Success(compatibilityDataReadiness(carId))
         val allowLegacyCompatibility = connectionModeStore.mode.first() == ConnectionMode.SELF_HOSTED
@@ -674,6 +805,21 @@ class TeslamateRepository @Inject constructor(
                 carId,
                 allowLegacyCompatibility
             )
+        }
+    }
+
+    override suspend fun getTelemetryDiagnostics(carId: Int): ApiResult<FleetTelemetryDiagnostics> {
+        if (isMockMode()) return ApiResult.Error("Fleet diagnostics unavailable")
+        return executeWithFallback { api ->
+            fleetTelemetryDiagnosticsResultForResponse(api.getTelemetryDiagnostics(carId))
+        }
+    }
+
+    override suspend fun getCloudTelemetryDiagnostics(carId: Int, fence: com.matelink.data.api.ArchiveEnrollmentRequestFence?): ApiResult<FleetTelemetryDiagnostics> {
+        if (isMockMode()) return ApiResult.Error("Fleet diagnostics unavailable")
+        if (fence == null) return ApiResult.Error("Diagnostic identity unavailable")
+        return executeWithFallback(requiredCloudMode = true, noRetry = true) { api ->
+            fleetTelemetryDiagnosticsResultForResponse(api.getTelemetryDiagnostics(carId, fence))
         }
     }
 
@@ -695,6 +841,64 @@ class TeslamateRepository @Inject constructor(
         }
         return executeWithFallback { api ->
             telemetryConfigureResultForResponse(api.configureTelemetry(carId))
+        }
+    }
+
+    /**
+     * Executes one vehicle command (design 2026-11-05 §6). The backend is
+     * the authority for gating; the error class lands in
+     * [ApiResult.Error.details] for the UI to localize.
+     */
+    suspend fun executeVehicleCommand(
+        carId: Int,
+        command: String,
+        params: Map<String, Any?>? = null,
+        confirm: Boolean = false
+    ): ApiResult<VehicleCommandResult> {
+        if (isMockMode()) {
+            return ApiResult.Error("Vehicle commands require a real vehicle connection", details = "command_failed")
+        }
+        return executeWithFallback { api ->
+            vehicleCommandResultForResponse(
+                api.executeVehicleCommand(carId, command, VehicleCommandRequest(params, confirm))
+            )
+        }
+    }
+
+    suspend fun getNearbyChargingSites(carId: Int): ApiResult<NearbyChargingData> {
+        if (isMockMode()) return ApiResult.Error("Nearby charging requires real data")
+        return executeWithFallback { api ->
+            nearbyChargingResultForResponse(api.getNearbyChargingSites(carId))
+        }
+    }
+
+    suspend fun getVehiclePlaces(carId: Int): ApiResult<List<VehiclePlace>> {
+        if (isMockMode()) return ApiResult.Error("Vehicle places require real data")
+        return executeWithFallback { api ->
+            vehiclePlacesResultForResponse(api.getVehiclePlaces(carId))
+        }
+    }
+
+    suspend fun createVehiclePlace(carId: Int, request: VehiclePlaceRequest): ApiResult<VehiclePlace> {
+        if (isMockMode()) return ApiResult.Error("Vehicle places require a real vehicle connection")
+        return executeWithFallback { api ->
+            val response = api.createVehiclePlace(carId, request)
+            when {
+                response.isSuccessful -> response.body()?.data?.let { ApiResult.Success(it) }
+                    ?: ApiResult.Error("Place was not created", response.code())
+                else -> ApiResult.Error("Place was not created", response.code())
+            }
+        }
+    }
+
+    suspend fun deleteVehiclePlace(carId: Int, placeId: Long): ApiResult<Boolean> {
+        if (isMockMode()) return ApiResult.Error("Vehicle places require a real vehicle connection")
+        return executeWithFallback { api ->
+            val response = api.deleteVehiclePlace(carId, placeId)
+            when {
+                response.isSuccessful -> ApiResult.Success(response.body()?.data?.deleted ?: true)
+                else -> ApiResult.Error("Place was not deleted", response.code())
+            }
         }
     }
 

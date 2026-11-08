@@ -1,5 +1,9 @@
 package com.matelink.domain.analytics
 
+import com.matelink.data.api.models.DrivesResponse
+import com.matelink.data.api.models.receivedDrives
+import com.matelink.data.sync.toSyncSummary
+import com.squareup.moshi.Moshi
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -50,6 +54,11 @@ class AnalysisCoverageTest {
         assertEquals(1, c.chargeLossSampleCount)
         assertEquals(10.0, c.chargeEnergyUsedForLossKwh!!, 0.0001)
         assertEquals(9.0, c.chargeEnergyAddedForLossKwh!!, 0.0001)
+        assertEquals(1, c.pairedEfficiency!!.sampleCount)
+        assertEquals(-0.5, c.pairedEfficiency.validEnergyKwh, 0.0001)
+        assertEquals(5.0, c.pairedEfficiency.validDistanceKm, 0.0001)
+        assertEquals(33.3333, c.efficiencyCoveragePercent!!, 0.0001)
+        assertEquals(1, c.pairedEstimatedEnergySampleCount)
     }
 
     @Test
@@ -76,5 +85,35 @@ class AnalysisCoverageTest {
         assertEquals("2026-02-01", coverage.firstObservedDate.toString())
         assertEquals("2026-02-01", coverage.lastObservedDate.toString())
         assertEquals(2, coverage.driveDistanceSampleCount)
+    }
+
+    @Test
+    fun actualReceiptThroughRoomProjectionKeepsEnergyAndDistancePairsTogether() {
+        val drives = Moshi.Builder().build().adapter(DrivesResponse::class.java).fromJson("""{
+            "data":{"units":{"unit_of_length":"km"},"drives":[
+                {"drive_id":1,"source":"teslamate_archive","quality_state":"observed",
+                 "start_date":"2026-10-20T10:00:00Z","end_date":"2026-10-20T10:30:00Z",
+                 "odometer_details":{"odometer_distance":10.0},"energy_consumed_net":2.0},
+                {"drive_id":2,"source":"teslamate_archive","quality_state":"observed",
+                 "start_date":"2026-10-20T11:00:00Z","end_date":"2026-10-20T11:30:00Z",
+                 "odometer_details":{"odometer_distance":5.0}},
+                {"drive_id":3,"source":"teslamate_archive","quality_state":"observed",
+                 "start_date":"2026-10-20T12:00:00Z","end_date":"2026-10-20T12:30:00Z",
+                 "odometer_details":{"odometer_distance":0.0},"energy_consumed_net":-0.5}
+            ]}}
+        """)!!.data!!.receivedDrives()
+        val stored = drives.map { it.toSyncSummary(9)!! }
+        val projected = stored.map { it.toAnalysisDriveData() }
+        val coverage = buildAnalysisCoverage(projected.map {
+            AnalysisDriveCoverageSample(it.distanceKm, it.netEnergyKwh, it.startDate,
+                it.energyContract?.netEnergy?.quality)
+        }, emptyList())
+
+        assertEquals(3, coverage.driveRecordCount)
+        assertEquals(15.0, coverage.qualifiedDistanceTotalKm!!, 0.0001)
+        assertEquals(1.5, coverage.qualifiedDriveEnergyTotalKwh!!, 0.0001)
+        assertEquals(1, coverage.pairedEfficiency!!.sampleCount)
+        assertEquals(200.0, coverage.pairedEfficiency.efficiencyWhKm!!, 0.0001)
+        assertEquals(10.0, coverage.pairedEfficiency.validDistanceKm, 0.0001)
     }
 }

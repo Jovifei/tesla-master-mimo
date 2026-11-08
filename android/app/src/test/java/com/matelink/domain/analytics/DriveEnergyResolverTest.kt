@@ -212,4 +212,35 @@ class DriveEnergyResolverTest {
         assertEquals(150.0, standardRange.efficiencyWhKm!!, 1e-12)
         assertEquals(DriveEnergySource.SOC_CAPACITY_ESTIMATE, standardRange.source)
     }
+    @Test fun ratedRangeDeltaEstimateComputesEnergyWhenSocUnchanged() {
+        val result = DriveEnergyResolver.resolve(
+            apiEnergyKwh = null,
+            distanceKm = 0.7,
+            samples = emptyList(),
+            startSoc = 80,
+            endSoc = 80,
+            batteryCapacityKwh = 60.0,
+            startRatedRangeKm = 350.0,
+            endRatedRangeKm = 349.3
+        )
+        assertEquals(0.1, result.energyKwh!!, 1e-6)
+        assertEquals(DriveEnergySource.SOC_CAPACITY_ESTIMATE, result.source)
+        assertEquals("rated_range_delta_estimate", result.qualityReason)
+    }
+
+    @Test fun ratedRangeNominalShortTripEstimateWhenDeltaIsZero() {
+        val result = DriveEnergyResolver.resolve(
+            apiEnergyKwh = null,
+            distanceKm = 0.7,
+            samples = emptyList(),
+            startSoc = 80,
+            endSoc = 80,
+            batteryCapacityKwh = 60.0,
+            startRatedRangeKm = 350.0,
+            endRatedRangeKm = 350.0
+        )
+        assertEquals(0.1, result.energyKwh!!, 1e-6)
+        assertEquals(DriveEnergySource.SOC_CAPACITY_ESTIMATE, result.source)
+        assertEquals("rated_range_nominal_short_trip", result.qualityReason)
+    }
 }

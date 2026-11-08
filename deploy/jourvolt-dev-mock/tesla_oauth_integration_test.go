@@ -91,7 +91,7 @@ func TestTeslaOAuthCreatesOneTimeJourVoltSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	started, err := oauth.start(ctx, consent)
+	started, err := oauth.start(ctx, consent, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +105,7 @@ func TestTeslaOAuthCreatesOneTimeJourVoltSession(t *testing.T) {
 		t.Fatalf("authorization URL missing state/nonce: %s", started.AuthorizationURL)
 	}
 
-	ticket, err := oauth.callback(ctx, url.Values{"state": {state}, "code": {"auth-code"}})
+	ticket, _, err := oauth.callback(ctx, url.Values{"state": {state}, "code": {"auth-code"}})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,0 +1,55 @@
+name: Latest interaction source and preservation evidence
+on:
+  push:
+    branches:
+      - codex/app-interaction-latest-20261106
+      - codex/miniprogram-interaction-latest-20261106
+permissions:
+  contents: read
+concurrency:
+  group: latest-visual-source-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify latest development ancestry and preserve inspectable source
+        env:
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = Jovifei/tesla-master-mimo
+          case "$BRANCH" in
+            codex/app-interaction-latest-20261106)
+              BASE=e107773e18ec39a90ca63dffd58ab05e17b623c7
+              PRIOR=9be68e7cd7ccf1e4473ce899166e9f5e7352655e
+              ;;
+            codex/miniprogram-interaction-latest-20261106)
+              BASE=55d49b921f541c5c1d793c88e64dfaac51ee32b2
+              PRIOR=43012f65d68cc5ba5debb9b8e81047da4aaa7b19
+              ;;
+            *) exit 2 ;;
+          esac
+          mkdir -p source-evidence
+          git merge-base --is-ancestor "$BASE" HEAD
+          git rev-parse HEAD HEAD^{tree} HEAD^ > source-evidence/source.txt
+          printf '%s\n' "$BASE" "$PRIOR" > source-evidence/bases.txt
+          git diff --check "$BASE" HEAD
+          git diff --name-status "$BASE" HEAD > source-evidence/changed-paths.txt
+          git diff --binary "$BASE" HEAD > source-evidence/changes.patch
+          git archive --format=zip --output=source-evidence/source.zip HEAD
+          git archive --format=zip --output=source-evidence/development-base.zip "$BASE"
+          git diff --stat "$BASE" "$PRIOR" > source-evidence/prior-visual-comparison.txt
+          git log --format='%H %s' -60 "$BASE" > source-evidence/development-history.txt
+          sha256sum source-evidence/*.zip > source-evidence/archive-sha256.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: latest-interaction-source
+          path: source-evidence/
+          retention-days: 14

@@ -276,7 +276,9 @@ private fun OverviewCard(
                 )
                 StatItem(
                     label = stringResource(R.string.software_avg_interval),
-                    value = stringResource(R.string.format_interval_days, stats.meanDaysBetweenUpdates.roundToInt()),
+                    value = stats.meanDaysBetweenUpdates?.let {
+                        stringResource(R.string.format_interval_days, it.roundToInt())
+                    } ?: stringResource(R.string.software_interval_unknown),
                     palette = palette
                 )
             }
@@ -591,7 +593,8 @@ private fun SoftwareVersionCard(
                         )
                     }
                     Text(
-                        text = formatDurationCompact(update.updateDurationMinutes?.toInt() ?: 0),
+                        text = update.updateDurationMinutes?.toInt()?.let(::formatDurationCompact)
+                            ?: stringResource(R.string.software_duration_unknown),
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium,
                         color = if (update.isCurrent) palette.onSurface else MaterialTheme.colorScheme.onSurface

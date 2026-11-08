@@ -35,6 +35,7 @@ private data class AmapMapContent(
     val center: Pair<Double, Double>?,
     val markers: List<AmapMapMarker>,
     val polylinePoints: List<Pair<Double, Double>>,
+    val polylineSegments: List<List<Pair<Double, Double>>>,
     val polylineColor: Int,
     val zoom: Float
 )
@@ -83,7 +84,8 @@ fun AmapNativeMapView(
     sourceCoordinateSystem: CoordinateSystem = CoordinateSystem.WGS84,
     onLoading: () -> Unit = {},
     onLoaded: () -> Unit = {},
-    onFailure: () -> Unit = {}
+    onFailure: () -> Unit = {},
+    polylineSegments: List<List<Pair<Double, Double>>>? = null
 ) {
     val context = LocalContext.current
     val savedState = rememberSaveable { Bundle() }
@@ -99,11 +101,16 @@ fun AmapNativeMapView(
         AmapCoordinateTransformer.normalize(point.first, point.second, sourceCoordinateSystem)
             ?.let { it.latitude to it.longitude }
     }
+    val validSegments = polylineSegments?.map { segment -> segment.mapNotNull { point ->
+        AmapCoordinateTransformer.normalize(point.first, point.second, sourceCoordinateSystem)
+            ?.let { it.latitude to it.longitude }
+    } } ?: listOf(validPolyline)
 
     handle.content = AmapMapContent(
         center = validCenter,
         markers = validMarkers,
         polylinePoints = validPolyline,
+        polylineSegments = validSegments,
         polylineColor = polylineColor.toArgb(),
         zoom = zoom
     )
@@ -142,8 +149,7 @@ fun AmapNativeMapView(
                         uiSettings.isZoomControlsEnabled = true
                         setOnMapLoadedListener {
                             handle.loaded = true
-                            renderMapContent(handle, onFailure)
-                            onLoaded()
+                            if (renderMapContent(handle)) onLoaded() else onFailure()
                         }
                     }
                 }
@@ -154,16 +160,20 @@ fun AmapNativeMapView(
             }
         },
         update = {
-            if (handle.loaded) renderMapContent(handle, onFailure)
+            if (handle.loaded && !renderMapContent(handle)) onFailure()
         }
     )
 }
 
-private fun renderMapContent(handle: AmapMapHandle, onFailure: () -> Unit) {
-    val map = handle.map ?: return
-    val content = handle.content ?: return
-    if (content == handle.renderedContent) return
+private fun renderMapContent(handle: AmapMapHandle): Boolean {
+    val map = handle.map ?: return false
+    val content = handle.content ?: return false
+    if (content == handle.renderedContent) return true
     try {
+        val cameraPoints = (
+            content.polylineSegments.flatten() + content.markers.map { it.latitude to it.longitude }
+        ).distinct()
+        if (cameraPoints.isEmpty() && content.center == null) return false
         map.clear()
         content.markers.forEach { marker ->
             map.addMarker(
@@ -172,41 +182,45 @@ private fun renderMapContent(handle: AmapMapHandle, onFailure: () -> Unit) {
                     .title(marker.title)
             )
         }
-        if (content.polylinePoints.size >= 2) {
+        content.polylineSegments.filter { it.size >= 2 }.forEach { segment ->
             map.addPolyline(
                 PolylineOptions()
-                    .addAll(content.polylinePoints.map { LatLng(it.first, it.second) })
+                    .addAll(segment.map { LatLng(it.first, it.second) })
                     .color(content.polylineColor)
-                    .width(10f)
+                    .width(18f)
+                    .lineJoinType(PolylineOptions.LineJoinType.LineJoinRound)
+                    .lineCapType(PolylineOptions.LineCapType.LineCapRound)
             )
         }
 
-        val cameraPoints = (
-            content.polylinePoints + content.markers.map { it.latitude to it.longitude }
-        ).distinct()
-        when {
-            cameraPoints.size >= 2 -> {
-                val builder = LatLngBounds.Builder()
-                cameraPoints.forEach { builder.include(LatLng(it.first, it.second)) }
-                map.animateCamera(CameraUpdateFactory.newLatLngBounds(builder.build(), 72))
-            }
-            cameraPoints.size == 1 -> {
-                val point = cameraPoints.first()
-                map.moveCamera(CameraUpdateFactory.newLatLngZoom(LatLng(point.first, point.second), content.zoom))
-            }
-            content.center != null -> {
-                map.moveCamera(
-                    CameraUpdateFactory.newLatLngZoom(
-                        LatLng(content.center.first, content.center.second),
-                        content.zoom
-                    )
-                )
+        // Move immediately to initial point so camera never defaults to Beijing Tiananmen
+        val firstPoint = cameraPoints.firstOrNull() ?: content.center
+        if (firstPoint != null) {
+            map.moveCamera(CameraUpdateFactory.newLatLngZoom(LatLng(firstPoint.first, firstPoint.second), content.zoom))
+        }
+
+        if (cameraPoints.size >= 2) {
+            val builder = LatLngBounds.Builder()
+            cameraPoints.forEach { builder.include(LatLng(it.first, it.second)) }
+            val bounds = builder.build()
+            val view = handle.view
+            if (view != null && view.width > 0 && view.height > 0) {
+                try {
+                    map.animateCamera(CameraUpdateFactory.newLatLngBounds(bounds, 72))
+                } catch (_: Exception) {}
+            } else {
+                view?.post {
+                    try {
+                        handle.map?.animateCamera(CameraUpdateFactory.newLatLngBounds(bounds, 72))
+                    } catch (_: Exception) {}
+                }
             }
         }
         handle.renderedContent = content
+        return true
     } catch (error: Exception) {
         Log.e("AmapNativeMapView", "AMap rendering failed: ${error.javaClass.simpleName}")
-        onFailure()
+        return false
     }
 }
 

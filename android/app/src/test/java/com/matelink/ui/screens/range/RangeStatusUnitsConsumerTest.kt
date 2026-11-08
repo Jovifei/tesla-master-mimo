@@ -30,7 +30,7 @@ class RangeStatusUnitsConsumerTest {
     @Test fun currentMilesAndHistoricalMilesSelectTheSameActualHighSpeedCohort() {
         val current = rangeStatusInputs(status("mi"))
         val drive = moshi.adapter(DrivesResponse::class.java).fromJson("""{
-            "data":{"units":{"unit_of_length":"mi"},"drives":[{
+            "data":{"units":{"unit_of_length":"mi","unit_of_temperature":"C"},"drives":[{
                 "drive_id":7,"source":"teslamate_archive","quality_state":"observed",
                 "start_date":"2026-10-14T01:00:00Z","end_date":"2026-10-14T02:00:00Z",
                 "speed_avg":60.0,"odometer_details":{"odometer_distance":20.0},

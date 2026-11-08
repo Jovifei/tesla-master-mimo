@@ -4,7 +4,6 @@ package com.matelink.ui.screens.charges
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,13 +14,19 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.unit.sp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.EvStation
 import androidx.compose.material.icons.filled.Paid
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.ShowChart
 import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.DeviceThermostat
@@ -29,6 +34,8 @@ import androidx.compose.material.icons.filled.ElectricalServices
 import androidx.compose.material.icons.filled.EnergySavingsLeaf
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Power
+import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.AlertDialog
@@ -48,23 +55,24 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import com.matelink.ui.components.HistoryForegroundRefreshEffect
 import com.matelink.ui.components.HistoryReadNotices
+import com.matelink.ui.components.HistoryArchiveNotice
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
@@ -74,19 +82,29 @@ import kotlin.math.roundToInt
 
 import com.matelink.R
 import com.matelink.data.api.models.ChargeDetail
-import com.matelink.data.api.models.ChargePoint
 import com.matelink.data.api.models.Units
+import com.matelink.data.model.Currency
 import com.matelink.domain.model.UnitFormatter
 import com.matelink.ui.components.FullscreenLineChart
 import com.matelink.ui.components.MateLinkLoadingPlaceholder
+import com.matelink.ui.components.showHistoryReadFailure
 import com.matelink.ui.components.TelemetryPanel
 import com.matelink.ui.screens.trips.displayName
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.IconButtonDefaults
+import com.matelink.domain.map.AmapConfiguration
+import com.matelink.ui.components.launchExternalIntentSafely
 import com.matelink.ui.components.AmapPointView
 import com.matelink.util.formatDurationCompact
 import com.matelink.util.formatMonthDayTime
 import com.matelink.util.formatTime
-import com.matelink.util.parseIsoDateTime
 import com.matelink.util.toChineseDisplayAddress
+import java.time.Instant
+import java.time.ZoneId
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -98,8 +116,9 @@ fun ChargeDetailScreen(
     onNavigateToTripDetail: (tripStartDate: String) -> Unit = {},
     viewModel: ChargeDetailViewModel = hiltViewModel()
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+    val feedbackContext = LocalContext.current
 
     HistoryForegroundRefreshEffect { viewModel.loadChargeDetail(carId, chargeId) }
     LaunchedEffect(carId, chargeId) {
@@ -108,10 +127,16 @@ fun ChargeDetailScreen(
 
     LaunchedEffect(uiState.error) {
         uiState.error?.let { error ->
-            snackbarHostState.showSnackbar(error)
-            viewModel.clearError()
+            val hasContent = uiState.chargeDetail != null
+            val retried = snackbarHostState.showHistoryReadFailure(feedbackContext, error, hasContent) {
+                viewModel.clearError()
+                viewModel.loadChargeDetail(carId, chargeId)
+            }
+            if (!retried && hasContent) viewModel.clearError()
         }
     }
+
+    HistoryArchiveNotice(uiState.localArchiveLinkPending, uiState.historyNoticeLocalCarId)
 
     Scaffold(
         topBar = {
@@ -126,7 +151,7 @@ fun ChargeDetailScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer
+                    containerColor = MaterialTheme.colorScheme.surface
                 )
             )
         },
@@ -137,7 +162,8 @@ fun ChargeDetailScreen(
         } else {
             uiState.chargeDetail?.let { detail ->
                 ChargeDetailContent(
-                    localArchiveLinkPending = uiState.localArchiveLinkPending,
+                    localArchiveLinkPending = uiState.localArchiveLinkPending &&
+                        uiState.historyNoticeLocalCarId?.let { it < 0 } != true,
                     historySyncWarning = uiState.historySyncWarning,
                     detail = detail,
                     stats = uiState.stats,
@@ -146,6 +172,10 @@ fun ChargeDetailScreen(
                     currencySymbol = uiState.currencySymbol,
                     isDcCharge = uiState.isDcCharge,
                     manualTotalAmount = uiState.manualTotalAmount,
+                    pendingLegacyAmount = uiState.pendingLegacyAmount,
+                    pendingBoundAmount = uiState.pendingBoundAmount,
+                    otherCurrencyAmount = uiState.otherCurrencyAmount,
+                    sourceUnconfirmedAmount = uiState.sourceUnconfirmedAmount,
                     containingTrip = uiState.containingTrip,
                     onNavigateToTripDetail = onNavigateToTripDetail,
                     onRemoveFromTrip = viewModel::removeFromTrip,
@@ -158,7 +188,7 @@ fun ChargeDetailScreen(
 }
 
 @Composable
-private fun ChargeDetailContent(
+internal fun ChargeDetailContent(
     localArchiveLinkPending: Boolean,
     historySyncWarning: String?,
     detail: ChargeDetail,
@@ -168,6 +198,10 @@ private fun ChargeDetailContent(
     currencySymbol: String,
     isDcCharge: Boolean?,
     manualTotalAmount: Double?,
+    pendingLegacyAmount: Double? = null,
+    pendingBoundAmount: Pair<String?, Double>? = null,
+    otherCurrencyAmount: Pair<String, Double>? = null,
+    sourceUnconfirmedAmount: Double? = null,
     containingTrip: Pair<Long, com.matelink.domain.model.Trip>?,
     onNavigateToTripDetail: (String) -> Unit,
     onRemoveFromTrip: () -> Unit,
@@ -179,63 +213,68 @@ private fun ChargeDetailContent(
     val freeLabel = stringResource(R.string.charge_free)
     val actualLabel = stringResource(R.string.charge_cost_actual)
     val manualLabel = stringResource(R.string.charge_cost_manual)
+    val pending = pendingChargeAmountForDisplay(
+        costPresentation.state == ChargeDetailCostState.MANUAL && costPresentation.cost != null,
+        pendingBoundAmount, pendingLegacyAmount)
+    val effectiveCostText = formatChargeDetailCostText(costPresentation.state, costPresentation.cost,
+        currencySymbol, freeLabel, unavailableLabel)
     val costText = when {
-        costPresentation.state == ChargeDetailCostState.FREE -> freeLabel
-        costPresentation.cost != null -> "$currencySymbol%.2f".format(costPresentation.cost)
+        pending != null -> "${pending.currencySymbol.orEmpty()}%.2f".format(pending.amount)
+        costPresentation.cost != null || costPresentation.state == ChargeDetailCostState.FREE -> effectiveCostText
+        sourceUnconfirmedAmount != null -> "%.2f".format(sourceUnconfirmedAmount)
         else -> unavailableLabel
     }
-    val costSourceText = when (costPresentation.state) {
-        ChargeDetailCostState.ESTIMATE -> stringResource(R.string.charge_cost_estimate)
-        ChargeDetailCostState.ACTUAL -> actualLabel
-        ChargeDetailCostState.MANUAL -> manualLabel
-        ChargeDetailCostState.FREE -> freeLabel
-        ChargeDetailCostState.UNAVAILABLE -> unavailableLabel
-    }
-    val scrollState = rememberScrollState()
-    var sharedXFraction by remember { mutableStateOf<Float?>(null) }
-    var showPriceDialog by remember { mutableStateOf(false) }
-    val chargePoints = detail.chargePoints.orEmpty()
-    val hasChartData = chargePoints.size > 2
-    val timeLabels = remember(chargePoints, is24Hour) {
-        if (hasChartData) extractTimeLabels(chargePoints, is24Hour) else emptyList()
-    }
-    val fractionToTimeLabel: (Float) -> String = remember(chargePoints, is24Hour) {
-        { fraction: Float ->
-            if (chargePoints.isEmpty()) {
-                ""
-            } else {
-                val index = (fraction * chargePoints.lastIndex).roundToInt()
-                    .coerceIn(0, chargePoints.lastIndex)
-                chargePoints[index].date?.let { dateStr ->
-                    parseIsoDateTime(dateStr)
-                        ?.formatTime(java.util.Locale.getDefault(), is24Hour)
-                        ?: ""
-                } ?: ""
-            }
+    val costSourceText = when {
+        pending != null -> stringResource(R.string.charge_cost_pending_short)
+        costPresentation.cost != null -> when (costPresentation.state) {
+            ChargeDetailCostState.ESTIMATE -> stringResource(R.string.charge_cost_estimate)
+            ChargeDetailCostState.ACTUAL -> actualLabel
+            ChargeDetailCostState.MANUAL -> manualLabel
+            ChargeDetailCostState.FREE -> freeLabel
+            ChargeDetailCostState.UNAVAILABLE -> unavailableLabel
         }
+        sourceUnconfirmedAmount != null -> stringResource(R.string.charge_cost_currency_pending_short)
+        else -> unavailableLabel
     }
-
-    LaunchedEffect(scrollState) {
-        snapshotFlow { scrollState.isScrollInProgress }
-            .collect { isScrolling -> if (isScrolling) sharedXFraction = null }
-    }
+    val secondaryCostText = if (pending != null && costPresentation.cost != null) {
+        when (costPresentation.state) {
+            ChargeDetailCostState.ESTIMATE -> "${stringResource(R.string.charge_cost_estimate)} $effectiveCostText"
+            ChargeDetailCostState.ACTUAL -> "$actualLabel $effectiveCostText"
+            ChargeDetailCostState.FREE -> freeLabel
+            else -> null
+        }
+    } else null
+    val currencyNoticeText = if (pending != null && pending.currencySymbol == null)
+        stringResource(R.string.charge_cost_currency_pending_short) else null
+    val scrollState = rememberScrollState()
+    var showPriceDialog by remember { mutableStateOf(false) }
+    val series = remember(detail) { ChargeStatsCalculator.project(detail) }
 
     Column(
         modifier = modifier
             .fillMaxSize()
             .verticalScroll(scrollState)
-            .pointerInput(Unit) { detectTapGestures { sharedXFraction = null } }
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         HistoryReadNotices(localArchiveLinkPending, historySyncWarning)
-        // Location header card
-        LocationHeaderCard(
+
+        // Map showing charge location
+        ChargeMapCard(
+            latitude = detail.latitude,
+            longitude = detail.longitude,
+            address = detail.address
+        )
+
+        // Unified Charge Card with Location, Times, and 4 Key Metrics (Energy, SOC, Cost, Power)
+        UnifiedChargeCard(
             detail = detail,
+            stats = stats,
             isDcCharge = isDcCharge,
             costText = costText,
             costSourceText = costSourceText,
-            manualTotalAmount = manualTotalAmount,
+            secondaryCostText = secondaryCostText,
+            currencyNoticeText = currencyNoticeText,
             currencySymbol = currencySymbol,
             onEditPrice = { showPriceDialog = true }
         )
@@ -250,98 +289,131 @@ private fun ChargeDetailContent(
             )
         }
 
-        // Map showing charge location
-        if (detail.latitude != null && detail.longitude != null) {
-            ChargeMapCard(latitude = detail.latitude, longitude = detail.longitude)
+        // ── Group 2: Interactive Telemetry Curves ──────────────────────────────
+        val hasElectricalData = stats?.let { s ->
+            s.voltageMax != null || s.voltageMin != null || s.voltageAvg != null ||
+            s.currentMax != null || s.currentMin != null || s.currentAvg != null
+        } ?: false
+
+        val temperatureStats = stats?.let { s ->
+            buildList {
+                s.tempMax?.let { add(StatItem(stringResource(R.string.maximum), UnitFormatter.formatTemperature(it, units))) }
+                s.tempMin?.let { add(StatItem(stringResource(R.string.minimum), UnitFormatter.formatTemperature(it, units))) }
+                s.tempAvg?.let { add(StatItem(stringResource(R.string.charge_sample_average), UnitFormatter.formatTemperature(it, units))) }
+            }
+        }.orEmpty()
+
+        val hasCurves = series.soc.size >= 1 || (stats?.powerMax != null && series.power.size >= 1) ||
+            (hasElectricalData && (series.voltage.size >= 1 || series.current.size >= 1)) ||
+            (temperatureStats.isNotEmpty() && series.temperature.size >= 1)
+
+        if (hasCurves) {
+            Spacer(modifier = Modifier.height(2.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.ShowChart,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp)
+                )
+                Text(
+                    text = "充电详细曲线",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+
+            if (series.soc.size >= 2) {
+                BatteryChartCard(
+                    samples = series.soc,
+                    is24Hour = is24Hour,
+                    title = stringResource(R.string.battery_level)
+                )
+            } else if (series.soc.size == 1) {
+                val sample = series.soc.single()
+                SingleChargeObservation(stringResource(R.string.battery_level), sample.first,
+                    "${sample.second}%", MaterialTheme.colorScheme.primary, is24Hour)
+            }
+
+            if (stats?.powerMax != null) {
+                if (series.power.size >= 2) {
+                    PowerChartCard(
+                        samples = series.power,
+                        is24Hour = is24Hour,
+                        title = stringResource(R.string.power_profile)
+                    )
+                } else if (series.power.size == 1) {
+                    val sample = series.power.single()
+                    SingleChargeObservation(stringResource(R.string.power_profile), sample.first,
+                        "${sample.second} kW", Color(0xFF4CAF50), is24Hour)
+                }
+            }
+
+            if (hasElectricalData) {
+                if (series.voltage.size >= 2) {
+                    VoltageChartCard(
+                        samples = series.voltage,
+                        is24Hour = is24Hour,
+                        title = stringResource(R.string.voltage_profile)
+                    )
+                } else if (series.voltage.size == 1) {
+                    val sample = series.voltage.single()
+                    SingleChargeObservation(stringResource(R.string.voltage_profile), sample.first,
+                        "${sample.second} V", MaterialTheme.colorScheme.tertiary, is24Hour)
+                }
+                if (series.current.size >= 2) {
+                    CurrentChartCard(
+                        samples = series.current,
+                        is24Hour = is24Hour,
+                        title = stringResource(R.string.current_profile)
+                    )
+                } else if (series.current.size == 1) {
+                    val sample = series.current.single()
+                    SingleChargeObservation(stringResource(R.string.current_profile), sample.first,
+                        "${sample.second} A", MaterialTheme.colorScheme.secondary, is24Hour)
+                }
+            }
+
+            if (temperatureStats.isNotEmpty()) {
+                val temperatureLabel = stringResource(R.string.temperature)
+                if (series.temperature.size >= 2) {
+                    TemperatureChartCard(
+                        samples = series.temperature,
+                        units = units,
+                        is24Hour = is24Hour,
+                        title = temperatureLabel
+                    )
+                } else if (series.temperature.size == 1) {
+                    val sample = series.temperature.single()
+                    SingleChargeObservation(temperatureLabel, sample.first,
+                        UnitFormatter.formatTemperature(sample.second, units),
+                        Color(0xFFFF9800), is24Hour)
+                }
+            }
         }
 
-        // Stats grid
+        // Supplementary Stats Grid (Electrical samples, Temperature, Efficiency/Cost details)
         stats?.let { s ->
-            // Localized labels
-            val energyLabel = stringResource(R.string.energy)
-            val batteryLabel = stringResource(R.string.battery)
-            val powerLabel = stringResource(R.string.power)
-            val chargerLabel = stringResource(R.string.charger)
+            val chargerLabel = stringResource(R.string.charge_electrical_samples)
             val temperatureLabel = stringResource(R.string.temperature)
             val costLabel = stringResource(R.string.cost)
-            val addedLabel = stringResource(R.string.energy_added)
-            val usedLabel = stringResource(R.string.used)
-            val efficiencyLabel = stringResource(R.string.charging_efficiency)
-            val startLabel = stringResource(R.string.start)
-            val endLabel = stringResource(R.string.end)
-            val durationLabel = stringResource(R.string.duration)
             val maximumLabel = stringResource(R.string.maximum)
             val minimumLabel = stringResource(R.string.minimum)
-            val averageLabel = stringResource(R.string.average)
+            val averageLabel = stringResource(R.string.charge_sample_average)
             val voltageMaxLabel = stringResource(R.string.voltage_max)
             val voltageMinLabel = stringResource(R.string.voltage_min)
             val voltageAvgLabel = stringResource(R.string.voltage_avg)
             val currentMaxLabel = stringResource(R.string.current_max)
             val currentMinLabel = stringResource(R.string.current_min)
             val currentAvgLabel = stringResource(R.string.current_avg)
-            val totalLabel = stringResource(R.string.total)
             val perKwhLabel = stringResource(R.string.per_kwh)
 
-            // Energy section
-            StatsSectionCard(
-                title = energyLabel,
-                icon = Icons.Default.EnergySavingsLeaf,
-                stats = listOf(
-                    StatItem(addedLabel, s.energyAdded?.let { "%.2f kWh".format(it) } ?: unavailableLabel),
-                    StatItem(usedLabel, s.energyUsed?.let { "%.2f kWh".format(it) } ?: unavailableLabel),
-                    StatItem(efficiencyLabel, s.efficiency?.let { "%.1f%%".format(it) } ?: unavailableLabel)
-                )
-            )
-            // Battery section
-            StatsSectionCard(
-                title = batteryLabel,
-                icon = Icons.Default.BatteryChargingFull,
-                stats = listOf(
-                    StatItem(startLabel, s.batteryStart?.let { "$it%" } ?: unavailableLabel),
-                    StatItem(endLabel, s.batteryEnd?.let { "$it%" } ?: unavailableLabel),
-                    StatItem(addedLabel, s.batteryAdded?.let { "%+d%%".format(it) } ?: unavailableLabel),
-                    StatItem(durationLabel, s.durationMin?.let(::formatDurationCompact) ?: unavailableLabel)
-                )
-            )
-            if (hasChartData && chargePoints.any { it.batteryLevel != null }) {
-                BatteryChartCard(
-                    chargePoints = chargePoints,
-                    timeLabels = timeLabels,
-                    title = stringResource(R.string.battery_level),
-                    externalSelectedFraction = sharedXFraction,
-                    onXSelected = { sharedXFraction = it },
-                    fractionToTimeLabel = fractionToTimeLabel
-                )
-            }
-
-            // Power section
-            if (s.powerMax != null) {
-                StatsSectionCard(
-                    title = powerLabel,
-                    icon = Icons.Default.Bolt,
-                    stats = listOf(
-                        StatItem(maximumLabel, s.powerMax?.let { "$it kW" } ?: unavailableLabel),
-                        StatItem(minimumLabel, s.powerMin?.let { "$it kW" } ?: unavailableLabel),
-                        StatItem(averageLabel, s.powerAvg?.let { "%.1f kW".format(it) } ?: unavailableLabel)
-                    )
-                )
-                if (hasChartData && chargePoints.any { (it.chargerPower ?: 0) > 0 }) {
-                    PowerChartCard(
-                        chargePoints = chargePoints,
-                        timeLabels = timeLabels,
-                        title = stringResource(R.string.power_profile),
-                        externalSelectedFraction = sharedXFraction,
-                        onXSelected = { sharedXFraction = it },
-                        fractionToTimeLabel = fractionToTimeLabel
-                    )
-                }
-            }
-
-            // Voltage & Current section
-            // Shown only for AC charges
-            val hasElectricalData = s.voltageMax != null || s.voltageMin != null || s.voltageAvg != null ||
-                s.currentMax != null || s.currentMin != null || s.currentAvg != null
-            if (isDcCharge == false && hasElectricalData) {
+            if (hasElectricalData) {
                 StatsSectionCard(
                     title = chargerLabel,
                     icon = Icons.Default.ElectricalServices,
@@ -354,77 +426,77 @@ private fun ChargeDetailContent(
                         StatItem(currentAvgLabel, s.currentAvg?.let { "%.1f A".format(it) } ?: unavailableLabel)
                     )
                 )
-                if (hasChartData && chargePoints.any { (it.chargerVoltage ?: 0) > 0 }) {
-                    VoltageChartCard(
-                        chargePoints = chargePoints,
-                        timeLabels = timeLabels,
-                        title = stringResource(R.string.voltage_profile),
-                        externalSelectedFraction = sharedXFraction,
-                        onXSelected = { sharedXFraction = it },
-                        fractionToTimeLabel = fractionToTimeLabel
-                    )
-                }
-                if (hasChartData && chargePoints.any { (it.chargerCurrent ?: 0) > 0 }) {
-                    CurrentChartCard(
-                        chargePoints = chargePoints,
-                        timeLabels = timeLabels,
-                        title = stringResource(R.string.current_profile),
-                        externalSelectedFraction = sharedXFraction,
-                        onXSelected = { sharedXFraction = it },
-                        fractionToTimeLabel = fractionToTimeLabel
-                    )
-                }
             }
 
-            // Temperature section
-            if (s.tempMax != null) {
+            if (temperatureStats.isNotEmpty()) {
                 StatsSectionCard(
                     title = temperatureLabel,
                     icon = Icons.Default.DeviceThermostat,
-                    stats = listOf(
-                        StatItem(maximumLabel, s.tempMax?.let { UnitFormatter.formatTemperature(it, units) } ?: unavailableLabel),
-                        StatItem(minimumLabel, s.tempMin?.let { UnitFormatter.formatTemperature(it, units) } ?: unavailableLabel),
-                        StatItem(averageLabel, s.tempAvg?.let { UnitFormatter.formatTemperature(it, units) } ?: unavailableLabel)
-                    )
+                    stats = temperatureStats
                 )
-                if (hasChartData && chargePoints.any { it.outsideTemp != null }) {
-                    TemperatureChartCard(
-                        chargePoints = chargePoints,
-                        units = units,
-                        timeLabels = timeLabels,
-                        title = temperatureLabel,
-                        externalSelectedFraction = sharedXFraction,
-                        onXSelected = { sharedXFraction = it },
-                        fractionToTimeLabel = fractionToTimeLabel
-                    )
-                }
             }
 
-            // Cost section
-            val validEnergyKwh = detail.batteryInputKwh?.takeIf { it.isFinite() && it > 0.0 }
-            val costPerKwh = if (costPresentation.cost != null && validEnergyKwh != null) {
-                "$currencySymbol%.3f".format(costPresentation.cost / validEnergyKwh)
-            } else {
-                unavailableLabel
-            }
+            val rate = chargeUnitCost(costPresentation, detail.batteryInputKwh, detail.partialBatteryInputKwh)
+            val costPerKwh = rate?.let {
+                (if (it.estimated) "≈" else "") + "$currencySymbol%.3f / 度".format(it.amount)
+            } ?: unavailableLabel
             StatsSectionCard(
                 title = costLabel,
                 icon = Icons.Default.Paid,
                 stats = listOf(
-                    StatItem(totalLabel, costText),
-                    StatItem(costLabel, costSourceText),
+                    StatItem(stringResource(R.string.charging_efficiency), s.efficiency?.let { "%.1f%%".format(it) } ?: unavailableLabel),
+                    StatItem(costLabel, secondaryCostText ?: costSourceText),
                     StatItem(perKwhLabel, costPerKwh)
                 )
             )
-
         }
 
         Spacer(modifier = Modifier.height(16.dp))
+        if (costPresentation.state == ChargeDetailCostState.MANUAL &&
+            costPresentation.qualificationReason == "instance_unverified") {
+            Text(stringResource(R.string.charge_cost_instance_unverified),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        otherCurrencyAmount?.let { (code, amount) ->
+            Text(stringResource(R.string.charge_cost_other_currency, code, amount),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        sourceUnconfirmedAmount?.let { amount ->
+            Text(stringResource(R.string.charge_cost_source_unconfirmed, amount),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (costPresentation.qualificationReason == "source_unverified") {
+            detail.cost?.takeIf { it.isFinite() && it >= 0.0 }?.let { amount ->
+                Text(stringResource(R.string.charge_cost_source_identity_unverified, amount),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        if (costPresentation.qualificationReason == "currency_mismatch") {
+            detail.cost?.takeIf { it.isFinite() && it > 0.0 }?.let { amount ->
+                Text(stringResource(R.string.charge_cost_source_other_currency,
+                    detail.currencyCode.orEmpty(), amount),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        if (costPresentation.qualificationReason == "provider_zero_unverified" &&
+            sourceUnconfirmedAmount == null) {
+            Text(stringResource(R.string.charge_cost_source_zero_unverified),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 
     if (showPriceDialog) {
         ChargePriceDialog(
             currentTotal = manualTotalAmount,
+            pendingLegacyAmount = if (manualTotalAmount == null) pendingLegacyAmount else null,
+            otherCurrencyAmount = otherCurrencyAmount,
+            pendingBoundAmount = pendingBoundAmount,
             currencySymbol = currencySymbol,
             onDismiss = { showPriceDialog = false },
             onSave = { total ->
@@ -440,161 +512,203 @@ private fun ChargeDetailContent(
 }
 
 @Composable
-private fun LocationHeaderCard(
+private fun UnifiedChargeCard(
     detail: ChargeDetail,
+    stats: ChargeDetailStats?,
     isDcCharge: Boolean?,
     costText: String,
     costSourceText: String,
-    manualTotalAmount: Double?,
+    secondaryCostText: String?,
+    currencyNoticeText: String?,
     currencySymbol: String,
     onEditPrice: () -> Unit
 ) {
     val is24Hour = android.text.format.DateFormat.is24HourFormat(LocalContext.current)
-    val locationLabel = stringResource(R.string.location)
     val unknownLocationLabel = stringResource(R.string.unknown_location)
     val startedLabel = stringResource(R.string.started)
     val endedLabel = stringResource(R.string.ended)
-    val energyAddedLabel = stringResource(R.string.energy_added_header)
+    val durationLabel = stringResource(R.string.duration)
     val unknownLabel = stringResource(R.string.unknown)
+    val notAvailableLabel = stringResource(R.string.not_available)
 
     TelemetryPanel(
         modifier = Modifier.fillMaxWidth(),
         accent = MaterialTheme.colorScheme.primary
     ) {
         Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            // Location
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.LocationOn,
-                    contentDescription = null,
-                    modifier = Modifier.size(24.dp),
-                    tint = MaterialTheme.colorScheme.primary
-                )
-                Spacer(modifier = Modifier.width(12.dp))
-                Column {
-                    Text(
-                        text = locationLabel,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+            // Header: Title with Charge Type Badge & Price Edit Button
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.EvStation,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.primary
                     )
                     Text(
-                        text = detail.address.toChineseDisplayAddress() ?: unknownLocationLabel,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        text = stringResource(R.string.charge_details_title),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
                     )
+                    ChargeTypeBadge(isDcCharge = isDcCharge)
+                }
+                Surface(
+                    onClick = onEditPrice,
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Edit,
+                            contentDescription = null,
+                            modifier = Modifier.size(13.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = stringResource(R.string.edit_charge_cost),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
                 }
             }
 
+            // Location with address
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.LocationOn,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                val displayLocation = detail.address?.takeIf { !it.contains("未知") }?.toChineseDisplayAddress()
+                    ?: if (detail.latitude != null && detail.longitude != null) "%.3f°N, %.3f°E".format(detail.latitude, detail.longitude)
+                    else unknownLocationLabel
+                Text(
+                    text = displayLocation,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
             HorizontalDivider(
-                modifier = Modifier.padding(start = 36.dp),
-                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.2f)
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
             )
+
+            // Times: Started, Ended, Duration
+            val durationText = detail.durationMin?.let(::formatDurationCompact)
+                ?: detail.durationStr?.takeIf { it.isNotBlank() }
+                ?: notAvailableLabel
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                CompactHeaderValue(
-                    startedLabel,
-                    formatDateTime(detail.startDate, unknownLabel, is24Hour),
-                    Modifier.weight(1f)
+                DetailTimeValue(
+                    label = startedLabel,
+                    value = formatDateTime(detail.startDate, unknownLabel, is24Hour),
+                    modifier = Modifier.weight(1f)
                 )
-                CompactHeaderValue(
-                    endedLabel,
-                    formatDateTime(detail.endDate, unknownLabel, is24Hour),
-                    Modifier.weight(1f)
+                DetailTimeValue(
+                    label = endedLabel,
+                    value = formatDateTime(detail.endDate, unknownLabel, is24Hour),
+                    modifier = Modifier.weight(1f)
                 )
-                CompactHeaderValue(
-                    stringResource(R.string.duration),
-                    detail.durationMin?.let(::formatDurationCompact)
-                        ?: detail.durationStr?.takeIf { it.isNotBlank() }
-                        ?: unknownLabel,
-                    Modifier.weight(0.8f)
+                DetailTimeValue(
+                    label = durationLabel,
+                    value = durationText,
+                    modifier = Modifier.weight(0.8f)
                 )
             }
 
-            // Energy added and cost summary
-            detail.batteryInputKwh?.let { energy ->
-                HorizontalDivider(
-                    modifier = Modifier.padding(start = 36.dp),
-                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.2f)
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+            )
+
+            // 4 Key Metrics Strip:
+            // 1. 充入电量 (度)
+            // 2. 电量变化 (SOC% -> SOC%)
+            // 3. 充电费用 (¥ / 免费)
+            // 4. 充电功率 (最高 kW / 均值 kW)
+            val partialEnergy = detail.partialBatteryInputKwh
+            val energy = stats?.energyAdded ?: detail.batteryInputKwh ?: partialEnergy
+            val energyPrefix = if (stats?.energyAdded == null && partialEnergy != null) "≈" else ""
+            val energyValue = energy?.let { "$energyPrefix%.2f".format(it) } ?: notAvailableLabel
+
+            val startSoc = stats?.batteryStart ?: detail.startBatteryLevel
+            val endSoc = stats?.batteryEnd ?: detail.endBatteryLevel
+            val socAdded = stats?.batteryAdded ?: if (startSoc != null && endSoc != null) (endSoc - startSoc) else null
+            val socValue = when {
+                startSoc != null && endSoc != null -> "$startSoc%→$endSoc%"
+                startSoc != null -> "$startSoc%"
+                endSoc != null -> "$endSoc%"
+                else -> notAvailableLabel
+            }
+            val socUnit = socAdded?.let { if (it > 0) "+$it%" else "$it%" } ?: ""
+
+            val powerMax = stats?.powerMax
+            val powerAvg = stats?.powerAvg
+            val powerValue = when {
+                powerMax != null -> "$powerMax"
+                powerAvg != null -> "%.1f".format(powerAvg)
+                else -> notAvailableLabel
+            }
+            val powerUnit = if (powerMax != null || powerAvg != null) "kW" else ""
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                ChargeStatCapsule(
+                    label = stringResource(R.string.energy),
+                    value = energyValue,
+                    unit = "度",
+                    valueColor = Color(0xFF22C55E),
+                    modifier = Modifier.weight(1f)
                 )
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    // Energy Added (left side) with AC/DC badge
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.Power,
-                            contentDescription = null,
-                            modifier = Modifier.size(24.dp),
-                            tint = Color(0xFF4CAF50)
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column {
-                            Text(
-                                text = energyAddedLabel,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                            )
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = "%.2f kWh".format(energy),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF4CAF50)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                ChargeTypeBadge(isDcCharge = isDcCharge)
-                            }
-                        }
-                    }
-
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.clickable(onClick = onEditPrice)
-                    ) {
-                        Column(horizontalAlignment = Alignment.End) {
-                            Text(
-                                text = costSourceText,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                            )
-                            Text(
-                                text = costText,
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Icon(
-                            imageVector = Icons.Default.Paid,
-                            contentDescription = null,
-                            modifier = Modifier.size(24.dp),
-                            tint = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                    }
-                }
-                Text(
-                    text = manualTotalAmount?.let {
-                        "${stringResource(R.string.charge_total_amount)} $currencySymbol${"%.2f".format(it)}"
-                    } ?: stringResource(R.string.edit_charge_cost),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier
-                        .align(Alignment.End)
-                        .clickable(onClick = onEditPrice)
-                        .padding(vertical = 4.dp)
+                ChargeStatCapsule(
+                    label = stringResource(R.string.battery_level),
+                    value = socValue,
+                    unit = socUnit,
+                    valueColor = Color(0xFF0284C7),
+                    modifier = Modifier.weight(1f)
+                )
+                ChargeStatCapsule(
+                    label = stringResource(R.string.cost),
+                    value = costText,
+                    unit = "",
+                    valueColor = Color(0xFFD97706),
+                    modifier = Modifier.weight(1f)
+                )
+                ChargeStatCapsule(
+                    label = stringResource(R.string.power),
+                    value = powerValue,
+                    unit = powerUnit,
+                    valueColor = Color(0xFF8B5CF6),
+                    modifier = Modifier.weight(1f)
                 )
             }
         }
@@ -602,17 +716,70 @@ private fun LocationHeaderCard(
 }
 
 @Composable
-private fun CompactHeaderValue(label: String, value: String, modifier: Modifier = Modifier) {
-    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+private fun ChargeStatCapsule(
+    label: String,
+    value: String,
+    unit: String,
+    valueColor: Color,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Row(
+            verticalAlignment = Alignment.Bottom,
+            horizontalArrangement = Arrangement.spacedBy(1.dp)
+        ) {
+            Text(
+                text = value,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                color = valueColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (unit.isNotBlank()) {
+                Text(
+                    text = unit,
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 1.dp),
+                    maxLines = 1
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DetailTimeValue(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1
         )
         Text(
             text = value,
             style = MaterialTheme.typography.bodySmall,
             fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurface,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
@@ -625,7 +792,10 @@ internal fun ChargePriceDialog(
     currencySymbol: String,
     onDismiss: () -> Unit,
     onSave: (Double) -> Unit,
-    onClear: () -> Unit
+    onClear: () -> Unit,
+    pendingLegacyAmount: Double? = null,
+    pendingBoundAmount: Pair<String?, Double>? = null,
+    otherCurrencyAmount: Pair<String, Double>? = null
 ) {
     var value by remember(currentTotal) {
         mutableStateOf(currentTotal?.let { "%.2f".format(it) } ?: "")
@@ -637,7 +807,20 @@ internal fun ChargePriceDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.charge_total_dialog_title)) },
         text = {
-            OutlinedTextField(
+            Column {
+                pendingLegacyAmount?.let {
+                    Text(stringResource(R.string.charge_cost_legacy_pending, it),
+                        style = MaterialTheme.typography.bodySmall)
+                }
+                otherCurrencyAmount?.let { (code, amount) ->
+                    Text(stringResource(R.string.charge_cost_other_currency, code, amount),
+                        style = MaterialTheme.typography.bodySmall)
+                }
+                pendingBoundAmount?.let { (code, amount) ->
+                    Text(stringResource(R.string.charge_cost_saved_unbound, code ?: "?", amount),
+                        style = MaterialTheme.typography.bodySmall)
+                }
+                OutlinedTextField(
                 value = value,
                 onValueChange = { value = it },
                 label = { Text(stringResource(R.string.charge_total_amount)) },
@@ -649,7 +832,8 @@ internal fun ChargePriceDialog(
                 isError = value.isNotBlank() && !isValid,
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
-            )
+                )
+            }
         },
         confirmButton = {
             TextButton(
@@ -675,40 +859,102 @@ internal fun ChargePriceDialog(
 }
 
 @Composable
-private fun ChargeMapCard(latitude: Double, longitude: Double) {
-    val locationTitle = stringResource(R.string.location)
-    val chargeLocationMarker = stringResource(R.string.charge_location)
+private fun ChargeMapCard(
+    latitude: Double?,
+    longitude: Double?,
+    address: String?,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    val locationTitle = stringResource(R.string.charge_location)
+    val openInMapsLabel = stringResource(R.string.where_was_i_open_in_maps)
+    val hasValidCoords = AmapConfiguration.isUsableCoordinate(latitude, longitude)
+    val displayAddress = address?.toChineseDisplayAddress() ?: address
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        )
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
         Column(
             modifier = Modifier.padding(12.dp)
         ) {
-            Text(
-                text = locationTitle,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
-
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(200.dp)
-                    .clip(RoundedCornerShape(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                // Charge location map using AmapPointView (高德)
-                AmapPointView(
-                    modifier = Modifier.fillMaxSize(),
-                    latitude = latitude,
-                    longitude = longitude,
-                    title = chargeLocationMarker,
-                    zoom = 16f
-                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = locationTitle,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    if (!displayAddress.isNullOrBlank()) {
+                        Text(
+                            text = displayAddress,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+                if (hasValidCoords && latitude != null && longitude != null) {
+                    FilledIconButton(
+                        onClick = {
+                            val geoUri = Uri.parse("geo:$latitude,$longitude?q=$latitude,$longitude")
+                            context.launchExternalIntentSafely(Intent(Intent.ACTION_VIEW, geoUri))
+                        },
+                        colors = IconButtonDefaults.filledIconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            contentColor = MaterialTheme.colorScheme.primary
+                        ),
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.OpenInNew,
+                            contentDescription = openInMapsLabel,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            if (!hasValidCoords || latitude == null || longitude == null) {
+                Row(
+                    modifier = Modifier.padding(vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        Icons.Default.LocationOn,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Text(
+                        text = stringResource(R.string.amap_no_position),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(250.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                ) {
+                    AmapPointView(
+                        modifier = Modifier.fillMaxSize(),
+                        latitude = latitude,
+                        longitude = longitude,
+                        title = displayAddress ?: locationTitle,
+                        zoom = 16f
+                    )
+                }
             }
         }
     }
@@ -735,8 +981,9 @@ private fun StatsSectionCard(
 
     Card(
         modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+            containerColor = MaterialTheme.colorScheme.surface
         )
     ) {
         Column(
@@ -813,16 +1060,36 @@ private fun StatItemView(
     }
 }
 
+/** One real point is useful evidence, but it is not a line or a trend. */
+@Composable
+internal fun SingleChargeObservation(
+    title: String, at: Instant, value: String, color: Color, is24Hour: Boolean
+) {
+    Card(modifier = Modifier.fillMaxWidth().testTag("charge-single-observation"),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))) {
+        Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Box(Modifier.size(8.dp).clip(CircleShape).background(color))
+            Column(Modifier.weight(1f)) {
+                Text("$title · ${stringResource(R.string.charge_single_observation)}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(formatObservationTime(at, is24Hour), style = MaterialTheme.typography.bodySmall)
+            }
+            Text(value, style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold, maxLines = 2)
+        }
+    }
+}
+
 @Composable
 private fun PowerChartCard(
-    chargePoints: List<ChargePoint>,
-    timeLabels: List<String>,
-    title: String,
-    externalSelectedFraction: Float? = null,
-    onXSelected: ((Float?) -> Unit)? = null,
-    fractionToTimeLabel: ((Float) -> String)? = null
+    samples: List<Pair<Instant, Double>>,
+    is24Hour: Boolean,
+    title: String
 ) {
-    val powers = chargePoints.mapNotNull { it.chargerPower?.toFloat() }
+    val powers = samples.map { it.second.toFloat() }
     if (powers.size < 2) return
 
     ChartCard(
@@ -831,23 +1098,18 @@ private fun PowerChartCard(
         data = powers,
         color = Color(0xFF4CAF50),
         unit = "kW",
-        timeLabels = timeLabels,
-        externalSelectedFraction = externalSelectedFraction,
-        onXSelected = onXSelected,
-        fractionToTimeLabel = fractionToTimeLabel
+        sampleTimes = samples.map { it.first },
+        is24Hour = is24Hour
     )
 }
 
 @Composable
 private fun VoltageChartCard(
-    chargePoints: List<ChargePoint>,
-    timeLabels: List<String>,
-    title: String,
-    externalSelectedFraction: Float? = null,
-    onXSelected: ((Float?) -> Unit)? = null,
-    fractionToTimeLabel: ((Float) -> String)? = null
+    samples: List<Pair<Instant, Double>>,
+    is24Hour: Boolean,
+    title: String
 ) {
-    val voltages = chargePoints.mapNotNull { it.chargerVoltage?.toFloat() }
+    val voltages = samples.map { it.second.toFloat() }
     if (voltages.size < 2) return
 
     ChartCard(
@@ -856,23 +1118,18 @@ private fun VoltageChartCard(
         data = voltages,
         color = MaterialTheme.colorScheme.tertiary,
         unit = "V",
-        timeLabels = timeLabels,
-        externalSelectedFraction = externalSelectedFraction,
-        onXSelected = onXSelected,
-        fractionToTimeLabel = fractionToTimeLabel
+        sampleTimes = samples.map { it.first },
+        is24Hour = is24Hour
     )
 }
 
 @Composable
 private fun CurrentChartCard(
-    chargePoints: List<ChargePoint>,
-    timeLabels: List<String>,
-    title: String,
-    externalSelectedFraction: Float? = null,
-    onXSelected: ((Float?) -> Unit)? = null,
-    fractionToTimeLabel: ((Float) -> String)? = null
+    samples: List<Pair<Instant, Double>>,
+    is24Hour: Boolean,
+    title: String
 ) {
-    val currents = chargePoints.mapNotNull { it.chargerCurrent?.toFloat() }
+    val currents = samples.map { it.second.toFloat() }
     if (currents.size < 2) return
 
     ChartCard(
@@ -881,24 +1138,19 @@ private fun CurrentChartCard(
         data = currents,
         color = MaterialTheme.colorScheme.secondary,
         unit = "A",
-        timeLabels = timeLabels,
-        externalSelectedFraction = externalSelectedFraction,
-        onXSelected = onXSelected,
-        fractionToTimeLabel = fractionToTimeLabel
+        sampleTimes = samples.map { it.first },
+        is24Hour = is24Hour
     )
 }
 
 @Composable
 private fun TemperatureChartCard(
-    chargePoints: List<ChargePoint>,
+    samples: List<Pair<Instant, Double>>,
     units: Units?,
-    timeLabels: List<String>,
-    title: String,
-    externalSelectedFraction: Float? = null,
-    onXSelected: ((Float?) -> Unit)? = null,
-    fractionToTimeLabel: ((Float) -> String)? = null
+    is24Hour: Boolean,
+    title: String
 ) {
-    val temps = chargePoints.mapNotNull { it.outsideTemp?.toFloat() }
+    val temps = samples.map { it.second.toFloat() }
     if (temps.size < 2) return
     var yMin = kotlin.math.floor(temps.min())
     var yMax = kotlin.math.ceil(temps.max())
@@ -912,24 +1164,19 @@ private fun TemperatureChartCard(
         data = temps,
         color = Color(0xFFFF9800),
         unit = UnitFormatter.getTemperatureUnit(units),
-        timeLabels = timeLabels,
         fixedMinMax = Pair(yMin, yMax),
-        externalSelectedFraction = externalSelectedFraction,
-        onXSelected = onXSelected,
-        fractionToTimeLabel = fractionToTimeLabel
+        sampleTimes = samples.map { it.first },
+        is24Hour = is24Hour
     )
 }
 
 @Composable
 private fun BatteryChartCard(
-    chargePoints: List<ChargePoint>,
-    timeLabels: List<String>,
-    title: String,
-    externalSelectedFraction: Float? = null,
-    onXSelected: ((Float?) -> Unit)? = null,
-    fractionToTimeLabel: ((Float) -> String)? = null
+    samples: List<Pair<Instant, Int>>,
+    is24Hour: Boolean,
+    title: String
 ) {
-    val batteryLevels = chargePoints.mapNotNull { it.batteryLevel?.toFloat() }
+    val batteryLevels = samples.map { it.second.toFloat() }
     if (batteryLevels.size < 2) return
     var yMin = (kotlin.math.floor(batteryLevels.min() / 10.0) * 10).toFloat()
     var yMax = (kotlin.math.ceil(batteryLevels.max() / 10.0) * 10).toFloat()
@@ -945,10 +1192,8 @@ private fun BatteryChartCard(
         color = MaterialTheme.colorScheme.primary,
         unit = "%",
         fixedMinMax = Pair(yMin, yMax),
-        timeLabels = timeLabels,
-        externalSelectedFraction = externalSelectedFraction,
-        onXSelected = onXSelected,
-        fractionToTimeLabel = fractionToTimeLabel
+        sampleTimes = samples.map { it.first },
+        is24Hour = is24Hour
     )
 }
 
@@ -961,14 +1206,13 @@ private fun ChartCard(
     unit: String,
     showZeroLine: Boolean = false,
     fixedMinMax: Pair<Float, Float>? = null,
-    timeLabels: List<String> = emptyList(),
-    convertValue: (Float) -> Float = { it },
-    externalSelectedFraction: Float? = null,
-    onXSelected: ((Float?) -> Unit)? = null,
-    fractionToTimeLabel: ((Float) -> String)? = null
+    sampleTimes: List<Instant> = emptyList(),
+    is24Hour: Boolean = true,
+    convertValue: (Float) -> Float = { it }
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface
         )
@@ -1000,11 +1244,9 @@ private fun ChartCard(
                 unit = unit,
                 showZeroLine = showZeroLine,
                 fixedMinMax = fixedMinMax,
-                timeLabels = timeLabels,
+                timeLabels = extractTimeLabels(sampleTimes, is24Hour),
                 convertValue = convertValue,
-                externalSelectedFraction = externalSelectedFraction,
-                onXSelected = onXSelected,
-                fractionToTimeLabel = fractionToTimeLabel,
+                fractionToTimeLabel = { fraction -> timeAtFraction(sampleTimes, fraction, is24Hour) },
                 modifier = Modifier.fillMaxWidth()
             )
         }
@@ -1041,27 +1283,79 @@ private fun ChargeTypeBadge(isDcCharge: Boolean?) {
 }
 
 /**
- * Extract 5 time labels from charge points for X axis display.
+ * Extract 5 labels from this chart's qualified, ordered sample times.
  * Returns list of 5 time strings at 0%, 25%, 50%, 75%, and 100% positions.
  * Following the chart guidelines: start, 1st quarter, half, 3rd quarter, end.
  */
-private fun extractTimeLabels(chargePoints: List<ChargePoint>, is24Hour: Boolean? = null): List<String> {
-    if (chargePoints.isEmpty()) return listOf("", "", "", "", "")
-
-    val locale = java.util.Locale.getDefault()
-    val times = chargePoints.mapNotNull { point ->
-        point.date?.let { parseIsoDateTime(it) }
-    }
-
+private fun extractTimeLabels(times: List<Instant>, is24Hour: Boolean): List<String> {
     if (times.isEmpty()) return listOf("", "", "", "", "")
 
     // 5 positions: start (0%), 1st quarter (25%), half (50%), 3rd quarter (75%), end (100%)
     val indices = listOf(0, times.size / 4, times.size / 2, times.size * 3 / 4, times.size - 1)
     return indices.map { idx ->
-        times.getOrNull(idx.coerceIn(0, times.size - 1))?.formatTime(locale, is24Hour) ?: ""
+        times.getOrNull(idx.coerceIn(0, times.size - 1))
+            ?.let { formatObservationTime(it, is24Hour) } ?: ""
     }
 }
 
+private fun timeAtFraction(times: List<Instant>, fraction: Float, is24Hour: Boolean): String {
+    if (times.isEmpty()) return ""
+    val index = (fraction.coerceIn(0f, 1f) * times.lastIndex).roundToInt()
+    return formatObservationTime(times[index], is24Hour)
+}
+
+private fun formatObservationTime(at: Instant, is24Hour: Boolean): String =
+    at.atZone(ZoneId.systemDefault()).toLocalDateTime()
+        .formatTime(Locale.getDefault(), is24Hour)
+
 private fun formatDateTime(dateStr: String?, unknownLabel: String = "Unknown", is24Hour: Boolean? = null): String {
     return formatMonthDayTime(dateStr, is24Hour = is24Hour) ?: unknownLabel
+}
+
+internal data class PendingChargeAmount(val amount: Double, val currencySymbol: String?)
+
+internal fun pendingChargeAmountForDisplay(
+    hasVerifiedManual: Boolean, bound: Pair<String?, Double>?, legacy: Double?
+): PendingChargeAmount? {
+    if (hasVerifiedManual) return null
+    if (bound != null && bound.second.isFinite() && bound.second >= 0.0) {
+        val symbol = Currency.entries.firstOrNull { it.code.equals(bound.first?.trim(), ignoreCase = true) }?.symbol
+        return PendingChargeAmount(bound.second, symbol)
+    }
+    return legacy?.takeIf { it.isFinite() && it >= 0.0 }?.let { PendingChargeAmount(it, null) }
+}
+
+internal data class ChargeUnitCost(val amount: Double, val estimated: Boolean)
+
+internal fun chargeUnitCost(
+    cost: ChargeDetailCostPresentation, fullEnergy: Double?, partialEnergy: Double?
+): ChargeUnitCost? {
+    val total = cost.cost?.takeIf { it.isFinite() && it >= 0.0 } ?: return null
+    if (cost.state == ChargeDetailCostState.UNAVAILABLE) return null
+    val energy = if (fullEnergy != null) fullEnergy.takeIf { it.isFinite() && it > 0.0 }
+        else partialEnergy?.takeIf {
+            cost.state == ChargeDetailCostState.ESTIMATE && cost.qualificationReason == "estimate_partial_counter" &&
+                it.isFinite() && it > 0.0
+        }
+    energy ?: return null
+    val value = (total / energy).takeIf(Double::isFinite) ?: return null
+    return ChargeUnitCost(value, cost.state == ChargeDetailCostState.ESTIMATE)
+}
+
+/**
+ * Amount shown on the detail card. Estimated amounts keep the `≈` marker used by the
+ * list, summary and chart so a default-rate figure is never mistaken for a billed one.
+ */
+internal fun formatChargeDetailCostText(
+    state: ChargeDetailCostState,
+    cost: Double?,
+    currencySymbol: String,
+    freeLabel: String,
+    unavailableLabel: String
+): String = when {
+    state == ChargeDetailCostState.FREE -> freeLabel
+    cost != null ->
+        (if (state == ChargeDetailCostState.ESTIMATE) "≈" else "") +
+            "$currencySymbol%.2f".format(cost)
+    else -> unavailableLabel
 }

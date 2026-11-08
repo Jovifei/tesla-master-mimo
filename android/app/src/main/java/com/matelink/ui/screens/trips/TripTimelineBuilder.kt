@@ -5,6 +5,10 @@ import com.matelink.data.local.entity.DriveSummary
 import com.matelink.domain.model.Trip
 import com.matelink.ui.components.TripTimelineSegment
 import com.matelink.util.parseIsoDateTime
+import com.matelink.util.parseIsoInstant
+import com.matelink.domain.analytics.toAnalysisChargeData
+import com.matelink.domain.analytics.toAnalysisDriveData
+import com.matelink.domain.analytics.qualifiedChargeMode
 import java.time.LocalDateTime
 import java.time.temporal.ChronoUnit
 
@@ -19,12 +23,13 @@ private const val MIN_PARKING_GAP_MIN = 5L
  */
 fun buildTimelineSegments(
     trip: Trip,
-    dcChargeIds: Set<Int> = emptySet()
+    dcChargeIds: Set<Int> = emptySet(),
+    acChargeIds: Set<Int> = emptySet()
 ): List<TripTimelineSegment> {
     val allEvents = mutableListOf<Pair<String, Any>>()
     trip.drives.forEach { allEvents.add(it.startDate to it) }
     trip.charges.forEach { allEvents.add(it.startDate to it) }
-    allEvents.sortBy { it.first }
+    allEvents.sortBy { parseIsoInstant(it.first) }
 
     val segments = mutableListOf<TripTimelineSegment>()
     var driveIdx = 0
@@ -46,28 +51,37 @@ fun buildTimelineSegments(
         }
         when (event) {
             is DriveSummary -> {
+                val data = event.toAnalysisDriveData()
                 driveIdx++
                 segments.add(
                     TripTimelineSegment.Drive(
                         durationMin = event.durationMin,
                         index = driveIdx,
-                        distanceKm = event.distance
+                        distanceKm = event.distance,
+                        knownDistanceKm = data.distanceKm,
+                        knownDurationMin = data.durationMin
                     )
                 )
             }
             is ChargeSummary -> {
+                val data = event.toAnalysisChargeData()
+                val mode = qualifiedChargeMode(data, event.chargeId in dcChargeIds, event.chargeId in acChargeIds)
                 chargeIdx++
                 segments.add(
                     TripTimelineSegment.Charge(
                         durationMin = event.durationMin,
                         index = chargeIdx,
                         energyKwh = event.energyAdded,
-                        isDc = event.chargeId in dcChargeIds
+                        isDc = mode == "dc",
+                        mode = mode,
+                        knownEnergyKwh = data.batteryInputKwh,
+                        knownDurationMin = data.durationMin
                     )
                 )
             }
         }
-        prevEnd = parseTimelineDate(endStr)
+        val eventEnd = parseTimelineDate(endStr)
+        prevEnd = listOfNotNull(prevEnd, eventEnd).maxOrNull()
     }
     return segments
 }

@@ -1,5 +1,7 @@
 package com.matelink.ui.screens.mileage
 
+import com.matelink.ui.components.historyReadErrorMessageRes
+import com.matelink.ui.components.showHistoryReadFailure
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
@@ -17,11 +19,16 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.DirectionsCar
+import androidx.compose.material.icons.filled.Paid
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.material.icons.filled.ElectricBolt
 import androidx.compose.material.icons.outlined.AllInclusive
 import androidx.compose.material.icons.outlined.Info
@@ -39,6 +46,8 @@ import com.matelink.ui.components.formatTelemetryNumber
 import com.matelink.ui.icons.CustomIcons
 import com.matelink.ui.components.MetricPanelKind
 import com.matelink.ui.components.MetricStatusPanel
+import com.matelink.ui.components.CachedHistoryBanner
+import com.matelink.domain.analytics.HistoryFreshness
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
@@ -63,7 +72,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -107,8 +116,9 @@ fun MileageScreen(
     onNavigateToDriveDetail: (Int) -> Unit = {},
     viewModel: MileageViewModel = hiltViewModel()
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+    val feedbackContext = LocalContext.current
     val isDarkTheme = isSystemInDarkTheme()
     val palette = CarColorPalettes.forExteriorColor(exteriorColor, isDarkTheme)
 
@@ -130,8 +140,12 @@ fun MileageScreen(
 
     LaunchedEffect(uiState.error) {
         uiState.error?.let { error ->
-            snackbarHostState.showSnackbar(error)
-            viewModel.clearError()
+            val hasContent = uiState.allDrives.isNotEmpty()
+            val retried = snackbarHostState.showHistoryReadFailure(feedbackContext, error, hasContent) {
+                viewModel.clearError()
+                viewModel.refresh()
+            }
+            if (!retried && hasContent) viewModel.clearError()
         }
     }
 
@@ -160,7 +174,7 @@ fun MileageScreen(
                     .fillMaxSize()
                     .padding(padding)
             ) {
-                if (uiState.isLoading && !uiState.isRefreshing) {
+                if (uiState.isLoading && !uiState.isRefreshing && uiState.allDrives.isEmpty()) {
                     MateLinkLoadingPlaceholder(color = palette.accent)
                 } else {
                     YearOverviewContent(
@@ -255,11 +269,19 @@ private fun YearOverviewContent(
             item {
                 MetricStatusPanel(
                     kind = MetricPanelKind.EMPTY,
-                    title = stringResource(R.string.metric_state_empty_title),
-                    body = stringResource(R.string.metric_state_empty_body)
+                    title = stringResource(if (uiState.error != null) R.string.metric_state_error_title else R.string.metric_state_empty_title),
+                    body = stringResource(uiState.error?.let(::historyReadErrorMessageRes) ?: R.string.metric_state_empty_body)
                 )
             }
         } else {
+            if (uiState.historyFreshness == HistoryFreshness.STALE) {
+                item {
+                    CachedHistoryBanner(
+                        title = stringResource(R.string.metric_state_cached_title),
+                        body = stringResource(R.string.metric_state_cached_body)
+                    )
+                }
+            }
             // Lifetime summary stats
             item {
                 SummaryRow(
@@ -333,7 +355,7 @@ private fun YearlyChartCard(chartData: List<Pair<Int, Double>>, palette: CarColo
             InteractiveBarChart(
                 data = barChartData,
                 modifier = Modifier.fillMaxWidth(),
-                barColor = palette.accent,
+                barColor = ChartBlue,
                 labelColor = palette.onSurfaceVariant,
                 valueFormatter = { UnitFormatter.formatDistanceKm(it, units) },
                 yAxisFormatter = { if (it >= 1000) "%.0fk".format(it / 1000) else "%.0f".format(it) }
@@ -374,7 +396,7 @@ private fun YearRow(
             Row(
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(modifier = Modifier.weight(1f),horizontalAlignment = Alignment.End) {
+                Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.End) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
                             imageVector = CustomIcons.Road,
@@ -390,7 +412,8 @@ private fun YearRow(
                                 units,
                                 0
                             ),
-                            style = MaterialTheme.typography.bodyMedium
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium
                         )
                     }
                     Spacer(modifier = Modifier.height(8.dp))
@@ -408,7 +431,7 @@ private fun YearRow(
                         )
                     }
                 }
-                Column(modifier = Modifier.weight(1f),horizontalAlignment = Alignment.End) {
+                Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.End) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
                             imageVector = Icons.Filled.DirectionsCar,
@@ -418,15 +441,23 @@ private fun YearRow(
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = "%,d".format(yearData.driveCount),
+                            text = "%,d 次行程".format(yearData.driveCount),
                             style = MaterialTheme.typography.bodyMedium
                         )
                     }
                     Spacer(modifier = Modifier.height(8.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Filled.Paid,
+                            contentDescription = null,
+                            tint = Color(0xFF22C55E),
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
                         Text(
                             text = formatOptionalCost(yearData.totalEnergyCost, currencySymbol),
-                            style = MaterialTheme.typography.bodyMedium
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (yearData.totalEnergyCost != null) Color(0xFF22C55E) else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
@@ -575,7 +606,7 @@ private fun MonthlyChartCard(chartData: List<Pair<Int, Double>>, palette: CarCol
             InteractiveBarChart(
                 data = barChartData,
                 modifier = Modifier.fillMaxWidth(),
-                barColor = palette.accent,
+                barColor = ChartBlue,
                 labelColor = palette.onSurfaceVariant,
                 valueFormatter = { UnitFormatter.formatDistanceKm(it, units) },
                 yAxisFormatter = { if (it >= 1000) "%.0fk".format(it / 1000) else "%.0f".format(it) }
@@ -677,9 +708,17 @@ private fun MonthRow(
                     }
                     Spacer(modifier = Modifier.height(8.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Filled.Paid,
+                            contentDescription = null,
+                            tint = Color(0xFFF59E0B),
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
                         Text(
                             text = formatOptionalCost(monthData.totalEnergyCost, currencySymbol),
-                            style = MaterialTheme.typography.bodyMedium
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (monthData.totalEnergyCost != null) Color(0xFFF59E0B) else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
@@ -905,7 +944,7 @@ private fun MonthSummaryCard(
 // ============================================================================
 
 private fun formatOptionalCost(cost: Double?, currencySymbol: String): String =
-    cost?.let { "%,.2f %s".format(it, currencySymbol) } ?: "—"
+    cost?.let { "%,.2f %s".format(it, currencySymbol) } ?: "暂无费用"
 
 private fun formatObservedDistance(
     value: Double,
@@ -919,16 +958,25 @@ private fun formatObservedDistance(
 private fun formatObservedEnergy(value: Double, sampleCount: Int): String =
     if (sampleCount > 0 && value.isFinite()) formatEnergy(value) else UNKNOWN_METRIC
 
-private fun formatObservedBattery(value: Double, sampleCount: Int): String =
+internal fun formatObservedBattery(value: Double, sampleCount: Int): String =
     if (sampleCount > 0 && value.isFinite() && value >= 0.0) "%.0f%%".format(value) else UNKNOWN_METRIC
+
+internal fun formatMileageDayRowBattery(value: Double, sampleCount: Int): String =
+    formatObservedBattery(value, sampleCount)
 
 @Composable
 private fun formatKnownEfficiency(evidence: MileageEvidence): String =
     if (evidence.recordCount > 0) {
-        (evidence.efficiencyWhKm?.let(::formatTelemetryEfficiency) ?: UNKNOWN_METRIC) + "\n" + stringResource(
+        evidence.efficiencyWhKm?.let(::formatTelemetryEfficiency) ?: UNKNOWN_METRIC
+    } else UNKNOWN_METRIC
+
+@Composable
+private fun formatKnownEfficiencyCoverage(evidence: MileageEvidence): String =
+    if (evidence.recordCount > 0) {
+        stringResource(
             R.string.mileage_known_energy_coverage, evidence.efficiencySampleCount,
             evidence.recordCount, evidence.estimatedEnergySampleCount)
-    } else UNKNOWN_METRIC
+    } else ""
 
 @Composable
 private fun SummaryRow(
@@ -946,10 +994,16 @@ private fun SummaryRow(
     energySampleCount: Int = 0,
     evidence: MileageEvidence = MileageEvidence(0, 0, 0, 0)
 ) {
-    val containerColor = palette?.surface ?: MaterialTheme.colorScheme.surfaceVariant
-    val iconColor = palette?.accent ?: ChartBlue
+    val containerColor = palette?.surface ?: MaterialTheme.colorScheme.surface
     val valueColor = palette?.onSurface ?: MaterialTheme.colorScheme.onSurface
     val labelColor = palette?.onSurfaceVariant ?: MaterialTheme.colorScheme.onSurfaceVariant
+
+    val distanceColor = Color(0xFF2563EB) // Electric Blue
+    val avgDistanceColor = Color(0xFF7C3AED) // Purple
+    val tripCountColor = Color(0xFF0284C7) // Sky Blue
+    val efficiencyColor = Color(0xFF10B981) // Emerald Green
+    val costColor = Color(0xFFF59E0B) // Amber
+    val energyColor = Color(0xFF0D9488) // Teal
 
     var showAvgInfoDialog by remember { mutableStateOf(false) }
 
@@ -979,70 +1033,78 @@ private fun SummaryRow(
 
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = containerColor)
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = containerColor),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly
+                .padding(top = 16.dp, start = 12.dp, end = 12.dp, bottom = 12.dp),
+            horizontalArrangement = Arrangement.SpaceAround
         ) {
             SummaryItem(
                 icon = Icons.Outlined.AllInclusive,
                 value = formatObservedDistance(totalDistance, distanceSampleCount, units, 0),
                 label = stringResource(R.string.mileage_total),
-                iconColor = iconColor,
+                iconColor = distanceColor,
                 valueColor = valueColor,
-                labelColor = labelColor
+                labelColor = labelColor,
+                modifier = Modifier.weight(1f)
             )
             SummaryItemWithInfo(
                 icon = Icons.Filled.Speed,
                 value = formatObservedDistance(avgDistance, distanceSampleCount, units, 0),
                 label = avgLabel,
-                iconColor = iconColor,
+                iconColor = avgDistanceColor,
                 valueColor = valueColor,
                 labelColor = labelColor,
                 showInfoIcon = firstDriveDate != null,
-                onInfoClick = { showAvgInfoDialog = true }
+                onInfoClick = { showAvgInfoDialog = true },
+                modifier = Modifier.weight(1f)
             )
             SummaryItem(
                 icon = Icons.Filled.DirectionsCar,
                 value = "%,d".format(driveCount),
                 label = stringResource(R.string.mileage_drive_count),
-                iconColor = iconColor,
+                iconColor = tripCountColor,
                 valueColor = valueColor,
-                labelColor = labelColor
+                labelColor = labelColor,
+                modifier = Modifier.weight(1f)
             )
         }
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly
+                .padding(start = 12.dp, end = 12.dp, bottom = 16.dp),
+            horizontalArrangement = Arrangement.SpaceAround
         ) {
             SummaryItem(
                 icon = Icons.Outlined.EnergySavingsLeaf,
                 value = formatKnownEfficiency(evidence),
                 label = stringResource(R.string.stats_avg_efficiency),
-                iconColor = iconColor,
+                iconColor = efficiencyColor,
                 valueColor = valueColor,
-                labelColor = labelColor
+                labelColor = labelColor,
+                modifier = Modifier.weight(1f)
             )
             SummaryItem(
-                icon = Icons.Filled.AttachMoney,
+                icon = Icons.Filled.Paid,
                 value = formatOptionalCost(totalEnergyCost, currencySymbol),
                 label = stringResource(R.string.mileage_total),
-                iconColor = iconColor,
+                iconColor = costColor,
                 valueColor = valueColor,
-                labelColor = labelColor
+                labelColor = labelColor,
+                modifier = Modifier.weight(1f)
             )
             SummaryItem(
                 icon = Icons.Outlined.BatteryChargingFull,
                 value = formatObservedEnergy(totalEnergyUsed, energySampleCount),
                 label = stringResource(R.string.mileage_known_energy),
-                iconColor = iconColor,
+                iconColor = energyColor,
                 valueColor = valueColor,
-                labelColor = labelColor
+                labelColor = labelColor,
+                modifier = Modifier.weight(1f)
             )
         }
     }
@@ -1055,27 +1117,54 @@ private fun SummaryItem(
     label: String,
     iconColor: Color = ChartBlue,
     valueColor: Color = MaterialTheme.colorScheme.onSurface,
-    labelColor: Color = MaterialTheme.colorScheme.onSurfaceVariant
+    labelColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    detail: String? = null,
+    modifier: Modifier = Modifier
 ) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = iconColor,
-            modifier = Modifier.size(24.dp)
-        )
-        Spacer(modifier = Modifier.height(4.dp))
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
+            modifier = Modifier
+                .size(38.dp)
+                .clip(CircleShape)
+                .background(iconColor.copy(alpha = 0.12f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = iconColor,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+        Spacer(modifier = Modifier.height(6.dp))
         Text(
             text = value,
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
-            color = valueColor
+            color = valueColor,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
+        Spacer(modifier = Modifier.height(2.dp))
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
-            color = labelColor
+            color = labelColor,
+            maxLines = 1
         )
+        if (!detail.isNullOrBlank()) {
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = detail,
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = androidx.compose.ui.unit.TextUnit(10f, androidx.compose.ui.unit.TextUnitType.Sp)),
+                color = labelColor.copy(alpha = 0.7f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
     }
 }
 
@@ -1088,22 +1177,37 @@ private fun SummaryItemWithInfo(
     valueColor: Color = MaterialTheme.colorScheme.onSurface,
     labelColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
     showInfoIcon: Boolean = false,
-    onInfoClick: () -> Unit = {}
+    onInfoClick: () -> Unit = {},
+    modifier: Modifier = Modifier
 ) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = iconColor,
-            modifier = Modifier.size(24.dp)
-        )
-        Spacer(modifier = Modifier.height(4.dp))
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
+            modifier = Modifier
+                .size(38.dp)
+                .clip(CircleShape)
+                .background(iconColor.copy(alpha = 0.12f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = iconColor,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+        Spacer(modifier = Modifier.height(6.dp))
         Text(
             text = value,
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
-            color = valueColor
+            color = valueColor,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
+        Spacer(modifier = Modifier.height(2.dp))
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = if (showInfoIcon) Modifier.clickable { onInfoClick() } else Modifier
@@ -1111,7 +1215,8 @@ private fun SummaryItemWithInfo(
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelSmall,
-                color = labelColor
+                color = labelColor,
+                maxLines = 1
             )
             if (showInfoIcon) {
                 Spacer(modifier = Modifier.width(2.dp))
@@ -1235,7 +1340,7 @@ private fun DailyChartCard(
             InteractiveBarChart(
                 data = barChartData,
                 modifier = Modifier.fillMaxWidth(),
-                barColor = palette.accent,
+                barColor = ChartBlue,
                 labelColor = palette.onSurfaceVariant,
                 valueFormatter = { UnitFormatter.formatDistanceKm(it, units) },
                 yAxisFormatter = { if (it >= 1000) "%.0fk".format(it / 1000) else "%.0f".format(it) }
@@ -1384,7 +1489,7 @@ private fun DayTripRow(
                         )
                         Spacer(modifier = Modifier.width(2.dp))
                         Text(
-                            text = "%.0f%%".format(dayData.totalBatteryUsage),
+                            text = formatMileageDayRowBattery(dayData.totalBatteryUsage, evidence.batterySampleCount),
                             style = MaterialTheme.typography.bodySmall
                         )
                     }

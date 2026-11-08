@@ -61,18 +61,23 @@ data class ParkedDetailData(
     @Json(name = "peak_power_kw") val peakPowerKw: Double? = null,
     @Json(name = "inside_temp_average") val insideTempAverage: Double? = null,
     @Json(name = "outside_temp_average") val outsideTempAverage: Double? = null,
-    @Json(name = "sample_count") val sampleCount: Int = 0,
-    @Json(name = "coverage_seconds") val coverageSeconds: Long = 0,
-    @Json(name = "coverage_ratio") val coverageRatio: Double = 0.0,
+    @Json(name = "sample_count") val sampleCount: Int? = null,
+    @Json(name = "coverage_seconds") val coverageSeconds: Long? = null,
+    @Json(name = "coverage_ratio") val coverageRatio: Double? = null,
     @Json(name = "linked_charge") val linkedCharge: LinkedCharge? = null,
+    @Json(name = "linked_charges") val linkedCharges: List<LinkedCharge>? = null,
+    @Json(name = "charge_sessions_complete") val chargeSessionsComplete: Boolean? = null,
     @Json(name = "source") val source: String,
-    @Json(name = "energy_contract") val energyContract: EnergyContract? = null
+    @Json(name = "energy_contract") val energyContract: EnergyContract? = null,
+    @Json(name = "car_id") val carId: Int? = null,
+    @Json(name = "source_instance_id") val sourceInstanceId: String? = null
 ) {
     // Adjacent SOC is not a battery-side kWh measurement. Only explicit,
     // source-observed endpoints with evidence of no intervening activity qualify.
     val qualifiedParkedEnergyKwh: Double? get() {
         val metric = energyContract?.takeIf { it.version == 1 }?.storedChange ?: return null
-        if (linkedCharge != null || source !in setOf("telemetry_mqtt", "fleet_telemetry") ||
+        if (linkedCharge != null || !linkedCharges.isNullOrEmpty() ||
+            source !in setOf("telemetry_mqtt", "fleet_telemetry") ||
             metric.source != source || metric.sourceField != "EnergyRemaining" ||
             metric.method != "energy_remaining_delta" ||
             metric.measurementPoint != "nominal_battery_remaining" ||
@@ -95,7 +100,11 @@ data class LinkedCharge(
     @Json(name = "charge_id") val chargeId: Int,
     @Json(name = "start_date") val startDate: String? = null,
     @Json(name = "end_date") val endDate: String? = null,
-    @Json(name = "energy_added_kwh") val energyAddedKwh: Double? = null
+    @Json(name = "energy_added_kwh") val energyAddedKwh: Double? = null,
+    @Json(name = "start_battery_level") val startBatteryLevel: Int? = null,
+    @Json(name = "end_battery_level") val endBatteryLevel: Int? = null,
+    @Json(name = "start_soc_observed_at") val startSocObservedAt: String? = null,
+    @Json(name = "end_soc_observed_at") val endSocObservedAt: String? = null
 )
 
 @JsonClass(generateAdapter = true)

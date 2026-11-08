@@ -1,8 +1,8 @@
 package com.matelink.ui.screens.temperature
 
+import com.matelink.ui.components.HistoryForegroundRefreshEffect
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -37,10 +36,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -58,6 +54,13 @@ import kotlin.math.roundToInt
 private val ColorCabin = Color(0xFF00897B)   // Teal for Cabin (Inside)
 private val ColorOutside = Color(0xFF1E88E5) // Blue for Outside
 
+/** Axes must enclose negative/zero and every qualified real sample, even below −20°C. */
+internal fun realTemperatureAxisBounds(values: List<Double>): Pair<Double, Double>? {
+    val finite = values.filter(Double::isFinite)
+    if (finite.isEmpty()) return null
+    return kotlin.math.floor(finite.min() - 3.0) to kotlin.math.ceil(finite.max() + 3.0)
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TemperatureTrendScreen(
@@ -68,6 +71,7 @@ fun TemperatureTrendScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     LaunchedEffect(carId) { viewModel.load(carId) }
+    HistoryForegroundRefreshEffect { viewModel.retry() }
 
     Scaffold(
         topBar = {
@@ -138,21 +142,16 @@ fun TemperatureTrendScreen(
                         }
                     }
                 }
-            } else if (state.isUnavailable) {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
-                    )
-                ) {
-                    Text(
-                        text = stringResource(R.string.temperature_trend_unavailable),
-                        style = MaterialTheme.typography.bodyLarge,
-                        modifier = Modifier.padding(20.dp)
-                    )
-                }
             } else {
-                // Metric cards row
+                Text(
+                    text = stringResource(if (state.currentStatusAvailable) {
+                        R.string.temperature_current_status_note
+                    } else {
+                        R.string.temperature_current_unavailable
+                    }),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -171,29 +170,65 @@ fun TemperatureTrendScreen(
                     )
                 }
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    TemperatureMetricCard(
-                        title = stringResource(R.string.temperature_max_inside),
-                        value = state.maxInsideTemp?.let { "${it}°C" } ?: "--",
-                        color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.weight(1f)
-                    )
-                    TemperatureMetricCard(
-                        title = stringResource(R.string.temperature_max_outside),
-                        value = state.maxOutsideTemp?.let { "${it}°C" } ?: "--",
-                        color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.weight(1f)
+                Text(
+                    text = stringResource(R.string.temperature_history_note),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = stringResource(R.string.temperature_observed_coverage,
+                        state.historyQualifiedCount, state.historyDriveCount),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                state.latestHistoryObservedAtMs?.let { at ->
+                    val localTime = java.time.Instant.ofEpochMilli(at)
+                        .atZone(java.time.ZoneId.systemDefault())
+                        .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
+                    Text(
+                        text = stringResource(R.string.temperature_last_qualified_trip, localTime),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-
-                // Temperature Trend Chart
-                TemperatureTrendChartCard(state.points)
-
-                // Insights & Climate performance
-                TemperatureInsightsCard(state)
+                if (state.isUnavailable) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+                        )
+                    ) {
+                        Text(
+                            text = stringResource(if (state.historyUnavailableReason == "no_history_in_window") {
+                                R.string.temperature_no_trip_history
+                            } else {
+                                R.string.temperature_no_qualified_trip_samples
+                            }),
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier.padding(20.dp)
+                        )
+                    }
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        TemperatureMetricCard(
+                            title = stringResource(R.string.temperature_max_inside),
+                            value = state.maxInsideTemp?.let { "${it}°C" } ?: "--",
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.weight(1f)
+                        )
+                        TemperatureMetricCard(
+                            title = stringResource(R.string.temperature_max_outside),
+                            value = state.maxOutsideTemp?.let { "${it}°C" } ?: "--",
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    TemperatureTrendChartCard(state.points)
+                    TemperatureInsightsCard(state)
+                }
             }
         }
     }
@@ -239,10 +274,7 @@ private fun TemperatureTrendChartCard(points: List<TemperaturePoint>) {
     val allValues = insideValues + outsideValues
     if (allValues.isEmpty()) return
 
-    val minVal = allValues.minOrNull() ?: 15.0
-    val maxVal = allValues.maxOrNull() ?: 35.0
-    val yMin = kotlin.math.floor(minVal - 3.0).coerceAtLeast(-20.0)
-    val yMax = kotlin.math.ceil(maxVal + 3.0)
+    val (yMin, yMax) = realTemperatureAxisBounds(allValues) ?: return
     val yRange = (yMax - yMin).takeIf { it > 0.0 } ?: 10.0
 
     val firstT = points.firstOrNull()?.timestampMs ?: 0L
@@ -288,6 +320,11 @@ private fun TemperatureTrendChartCard(points: List<TemperaturePoint>) {
                 val bottom = size.height - 28.dp.toPx()
                 val width = (right - left).coerceAtLeast(1f)
                 val height = (bottom - top).coerceAtLeast(1f)
+                fun xAt(timestampMs: Long): Float = if (firstT == lastT) {
+                    left + width / 2f
+                } else {
+                    left + width * ((timestampMs - firstT) / timeRange)
+                }
 
                 // Draw Y-axis grid lines and labels
                 val gridSteps = 4
@@ -317,74 +354,29 @@ private fun TemperatureTrendChartCard(points: List<TemperaturePoint>) {
                     )
                 }
 
-                // Draw Inside Temperature Curve
+                // Each dot is an observed drive average. Do not interpolate unobserved hours.
                 val insidePoints = points.filter { it.insideTemp != null }
-                if (insidePoints.size >= 2) {
-                    val insidePath = Path()
-                    insidePoints.forEachIndexed { index, p ->
-                        val x = left + width * ((p.timestampMs - firstT) / timeRange)
-                        val y = bottom - height * ((p.insideTemp!! - yMin) / yRange).toFloat()
-                        if (index == 0) {
-                            insidePath.moveTo(x, y)
-                        } else {
-                            insidePath.lineTo(x, y)
-                        }
-                    }
-                    drawPath(
-                        path = insidePath,
-                        color = ColorCabin,
-                        style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round)
-                    )
-
-                    insidePoints.forEach { p ->
-                        val x = left + width * ((p.timestampMs - firstT) / timeRange)
-                        val y = bottom - height * ((p.insideTemp!! - yMin) / yRange).toFloat()
-                        drawCircle(
-                            color = ColorCabin,
-                            radius = 3.5.dp.toPx(),
-                            center = Offset(x, y)
-                        )
-                    }
+                insidePoints.forEach { p ->
+                    val x = xAt(p.timestampMs)
+                    val y = bottom - height * ((p.insideTemp!! - yMin) / yRange).toFloat()
+                    drawCircle(color = ColorCabin, radius = 3.5.dp.toPx(), center = Offset(x, y))
                 }
 
-                // Draw Outside Temperature Curve
                 val outsidePoints = points.filter { it.outsideTemp != null }
-                if (outsidePoints.size >= 2) {
-                    val outsidePath = Path()
-                    outsidePoints.forEachIndexed { index, p ->
-                        val x = left + width * ((p.timestampMs - firstT) / timeRange)
-                        val y = bottom - height * ((p.outsideTemp!! - yMin) / yRange).toFloat()
-                        if (index == 0) {
-                            outsidePath.moveTo(x, y)
-                        } else {
-                            outsidePath.lineTo(x, y)
-                        }
-                    }
-                    drawPath(
-                        path = outsidePath,
-                        color = ColorOutside,
-                        style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round)
-                    )
-
-                    outsidePoints.forEach { p ->
-                        val x = left + width * ((p.timestampMs - firstT) / timeRange)
-                        val y = bottom - height * ((p.outsideTemp!! - yMin) / yRange).toFloat()
-                        drawCircle(
-                            color = ColorOutside,
-                            radius = 3.5.dp.toPx(),
-                            center = Offset(x, y)
-                        )
-                    }
+                outsidePoints.forEach { p ->
+                    val x = xAt(p.timestampMs)
+                    val y = bottom - height * ((p.outsideTemp!! - yMin) / yRange).toFloat()
+                    drawCircle(color = ColorOutside, radius = 3.5.dp.toPx(), center = Offset(x, y))
                 }
 
                 // Draw X-axis date labels
-                val dateCount = 4
+                val dateCount = if (firstT == lastT) 1 else 4
                 val dateFormat = SimpleDateFormat("MM/dd", Locale.getDefault())
                 val dateStepMs = (lastT - firstT) / (dateCount - 1).coerceAtLeast(1)
 
                 for (i in 0 until dateCount) {
                     val t = firstT + i * dateStepMs
-                    val x = left + width * ((t - firstT) / timeRange)
+                    val x = xAt(t)
                     val label = dateFormat.format(Date(t))
                     drawContext.canvas.nativeCanvas.drawText(
                         label,
@@ -414,6 +406,7 @@ private fun LegendItem(color: Color, label: String) {
         )
     }
 }
+
 
 @Composable
 private fun TemperatureInsightsCard(state: TemperatureTrendUiState) {
@@ -445,7 +438,9 @@ private fun TemperatureInsightsCard(state: TemperatureTrendUiState) {
                 )
             }
 
-            // Insight Item 1: Solar Gain
+            // Same-observation averages cannot establish solar or climate-performance causality.
+            val maxCabinGain = state.maxPairedDifferenceC
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -458,13 +453,13 @@ private fun TemperatureInsightsCard(state: TemperatureTrendUiState) {
                 )
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(
-                        text = stringResource(R.string.temperature_insights_solar_gain) +
-                                (state.maxCabinGain?.let { " (+${it}°C)" } ?: ""),
+                        text = stringResource(R.string.temperature_observed_pair_delta_title) +
+                                (maxCabinGain?.let { " (%+.1f°C)".format(it) } ?: ""),
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.SemiBold
                     )
                     Text(
-                        text = stringResource(R.string.temperature_insights_solar_desc),
+                        text = stringResource(R.string.temperature_observed_pair_delta_note),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -489,7 +484,7 @@ private fun TemperatureInsightsCard(state: TemperatureTrendUiState) {
                         fontWeight = FontWeight.SemiBold
                     )
                     Text(
-                        text = stringResource(R.string.temperature_insights_climate_good_desc),
+                        text = stringResource(R.string.analysis_coverage_insufficient),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

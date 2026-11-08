@@ -38,7 +38,13 @@ class DriveCurvesUnitsAndroidTest {
 
     @Test fun rawPreferredCurveValuesAreDisplayedOnceInBothUnitSystems() {
         val imperial = mutableStateOf(true)
-        val positions = listOf(DrivePosition(speed = 20.0), DrivePosition(speed = 40.0), DrivePosition(speed = 60.0))
+        // Preferred-unit speed observations integrate to 1.0 distance unit over 90 seconds.
+        // The reported total of 10.0 must not rescale this independently observed curve.
+        val positions = listOf(
+            DrivePosition(date = "2026-10-27T00:00:00Z", speed = 20.0),
+            DrivePosition(date = "2026-10-27T00:00:45Z", speed = 40.0),
+            DrivePosition(date = "2026-10-27T00:01:30Z", speed = 60.0)
+        )
         compose.setContent {
             MaterialTheme {
                 val units = Units(unitOfLength = if (imperial.value) "mi" else "km")
@@ -49,9 +55,11 @@ class DriveCurvesUnitsAndroidTest {
             }
         }
         compose.onNodeWithText("60.0 mph", substring = true).assertIsDisplayed()
-        compose.onNodeWithText("10.0 mi", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("1.0 mi", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("10.0 mi", substring = true).assertDoesNotExist()
         compose.runOnIdle { imperial.value = false }
         compose.onNodeWithText("60.0 km/h", substring = true).assertIsDisplayed()
-        compose.onNodeWithText("10.0 km", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("1.0 km", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("10.0 km", substring = true).assertDoesNotExist()
     }
 }

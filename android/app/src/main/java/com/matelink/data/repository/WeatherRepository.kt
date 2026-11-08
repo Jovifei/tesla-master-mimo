@@ -32,7 +32,7 @@ data class WeatherPoint(
     val time: String,
     val distanceKm: Double,
     val temperatureCelsius: Double,
-    val weatherCode: Int,
+    val weatherCode: Int?,
     val weatherCondition: WeatherCondition
 )
 
@@ -40,6 +40,7 @@ data class WeatherPoint(
  * Weather conditions derived from WMO weather codes.
  */
 enum class WeatherCondition {
+    UNKNOWN,
     CLEAR,           // Code 0
     PARTLY_CLOUDY,   // Codes 1, 2, 3
     FOG,             // Codes 45, 48
@@ -49,7 +50,7 @@ enum class WeatherCondition {
     THUNDERSTORM;    // Codes 95, 96, 99
 
     companion object {
-        fun fromWmoCode(code: Int): WeatherCondition = when (code) {
+        fun fromWmoCode(code: Int?): WeatherCondition = when (code) {
             0 -> CLEAR
             1, 2, 3 -> PARTLY_CLOUDY
             45, 48 -> FOG
@@ -57,7 +58,7 @@ enum class WeatherCondition {
             61, 63, 65, 66, 67, 80, 81, 82 -> RAIN
             71, 73, 75, 77, 85, 86 -> SNOW
             95, 96, 99 -> THUNDERSTORM
-            else -> PARTLY_CLOUDY // Default for unknown codes
+            else -> UNKNOWN
         }
     }
 }
@@ -101,8 +102,9 @@ class WeatherRepository @Inject constructor(
 
         // Filter positions with valid coordinates and timestamps
         val validPositions = positions.filter {
-            it.latitude != null && it.longitude != null && it.date != null
-        }
+            it.latitude?.let { lat -> lat.isFinite() && lat in -90.0..90.0 } == true &&
+                it.longitude?.let { lon -> lon.isFinite() && lon in -180.0..180.0 } == true && observedWeatherInstant(it.date) != null
+        }.sortedBy { observedWeatherInstant(it.date) }
 
         if (validPositions.isEmpty()) return emptyList()
 
@@ -256,9 +258,11 @@ class WeatherRepository @Inject constructor(
     ): WeatherPoint? {
         val lat = position.latitude ?: return null
         val lng = position.longitude ?: return null
-        val dateTime = parseDateTime(position.date ?: return null) ?: return null
-        val dateStr = dateTime.format(DateTimeFormatter.ISO_LOCAL_DATE)
-        val hour = dateTime.hour
+        val observed = observedWeatherInstant(position.date) ?: return null
+        val providerTime = observed.atOffset(java.time.ZoneOffset.UTC).toLocalDateTime()
+        val displayTime = observed.atZone(java.time.ZoneId.systemDefault()).toLocalDateTime()
+        val dateStr = providerTime.format(DateTimeFormatter.ISO_LOCAL_DATE)
+        val hour = providerTime.hour
 
         try {
             val response = openMeteoApi.getHistoricalWeather(
@@ -280,7 +284,7 @@ class WeatherRepository @Inject constructor(
             val timeIndex = hourly.time?.indexOfFirst { timeStr ->
                 try {
                     val responseTime = LocalDateTime.parse(timeStr)
-                    responseTime.hour == hour
+                    responseTime.toLocalDate() == providerTime.toLocalDate() && responseTime.hour == hour
                 } catch (e: Exception) {
                     false
                 }
@@ -291,10 +295,10 @@ class WeatherRepository @Inject constructor(
                 return null
             }
 
-            val temperature = hourly.temperature2m?.getOrNull(timeIndex) ?: return null
-            val weatherCode = hourly.weatherCode?.getOrNull(timeIndex) ?: 0
+            val temperature = hourly.temperature2m?.getOrNull(timeIndex)?.takeIf(Double::isFinite) ?: return null
+            val weatherCode = hourly.weatherCode?.getOrNull(timeIndex)
 
-            val timeStr = dateTime.formatTime(Locale.getDefault())
+            val timeStr = displayTime.formatTime(Locale.getDefault())
 
             return WeatherPoint(
                 time = timeStr,
@@ -350,8 +354,8 @@ class WeatherRepository @Inject constructor(
      * Sampling: ~1 per hour of drive time, clamped to [3, 12]. Stationary periods
      * (parking / charging) are skipped — we only sample actual driving.
      *
-     * Timestamps for the route points are interpolated linearly between each drive's
-     * startDate/endDate since the cached route points don't carry per-point times.
+     * Only actual point timestamps in the matching drive slot/window may be sampled.
+     * Legacy points without an observation clock cannot be reconstructed from duration.
      *
      * @param drives The trip's drives (chronological order, same order as route segments)
      * @param routeSegments One segment per drive (may be empty on cache miss)
@@ -363,38 +367,38 @@ class WeatherRepository @Inject constructor(
     ): List<TripWeatherPoint> {
         if (drives.isEmpty() || routeSegments.isEmpty()) return emptyList()
 
-        // Build a (timestamp, lat, lon) list across all drive points, with timestamps
-        // interpolated evenly between each drive's startDate/endDate.
         data class TimedPoint(val epochMillis: Long, val lat: Double, val lon: Double)
         val allPoints = mutableListOf<TimedPoint>()
+        var qualifiedDriveMillis = 0.0
         drives.forEachIndexed { driveIdx, drive ->
             val segment = routeSegments.getOrNull(driveIdx) ?: return@forEachIndexed
-            val pts = segment.points
-            if (pts.isEmpty()) return@forEachIndexed
-            val ds = parseDateTime(drive.startDate)?.atZone(java.time.ZoneId.systemDefault())?.toInstant()?.toEpochMilli()
-                ?: return@forEachIndexed
-            val de = parseDateTime(drive.endDate)?.atZone(java.time.ZoneId.systemDefault())?.toInstant()?.toEpochMilli()
-                ?: return@forEachIndexed
-            val dur = (de - ds).coerceAtLeast(1L)
-            val n = pts.size
-            pts.forEachIndexed { i, pt ->
-                val t = if (n > 1) ds + (dur.toDouble() * i / (n - 1)).toLong() else ds
-                allPoints.add(TimedPoint(t, pt.latitude, pt.longitude))
+            if (drive.qualityState == "quarantined" || segment.driveId != drive.driveId) return@forEachIndexed
+            val ds = observedWeatherInstant(drive.startDate) ?: return@forEachIndexed
+            val de = observedWeatherInstant(drive.endDate)?.takeIf { it.isAfter(ds) } ?: return@forEachIndexed
+            if (observedWeatherInstant(segment.startDate) != ds || observedWeatherInstant(segment.endDate) != de) return@forEachIndexed
+            val points = segment.points.mapNotNull { point ->
+                val at = observedWeatherInstant(point.observedAt) ?: return@mapNotNull null
+                if (at.isBefore(ds) || at.isAfter(de) || !point.latitude.isFinite() || !point.longitude.isFinite() ||
+                    point.latitude !in -90.0..90.0 || point.longitude !in -180.0..180.0 ||
+                    point.latitude == 0.0 && point.longitude == 0.0) return@mapNotNull null
+                val millis = runCatching { at.toEpochMilli() }.getOrNull() ?: return@mapNotNull null
+                TimedPoint(millis, point.latitude, point.longitude)
+            }
+            if (points.isNotEmpty()) {
+                allPoints += points
+                val duration = java.time.Duration.between(ds, de)
+                qualifiedDriveMillis += duration.seconds * 1000.0 + duration.nano / 1_000_000.0
             }
         }
-        if (allPoints.isEmpty()) return emptyList()
-
-        // Sample count: ~1 per hour of drive, clamped [3, 12]
-        val totalDriveMin = drives.sumOf { it.durationMin }
-        val hours = totalDriveMin / 60.0
-        val sampleCount = hours.toInt().coerceIn(3, 12)
-
-        // Evenly sample indices across allPoints
-        val samples = (0 until sampleCount).map { i ->
-            val denom = (sampleCount - 1).coerceAtLeast(1).toDouble()
-            val idx = ((i / denom) * (allPoints.size - 1)).toInt().coerceIn(0, allPoints.size - 1)
-            allPoints[idx]
+        val ordered = allPoints.groupBy { it.epochMillis }.toSortedMap().values.mapNotNull { sameTime ->
+            sameTime.firstOrNull()?.takeIf { sameTime.map { it.lat to it.lon }.distinct().size == 1 }
         }
+        if (ordered.isEmpty()) return emptyList()
+        val sampleCount = (qualifiedDriveMillis / 3_600_000.0).toInt().coerceIn(3, 12)
+        val samples = (0 until sampleCount).map { index ->
+            val slot = (index.toDouble() / (sampleCount - 1) * (ordered.size - 1)).toInt().coerceIn(0, ordered.lastIndex)
+            ordered[slot]
+        }.distinct()
 
         // Fetch weather for each sample in parallel
         return coroutineScope {
@@ -413,8 +417,9 @@ class WeatherRepository @Inject constructor(
         val dt = java.time.Instant.ofEpochMilli(epochMillis)
             .atZone(java.time.ZoneId.systemDefault())
             .toLocalDateTime()
-        val dateStr = dt.format(DateTimeFormatter.ISO_LOCAL_DATE)
-        val hour = dt.hour
+        val providerTime = java.time.Instant.ofEpochMilli(epochMillis).atOffset(java.time.ZoneOffset.UTC).toLocalDateTime()
+        val dateStr = providerTime.format(DateTimeFormatter.ISO_LOCAL_DATE)
+        val hour = providerTime.hour
         return try {
             val response = openMeteoApi.getHistoricalWeather(
                 latitude = lat,
@@ -427,19 +432,21 @@ class WeatherRepository @Inject constructor(
             val hourly = body.hourly ?: return null
             val idx = hourly.time?.indexOfFirst { timeStr ->
                 try {
-                    LocalDateTime.parse(timeStr).hour == hour
+                    val parsed = LocalDateTime.parse(timeStr)
+                    parsed.toLocalDate() == providerTime.toLocalDate() && parsed.hour == hour
                 } catch (_: Exception) { false }
             } ?: -1
             if (idx < 0) return null
-            val temp = hourly.temperature2m?.getOrNull(idx) ?: return null
-            val code = hourly.weatherCode?.getOrNull(idx) ?: 0
+            val temp = hourly.temperature2m?.getOrNull(idx)?.takeIf(Double::isFinite) ?: return null
+            val code = hourly.weatherCode?.getOrNull(idx)
             TripWeatherPoint(
                 timestamp = dt,
                 latitude = lat,
                 longitude = lon,
                 temperatureCelsius = temp,
                 weatherCode = code,
-                weatherCondition = WeatherCondition.fromWmoCode(code)
+                weatherCondition = WeatherCondition.fromWmoCode(code),
+                clockContractVersion = 1
             )
         } catch (e: Exception) {
             Log.e(TAG, "Trip weather fetch failed at $lat,$lon", e)
@@ -457,6 +464,15 @@ data class TripWeatherPoint(
     val latitude: Double,
     val longitude: Double,
     val temperatureCelsius: Double,
-    val weatherCode: Int,
-    val weatherCondition: WeatherCondition
+    val weatherCode: Int?,
+    val weatherCondition: WeatherCondition,
+    /** 1 requires an actual matching route observation and an explicit GMT/C provider request. */
+    val clockContractVersion: Int = 0
 )
+
+/** An unzoned wall clock is not an absolute weather observation. */
+private fun observedWeatherInstant(raw: String?): java.time.Instant? {
+    if (raw.isNullOrBlank()) return null
+    return runCatching { java.time.Instant.parse(raw) }.getOrNull()
+        ?: runCatching { java.time.OffsetDateTime.parse(raw).toInstant() }.getOrNull()
+}

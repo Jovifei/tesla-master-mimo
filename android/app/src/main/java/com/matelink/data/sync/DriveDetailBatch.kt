@@ -26,9 +26,12 @@ internal sealed interface CarSyncResult {
 
 internal class DriveDetailSyncException(val failure: ApiResult.Error) : Exception("drive_detail_${failure.kind.name.lowercase()}")
 
+internal fun isTerminalDriveDetailFailure(error: ApiResult.Error): Boolean =
+    error.kind in setOf(ApiErrorKind.AUTH_REQUIRED, ApiErrorKind.CONFIGURATION, ApiErrorKind.INVALID_RESPONSE) ||
+        (error.code?.let { it in 400..499 && it != 429 } == true)
+
 internal fun driveDetailFailureWorkerResult(error: ApiResult.Error): ListenableWorker.Result =
-    if (error.kind in setOf(ApiErrorKind.AUTH_REQUIRED, ApiErrorKind.CONFIGURATION, ApiErrorKind.INVALID_RESPONSE) ||
-        (error.code?.let { it in 400..499 && it != 429 } == true)) ListenableWorker.Result.failure()
+    if (isTerminalDriveDetailFailure(error)) ListenableWorker.Result.failure()
     else ListenableWorker.Result.retry()
 
 /** Batch success is truthful only after its continuation has been durably enqueued. */

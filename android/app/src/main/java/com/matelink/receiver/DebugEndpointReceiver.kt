@@ -28,6 +28,7 @@ class DebugEndpointReceiver : BroadcastReceiver() {
     @InstallIn(SingletonComponent::class)
     interface SettingsEntryPoint {
         fun settingsDataStore(): SettingsDataStore
+        fun statsDatabase(): com.matelink.data.local.StatsDatabase
     }
 
     companion object {

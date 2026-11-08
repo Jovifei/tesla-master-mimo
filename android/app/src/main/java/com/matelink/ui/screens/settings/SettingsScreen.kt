@@ -314,7 +314,8 @@ internal fun SettingsContent(
     onInstanceEditorUrlChange: (String) -> Unit = {},
     onInstanceEditorTokenChange: (String) -> Unit = {},
     onInstanceEditorCarIdChange: (Int) -> Unit = {},
-    accountContent: @Composable () -> Unit = {}
+    accountContent: @Composable () -> Unit = {},
+    amapSettingsEntry: @Composable () -> Unit = { AmapSettingsEntry(onNavigateToAmapSetup) }
 ) {
     var languageDropdownExpanded by remember { mutableStateOf(false) }
     var currencyDropdownExpanded by remember { mutableStateOf(false) }
@@ -676,7 +677,7 @@ internal fun SettingsContent(
             style = MaterialTheme.typography.titleMedium
         )
         Spacer(modifier = Modifier.height(8.dp))
-        AmapSettingsEntry(onNavigateToAmapSetup)
+        amapSettingsEntry()
 
         Spacer(modifier = Modifier.height(16.dp))
 

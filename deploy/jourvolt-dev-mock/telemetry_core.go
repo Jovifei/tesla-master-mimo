@@ -21,6 +21,10 @@ const (
 	maxTelemetryPayloadBytes = 64 << 10
 	telemetryStaleAfter      = 2 * time.Minute
 	telemetryEventTTL        = 24 * time.Hour
+	// telemetryCacheMaxAge bounds the asleep-vehicle cache fallback in
+	// currentVehicleStatus: a snapshot older than this is never served as
+	// a stand-in status.
+	telemetryCacheMaxAge     = 24 * time.Hour
 	defaultDriveStopDebounce = 20 * time.Second
 )
 
@@ -65,7 +69,13 @@ var telemetryFieldSpecs = map[string]telemetryFieldDefinition{
 }
 
 func telemetryFieldSpec(name string) (telemetryFieldDefinition, bool) {
-	spec, ok := telemetryFieldSpecs[strings.TrimSpace(name)]
+	name = strings.TrimSpace(name)
+	if spec, ok := telemetryFieldSpecs[name]; ok {
+		return spec, true
+	}
+	// Gray-release candidates (telemetry_gray.go) are parseable but are
+	// never part of the production desired configuration.
+	spec, ok := grayTelemetryFieldSpecs[name]
 	return spec, ok
 }
 
@@ -580,7 +590,7 @@ func (m *telemetrySessionMachine) apply(event telemetrySessionEvent) {
 			nil,
 			m.recentObservation(m.lastHeading, m.lastHeadingAt, event.ObservedAt)); ok && m.drive != nil {
 			m.drive.Route = append(m.drive.Route, point)
-		} else if point, ok := routePointFromLocation(event); ok && m.charge != nil {
+		} else if point, ok := routePointFromLocation(event); ok && m.charge != nil && !event.ObservedAt.Before(m.charge.StartAt) {
 			latitude, longitude := point.Latitude, point.Longitude
 			m.appendChargePoint(telemetryChargePoint{ObservedAt: event.ObservedAt, Latitude: &latitude, Longitude: &longitude})
 		}

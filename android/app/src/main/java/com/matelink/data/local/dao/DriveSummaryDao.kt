@@ -4,6 +4,11 @@ import androidx.room.Dao
 import androidx.room.Query
 import androidx.room.Upsert
 import androidx.room.Transaction
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
+import com.matelink.data.local.HistorySourceReceiptArchive
+import com.matelink.data.local.HistorySourceArchiveException
+import com.matelink.data.local.entity.HistoryDetailReceipt
 import com.matelink.domain.analytics.HistorySummaryEvidenceCodec
 import com.matelink.data.repository.mergeStoredDrive
 import com.matelink.data.local.entity.DriveSummary
@@ -18,6 +23,9 @@ import com.matelink.util.parseIsoInstant
 
 @Dao
 interface DriveSummaryDao {
+    @Query("SELECT * FROM drives_summary WHERE carId = :carId AND qualityState != 'quarantined' ORDER BY startDate DESC")
+    suspend fun getAllForCar(carId: Int): List<DriveSummary>
+
     @Query("SELECT COUNT(*) FROM drives_summary WHERE carId = :carId AND qualityState != 'quarantined'")
     suspend fun countDiagnosticHistory(carId: Int): Int
 
@@ -76,7 +84,10 @@ interface DriveSummaryDao {
     /** Serialize read/merge/upsert without deleting older records or detail aggregates. */
     @Transaction
     suspend fun upsertPreservingEvidence(rows: List<DriveSummary>) {
-        persistDriveRowsWithoutEvidenceLoss(rows, ::get, ::upsert)
+        persistDriveRowsWithoutEvidenceLoss(rows, ::getAnyForPersistence, ::upsert) { previous ->
+            val original = HistorySourceReceiptArchive.capture(previous)
+            if (original != null) archivePrior(original)
+        }
     }
 
     /** Retain a missing detail as visible unknown; rollback a concurrent identity change. */
@@ -87,6 +98,24 @@ interface DriveSummaryDao {
         if (newest.apiEvidence != expectedEvidence) return
         upsert(newest.copy(apiEvidence = HistorySummaryEvidenceCodec.markDetailTerminal404(newest.apiEvidence, carId)))
         ensureCurrent()
+    }
+
+    @Query("SELECT COUNT(*) FROM history_detail_receipts WHERE receiptId = :receiptId")
+    suspend fun archiveExists(receiptId: String): Int
+
+    @Query("SELECT COALESCE(SUM(encodedByteCount), 0) FROM history_detail_receipts WHERE state='archived_source_conflict' AND kind='archived_drive_source'")
+    suspend fun archiveUsedBytes(): Long
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertConflictArchive(receipt: HistoryDetailReceipt)
+
+    suspend fun archivePrior(receipt: HistoryDetailReceipt) {
+        if (archiveExists(receipt.receiptId) > 0) return
+        val maxBytes = 64L * 1024 * 1024
+        val used = archiveUsedBytes()
+        if (receipt.encodedByteCount < 0L || used < 0L || used > maxBytes || receipt.encodedByteCount > maxBytes - used)
+            throw HistorySourceArchiveException("history_conflict_archive_budget_exceeded")
+        insertConflictArchive(receipt)
     }
 
     // === CRUD Operations ===
@@ -114,11 +143,31 @@ interface DriveSummaryDao {
     """)
     suspend fun copyFromLegacy(legacyCarId: Int, targetCarId: Int)
 
+    /** Bounded, all-quality adjacency veto. DATE parsing handles offset timestamps, not string ordering. */
+    @Query("""
+        SELECT EXISTS(SELECT 1 FROM drives_summary
+        WHERE carId = :carId AND driveId NOT IN (:olderDriveId, :newerDriveId)
+          AND (julianday(startDate) IS NULL OR julianday(startDate) < julianday(:newerDriveEnd))
+          AND (julianday(endDate) IS NULL OR julianday(endDate) > julianday(:olderDriveStart)))
+    """)
+    suspend fun hasInterveningParkedDrive(
+        carId: Int, olderDriveId: Int, newerDriveId: Int,
+        olderDriveStart: String, newerDriveEnd: String
+    ): Boolean
+
     @Query("SELECT * FROM drives_summary WHERE driveId = :driveId AND carId = :carId AND qualityState != 'quarantined'")
     suspend fun get(carId: Int, driveId: Int): DriveSummary?
 
+    /** Preserve quarantined raw receipts too; the presentation get() intentionally hides them. */
+    @Query("SELECT * FROM drives_summary WHERE carId = :carId AND driveId = :id LIMIT 1")
+    suspend fun getAnyForPersistence(carId: Int, id: Int): DriveSummary?
+
     @Query("SELECT * FROM drives_summary WHERE carId = :carId AND qualityState != 'quarantined' ORDER BY startDate DESC")
     fun observeAll(carId: Int): Flow<List<DriveSummary>>
+
+    /** Hidden rows must remain in the live chronology so they can block parking adjacency. */
+    @Query("SELECT * FROM drives_summary WHERE carId = :carId ORDER BY startDate ASC")
+    fun observeAllForAdjacency(carId: Int): Flow<List<DriveSummary>>
 
     @Query("SELECT MAX(driveId) FROM drives_summary WHERE carId = :carId")
     suspend fun getMaxDriveId(carId: Int): Int?
@@ -136,9 +185,33 @@ interface DriveSummaryDao {
     @Query("SELECT * FROM drives_summary WHERE carId = :carId AND qualityState != 'quarantined' ORDER BY startDate ASC")
     suspend fun getAllChronological(carId: Int): List<DriveSummary>
 
+    /** Display filtering must happen after adjacency is proved against every stored quality. */
+    @Query("SELECT * FROM drives_summary WHERE carId = :carId ORDER BY startDate ASC")
+    suspend fun getAllChronologicalForAdjacency(carId: Int): List<DriveSummary>
+
     /** Latest drive with a non-empty endAddress to resolve last known parked location. */
     @Query("SELECT * FROM drives_summary WHERE carId = :carId AND qualityState != 'quarantined' AND endAddress != '' ORDER BY startDate DESC LIMIT 1")
     suspend fun getLatestWithEndAddress(carId: Int): DriveSummary?
+
+    @Query("SELECT * FROM drives_summary WHERE qualityState != 'quarantined' AND endAddress != '' ORDER BY startDate DESC LIMIT 1")
+    suspend fun getLatestWithEndAddressAnyCar(): DriveSummary?
+
+    @Query("SELECT * FROM drives_summary WHERE qualityState != 'quarantined' ORDER BY startDate DESC LIMIT 1")
+    suspend fun getLatestAnyCar(): DriveSummary?
+
+    @Query("SELECT * FROM drives_summary WHERE qualityState != 'quarantined' ORDER BY startDate DESC")
+    fun observeAllAnyCar(): Flow<List<DriveSummary>>
+
+    @Query("SELECT * FROM drives_summary WHERE qualityState != 'quarantined' ORDER BY startDate DESC")
+    suspend fun getAllAnyCar(): List<DriveSummary>
+
+    /** Drive ending immediately on or before a given timestamp (e.g. arrival before charge). */
+    @Query("SELECT * FROM drives_summary WHERE carId = :carId AND qualityState != 'quarantined' AND endDate <= :beforeDate ORDER BY endDate DESC LIMIT 1")
+    suspend fun getDriveEndingBefore(carId: Int, beforeDate: String): DriveSummary?
+
+    /** Drive starting immediately on or after a given timestamp (e.g. departure after charge). */
+    @Query("SELECT * FROM drives_summary WHERE carId = :carId AND qualityState != 'quarantined' AND startDate >= :afterDate ORDER BY startDate ASC LIMIT 1")
+    suspend fun getDriveStartingAfter(carId: Int, afterDate: String): DriveSummary?
 
     // === Quick Stats Queries ===
 
@@ -166,6 +239,15 @@ interface DriveSummaryDao {
         ORDER BY startDate ASC
     """)
     suspend fun getDrivesInRange(carId: Int, startDate: String, endDate: String): List<DriveSummary>
+
+    /** Bounded history read for local-time annual projections, including trusted legacy rows. */
+    @Query("""
+        SELECT * FROM drives_summary
+        WHERE carId = :carId AND qualityState != 'quarantined'
+        AND startDate >= :startDate AND startDate < :endDate
+        ORDER BY startDate ASC
+    """)
+    suspend fun getHistoryDrivesInRange(carId: Int, startDate: String, endDate: String): List<DriveSummary>
 
     // Total distance
     @Query("SELECT COALESCE(SUM(distance), 0) FROM drives_summary WHERE carId = :carId AND qualityState IN ('observed', 'derived')")
@@ -511,19 +593,6 @@ interface DriveSummaryDao {
     """)
     suspend fun getDistinctDrivingDaysInRange(carId: Int, startDate: String, endDate: String): List<String>
 
-    // === Monthly Aggregation Queries ===
-
-    @Query("""
-        SELECT CAST(strftime('%m', startDate) AS INTEGER) as month,
-               COALESCE(SUM(distance), 0) as totalDistance,
-               COALESCE(SUM(energyConsumed), 0) as totalEnergy,
-               COUNT(*) as driveCount
-        FROM drives_summary
-        WHERE carId = :carId AND qualityState IN ('observed', 'derived') AND strftime('%Y', startDate) = :year
-        GROUP BY strftime('%m', startDate)
-        ORDER BY month ASC
-    """)
-    suspend fun getMonthlyAggregation(carId: Int, year: String): List<MonthlyDriveAggregation>
 }
 
 data class BusiestDayResult(
@@ -549,9 +618,11 @@ data class GapBetweenDrivesResult(
 
 data class MonthlyDriveAggregation(
     val month: Int,
-    val totalDistance: Double,
-    val totalEnergy: Double,
-    val driveCount: Int
+    val totalDistance: Double?,
+    val totalEnergy: Double?,
+    val driveCount: Int,
+    val distanceSampleCount: Int,
+    val energySampleCount: Int
 )
 
 /**
@@ -562,11 +633,47 @@ data class MonthlyDriveAggregation(
 internal suspend fun persistDriveRowsWithoutEvidenceLoss(
     rows: List<DriveSummary>,
     get: suspend (Int, Int) -> DriveSummary?,
-    upsert: suspend (DriveSummary) -> Unit
+    upsert: suspend (DriveSummary) -> Unit,
+    archive: suspend (DriveSummary) -> Unit = {}
 ) {
     rows.forEach { incoming ->
         val prior = get(incoming.carId, incoming.driveId)
+        if (prior != null && prior.apiEvidence.isNullOrBlank() && prior != incoming)
+            throw HistorySourceArchiveException("history_legacy_unverified_preservation_required")
+        val superseded = prior != null && HistorySourceReceiptArchive.replaced(prior, incoming)
         val merged = mergeStoredDrive(incoming, prior)
+        if (superseded) {
+            // Archive the DISCARDED original, not always the prior row.
+            // A foreign observed-looking import can be correctly rejected by
+            // the resolver; silently dropping its distinct raw bytes would
+            // still lose history. Room's enclosing @Transaction is atomic.
+            val priorBytes = prior!!.apiEvidence
+            val incomingBytes = incoming.apiEvidence
+            when {
+                merged.apiEvidence == priorBytes && merged.apiEvidence != incomingBytes ->
+                    archive(incoming)
+                merged.apiEvidence == incomingBytes && merged.apiEvidence != priorBytes ->
+                    archive(prior)
+                else -> {
+                    archive(prior)
+                    archive(incoming)
+                }
+            }
+        } else if (prior != null) {
+            val previousSource = HistorySummaryEvidenceCodec.sourceEvidence(prior.apiEvidence)
+                ?: prior.apiEvidence?.takeIf(String::isNotBlank)
+            val incomingSource = HistorySummaryEvidenceCodec.sourceEvidence(incoming.apiEvidence)
+                ?: incoming.apiEvidence?.takeIf(String::isNotBlank)
+            val nextSource = HistorySummaryEvidenceCodec.sourceEvidence(merged.apiEvidence)
+                ?: merged.apiEvidence?.takeIf(String::isNotBlank)
+            if (previousSource != null && previousSource != nextSource) {
+                // Keep source bytes and units, including an undecodable original.
+                archive(prior.copy(apiEvidence = previousSource))
+            }
+            if (incomingSource != null && incomingSource != nextSource && incomingSource != previousSource) {
+                archive(incoming.copy(apiEvidence = incomingSource))
+            }
+        }
         val marked = merged.copy(apiEvidence = HistorySummaryEvidenceCodec.carryDetailTerminal404(
             merged.apiEvidence, prior?.apiEvidence, incoming.carId))
         // Legacy terminal rows lost their original qualification in older code. Do not guess it back.

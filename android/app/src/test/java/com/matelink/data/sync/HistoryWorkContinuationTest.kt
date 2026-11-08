@@ -24,7 +24,10 @@ import java.util.concurrent.Executor
 class HistoryWorkContinuationTest {
     @get:Rule val temp = TemporaryFolder()
     private val ownedManagers = mutableListOf<WorkManagerImpl>()
-    private fun initialize(fixture: HistoryResourceFixture): WorkManagerImpl {
+    private suspend fun initialize(fixture: HistoryResourceFixture): WorkManagerImpl {
+        // This fixture installs intercepted HTTP; never inherit mock-provider
+        // selection from another test's application settings DataStore.
+        com.matelink.data.repository.SettingsRepository(fixture.context).setMockMode(false)
         // Android Startup may already initialize its default manager in the rendered test manifest.
         // Build the actual manager directly, then bind only this Robolectric sandbox's delegate.
         val manager = Class.forName("androidx.work.impl.WorkManagerImplExtKt")
@@ -59,7 +62,19 @@ class HistoryWorkContinuationTest {
             fixture.initialize(cloud = true); fixture.seed(1, 351, 500); fixture.seed(2, 1, 1)
             var manager = initialize(fixture)
             val actual = worker(fixture, manager, input(fixture))
-            assertTrue(actual.doWork() is ListenableWorker.Result.Success)
+            val result = actual.doWork()
+            val logs = fixture.log.logs.value
+            // Only fixed event counters: no request URLs, tokens, identities or
+            // throwable messages from the underlying diagnostic buffer.
+            val logSummary = mapOf(
+                "starts" to logs.count { it.contains("[DataSyncWorker] Starting data sync worker") },
+                "foregroundUnavailable" to logs.count { it.contains("Could not set foreground service") },
+                "unexpectedFailures" to logs.count { it.contains("Unexpected error in sync worker") },
+                "networkRetries" to logs.count { it.contains("Network error, will retry") },
+                "geocodingScheduled" to logs.count { it.contains("Ensured geocoding worker is scheduled") }
+            )
+            assertTrue("result=${result.javaClass.simpleName}; httpCalls=${fixture.calls.size}; logEvents=$logSummary",
+                result is ListenableWorker.Result.Success)
             assertEquals(20, fixture.calls.size)
             val first = manager.getWorkInfosForUniqueWork(DataSyncWorker.WORK_NAME).get().single()
             val saved = requireNotNull(manager.workDatabase.workSpecDao().getWorkSpec(first.id.toString()))

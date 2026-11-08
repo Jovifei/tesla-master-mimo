@@ -7,7 +7,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -32,6 +34,7 @@ import com.matelink.ui.components.MetricPanelKind
 import com.matelink.ui.components.MetricStatusPanel
 import com.matelink.ui.components.MateLinkLoadingPlaceholder
 import com.matelink.ui.components.HistoryStatusPanel
+import com.matelink.ui.components.HistoryForegroundRefreshEffect
 import com.matelink.ui.theme.SwissOutline
 import java.util.Locale
 
@@ -47,6 +50,7 @@ fun EfficiencyScreen(
     }
 
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    HistoryForegroundRefreshEffect { viewModel.refresh() }
 
     Scaffold(
         topBar = {
@@ -63,14 +67,21 @@ fun EfficiencyScreen(
             )
         }
     ) { innerPadding ->
-        if (uiState.isLoading) {
-            MateLinkLoadingPlaceholder(modifier = Modifier.padding(innerPadding))
-            return@Scaffold
+        PullToRefreshBox(
+            isRefreshing = uiState.isRefreshing,
+            onRefresh = viewModel::refresh,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+        ) {
+        if (uiState.isLoading && uiState.avgEfficiencyWhKm == null && uiState.driveCount == 0) {
+            MateLinkLoadingPlaceholder()
+            return@PullToRefreshBox
         }
 
         if (uiState.error != null) {
             Box(
-                modifier = Modifier.fillMaxSize().padding(innerPadding),
+                modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
             ) {
                 MetricStatusPanel(
@@ -80,15 +91,17 @@ fun EfficiencyScreen(
                         stringResource(R.string.history_identity_unavailable_message)
                     } else {
                         uiState.error ?: stringResource(R.string.no_data)
-                    }
+                    },
+                    actionLabel = stringResource(R.string.metric_state_retry),
+                    onAction = viewModel::refresh
                 )
             }
-            return@Scaffold
+            return@PullToRefreshBox
         }
 
         if (uiState.driveCount == 0) {
             Box(
-                modifier = Modifier.fillMaxSize().padding(innerPadding),
+                modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
             ) {
                 HistoryStatusPanel(
@@ -96,22 +109,61 @@ fun EfficiencyScreen(
                     emptyBody = stringResource(R.string.metric_state_empty_body)
                 )
             }
-            return@Scaffold
+            return@PullToRefreshBox
         }
 
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            if (uiState.historyFreshness == HistoryFreshness.STALE) {
-                CachedHistoryBanner(
-                    title = stringResource(R.string.metric_state_cached_title),
-                    body = stringResource(R.string.metric_state_cached_body)
+            var showCachedNoticeDialog by remember { mutableStateOf(false) }
+            if (showCachedNoticeDialog) {
+                AlertDialog(
+                    onDismissRequest = { showCachedNoticeDialog = false },
+                    title = { Text(stringResource(R.string.metric_state_cached_title)) },
+                    text = { Text(stringResource(R.string.metric_state_cached_body)) },
+                    confirmButton = {
+                        TextButton(onClick = { showCachedNoticeDialog = false }) {
+                            Text(stringResource(android.R.string.ok))
+                        }
+                    }
                 )
+            }
+            if (uiState.historyFreshness == HistoryFreshness.STALE) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showCachedNoticeDialog = true },
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    border = BorderStroke(
+                        0.5.dp,
+                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(15.dp)
+                        )
+                        Text(
+                            text = "历史缓存 · 仅供离线查看 ⓘ",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
             }
 
             // Summary card - Average Efficiency
@@ -148,7 +200,7 @@ fun EfficiencyScreen(
                 )
                 StatCard(
                     modifier = Modifier.weight(1f),
-                    label = stringResource(R.string.efficiency_total_distance),
+                    label = stringResource(R.string.efficiency_paired_distance),
                     value = if (uiState.driveCount > 0) String.format(Locale.getDefault(), "%.1f km", uiState.totalDistanceKm)
                     else stringResource(R.string.analysis_no_records)
                 )
@@ -211,17 +263,47 @@ fun EfficiencyScreen(
             }
 
             uiState.personalPercentile?.let { position ->
+                var showPositionInfo by remember { mutableStateOf(false) }
+                if (showPositionInfo) {
+                    AlertDialog(
+                        onDismissRequest = { showPositionInfo = false },
+                        title = { Text(stringResource(R.string.efficiency_personal_position)) },
+                        text = { Text(stringResource(R.string.efficiency_public_benchmark_unavailable)) },
+                        confirmButton = {
+                            TextButton(onClick = { showPositionInfo = false }) {
+                                Text(stringResource(android.R.string.ok))
+                            }
+                        }
+                    )
+                }
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(16.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Text(
-                            text = stringResource(R.string.efficiency_personal_position),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = stringResource(R.string.efficiency_personal_position),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.weight(1f)
+                            )
+                            IconButton(
+                                onClick = { showPositionInfo = true },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Info,
+                                    contentDescription = stringResource(R.string.efficiency_personal_position),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
                         Text(
                             text = stringResource(R.string.efficiency_percentile_summary, position.percentile, position.sampleCount),
                             style = MaterialTheme.typography.bodyLarge,
@@ -252,12 +334,7 @@ fun EfficiencyScreen(
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = stringResource(R.string.efficiency_public_benchmark_unavailable),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+
                     }
                 }
             }
@@ -305,6 +382,7 @@ fun EfficiencyScreen(
                     }
                 }
             }
+        }
         }
     }
 }
@@ -433,14 +511,29 @@ private fun EfficiencyTrendChart(points: List<EfficiencyTrendPoint>) {
     }
 }
 
+internal data class SignedEfficiencyScale(val minValue: Double, val maxValue: Double) {
+    fun yFraction(value: Double): Double = (maxValue - value) / (maxValue - minValue)
+}
+
+internal fun signedEfficiencyScale(values: List<Double>): SignedEfficiencyScale {
+    val finite = values.filter(Double::isFinite)
+    val min = minOf(0.0, finite.minOrNull() ?: 0.0)
+    val max = maxOf(0.0, finite.maxOrNull() ?: 0.0)
+    if (min == max) return SignedEfficiencyScale(-1.0, 1.0)
+    return SignedEfficiencyScale(if (min < 0.0) min * 1.1 else 0.0,
+        if (max > 0.0) max * 1.1 else 0.0)
+}
+
 @Composable
 private fun EfficiencyBarChart(
     data: List<Pair<String, Double>>,
     modifier: Modifier = Modifier
 ) {
-    val maxEfficiency = data.maxOfOrNull { it.second } ?: 1.0
+    val scale = remember(data) { signedEfficiencyScale(data.map { it.second }) }
     val barColor = MaterialTheme.colorScheme.primary
+    val recoveryColor = Color(0xFF10B981)
     val gridColor = MaterialTheme.colorScheme.outlineVariant
+    val zeroColor = MaterialTheme.colorScheme.onSurfaceVariant
 
     Canvas(modifier = modifier) {
         val barCount = data.size
@@ -449,7 +542,7 @@ private fun EfficiencyBarChart(
         val barWidth = (size.width / barCount) * 0.6f
         val barSpacing = (size.width / barCount) * 0.4f
         val chartHeight = size.height - 24.dp.toPx() // Leave room for labels
-        val maxValue = maxEfficiency * 1.1 // 10% headroom
+        val zeroY = (scale.yFraction(0.0) * chartHeight).toFloat()
 
         // Draw grid lines
         for (i in 0..4) {
@@ -462,17 +555,29 @@ private fun EfficiencyBarChart(
             )
         }
 
-        // Draw bars
-        data.forEachIndexed { index, (speedLabel, efficiency) ->
-            val barHeight = (efficiency / maxValue * chartHeight).toFloat()
-            val x = index * (barWidth + barSpacing) + barSpacing / 2
-            val y = chartHeight - barHeight
+        drawLine(
+            color = zeroColor,
+            start = Offset(0f, zeroY),
+            end = Offset(size.width, zeroY),
+            strokeWidth = 1.dp.toPx()
+        )
 
-            drawRect(
-                color = barColor,
-                topLeft = Offset(x, y),
-                size = Size(barWidth, barHeight)
-            )
+        // Draw bars
+        data.forEachIndexed { index, (_, efficiency) ->
+            val valueY = (scale.yFraction(efficiency) * chartHeight).toFloat()
+            val top = minOf(valueY, zeroY)
+            val barHeight = kotlin.math.abs(valueY - zeroY)
+            val x = index * (barWidth + barSpacing) + barSpacing / 2
+
+            if (efficiency == 0.0) {
+                drawCircle(barColor, radius = 3.dp.toPx(), center = Offset(x + barWidth / 2, zeroY))
+            } else {
+                drawRect(
+                    color = if (efficiency < 0.0) recoveryColor else barColor,
+                    topLeft = Offset(x, top),
+                    size = Size(barWidth, barHeight)
+                )
+            }
         }
 
         // Draw speed labels below bars (native canvas text drawing omitted for compatibility)

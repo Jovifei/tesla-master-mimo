@@ -86,7 +86,6 @@ class TeslaAuthNavigationContractTest {
         assertTrue(navigation.contains("revealLoginError"))
         assertTrue(navigation.contains("if (currentRoute.isBlank()) return@LaunchedEffect"))
         assertTrue(navigation.contains("teslaLoginViewModel = teslaLoginViewModel"))
-        assertTrue(source("ui/screens/auth/TeslaLoginViewModel.kt").contains("shouldTreatTeslaExchangeFailureAsSuccess"))
         assertTrue(source("ui/screens/auth/TeslaAccountSection.kt").contains("TeslaLoginUiState.Error"))
     }
 

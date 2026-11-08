@@ -26,33 +26,33 @@ class TimelineUnitsConsumerTest {
     @Test fun milesAreConvertedOnceForTheExistingKilometreLabel() {
         val drive = receipt("mi")
         val before = HistorySummaryEvidenceCodec.encode(drive)
-        val event = drive.toTimelineDriveEvent()
+        val event = drive.toTimelineDriveEvent()!!
         assertEquals(16.09344, event.distance!!, 0.000001)
         assertEquals(10.0, drive.distance!!, 0.0)
         assertEquals(before, HistorySummaryEvidenceCodec.encode(drive))
     }
 
     @Test fun kilometresAreNotConvertedAgain() {
-        assertEquals(10.0, receipt("km").toTimelineDriveEvent().distance!!, 0.0)
+        assertEquals(10.0, receipt("km").toTimelineDriveEvent()!!.distance!!, 0.0)
     }
 
     @Test fun unknownUnitsAndMissingDistancesStayUnavailable() {
-        assertNull(receipt("yards").toTimelineDriveEvent().distance)
-        assertNull(receipt("").toTimelineDriveEvent().distance)
-        assertNull(receipt("mi", "null").toTimelineDriveEvent().distance)
+        assertNull(receipt("yards").toTimelineDriveEvent()!!.distance)
+        assertNull(receipt("").toTimelineDriveEvent()!!.distance)
+        assertNull(receipt("mi", "null").toTimelineDriveEvent()!!.distance)
     }
 
     @Test fun trueZeroIsRetained() {
-        assertEquals(0.0, receipt("mi", "0.0").toTimelineDriveEvent().distance!!, 0.0)
+        assertEquals(0.0, receipt("mi", "0.0").toTimelineDriveEvent()!!.distance!!, 0.0)
     }
 
     @Test fun negativeDistanceIsUnavailable() {
-        assertNull(receipt("mi", "-1.0").toTimelineDriveEvent().distance)
+        assertNull(receipt("mi", "-1.0").toTimelineDriveEvent()!!.distance)
     }
 
     @Test fun regenerativeEnergyAndRecordIdentityArePreserved() {
         val drive = receipt("mi", energy = -1.0)
-        val event = drive.toTimelineDriveEvent()
+        val event = drive.toTimelineDriveEvent()!!
         assertEquals(drive.efficiencyWhKm!!, event.efficiencyWhKm!!, 0.0)
         assertTrue(event.efficiencyWhKm!! < 0.0)
         assertEquals(7, event.driveId)
@@ -65,7 +65,7 @@ class TimelineUnitsConsumerTest {
         val drive = receipt("mi", energy = -1.0)
         val stored = drive.toSyncSummary(9)!!
         val restarted = stored.toAnalysisDriveData()
-        val event = restarted.toTimelineDriveEvent()
+        val event = restarted.toTimelineDriveEvent()!!
         assertEquals(9, stored.carId)
         assertEquals("mi", restarted.lengthUnit)
         assertEquals(16.09344, event.distance!!, 0.000001)

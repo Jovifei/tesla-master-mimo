@@ -5,8 +5,6 @@ import com.matelink.data.local.entity.DriveSummary
 import com.matelink.data.local.entity.TpmsPressureSample
 import com.matelink.data.local.entity.TPMS_VERIFIED_COLLECTOR
 import java.time.Instant
-import java.time.LocalDateTime
-import java.time.ZoneOffset
 data class TpmsPressurePoint(val observedAt: Long, val pressureBar: Double?)
 
 data class TpmsCoverage(
@@ -134,7 +132,6 @@ class TpmsTrendAnalyzer {
     )
 
     private fun String.toEpochMillis(): Long? = runCatching { Instant.parse(this).toEpochMilli() }
-        .recoverCatching { LocalDateTime.parse(this).toInstant(ZoneOffset.UTC).toEpochMilli() }
         .getOrNull()
 
     private fun Double?.finiteOrNull(): Double? = this?.takeIf { it.isFinite() }

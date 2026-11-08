@@ -61,8 +61,10 @@ fun MateLinkLoadingMark(
             Bitmap.createBitmap(mask, source.width, source.height, Bitmap.Config.ARGB_8888).asImageBitmap()
         }.also { source.recycle() }
     }
+    val motionEnabled = rememberVisualMotionEnabled()
+    val progress = if (motionEnabled) {
     val transition = rememberInfiniteTransition(label = "mateLinkRoadPulse")
-    val progress by transition.animateFloat(
+    val animatedProgress by transition.animateFloat(
         initialValue = 0f,
         targetValue = 4f,
         animationSpec = infiniteRepeatable(
@@ -71,6 +73,9 @@ fun MateLinkLoadingMark(
         ),
         label = "mateLinkRoadProgress",
     )
+
+    animatedProgress
+    } else 0f
 
     Box(modifier.width(size).aspectRatio(515f / 273f)) {
         Image(

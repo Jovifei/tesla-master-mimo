@@ -2,11 +2,58 @@ package com.matelink.ui.screens.drives
 
 import com.matelink.data.api.models.DriveData
 import com.matelink.data.api.models.DriveOdometerDetails
+import com.matelink.data.api.models.Units
+import com.matelink.domain.model.UnitFormatter
+import java.io.File
+import javax.xml.parsers.DocumentBuilderFactory
+import kotlin.math.round
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DrivesSummaryEvidenceTest {
+    @Test
+    fun distanceFiltersUseTheDisplayedTenAndHundredKilometreBoundaries() {
+        val cases = listOf(
+            9.999 to DriveDistanceFilter.COMMUTE,
+            10.0 to DriveDistanceFilter.DAY_TRIP,
+            99.999 to DriveDistanceFilter.DAY_TRIP,
+            100.0 to DriveDistanceFilter.ROAD_TRIP
+        )
+        for ((kilometres, expected) in cases) {
+            for ((distance, unit) in listOf(kilometres to "km", (kilometres / 1.609344) to "mi")) {
+                val matching = DriveDistanceFilter.entries.filter {
+                    it != DriveDistanceFilter.ALL && drive(distance).copy(lengthUnit = unit).matchesDistanceFilter(it)
+                }
+                assertEquals("distance=$distance $unit", listOf(expected), matching)
+            }
+        }
+    }
+
+    @Test
+    fun distanceFilterLabelsMatchTheActualBoundariesInBothLanguages() {
+        val miles = Units(unitOfLength = "mi")
+        val first = round(UnitFormatter.distanceKmDisplayValue(10.0, miles) * 10) / 10
+        val second = round(UnitFormatter.distanceKmDisplayValue(100.0, miles) * 10) / 10
+        assertEquals(6.2, first, 0.0)
+        assertEquals(62.1, second, 0.0)
+        for (path in listOf("src/main/res/values/strings.xml", "src/main/res/values-zh/strings.xml")) {
+            val nodes = DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(File(path))
+                .getElementsByTagName("string")
+            val labels = (0 until nodes.length).map { nodes.item(it) }
+                .associate { it.attributes.getNamedItem("name").nodeValue to it.textContent }
+            assertTrue(labels.getValue("filter_commute_km").contains("10 km"))
+            assertTrue(labels.getValue("filter_day_trip_km").contains("10–<100 km"))
+            assertTrue(labels.getValue("filter_road_trip_km").contains("100 km"))
+            assertTrue(labels.getValue("filter_commute_mi").contains("6.2 mi"))
+            assertTrue(labels.getValue("filter_day_trip_mi").contains("6.2–<62.1 mi"))
+            assertTrue(labels.getValue("filter_road_trip_mi").contains("62.1 mi"))
+            assertTrue(labels.getValue("filter_commute_mi").contains(if (path.contains("values-zh")) "约" else "approx."))
+            assertTrue(labels.getValue("filter_road_trip_mi").contains(if (path.contains("values-zh")) "约" else "approx."))
+        }
+    }
+
     @Test
     fun unknownDistanceIsRetainedOnlyInUnfilteredWindowAndMilesUseKilometreThresholds() {
         assertEquals(true, drive().matchesDistanceFilter(DriveDistanceFilter.ALL))

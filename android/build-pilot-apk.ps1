@@ -94,6 +94,7 @@ $gradleArgs = @(
     "-PJOURVOLT_API_BASE_URL=$normalizedApiBaseUrl",
     "-PJOURVOLT_AUTH_HOST=$normalizedAuthHost",
     "-PMATELINK_PUBLIC_INFO_BASE_URL=$normalizedPublicInfoBaseUrl",
+    '-Pkotlin.compiler.execution.strategy=in-process',
     '--no-daemon'
 )
 if ($normalizedSigningPropertiesPath) {

@@ -6,16 +6,19 @@ import com.matelink.data.api.models.DriveDetail
 import com.matelink.data.local.entity.ChargeDetailAggregate
 import com.matelink.data.local.entity.DriveDetailAggregate
 import com.matelink.data.local.entity.SchemaVersion
+import com.matelink.ui.screens.charges.ChargeStatsCalculator
+import com.matelink.ui.screens.charges.ChargeType
+import com.matelink.domain.telemetry.usableVehicleCoordinates
 import kotlin.math.roundToInt
 
 internal fun DriveDetail.toAggregate(carId: Int, computedAt: Long): DriveDetailAggregate {
     val positions = positions.orEmpty()
     val elevations = positions.mapNotNull { it.elevation }
-    val insideTemperatures = positions.mapNotNull { it.insideTemp }
-    val outsideTemperatures = positions.mapNotNull { it.outsideTemp }
+    val insideTemperatures = positions.mapNotNull { com.matelink.data.api.models.canonicalAggregateTemperatureC(it.insideTemp, temperatureUnit, source) }
+    val outsideTemperatures = positions.mapNotNull { com.matelink.data.api.models.canonicalAggregateTemperatureC(it.outsideTemp, temperatureUnit, source) }
     val powers = positions.mapNotNull { it.power }
-    val firstCoordinate = positions.firstOrNull { it.latitude != null && it.longitude != null }
-    val lastCoordinate = positions.lastOrNull { it.latitude != null && it.longitude != null }
+    val firstCoordinate = positions.firstOrNull { usableVehicleCoordinates(it.latitude, it.longitude) != null }
+    val lastCoordinate = positions.lastOrNull { usableVehicleCoordinates(it.latitude, it.longitude) != null }
     var elevationGain = 0
     var elevationLoss = 0
 
@@ -56,10 +59,13 @@ internal fun DriveDetail.toAggregate(carId: Int, computedAt: Long): DriveDetailA
 internal fun ChargeDetail.toAggregate(carId: Int, computedAt: Long): ChargeDetailAggregate {
     val points = chargePoints.orEmpty()
     val chargerDetails = points.mapNotNull { it.chargerDetails }
-    val outsideTemperatures = points.mapNotNull { it.outsideTemp }
-    val isFastCharger = chargerDetails.any { details ->
-        details.fastChargerPresent == true ||
-            (details.chargerPower != null && details.chargerPhases == 0)
+    val outsideTemperatures = points.mapNotNull { com.matelink.data.api.models.canonicalAggregateTemperatureC(it.outsideTemp, temperatureUnit, source) }
+    // Share the detail consumer's existing conflict/contract arbiter, rather than any/max hints.
+    val detectedType = ChargeStatsCalculator.detectChargeType(this)
+    val observedPhases = when (detectedType) {
+        ChargeType.AC -> chargerDetails.mapNotNull { it.chargerPhases }.filter { it in 1..3 }.maxOrNull()
+        ChargeType.DC -> chargerDetails.mapNotNull { it.chargerPhases }.firstOrNull { it == 0 }
+        ChargeType.UNKNOWN -> null
     }
 
     return ChargeDetailAggregate(
@@ -67,13 +73,13 @@ internal fun ChargeDetail.toAggregate(carId: Int, computedAt: Long): ChargeDetai
         carId = carId,
         schemaVersion = SchemaVersion.CURRENT,
         computedAt = computedAt,
-        isFastCharger = isFastCharger,
+        isFastCharger = detectedType == ChargeType.DC,
         fastChargerBrand = chargerDetails.firstNonBlank { it.fastChargerBrand },
         connectorType = chargerDetails.firstNonBlank { it.fastChargerType },
         maxChargerPower = chargerDetails.mapNotNull { it.chargerPower }.maxOrNull()?.roundToInt(),
         maxChargerVoltage = chargerDetails.mapNotNull { it.chargerVoltage }.maxOrNull()?.roundToInt(),
         maxChargerCurrent = chargerDetails.mapNotNull { it.chargerActualCurrent }.maxOrNull()?.roundToInt(),
-        chargerPhases = chargerDetails.mapNotNull { it.chargerPhases }.maxOrNull(),
+        chargerPhases = observedPhases,
         maxOutsideTemp = outsideTemperatures.maxOrNull(),
         minOutsideTemp = outsideTemperatures.minOrNull(),
         chargePointCount = points.size

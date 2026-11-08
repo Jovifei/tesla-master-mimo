@@ -501,9 +501,15 @@ func (a *app) historyArchiveImportForBinding(w http.ResponseWriter, r *http.Requ
 		a.json(w, http.StatusServiceUnavailable, map[string]string{"error": "history_archive_import_failed"})
 		return
 	}
-	result, err := a.telemetry.importHistory(r.Context(), binding.UserID, binding.VehicleID, request)
+	guard := archiveImportGuard{binding: binding, tokenHash: archiveBindingTokenHash(r.Header.Get(archiveBindingHeader))}
+	result, err := a.telemetry.importBoundHistory(r.Context(), guard, request)
 	if err != nil {
-		a.json(w, http.StatusServiceUnavailable, map[string]string{"error": "history_archive_import_failed"})
+		if errors.Is(err, errArchiveBindingInvalid) || errors.Is(err, errArchiveBindingRevoked) ||
+			errors.Is(err, errArchiveBindingExpired) || errors.Is(err, errArchiveBindingScopeMismatch) {
+			a.archiveBindingError(w, err)
+		} else {
+			a.json(w, http.StatusServiceUnavailable, map[string]string{"error": "history_archive_import_failed"})
+		}
 		return
 	}
 	a.json(w, http.StatusOK, map[string]any{"data": result})

@@ -96,6 +96,18 @@ type teslaChargeState struct {
 	ChargeCurrentRequest    *int     `json:"charge_current_request"`
 	ChargeCurrentRequestMax *int     `json:"charge_current_request_max"`
 	TimeToFullCharge        *float64 `json:"time_to_full_charge"`
+	// Extended display fields (design 2026-11-05 §4.1). All optional: vehicles
+	// or firmware that do not report them must stay nil end to end.
+	ConnChargeCable        *string  `json:"conn_charge_cable"`
+	FastChargerBrand       *string  `json:"fast_charger_brand"`
+	FastChargerType        *string  `json:"fast_charger_type"`
+	ChargePortLatch        *string  `json:"charge_port_latch"`
+	BatteryHeaterOn        *bool    `json:"battery_heater_on"`
+	ScheduledChargingStart *int64   `json:"scheduled_charging_start_time"`
+	ScheduledDeparture     *int64   `json:"scheduled_departure_time"`
+	MinutesToFullCharge    *int     `json:"minutes_to_full_charge"`
+	ChargeMilesAddedRated  *float64 `json:"charge_miles_added_rated"`
+	ChargeMilesAddedIdeal  *float64 `json:"charge_miles_added_ideal"`
 }
 
 type teslaClimateState struct {
@@ -103,6 +115,23 @@ type teslaClimateState struct {
 	InsideTemp        *float64 `json:"inside_temp"`
 	OutsideTemp       *float64 `json:"outside_temp"`
 	IsPreconditioning *bool    `json:"is_preconditioning"`
+	// Extended display fields (design 2026-11-05 §4.1).
+	DriverTempSetting    *float64 `json:"driver_temp_setting"`
+	PassengerTempSetting *float64 `json:"passenger_temp_setting"`
+	FanStatus            *int     `json:"fan_status"`
+	IsFrontDefrosterOn   *bool    `json:"is_front_defroster_on"`
+	IsRearDefrosterOn    *bool    `json:"is_rear_defroster_on"`
+	SeatHeaterLeft       *int     `json:"seat_heater_left"`
+	SeatHeaterRight      *int     `json:"seat_heater_right"`
+	SeatHeaterRearLeft   *int     `json:"seat_heater_rear_left"`
+	SeatHeaterRearCenter *int     `json:"seat_heater_rear_center"`
+	SeatHeaterRearRight  *int     `json:"seat_heater_rear_right"`
+	SteeringWheelHeater  *bool    `json:"steering_wheel_heater"`
+	DefrostMode          *int     `json:"defrost_mode"`
+	ClimateKeeperMode    *string  `json:"climate_keeper_mode"`
+	CabinOverheatProtect *string  `json:"cabin_overheat_protection"`
+	CabinOverheatCooling *bool    `json:"cabin_overheat_protection_actively_cooling"`
+	SideMirrorHeaters    *bool    `json:"side_mirror_heaters"`
 }
 
 type teslaDriveState struct {
@@ -147,6 +176,37 @@ type teslaVehicleState struct {
 	TPMSSoftWarningFR  *bool    `json:"tpms_soft_warning_fr"`
 	TPMSSoftWarningRL  *bool    `json:"tpms_soft_warning_rl"`
 	TPMSSoftWarningRR  *bool    `json:"tpms_soft_warning_rr"`
+	// Extended display fields (design 2026-11-05 §4.1).
+	FrontLeftWindow  *int              `json:"fd_window"`
+	FrontRightWindow *int              `json:"fp_window"`
+	RearLeftWindow   *int              `json:"rd_window"`
+	RearRightWindow  *int              `json:"rp_window"`
+	ValetMode        *bool             `json:"valet_mode"`
+	SoftwareUpdate   *teslaSoftwareUpd `json:"software_update"`
+	SpeedLimitMode   *teslaSpeedLimit  `json:"speed_limit_mode"`
+	MediaInfo        *teslaMediaInfo   `json:"media_info"`
+}
+
+type teslaSoftwareUpd struct {
+	Status              *string `json:"status"`
+	DownloadPercent     *int    `json:"download_percent"`
+	InstallPercent      *int    `json:"install_percent"`
+	ExpectedDurationSec *int    `json:"expected_duration_sec"`
+}
+
+type teslaSpeedLimit struct {
+	Active          *bool    `json:"active"`
+	CurrentLimitMPH *float64 `json:"current_limit_mph"`
+	MaxLimitMPH     *float64 `json:"max_limit_mph"`
+	MinLimitMPH     *float64 `json:"min_limit_mph"`
+	PinCodeRequired *bool    `json:"pin_code_required"`
+}
+
+type teslaMediaInfo struct {
+	MediaState       *string `json:"media_state"`
+	NowPlayingTitle  *string `json:"now_playing_title"`
+	NowPlayingArtist *string `json:"now_playing_artist"`
+	NowPlayingAlbum  *string `json:"now_playing_album"`
 }
 
 func (p *fleetProvider) Vehicles(ctx context.Context, userID string) ([]vehicle, error) {
@@ -219,9 +279,59 @@ func fleetVehicleCoreDataPath(vin string) string {
 	return "/api/1/vehicles/" + url.PathEscape(vin) + "/vehicle_data"
 }
 
+var (
+	// Bounded wake window for a sleeping vehicle: one wake_up call, then
+	// poll vehicle_data until the window closes. Package-level variables
+	// so tests can shrink the window.
+	wakePollInterval = 5 * time.Second
+	wakePollTimeout  = 60 * time.Second
+)
+
+// vehicleData fetches the vehicle's data, waking it first when necessary.
+// A 408 from the core endpoint means the car is asleep: issue exactly one
+// wake_up for this refresh — never a wake loop, so quota is not burned on
+// repeated wakes — then poll inside the bounded wake window. Any other
+// error class (auth, billing, rate limit, transport) is returned at once.
+func (p *fleetProvider) vehicleData(ctx context.Context, userID, vin string) (teslaVehicleDataEnvelope, bool, error) {
+	payload, locationPermissionRequired, err := p.vehicleDataOnce(ctx, userID, vin)
+	if err == nil || !isVehicleUnavailable(err) {
+		return payload, locationPermissionRequired, err
+	}
+	if wakeErr := p.wakeUp(ctx, userID, vin); wakeErr != nil {
+		if ctx.Err() != nil {
+			return payload, locationPermissionRequired, ctx.Err()
+		}
+		if !isVehicleUnavailable(wakeErr) {
+			return payload, locationPermissionRequired, wakeErr
+		}
+	}
+	deadline := time.Now().Add(wakePollTimeout)
+	for {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			return payload, locationPermissionRequired, err
+		}
+		wait := wakePollInterval
+		if wait > remaining {
+			wait = remaining
+		}
+		timer := time.NewTimer(wait)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return payload, locationPermissionRequired, ctx.Err()
+		case <-timer.C:
+		}
+		payload, locationPermissionRequired, err = p.vehicleDataOnce(ctx, userID, vin)
+		if err == nil || !isVehicleUnavailable(err) {
+			return payload, locationPermissionRequired, err
+		}
+	}
+}
+
 // Core and location are independent capabilities. A successful location-only
 // response is not a complete snapshot and must never replace charge/config data.
-func (p *fleetProvider) vehicleData(ctx context.Context, userID, vin string) (teslaVehicleDataEnvelope, bool, error) {
+func (p *fleetProvider) vehicleDataOnce(ctx context.Context, userID, vin string) (teslaVehicleDataEnvelope, bool, error) {
 	var core teslaVehicleDataEnvelope
 	if err := p.get(ctx, userID, fleetVehicleCoreDataPath(vin), &core); err != nil {
 		return teslaVehicleDataEnvelope{}, false, err
@@ -290,6 +400,15 @@ func (p *fleetProvider) Status(ctx context.Context, userID string, vehicleID int
 	}
 
 	status := mapTeslaVehicleStatus(data, displayName, state)
+	// Best-effort command-scope detection (design §6 P3): parse the granted
+	// scopes out of the user's current access token so the app can prompt a
+	// one-tap incremental authorization before commands are offered. Any
+	// failure leaves the field nil (unknown) rather than blocking status.
+	if accessToken, tokenErr := p.tokens.accessToken(ctx, userID, ""); tokenErr == nil {
+		if granted := parseGrantedScopes(accessToken); granted != nil {
+			status.CommandScopesMissing = missingCommandScopes(granted)
+		}
+	}
 	status.LocationPermissionRequired = locationPermissionRequired
 	providerIdentity, err := p.storedProviderIdentity(ctx, userID, vehicleID)
 	if err != nil {
@@ -365,7 +484,78 @@ func mapTeslaVehicleStatus(data teslaVehicleData, displayName, state string) veh
 		value := strconv.Itoa(*data.VehicleState.CenterDisplayState)
 		status.CenterDisplayState = &value
 	}
+	applyExtendedDisplayFields(&status, data)
 	return status
+}
+
+// applyExtendedDisplayFields maps the optional Fleet display fields added by
+// design 2026-11-05 §4.1 into the internal status. Every source field is a
+// pointer: an absent Fleet value leaves the status field nil so the API keeps
+// reporting "unknown" instead of inventing a zero.
+func applyExtendedDisplayFields(status *vehicleStatus, data teslaVehicleData) {
+	charge := data.ChargeState
+	status.ConnChargeCable = charge.ConnChargeCable
+	status.FastChargerBrand = charge.FastChargerBrand
+	status.FastChargerType = charge.FastChargerType
+	status.ChargePortLatch = charge.ChargePortLatch
+	status.BatteryHeaterOn = charge.BatteryHeaterOn
+	status.MinutesToFullCharge = charge.MinutesToFullCharge
+	status.ChargeRangeAddedRated = milesPointerToKilometres(charge.ChargeMilesAddedRated)
+	status.ChargeRangeAddedIdeal = milesPointerToKilometres(charge.ChargeMilesAddedIdeal)
+	status.ScheduledChargingStartTime = epochMillisPointer(charge.ScheduledChargingStart)
+	status.ScheduledDepartureTime = epochMillisPointer(charge.ScheduledDeparture)
+
+	climate := data.ClimateState
+	status.DriverTempSetting = climate.DriverTempSetting
+	status.PassengerTempSetting = climate.PassengerTempSetting
+	status.FanStatus = climate.FanStatus
+	status.FrontDefrosterOn = climate.IsFrontDefrosterOn
+	status.RearDefrosterOn = climate.IsRearDefrosterOn
+	status.SeatHeaterLeft = climate.SeatHeaterLeft
+	status.SeatHeaterRight = climate.SeatHeaterRight
+	status.SeatHeaterRearLeft = climate.SeatHeaterRearLeft
+	status.SeatHeaterRearCenter = climate.SeatHeaterRearCenter
+	status.SeatHeaterRearRight = climate.SeatHeaterRearRight
+	status.SteeringWheelHeater = climate.SteeringWheelHeater
+	status.DefrostMode = climate.DefrostMode
+	status.ClimateKeeperMode = climate.ClimateKeeperMode
+	status.CabinOverheatProtection = climate.CabinOverheatProtect
+	status.CabinOverheatProtectionCooling = climate.CabinOverheatCooling
+	status.SideMirrorHeaters = climate.SideMirrorHeaters
+
+	vehicle := data.VehicleState
+	status.WindowsOpen = anyOpen(vehicle.FrontLeftWindow, vehicle.FrontRightWindow, vehicle.RearLeftWindow, vehicle.RearRightWindow)
+	status.ValetMode = vehicle.ValetMode
+	if update := vehicle.SoftwareUpdate; update != nil {
+		status.SoftwareUpdateStatus = update.Status
+		status.SoftwareDownloadPercent = update.DownloadPercent
+		status.SoftwareInstallPercent = update.InstallPercent
+		status.SoftwareUpdateExpectedSec = update.ExpectedDurationSec
+	}
+	if limit := vehicle.SpeedLimitMode; limit != nil {
+		status.SpeedLimitActive = limit.Active
+		status.SpeedLimitPinRequired = limit.PinCodeRequired
+		if limit.CurrentLimitMPH != nil {
+			kmh := int(math.Round(*limit.CurrentLimitMPH * milesToKilometres))
+			status.SpeedLimitCurrentKMH = &kmh
+		}
+	}
+	if media := vehicle.MediaInfo; media != nil {
+		status.MediaState = media.MediaState
+		status.MediaTitle = media.NowPlayingTitle
+		status.MediaArtist = media.NowPlayingArtist
+		status.MediaAlbum = media.NowPlayingAlbum
+	}
+}
+
+// epochMillisPointer converts a Fleet epoch-milliseconds value to a UTC time.
+// Zero or negative values mean "not scheduled" at Tesla and stay nil.
+func epochMillisPointer(value *int64) *time.Time {
+	if value == nil || *value <= 0 {
+		return nil
+	}
+	converted := time.UnixMilli(*value).UTC()
+	return &converted
 }
 
 func (p *fleetProvider) storedProviderIdentity(ctx context.Context, userID string, vehicleID int) (string, error) {
@@ -425,7 +615,14 @@ func (p *fleetProvider) get(ctx context.Context, userID, path string, target any
 	case http.StatusTooManyRequests:
 		logFleetAPI("GET", path, response.StatusCode, body)
 		return errTeslaRateLimited
-	case http.StatusRequestTimeout, http.StatusMisdirectedRequest:
+	case http.StatusRequestTimeout:
+		// 408 is Tesla's "vehicle unavailable" answer (the car is asleep).
+		// Keep the status code on the error so the refresh path can
+		// recognise it and attempt a wake_up; errors.Is(err,
+		// errTeslaUnavailable) keeps working through Unwrap.
+		logFleetAPI("GET", path, response.StatusCode, body)
+		return &fleetAPIError{class: "vehicle_unavailable", statusCode: response.StatusCode, cause: errTeslaUnavailable}
+	case http.StatusMisdirectedRequest:
 		logFleetAPI("GET", path, response.StatusCode, body)
 		return errTeslaUnavailable
 	}
@@ -443,6 +640,78 @@ func (p *fleetProvider) get(ctx context.Context, userID, path string, target any
 	return nil
 }
 
+// post issues an authenticated Fleet API POST with the same one-time token
+// refresh behaviour as get. The response body is discarded; only the
+// outcome class matters to callers.
+func (p *fleetProvider) post(ctx context.Context, userID, path string) error {
+	accessToken, err := p.tokens.accessToken(ctx, userID, "")
+	if err != nil {
+		return err
+	}
+	response, err := p.requestMethod(ctx, http.MethodPost, path, accessToken)
+	if err != nil {
+		return err
+	}
+	if response.StatusCode == http.StatusUnauthorized {
+		response.Body.Close()
+		accessToken, err = p.tokens.accessToken(ctx, userID, accessToken)
+		if err != nil {
+			return err
+		}
+		response, err = p.requestMethod(ctx, http.MethodPost, path, accessToken)
+		if err != nil {
+			return err
+		}
+	}
+	defer response.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(response.Body, 4096))
+	if err != nil {
+		return fmt.Errorf("read Fleet API response: %w", err)
+	}
+	logFleetAPI("POST", path, response.StatusCode, body)
+	switch {
+	case response.StatusCode >= 200 && response.StatusCode < 300:
+		return nil
+	case response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden:
+		if errors.Is(teslaTokenFailure(response.StatusCode, body), errTeslaConfiguration) {
+			return errTeslaConfiguration
+		}
+		if fleetResponseErrorClass(response.StatusCode, body) == "billing_blocked" {
+			return &fleetAPIError{class: "billing_blocked", statusCode: response.StatusCode, cause: errTeslaBillingBlocked}
+		}
+		return errTeslaReauthorization
+	case response.StatusCode == http.StatusNotFound:
+		return errVehicleNotFound
+	case response.StatusCode == http.StatusTooManyRequests:
+		return errTeslaRateLimited
+	case response.StatusCode == http.StatusRequestTimeout:
+		return &fleetAPIError{class: "vehicle_unavailable", statusCode: response.StatusCode, cause: errTeslaUnavailable}
+	default:
+		if fleetResponseErrorClass(response.StatusCode, body) == "billing_blocked" {
+			return &fleetAPIError{class: "billing_blocked", statusCode: response.StatusCode, cause: errTeslaBillingBlocked}
+		}
+		return errTeslaUnavailable
+	}
+}
+
+func fleetWakeUpPath(vin string) string {
+	return "/api/1/vehicles/" + url.PathEscape(vin) + "/wake_up"
+}
+
+// wakeUp asks the vehicle to wake. A 408 answer means the wake is still in
+// progress, not that it failed; the caller polls vehicle_data afterwards.
+func (p *fleetProvider) wakeUp(ctx context.Context, userID, vin string) error {
+	return p.post(ctx, userID, fleetWakeUpPath(vin))
+}
+
+// isVehicleUnavailable reports whether err is the Fleet API 408 "vehicle
+// unavailable" outcome (car asleep), as opposed to an auth, billing,
+// rate-limit or transport failure.
+func isVehicleUnavailable(err error) bool {
+	var apiErr *fleetAPIError
+	return errors.As(err, &apiErr) && apiErr.statusCode == http.StatusRequestTimeout
+}
+
 func logFleetAPI(method, path string, status int, body []byte) {
 	log.Print(sanitizeFleetLog(method, path, status, body))
 }
@@ -457,6 +726,8 @@ func fleetEndpointLabel(path string) string {
 		return "vehicles"
 	case strings.HasPrefix(path, "/api/1/vehicles/") && strings.Contains(path, "/vehicle_data"):
 		return "vehicle_data"
+	case strings.HasPrefix(path, "/api/1/vehicles/") && strings.HasSuffix(path, "/wake_up"):
+		return "wake_up"
 	case path == "/api/1/partner_accounts":
 		return "partner_accounts"
 	default:
@@ -548,7 +819,11 @@ func fleetExplicitBillingCode(field, value string) bool {
 }
 
 func (p *fleetProvider) request(ctx context.Context, path, accessToken string) (*http.Response, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.baseURL+path, nil)
+	return p.requestMethod(ctx, http.MethodGet, path, accessToken)
+}
+
+func (p *fleetProvider) requestMethod(ctx context.Context, method, path, accessToken string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, method, p.baseURL+path, nil)
 	if err != nil {
 		return nil, err
 	}

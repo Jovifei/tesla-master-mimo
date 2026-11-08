@@ -300,7 +300,7 @@ private fun CountryCard(
                 // Distance chip
                 StatChip(
                     icon = Icons.Default.Route,
-                    value = UnitFormatter.formatDistance(country.totalDistanceKm, units, 0),
+                    value = geoDistanceText(country.qualifiedDistanceKm, units),
                     palette = palette,
                     modifier = Modifier.weight(1f)
                 )
@@ -308,11 +308,7 @@ private fun CountryCard(
                 // Energy chip
                 StatChip(
                     icon = Icons.Default.ElectricBolt,
-                    value = if (country.totalChargeEnergyKwh > 999) {
-                        "%.1f MWh".format(country.totalChargeEnergyKwh / 1000)
-                    } else {
-                        "%.0f kWh".format(country.totalChargeEnergyKwh)
-                    },
+                    value = geoEnergyText(country.qualifiedChargeEnergyKwh),
                     palette = palette,
                     modifier = Modifier.weight(1f)
                 )

@@ -1,7 +1,12 @@
 package com.matelink.ui.screens.tpms
 
+import com.matelink.ui.components.TpmsVehicleVisual
+import com.matelink.domain.model.visualWheelReading
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -76,6 +81,7 @@ fun TpmsTrendScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     LaunchedEffect(carId) { viewModel.load(carId) }
+    var focusedWheel by remember(carId, state.selectedWindow) { mutableStateOf<TirePosition?>(null) }
 
     Scaffold(
         topBar = {
@@ -163,7 +169,16 @@ fun TpmsTrendScreen(
                     }
                 }
             } else {
-                TpmsTrendChart(state.series)
+                val now = System.currentTimeMillis()
+                val readings = TirePosition.entries.associateWith { wheel ->
+                    val point = state.series[wheel]?.lastOrNull { it.pressureBar != null }
+                    visualWheelReading(point?.pressureBar, point?.observedAt, now, verified = point != null)
+                }
+                TpmsVehicleVisual(readings, focusedWheel, onSelect = { focusedWheel = it }, profile = state.alertProfile)
+                TpmsTrendChart(
+                    series = if (focusedWheel == null) state.series else state.series.filterKeys { it == focusedWheel },
+                    window = state.selectedWindow
+                )
                 TpmsSummary(state)
             }
 
@@ -199,7 +214,10 @@ private fun WindowSelector(
 }
 
 @Composable
-private fun TpmsTrendChart(series: Map<TirePosition, List<com.matelink.domain.analytics.TpmsPressurePoint>>) {
+private fun TpmsTrendChart(
+    series: Map<TirePosition, List<com.matelink.domain.analytics.TpmsPressurePoint>>,
+    window: TpmsTrendWindow
+) {
     val allPoints = series.values.flatten()
     val validPoints = allPoints.mapNotNull { it.pressureBar }
     if (validPoints.isEmpty()) return
@@ -209,11 +227,18 @@ private fun TpmsTrendChart(series: Map<TirePosition, List<com.matelink.domain.an
     val paddedMax = maxValue + 0.25
     val range = (paddedMax - paddedMin).takeIf { it > 0.0 } ?: 1.0
 
-    val firstTime = allPoints.minOfOrNull { it.observedAt }
-    val lastTime = allPoints.maxOfOrNull { it.observedAt }
+    val now = System.currentTimeMillis()
+    val windowDurationMs = window.days * 86_400_000L
+    val windowEnd = now
+    val windowStart = now - windowDurationMs
+    val timeRange = windowDurationMs.toFloat()
 
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(12.dp)) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -226,7 +251,7 @@ private fun TpmsTrendChart(series: Map<TirePosition, List<com.matelink.domain.an
                 )
                 // Legend in top-right corner
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     TirePosition.entries.forEach { wheel ->
@@ -234,7 +259,7 @@ private fun TpmsTrendChart(series: Map<TirePosition, List<com.matelink.domain.an
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(3.dp)
                         ) {
-                            Canvas(modifier = Modifier.size(7.dp)) {
+                            Canvas(modifier = Modifier.size(8.dp)) {
                                 drawCircle(TpmsWheelColors.getValue(wheel))
                             }
                             Text(
@@ -245,7 +270,7 @@ private fun TpmsTrendChart(series: Map<TirePosition, List<com.matelink.domain.an
                     }
                 }
             }
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(10.dp))
             Canvas(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -271,13 +296,11 @@ private fun TpmsTrendChart(series: Map<TirePosition, List<com.matelink.domain.an
 
                 series.forEach { (wheel, points) ->
                     val color = TpmsWheelColors.getValue(wheel)
-                    nullableSegments(points).forEach { segment ->
-                        val firstT = points.firstOrNull()?.observedAt ?: return@forEach
-                        val lastT = points.lastOrNull()?.observedAt ?: firstT
-                        val timeRange = (lastT - firstT).toFloat().takeIf { it > 0f } ?: 1f
-                        segment.zipWithNext().forEach { (first, last) ->
-                            val x1 = left + width * ((first.observedAt - firstT) / timeRange)
-                            val x2 = left + width * ((last.observedAt - firstT) / timeRange)
+                    val wheelValidPoints = points.filter { it.pressureBar != null }.sortedBy { it.observedAt }
+                    if (wheelValidPoints.size >= 2) {
+                        wheelValidPoints.zipWithNext().forEach { (first, last) ->
+                            val x1 = left + width * ((first.observedAt - windowStart).toFloat() / timeRange).coerceIn(0f, 1f)
+                            val x2 = left + width * ((last.observedAt - windowStart).toFloat() / timeRange).coerceIn(0f, 1f)
                             val y1 = bottom - height * ((first.pressureBar!! - paddedMin) / range).toFloat()
                             val y2 = bottom - height * ((last.pressureBar!! - paddedMin) / range).toFloat()
                             drawLine(
@@ -288,38 +311,47 @@ private fun TpmsTrendChart(series: Map<TirePosition, List<com.matelink.domain.an
                                 cap = StrokeCap.Round
                             )
                         }
-                        segment.forEach { point ->
-                            val x = left + width * ((point.observedAt - firstT) / timeRange)
-                            val y = bottom - height * ((point.pressureBar!! - paddedMin) / range).toFloat()
-                            drawCircle(color, radius = 3.5.dp.toPx(), center = Offset(x, y))
-                        }
+                    } else if (wheelValidPoints.size == 1) {
+                        val pt = wheelValidPoints.first()
+                        val y = bottom - height * ((pt.pressureBar!! - paddedMin) / range).toFloat()
+                        drawLine(
+                            color = color.copy(alpha = 0.4f),
+                            start = Offset(left, y),
+                            end = Offset(right, y),
+                            strokeWidth = 1.5.dp.toPx(),
+                            pathEffect = PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 4.dp.toPx()))
+                        )
+                    }
+                    wheelValidPoints.forEach { point ->
+                        val x = left + width * ((point.observedAt - windowStart).toFloat() / timeRange).coerceIn(0f, 1f)
+                        val y = bottom - height * ((point.pressureBar!! - paddedMin) / range).toFloat()
+                        drawCircle(color, radius = 4.dp.toPx(), center = Offset(x, y))
                     }
                 }
             }
-            if (firstTime != null && lastTime != null && lastTime > firstTime) {
-                val dateFormat = remember { SimpleDateFormat("MM/dd", Locale.getDefault()) }
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 8.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        dateFormat.format(Date(firstTime)),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        dateFormat.format(Date(firstTime + (lastTime - firstTime) / 2)),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        dateFormat.format(Date(lastTime)),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+
+            val dateFormat = remember { SimpleDateFormat("MM/dd", Locale.getDefault()) }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    dateFormat.format(Date(windowStart)),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    dateFormat.format(Date(windowStart + windowDurationMs / 2)),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    dateFormat.format(Date(windowEnd)),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }

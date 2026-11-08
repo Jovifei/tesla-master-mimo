@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
+	"sort"
 	"strconv"
 	"time"
 
@@ -13,6 +15,133 @@ import (
 type parkedHistoryBound struct {
 	Session          telemetrySession
 	StartSOC, EndSOC *int
+}
+
+// This is a bound on the read response, not a claim that the archive captured
+// every physical charge. charge_sessions_complete only says the scoped query
+// returned every matching stored session without truncation or rejection.
+const maxParkedChargeSessions = 64
+const parkedChargeSOCTolerance = 5 * time.Minute
+
+func parkedChargeBoundarySOC(points []telemetryChargePoint, at time.Time) (*int, *time.Time) {
+	var levelAtBoundary *int
+	var observedAt *time.Time
+	var nearest time.Duration
+	ambiguous := false
+	for _, point := range points {
+		level := observedRouteBatteryLevel(point.BatteryLevel)
+		if level == nil {
+			continue
+		}
+		distance := point.ObservedAt.Sub(at)
+		if distance < 0 {
+			distance = -distance
+		}
+		if distance > parkedChargeSOCTolerance {
+			continue
+		}
+		if observedAt == nil || distance < nearest {
+			value, timestamp := *level, point.ObservedAt
+			levelAtBoundary, observedAt, nearest, ambiguous = &value, &timestamp, distance, false
+		} else if distance == nearest && (!point.ObservedAt.Equal(*observedAt) || *level != *levelAtBoundary) {
+			ambiguous = true
+		}
+	}
+	if ambiguous {
+		return nil, nil
+	}
+	return levelAtBoundary, observedAt
+}
+
+func parkedLinkedCharges(older, newer telemetrySession, candidates []telemetrySession) ([]map[string]any, bool) {
+	start, end := *older.EndAt, newer.StartAt
+	rows := append([]telemetrySession(nil), candidates...)
+	sort.Slice(rows, func(i, j int) bool {
+		if rows[i].StartAt.Equal(rows[j].StartAt) {
+			return rows[i].PublicID < rows[j].PublicID
+		}
+		return rows[i].StartAt.Before(rows[j].StartAt)
+	})
+	result := make([]map[string]any, 0, min(len(rows), maxParkedChargeSessions))
+	complete := true
+	seen := make(map[int]bool)
+	var previousEnd *time.Time
+	for _, row := range rows {
+		if row.Kind != "charge" || !row.StartAt.Before(end) || (row.EndAt != nil && !row.EndAt.After(start)) {
+			continue
+		}
+		if row.Source != older.Source || row.SourceInstanceID != older.SourceInstanceID ||
+			row.SourceVehicleID != older.SourceVehicleID || row.QualityState == "quarantined" || row.PublicID <= 0 {
+			complete = false
+			continue
+		}
+		if seen[row.PublicID] {
+			complete = false
+			continue
+		}
+		seen[row.PublicID] = true
+		if row.EndAt != nil && !row.EndAt.After(row.StartAt) {
+			complete = false
+			continue
+		}
+		if previousEnd != nil && row.StartAt.Before(*previousEnd) {
+			complete = false
+		}
+		if row.EndAt != nil {
+			previousEnd = row.EndAt
+		}
+		if len(result) == maxParkedChargeSessions {
+			complete = false
+			continue
+		}
+		var endDate any
+		if row.EndAt != nil {
+			endDate = row.EndAt.UTC().Format(time.RFC3339Nano)
+		}
+		if row.StartAt.Before(start) || row.EndAt == nil || row.EndAt.After(end) {
+			complete = false
+		}
+		var energy any
+		if row.QualityState == "observed" && row.EndAt != nil {
+			if amount := finiteHistorySample(row.EnergyAdded); amount != nil && *amount >= 0 {
+				energy = *amount
+			}
+		}
+		var firstSOC, lastSOC, firstSOCAt, lastSOCAt any
+		if row.EndAt != nil {
+			startLevel, startObserved := parkedChargeBoundarySOC(row.ChargePoints, row.StartAt)
+			endLevel, endObserved := parkedChargeBoundarySOC(row.ChargePoints, *row.EndAt)
+			firstSOC, lastSOC = nullableInt(startLevel), nullableInt(endLevel)
+			if startObserved != nil {
+				firstSOCAt = startObserved.UTC().Format(time.RFC3339Nano)
+			}
+			if endObserved != nil {
+				lastSOCAt = endObserved.UTC().Format(time.RFC3339Nano)
+			}
+		}
+		result = append(result, map[string]any{
+			"charge_id":             row.PublicID,
+			"start_date":            row.StartAt.UTC().Format(time.RFC3339Nano),
+			"end_date":              endDate,
+			"energy_added_kwh":      energy,
+			"start_battery_level":   firstSOC,
+			"end_battery_level":     lastSOC,
+			"start_soc_observed_at": firstSOCAt,
+			"end_soc_observed_at":   lastSOCAt,
+			"source":                row.Source,
+			"quality_state":         row.QualityState,
+		})
+	}
+	return result, complete
+}
+
+func addParkedCharges(data map[string]any, older, newer telemetrySession, rows []telemetrySession) {
+	charges, complete := parkedLinkedCharges(older, newer, rows)
+	data["linked_charges"] = charges
+	data["charge_sessions_complete"] = complete
+	if len(charges) != 0 {
+		data["linked_charge"] = charges[0]
+	}
 }
 
 func parkedHistoryBoundaryData(older, newer parkedHistoryBound) map[string]any {
@@ -31,7 +160,7 @@ func parkedHistoryBoundaryData(older, newer parkedHistoryBound) map[string]any {
 	}
 	var delta any
 	if older.EndSOC != nil && newer.StartSOC != nil {
-		delta = *older.EndSOC - *newer.StartSOC
+		delta = *newer.StartSOC - *older.EndSOC
 	}
 	return map[string]any{
 		"older_drive_id": a.PublicID, "newer_drive_id": b.PublicID,
@@ -39,6 +168,7 @@ func parkedHistoryBoundaryData(older, newer parkedHistoryBound) map[string]any {
 		"address": a.EndAddress, "start_battery_level": nullableInt(older.EndSOC), "end_battery_level": nullableInt(newer.StartSOC),
 		"battery_delta": delta, "energy_kwh": nil, "average_power_kw": nil, "peak_power_kw": nil,
 		"inside_temp_average": nil, "outside_temp_average": nil, "linked_charge": nil,
+		"linked_charges": []map[string]any{}, "charge_sessions_complete": false,
 		"sample_count": 0, "coverage_seconds": 0, "coverage_ratio": 0.0,
 		"source": "teslamate_archive", "evidence": "adjacent_observed_drive_bounds",
 	}
@@ -116,6 +246,16 @@ func (s *telemetryService) parkedHistoryBounds(ctx context.Context, user string,
 		if machine := s.memory.machines[key]; machine != nil && machine.drive != nil && interveningParkedDrive(*machine.drive, older.Session, newer.Session) {
 			return nil, nil
 		}
+		var charges []telemetrySession
+		for _, row := range s.memory.completed[key] {
+			if row.Kind == "charge" {
+				charges = append(charges, row)
+			}
+		}
+		if machine := s.memory.machines[key]; machine != nil && machine.charge != nil {
+			charges = append(charges, *machine.charge)
+		}
+		addParkedCharges(data, older.Session, newer.Session, charges)
 		return data, ctx.Err()
 	}
 	if s.store == nil || s.store.pool == nil {
@@ -189,6 +329,40 @@ LIMIT 3`, user, car, olderID, newerID)
 	if intervening {
 		return nil, nil
 	}
+	chargeRows, err := tx.Query(ctx, `
+SELECT public_id,started_at,ended_at,energy_added,charge_points_json,
+       source,quality_state,COALESCE(source_instance_id,''),COALESCE(source_vehicle_id,'')
+FROM jourvolt_telemetry_sessions
+WHERE user_id=$1 AND vehicle_id=$2 AND kind='charge'
+  AND started_at<$4 AND (ended_at IS NULL OR ended_at>$3)
+ORDER BY started_at,public_id
+LIMIT $5`, user, car, *older.Session.EndAt, newer.Session.StartAt, maxParkedChargeSessions+1)
+	if err != nil {
+		return nil, err
+	}
+	var charges []telemetrySession
+	for chargeRows.Next() {
+		var charge telemetrySession
+		var points []byte
+		if err := chargeRows.Scan(&charge.PublicID, &charge.StartAt, &charge.EndAt,
+			&charge.EnergyAdded, &points, &charge.Source, &charge.QualityState,
+			&charge.SourceInstanceID, &charge.SourceVehicleID); err != nil {
+			chargeRows.Close()
+			return nil, err
+		}
+		charge.Kind = "charge"
+		if err := json.Unmarshal(points, &charge.ChargePoints); err != nil {
+			chargeRows.Close()
+			return nil, err
+		}
+		charges = append(charges, charge)
+	}
+	err = chargeRows.Err()
+	chargeRows.Close()
+	if err != nil {
+		return nil, err
+	}
+	addParkedCharges(data, older.Session, newer.Session, charges)
 	if err := tx.Commit(ctx); err != nil {
 		return nil, err
 	}

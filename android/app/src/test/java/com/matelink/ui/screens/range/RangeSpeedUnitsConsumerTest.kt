@@ -16,7 +16,7 @@ class RangeSpeedUnitsConsumerTest {
     private val date = LocalDate.of(2026, 10, 14)
     private fun receipt(unit: String, speed: String = "60.0", energy: Double = 5.0) =
         Moshi.Builder().build().adapter(DrivesResponse::class.java).fromJson("""{
-            "data":{"units":{"unit_of_length":"$unit"},"drives":[{
+            "data":{"units":{"unit_of_length":"$unit","unit_of_temperature":"C"},"drives":[{
                 "drive_id":7,"source":"teslamate_archive","quality_state":"observed",
                 "start_date":"2026-10-14T01:00:00Z","end_date":"2026-10-14T02:00:00Z",
                 "speed_avg":$speed,"odometer_details":{"odometer_distance":20.0},
@@ -79,5 +79,17 @@ class RangeSpeedUnitsConsumerTest {
             assertEquals(PersonalizedRangeSource.UNAVAILABLE, result.source)
             assertNull(result.rangeKm)
         }
+    }
+
+    @Test fun fiveCandidatesWithUnknownTemperatureUnitsCannotClaimAQualifiedConditionGroup() {
+        val raw = receipt("mi").copy(temperatureUnit = "")
+        val sample = raw.toPersonalizedRangeSample(date)
+        assertEquals(20.0, raw.outsideTempAvg!!, 0.0)
+        assertNull(sample.temperatureC)
+        val result = estimatePersonalizedRange(List(5) { sample }, 60.0, 20.0, 100.0, date)
+        assertEquals(PersonalizedRangeSource.UNAVAILABLE, result.source)
+        assertEquals(5, result.candidateSampleCount)
+        assertEquals(0, result.sampleCount)
+        assertNull(result.rangeKm)
     }
 }

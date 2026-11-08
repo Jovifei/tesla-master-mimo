@@ -183,6 +183,11 @@ class SettingsDataStore internal constructor(
         parseChargePriceOverrides(preferences[chargeTotalOverridesKey] ?: "{}")
     }
 
+    /** The original bytes must remain available if any legacy entry cannot migrate. */
+    internal val legacyChargeTotalOverridesJson: Flow<String?> = backingDataStore.data.map {
+        it[chargeTotalOverridesKey]
+    }
+
     /** Whether the legacy JSON total overrides have been copied into Room. */
     val chargeTotalOverridesMigrated: Flow<Boolean> = backingDataStore.data.map { preferences ->
         preferences[chargeTotalOverridesMigratedKey] ?: false
@@ -388,25 +393,31 @@ class SettingsDataStore internal constructor(
     }
 
     suspend fun saveChargeTotalOverride(key: String, totalAmount: Double?) {
+        require(totalAmount == null || (totalAmount.isFinite() && totalAmount >= 0.0))
         backingDataStore.edit { preferences ->
-            val overrides = parseChargePriceOverrides(
-                preferences[chargeTotalOverridesKey] ?: "{}"
-            ).toMutableMap()
-            if (totalAmount != null && totalAmount.isFinite() && totalAmount >= 0.0) {
-                overrides[key] = totalAmount
+            // Do not rewrite an unreadable value or discard unrelated invalid entries.
+            val overrides = JSONObject(preferences[chargeTotalOverridesKey] ?: "{}")
+            if (totalAmount != null) {
+                overrides.put(key, totalAmount)
             } else {
                 overrides.remove(key)
             }
-            preferences[chargeTotalOverridesKey] = chargePriceOverridesToJson(overrides)
+            preferences[chargeTotalOverridesKey] = overrides.toString()
         }
     }
 
-    /** Mark the legacy total override JSON as migrated and remove the old copy. */
-    suspend fun markChargeTotalOverridesMigrated() {
+    /** Keep the original as a backup and never mark a concurrently edited snapshot complete. */
+    internal suspend fun markChargeTotalOverridesMigrated(expectedJson: String?): Boolean {
+        var completed = false
         backingDataStore.edit { preferences ->
-            preferences.remove(chargeTotalOverridesKey)
-            preferences[chargeTotalOverridesMigratedKey] = true
+            if (preferences[chargeTotalOverridesMigratedKey] == true) {
+                completed = true
+            } else if (preferences[chargeTotalOverridesKey] == expectedJson) {
+                preferences[chargeTotalOverridesMigratedKey] = true
+                completed = true
+            }
         }
+        return completed
     }
 
     suspend fun saveNotificationPermissionAsked() {
