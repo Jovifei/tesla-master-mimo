@@ -52,4 +52,68 @@ export type WebDriveSummary = {
   startBatteryLevel: number | null
   endBatteryLevel: number | null
   speedMaxKmh: number | null
+  speedAvgKmh: number | null
+  outsideTempAvgC: number | null
+  energyConsumedKwh: number | null
+  consumptionWhPerKm: number | null
+  qualityState: string | null
+}
+
+export type WebCharge = {
+  id: string
+  startDate: string | null
+  endDate: string | null
+  address: string | null
+  durationMinutes: number | null
+  energyAddedKwh: number | null
+  cost: number | null
+  currency: string | null
+  /** 'ac' | 'dc' | null, with the miniprogram's conflict rules. */
+  chargeMode: 'ac' | 'dc' | null
+  maxPowerKw: number | null
+  startBatteryLevel: number | null
+  endBatteryLevel: number | null
+  isCharging: boolean | null
+  qualityState: string | null
+}
+
+export type WebChargePoint = {
+  date: string
+  batteryLevel: number | null
+  powerKw: number | null
+  voltageV: number | null
+  currentA: number | null
+  temperatureC: number | null
+}
+
+export type WebChargeSummary = {
+  chargerPowerKw: number | null
+  chargerVoltageV: number | null
+  currentA: number | null
+  phases: number | null
+  timeToFullHours: number | null
+  outsideTempC: number | null
+  isCharging: boolean | null
+}
+
+export type WebDrivePoint = {
+  date: string
+  speedKmh: number | null
+  powerKw: number | null
+  batteryLevel: number | null
+  elevationM: number | null
+}
+
+export type WebParked = {
+  startDate: string | null
+  endDate: string | null
+  address: string | null
+  startBatteryLevel: number | null
+  endBatteryLevel: number | null
+  batteryDelta: number | null
+  /** Only set when the backend energy proof qualifies (same strict rules as the miniprogram). */
+  energyKwh: number | null
+  averagePowerW: number | null
+  outsideTempC: number | null
+  insideTempC: number | null
 }

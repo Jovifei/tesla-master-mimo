@@ -3,13 +3,12 @@ import { useNavigate } from 'react-router-dom'
 import { ApiError, extractTicket, exchangeTicket, startTeslaAuthorization } from '../api/matelink'
 
 /**
- * Web login (W1): Tesla OAuth is the only credential path — the web
- * app never sees a Tesla password. The backend's OAuth callback
- * returns the one-shot login ticket to the MateLink app link, so
- * until the backend grows a web return target, the user completes
- * the loop by pasting the callback link (or the ticket) here; the
- * /auth/complete route accepts the same paste and also handles a
- * ticket that lands on this origin directly.
+ * Web login: Tesla OAuth is the only credential path — the web app
+ * never sees a Tesla password. The client asks the backend to
+ * return the one-shot login ticket to this origin's /auth/complete
+ * (honored when the origin is on the backend allowlist, which the
+ * production web origin and the localhost dev origin are). The
+ * paste box below remains as the fallback for any other origin.
  */
 export default function Login() {
   const navigate = useNavigate()
@@ -62,9 +61,9 @@ export default function Login() {
         </p>
 
         <div style={{ borderTop: '0.5px solid var(--apple-separator)', marginTop: 24, paddingTop: 20 }}>
-          <h2 style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>已完成授权？粘贴返回链接完成登录</h2>
+          <h2 style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>授权后没有自动跳回？粘贴返回链接完成登录</h2>
           <p className="text-secondary" style={{ fontSize: 13, lineHeight: 1.6, marginBottom: 12 }}>
-            授权完成后浏览器会停在“授权成功，正在返回 MateLink…”页面，把那个页面地址栏里的完整链接粘贴到这里即可完成网页登录。票据 2 分钟内有效且只能用一次。
+            在已登记的网页地址上，授权完成后会自动跳回并完成登录。若浏览器停在了“授权成功，正在返回 MateLink…”页面，把那个页面地址栏里的完整链接粘贴到这里即可。票据 2 分钟内有效且只能用一次。
           </p>
           <textarea
             className="apple-input"
