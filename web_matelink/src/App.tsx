@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, NavLink, Navigate, useNavigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, NavLink, Navigate, useNavigate, useLocation } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import { loadSession, logout } from './api/matelink'
 import Login from './pages/Login'
@@ -21,69 +21,77 @@ const NAV = [
   { path: '/', label: '仪表盘', icon: 'gauge' },
   { path: '/charges', label: '充电', icon: 'bolt' },
   { path: '/drives', label: '行程', icon: 'route' },
-  { path: '/controls', label: '远程控制', icon: 'remote' },
+  { path: '/controls', label: '远程控制', icon: 'sliders' },
   { path: '/analysis', label: '分析', icon: 'chart' },
   { path: '/me', label: '我的', icon: 'person' },
 ] as const
 
+/**
+ * Shell v3 (docs/WEB-DESIGN-V3.md §2.1): 56px glass top bar, no sidebar.
+ * The dashboard (pilot page) renders its own premise strip and content
+ * frame; the remaining v2 pages keep the legacy padded frame until the
+ * full rollout. Shell-level car switching and the live charging pill
+ * need page state lifted into the shell — scheduled with the rollout.
+ */
 function Shell({ children }: { children: ReactNode }) {
   const navigate = useNavigate()
+  const location = useLocation()
   const signOut = async () => {
     await logout()
     navigate('/login', { replace: true })
   }
+  const isDashboard = location.pathname === '/'
   return (
-    <div style={{ display: 'flex', minHeight: '100vh' }}>
-      <aside
+    <div style={{ minHeight: '100vh', background: '#f2f2f7', display: 'flex', flexDirection: 'column' }}>
+      <header
         style={{
-          width: 216,
-          flexShrink: 0,
-          borderRight: '0.5px solid var(--apple-separator)',
-          background: 'color-mix(in srgb, var(--apple-surface) 72%, transparent)',
-          backdropFilter: 'blur(14px)',
-          padding: '20px 12px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 4,
-          position: 'sticky',
-          top: 0,
-          height: '100vh',
+          height: 56, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 28,
+          padding: '0 32px', position: 'sticky', top: 0, zIndex: 40,
+          background: 'color-mix(in srgb, #ffffff 72%, transparent)',
+          backdropFilter: 'blur(14px) saturate(180%)',
+          borderBottom: '0.5px solid rgba(0,0,0,0.08)',
         }}
       >
-        <div style={{ fontSize: 17, fontWeight: 700, padding: '4px 10px 16px', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ width: 26, height: 26, borderRadius: 8, background: 'linear-gradient(135deg, #157a86, #34c759)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 16, fontWeight: 700, color: '#1c1c1e' }}>
+          <span style={{ width: 26, height: 26, borderRadius: 8, background: '#157a86', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>
             <Icon name="bolt" size={15} />
           </span>
           MateLink
         </div>
-        {NAV.map(item => (
-          <NavLink
-            key={item.path}
-            to={item.path}
-            end={item.path === '/'}
-            style={({ isActive }) => ({
-              display: 'flex',
-              alignItems: 'center',
-              gap: 9,
-              padding: '8px 10px',
-              borderRadius: 10,
-              color: isActive ? 'var(--apple-teal)' : 'var(--apple-label-primary)',
-              background: isActive ? 'var(--apple-teal-soft)' : 'transparent',
-              fontSize: 14,
-              fontWeight: isActive ? 600 : 400,
-              textDecoration: 'none',
-              transition: 'background 160ms ease',
-            })}
+        <nav style={{ display: 'flex', gap: 4 }}>
+          {NAV.map(item => (
+            <NavLink
+              key={item.path}
+              to={item.path}
+              end={item.path === '/'}
+              style={({ isActive }) => ({
+                display: 'inline-flex', alignItems: 'center', gap: 7,
+                padding: '7px 12px', borderRadius: 9, textDecoration: 'none',
+                fontSize: 14, fontWeight: isActive ? 600 : 400,
+                color: isActive ? '#0071e3' : '#1c1c1e',
+                background: isActive ? 'rgba(0,113,227,0.08)' : 'transparent',
+              })}
+            >
+              <Icon name={item.icon as IconName} size={18} />
+              {item.label}
+            </NavLink>
+          ))}
+        </nav>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
+          <button
+            onClick={() => void signOut()}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', cursor: 'pointer', color: '#3a3a3c', fontSize: 13.5, fontWeight: 500, padding: '7px 10px' }}
           >
-            <Icon name={item.icon as IconName} size={17} />
-            {item.label}
-          </NavLink>
-        ))}
-        <div style={{ marginTop: 'auto', padding: '0 10px' }}>
-          <button className="apple-btn-secondary" onClick={() => void signOut()}>退出登录</button>
+            <Icon name="logout" size={17} />
+            退出登录
+          </button>
         </div>
-      </aside>
-      <main className="page-in" style={{ flex: 1, padding: '26px 30px 40px', maxWidth: 1160, margin: '0 auto', width: '100%' }}>{children}</main>
+      </header>
+      {isDashboard ? (
+        <main style={{ flex: 1, width: '100%' }}>{children}</main>
+      ) : (
+        <main style={{ flex: 1, padding: '26px 30px 40px', maxWidth: 1160, margin: '0 auto', width: '100%' }}>{children}</main>
+      )}
     </div>
   )
 }

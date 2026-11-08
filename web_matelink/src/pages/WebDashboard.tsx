@@ -1,347 +1,350 @@
-import { useCallback, useEffect, useState } from 'react'
-import { ApiError, getCarStatus, getCars, getRecentDrives } from '../api/matelink'
-import type { WebCar, WebCarStatus, WebDriveSummary } from '../api/matelink-types'
-import { recentDriveModel } from '../api/recent-drive'
-import { NearbySection, PlacesSection } from './DashboardSections'
-import { amapCoordinateUrl } from '../api/nearby'
-import { BatteryPill, Icon, Kpi, Ring, Skeleton, TONES, type Tone } from '../components/viz'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { Link } from 'react-router-dom'
+import { getCarStatus, getNearbyChargingSites, getParkedBetween, getRecentDrives, type NearbyCharging } from '../api/matelink'
+import type { WebCarStatus, WebDriveSummary, WebParked } from '../api/matelink-types'
+import { amapMarkerUrl } from '../api/nearby'
+import { Icon, Skeleton } from '../components/viz'
+import { AnomalyBand, ChargeRuler, Panel, PremiseStrip, V3 } from '../components/v3'
+import { useCar } from './useCar'
 
-function stateLabel(status: WebCarStatus): string {
-  if (status.chargingState && status.chargingState.toLowerCase() === 'charging') return '充电中'
-  switch ((status.state ?? '').toLowerCase()) {
-    case 'online':
-      return '在线'
-    case 'asleep':
-      return '休眠中'
-    case 'driving':
-      return '驾驶中'
-    case 'charging':
-      return '充电中'
-    default:
-      return status.state ?? '状态未知'
+/**
+ * Dashboard v3 — the triage desk (docs/WEB-DESIGN-V3.md §3.1).
+ * Left rail = conclusions (sticky), right zone = evidence. The page
+ * answers four questions in ten seconds: is the charge enough, is the
+ * data fresh, is the car secure, where is it. Everything else was
+ * demoted or moved by the panel's parameter triage.
+ */
+
+function fmt(value: number | null | undefined, digits = 0): string {
+  if (value == null || !Number.isFinite(value)) return '--'
+  return value.toLocaleString('zh-CN', { minimumFractionDigits: digits, maximumFractionDigits: digits })
+}
+
+function stateLabel(state: string | null): string {
+  switch (state) {
+    case 'online': return '在线'
+    case 'asleep': return '休眠'
+    case 'driving': return '驾驶中'
+    case 'charging': return '充电中'
+    default: return state ?? ''
   }
 }
 
-function stateTone(status: WebCarStatus): Tone {
-  const label = stateLabel(status)
-  if (label === '充电中') return 'blue'
-  if (label === '在线') return 'green'
-  if (label === '驾驶中') return 'teal'
-  return 'gray'
-}
-
-function sourceLabel(status: WebCarStatus): string | null {
-  if (!status.source) return null
-  if (status.source === 'telemetry_cache') return '车辆暂不可达，显示最近一次遥测快照'
-  return null
-}
-
-function formatObserved(iso: string | null): string {
-  if (!iso) return '观测时间未知'
-  const date = new Date(iso)
-  if (Number.isNaN(date.getTime())) return '观测时间未知'
-  return `观测于 ${date.toLocaleString('zh-CN', { hour12: false })}`
-}
-
-const num = (value: number | null, digits = 0): string => (value == null ? '--' : value.toFixed(digits))
-
-const UNKNOWN_PLACE = '未知地点'
-
-function placeLabel(value: string | null): string {
-  return value && value.trim() !== '' ? value.trim() : UNKNOWN_PLACE
-}
-
-function StateChip({ status }: { status: WebCarStatus }) {
-  const tone = stateTone(status)
-  const color = TONES[tone]
+function StatusLine({ icon, label, value, abnormal }: { icon: 'lock' | 'unlock' | 'eye' | 'window' | 'pin'; label: string; value: ReactNode; abnormal?: boolean }) {
   return (
-    <span
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 6,
-        background: `${color}1c`,
-        color,
-        borderRadius: 'var(--apple-radius-pill)',
-        padding: '4px 12px',
-        fontSize: 13,
-        fontWeight: 600,
-      }}
-    >
-      <span style={{ width: 7, height: 7, borderRadius: 4, background: color }} />
-      {stateLabel(status)}
-    </span>
-  )
-}
-
-function RouteCard({ drive }: { drive: WebDriveSummary }) {
-  const model = recentDriveModel(drive)
-  const start = placeLabel(drive.startAddress)
-  const end = placeLabel(drive.endAddress)
-  const samePlace = start === end
-  return (
-    <div
-      className="hover-lift"
-      style={{ background: 'var(--apple-surface-secondary)', borderRadius: 16, padding: '14px 16px', display: 'flex', gap: 14 }}
-    >
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 5 }}>
-        <span style={{ width: 9, height: 9, borderRadius: 5, background: TONES.teal, flexShrink: 0 }} />
-        {!samePlace ? (
-          <>
-            <span style={{ flex: 1, width: 2, minHeight: 14, background: 'var(--apple-separator)', margin: '3px 0' }} />
-            <span style={{ width: 9, height: 9, borderRadius: 5, border: `2px solid ${TONES.green}`, background: 'var(--apple-surface)', flexShrink: 0 }} />
-          </>
-        ) : null}
-      </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        {samePlace ? (
-          <div style={{ fontSize: 14, fontWeight: 600 }}>{start}</div>
-        ) : (
-          <>
-            <div style={{ fontSize: 14, fontWeight: 600 }}>{start}</div>
-            <div className="text-secondary" style={{ fontSize: 13.5, marginTop: 3 }}>{end}</div>
-          </>
-        )}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 8 }}>
-          <BatteryPill from={drive.startBatteryLevel} to={drive.endBatteryLevel} />
-          <span className="chip" style={{ padding: '3px 9px', fontSize: 12 }}>
-            <Icon name="clock" size={13} />
-            {model.durationText}
-          </span>
-          <span className="text-tertiary tabular" style={{ fontSize: 12.5 }}>结束 {model.endText}</span>
-        </div>
-      </div>
-      <div style={{ textAlign: 'right', flexShrink: 0 }}>
-        <div className="tabular" style={{ fontSize: 20, fontWeight: 700, lineHeight: 1.1 }}>
-          {drive.distanceKm != null ? drive.distanceKm.toFixed(1) : '--'}
-          {drive.distanceKm != null ? <span className="text-secondary" style={{ fontSize: 12, fontWeight: 500, marginLeft: 3 }}>km</span> : null}
-        </div>
-        <div className="text-tertiary" style={{ fontSize: 11.5, marginTop: 2 }}>距离</div>
-      </div>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 9, height: 36 }}>
+      <span style={{ display: 'inline-flex', color: abnormal ? V3.errorText : V3.label3 }}><Icon name={icon} size={16} /></span>
+      <span style={{ fontSize: 14, color: V3.label2 }}>{label}</span>
+      <span style={{ marginLeft: 'auto', fontSize: 14, fontWeight: abnormal ? 600 : 500, color: abnormal ? V3.errorText : V3.label }}>{value}</span>
     </div>
   )
 }
 
 export default function WebDashboard() {
-  const [cars, setCars] = useState<WebCar[]>([])
-  const [carId, setCarId] = useState<number | null>(null)
+  const { cars, car, carId, setCarId, error: carError } = useCar()
   const [status, setStatus] = useState<WebCarStatus | null>(null)
-  const [drives, setDrives] = useState<WebDriveSummary[]>([])
-  const [loading, setLoading] = useState(true)
-  const [refreshing, setRefreshing] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [statusError, setStatusError] = useState(false)
+  const [drives, setDrives] = useState<WebDriveSummary[] | null>(null)
+  const [nearby, setNearby] = useState<NearbyCharging | null>(null)
+  const [parked, setParked] = useState<WebParked | null | undefined>(undefined)
 
-  const load = useCallback(async (selectedId: number | null, isRefresh: boolean) => {
-    if (isRefresh) setRefreshing(true)
-    else setLoading(true)
-    setError(null)
+  const loadAll = useCallback(async (id: number) => {
+    setStatusError(false)
     try {
-      const list = await getCars()
-      setCars(list)
-      const current = list.find(car => car.id === selectedId) ?? list[0] ?? null
-      if (!current) {
-        setStatus(null)
-        setDrives([])
-        setError('当前账号暂无车辆。')
-        return
-      }
-      setCarId(current.id)
-      const [nextStatus, nextDrives] = await Promise.all([
-        getCarStatus(current.id),
-        getRecentDrives(current.id, 5).catch(() => [] as WebDriveSummary[]),
-      ])
-      setStatus(nextStatus)
-      setDrives(nextDrives)
-    } catch (reason) {
-      setError(reason instanceof ApiError ? reason.message : '读取车辆数据失败，请稍后重试。')
-    } finally {
-      setLoading(false)
-      setRefreshing(false)
+      setStatus(await getCarStatus(id))
+    } catch {
+      setStatus(null)
+      setStatusError(true)
+    }
+    try {
+      setDrives(await getRecentDrives(id, 5))
+    } catch {
+      setDrives([])
+    }
+    try {
+      setNearby(await getNearbyChargingSites(id))
+    } catch {
+      setNearby({ sites: [], source: null })
     }
   }, [])
 
   useEffect(() => {
-    void load(null, false)
-  }, [load])
+    if (carId != null) void loadAll(carId)
+  }, [carId, loadAll])
 
-  const car = cars.find(item => item.id === carId) ?? null
-  const cacheNote = status ? sourceLabel(status) : null
-  const rangeKm = status ? status.ratedRangeKm ?? status.estimatedRangeKm : null
-  const charging = Boolean(status?.chargingState)
+  useEffect(() => {
+    setParked(undefined)
+    if (carId == null || !drives || drives.length < 2) return
+    const newer = drives[0]
+    const older = drives[1]
+    if (!/^[1-9]\d*$/.test(newer.id) || !/^[1-9]\d*$/.test(older.id)) {
+      setParked(null)
+      return
+    }
+    let cancelled = false
+    getParkedBetween(carId, older.id, newer.id)
+      .then(result => { if (!cancelled) setParked(result) })
+      .catch(() => { if (!cancelled) setParked(null) })
+    return () => { cancelled = true }
+  }, [carId, drives])
+
+  const snapshot = status?.source === 'telemetry_cache'
+  const charging = status?.chargingState === 'charging'
+  const unlocked = status?.locked === false
+  const windowsOpen = status?.windowsOpen === true
+  const anomaly = unlocked || windowsOpen
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
-        <div>
-          <h1 style={{ fontSize: 28, fontWeight: 700 }}>{car ? car.name : '仪表盘'}</h1>
-          <p className="text-secondary" style={{ fontSize: 13, marginTop: 4 }}>
-            {car?.model ?? ''}
-            {status ? ` · ${stateLabel(status)} · ${formatObserved(status.observedAt)}` : ''}
-          </p>
-          {cacheNote ? <p className="text-teal" style={{ fontSize: 13, marginTop: 2 }}>{cacheNote}</p> : null}
-        </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          {cars.length > 1 ? (
-            <select
-              className="apple-input"
-              style={{ width: 'auto' }}
-              value={carId ?? ''}
-              onChange={event => void load(Number(event.target.value), false)}
-            >
-              {cars.map(item => (
-                <option key={item.id} value={item.id}>{item.name}</option>
-              ))}
-            </select>
-          ) : null}
-          <button className="apple-btn-secondary" disabled={refreshing || loading} onClick={() => void load(carId, true)}>
-            <Icon name="refresh" size={15} />
-            {refreshing ? '刷新中…' : '刷新'}
-          </button>
-        </div>
+    <div>
+      <div style={{ position: 'sticky', top: 56, zIndex: 30 }}>
+        <PremiseStrip source={status?.source ?? null} observedAt={status?.observedAt ?? null} onRefresh={() => { if (carId != null) void loadAll(carId) }} />
       </div>
 
-      {error ? (
-        <div className="apple-card">
-          <p className="text-error" style={{ fontSize: 14, lineHeight: 1.6 }}>{error}</p>
-          <button className="apple-btn-secondary" style={{ marginTop: 12 }} onClick={() => void load(carId, false)}>重试</button>
-        </div>
-      ) : null}
+      <div style={{ maxWidth: 1400, margin: '0 auto', padding: '20px 32px 44px' }}>
+        {carError ? (
+          <Panel><p style={{ color: V3.errorText, fontSize: 15 }}>{carError}</p></Panel>
+        ) : null}
 
-      {loading && !status ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <Skeleton height={248} />
-          <Skeleton height={132} />
-          <Skeleton height={180} />
-        </div>
-      ) : null}
-
-      {status ? (
-        <>
-          <div className="apple-card">
-            <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-              <div style={{ flexShrink: 0, display: 'flex', justifyContent: 'center' }}>
-                {status.batteryLevel != null ? (
-                  <Ring
-                    value={status.batteryLevel}
-                    label="电量"
-                    sub={rangeKm != null ? `续航 ${rangeKm.toFixed(0)} km` : undefined}
-                    tone={charging && stateLabel(status) === '充电中' ? 'blue' : 'teal'}
-                  />
-                ) : (
-                  <div
-                    style={{
-                      width: 168, height: 168, borderRadius: '50%',
-                      border: '13px solid var(--apple-surface-tertiary)',
-                      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                    }}
-                  >
-                    <span className="tabular text-tertiary" style={{ fontSize: 34, fontWeight: 700 }}>--%</span>
-                    <span className="text-secondary" style={{ fontSize: 13, fontWeight: 600, marginTop: 4 }}>电量</span>
-                  </div>
-                )}
-              </div>
-              <div style={{ flex: 1, minWidth: 260 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
-                  <span style={{ fontSize: 19, fontWeight: 700 }}>{car?.name ?? '我的特斯拉'}</span>
-                  <StateChip status={status} />
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(148px, 1fr))', gap: 10 }}>
-                  <Kpi label="总里程" value={num(status.odometerKm)} unit="km" icon="gauge" tone="teal" />
-                  <Kpi label="车内温度" value={num(status.insideTempC, 1)} unit="°C" icon="thermo" tone="amber" />
-                  <Kpi label="车外温度" value={num(status.outsideTempC, 1)} unit="°C" icon="thermo" tone="blue" />
-                  <Kpi
-                    label="车锁"
-                    value={status.locked == null ? '--' : status.locked ? '已锁定' : '未锁定'}
-                    icon={status.locked ? 'lock' : 'unlock'}
-                    tone={status.locked ? 'green' : 'amber'}
-                  />
-                  <Kpi
-                    label="哨兵模式"
-                    value={status.sentryMode == null ? '--' : status.sentryMode ? '开启' : '关闭'}
-                    icon="shield"
-                    tone={status.sentryMode ? 'teal' : 'gray'}
-                  />
-                  <Kpi
-                    label="车窗"
-                    value={status.windowsOpen == null ? '--' : status.windowsOpen ? '开启' : '关闭'}
-                    icon="window"
-                    tone={status.windowsOpen ? 'amber' : 'gray'}
-                  />
-                </div>
-                {charging ? (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(148px, 1fr))', gap: 10, marginTop: 10 }}>
-                    <Kpi label="充电状态" value={status.chargingState ?? '--'} icon="plug" tone="blue" />
-                    <Kpi label="已充入" value={num(status.chargeEnergyAddedKwh, 1)} unit="kWh" icon="bolt" tone="green" />
-                    <Kpi label="充电功率" value={num(status.chargerPowerKw, 1)} unit="kW" icon="zap" tone="blue" />
-                  </div>
-                ) : null}
-              </div>
-            </div>
+        {anomaly ? (
+          <div style={{ marginBottom: 16 }}>
+            <AnomalyBand
+              title={unlocked ? '车辆未锁定' : '车窗未关闭'}
+              detail={[unlocked && windowsOpen ? '车窗同时未关闭。' : null, '请确认车辆停放环境安全。'].filter(Boolean).join('')}
+            />
           </div>
+        ) : null}
 
-          <div className="apple-card">
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, flexWrap: 'wrap' }}>
-              <span
-                style={{
-                  width: 40, height: 40, borderRadius: 20, flexShrink: 0,
-                  background: 'var(--apple-teal-soft)', color: 'var(--apple-teal)',
-                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                }}
+        <div style={{ display: 'grid', gridTemplateColumns: '360px minmax(0, 1fr)', gap: 16, alignItems: 'start' }}>
+          {/* ------------------------- Conclusion rail ------------------------- */}
+          <div style={{ position: 'sticky', top: 104, display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {cars.length > 1 ? (
+              <select
+                className="apple-input"
+                value={carId ?? ''}
+                onChange={event => setCarId(Number(event.target.value))}
+                aria-label="切换车辆"
               >
-                <Icon name="pin" size={21} />
-              </span>
-              <div style={{ flex: 1, minWidth: 200 }}>
-                <h2 style={{ fontSize: 16, fontWeight: 600 }}>位置</h2>
-                {status.geofence ? (
-                  <p style={{ fontSize: 17, fontWeight: 600, marginTop: 5 }}>{status.geofence}</p>
-                ) : status.latitude != null && status.longitude != null ? (
-                  <p className="tabular" style={{ fontSize: 17, fontWeight: 600, marginTop: 5 }}>
-                    {status.latitude.toFixed(5)}, {status.longitude.toFixed(5)}
-                  </p>
-                ) : (
-                  <p className="text-secondary" style={{ fontSize: 14, marginTop: 5 }}>暂无位置数据。</p>
-                )}
-                {status.latitude != null && status.longitude != null ? (
-                  <p className="text-tertiary tabular" style={{ fontSize: 12, marginTop: 3 }}>
-                    {status.geofence ? `${status.latitude.toFixed(5)}, ${status.longitude.toFixed(5)}` : formatObserved(status.observedAt)}
-                  </p>
-                ) : null}
-              </div>
-              {status.latitude != null && status.longitude != null ? (
-                <a
-                  className="apple-btn-secondary"
-                  href={amapCoordinateUrl(status.latitude, status.longitude, car?.name ?? '车辆位置')}
-                  target="_blank"
-                  rel="noreferrer"
-                  style={{ textDecoration: 'none' }}
-                >
-                  <Icon name="nav" size={15} />
-                  在高德地图打开
-                </a>
-              ) : null}
-            </div>
-          </div>
-
-          <div className="apple-card">
-            <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ color: 'var(--apple-teal)', display: 'inline-flex' }}><Icon name="route" size={18} /></span>
-              最近行程
-            </h2>
-            {drives.length ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {drives.map(drive => (
-                  <RouteCard key={drive.id} drive={drive} />
+                {cars.map(item => (
+                  <option key={item.id} value={item.id}>{item.name}</option>
                 ))}
+              </select>
+            ) : null}
+
+            {/* Hero: SOC + estimated range + the Charge Ruler */}
+            <section style={{ background: V3.surface, borderRadius: 16, padding: 24, boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: `0.5px solid ${V3.separator}` }}>
+              {statusError ? (
+                <>
+                  <p style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>读取车辆状态失败</p>
+                  <p style={{ fontSize: 13.5, color: V3.label2, lineHeight: 1.6, marginBottom: 12 }}>网络或服务暂时不可用，你可以重试。</p>
+                  <button className="apple-btn-primary" onClick={() => { if (carId != null) void loadAll(carId) }}>重试</button>
+                </>
+              ) : !status ? (
+                <Skeleton height={180} radius={12} />
+              ) : (
+                <>
+                  <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: 13, fontWeight: 500, color: V3.label2 }}>{car?.name ?? '我的特斯拉'}</span>
+                    <span style={{ fontSize: 12.5, color: V3.label3 }}>
+                      {stateLabel(status.state)}{snapshot ? ' · 快照' : ''}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 5, marginTop: 10 }}>
+                    <span className="tabular" style={{ fontSize: 56, fontWeight: 600, lineHeight: '60px', color: V3.label }}>
+                      {status.batteryLevel != null ? Math.round(status.batteryLevel) : '--'}
+                    </span>
+                    <span style={{ fontSize: 20, fontWeight: 500, color: V3.label2 }}>%</span>
+                    <span style={{ marginLeft: 10, fontSize: 13, color: V3.label3 }}>当前电量</span>
+                  </div>
+                  <div style={{ position: 'relative', marginTop: 18 }}>
+                    {status.estimatedRangeKm != null && status.batteryLevel != null ? (
+                      <span
+                        className="tabular"
+                        style={{
+                          position: 'absolute', bottom: 40,
+                          left: `${Math.max(0, Math.min(100, status.batteryLevel))}%`,
+                          transform: status.batteryLevel >= 22 ? 'translateX(-100%)' : 'none',
+                          fontSize: 13, color: V3.label2, whiteSpace: 'nowrap',
+                        }}
+                      >
+                        续航约 <span style={{ fontSize: 15, fontWeight: 600, color: V3.label }}>{fmt(status.estimatedRangeKm)}</span> km
+                      </span>
+                    ) : null}
+                    {status.batteryLevel != null ? (
+                      <ChargeRuler soc={status.batteryLevel} snapshot={snapshot} />
+                    ) : (
+                      <p style={{ fontSize: 13, color: V3.label3 }}>暂无电量数据。</p>
+                    )}
+                  </div>
+                </>
+              )}
+            </section>
+
+            {/* Security + location conclusions */}
+            {status ? (
+              <section style={{ background: V3.surface, borderRadius: 16, padding: '8px 16px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: `0.5px solid ${V3.separator}` }}>
+                <StatusLine icon={status.locked ? 'lock' : 'unlock'} label="车锁" value={status.locked == null ? '未知' : status.locked ? '已锁定' : '未锁定'} abnormal={unlocked} />
+                <div style={{ borderTop: `0.5px solid ${V3.separator}` }}>
+                  <StatusLine icon="eye" label="哨兵模式" value={status.sentryMode == null ? '未知' : status.sentryMode ? '已开启' : '未开启'} />
+                </div>
+                <div style={{ borderTop: `0.5px solid ${V3.separator}` }}>
+                  <StatusLine icon="window" label="车窗" value={status.windowsOpen == null ? '未知' : status.windowsOpen ? '未关闭' : '已关闭'} abnormal={windowsOpen} />
+                </div>
+                <div style={{ borderTop: `0.5px solid ${V3.separator}` }}>
+                  <StatusLine
+                    icon="pin"
+                    label="位置"
+                    value={
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
+                        <span>{status.geofence ?? (status.latitude != null ? '已定位' : '未知')}</span>
+                        {status.latitude != null && status.longitude != null ? (
+                          <a
+                            href={`https://uri.amap.com/marker?position=${status.longitude},${status.latitude}&name=${encodeURIComponent(car?.name ?? '车辆位置')}&coordinate=gaode`}
+                            target="_blank"
+                            rel="noreferrer"
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: 3, color: V3.tint, textDecoration: 'none', fontSize: 13, fontWeight: 600 }}
+                          >
+                            高德打开 <Icon name="external" size={13} />
+                          </a>
+                        ) : null}
+                      </span>
+                    }
+                  />
+                </div>
+              </section>
+            ) : null}
+
+            {/* Charging block — exists only while charging */}
+            {status && charging ? (
+              <section style={{ background: V3.surface, borderRadius: 16, padding: 16, boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: `0.5px solid ${V3.separator}` }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7, height: 24, marginBottom: 10 }}>
+                  <span style={{ display: 'inline-flex', color: V3.teal }}><Icon name="bolt" size={17} /></span>
+                  <h2 style={{ fontSize: 17, fontWeight: 600 }}>正在充电</h2>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div>
+                    <div style={{ fontSize: 12.5, color: V3.label3, marginBottom: 3 }}>当前功率</div>
+                    <div className="tabular" style={{ fontSize: 28, fontWeight: 600, color: V3.teal }}>
+                      {fmt(status.chargerPowerKw, 1)}<span style={{ fontSize: 13, fontWeight: 500, color: V3.label2, marginLeft: 3 }}>kW</span>
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 12.5, color: V3.label3, marginBottom: 3 }}>已充入</div>
+                    <div className="tabular" style={{ fontSize: 28, fontWeight: 600 }}>
+                      {fmt(status.chargeEnergyAddedKwh, 1)}<span style={{ fontSize: 13, fontWeight: 500, color: V3.label2, marginLeft: 3 }}>kWh</span>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            ) : null}
+
+            {/* Spec lines — P2 parameters live here, small and factual */}
+            {status ? (
+              <div style={{ padding: '2px 6px', fontSize: 12.5, color: V3.label3, lineHeight: 2 }}>
+                <div>总里程 {fmt(status.odometerKm)} km</div>
+                <div>车内 {fmt(status.insideTempC, 1)} °C · 车外 {fmt(status.outsideTempC, 1)} °C</div>
+                {status.ratedRangeKm != null ? <div>额定续航 {fmt(status.ratedRangeKm)} km（额定口径，仅供参考）</div> : null}
               </div>
-            ) : (
-              <p className="text-secondary" style={{ fontSize: 14 }}>暂无行程记录。</p>
-            )}
+            ) : null}
           </div>
 
-          {carId != null ? <NearbySection carId={carId} /> : null}
-          {carId != null ? <PlacesSection carId={carId} status={status} /> : null}
-        </>
-      ) : null}
+          {/* --------------------------- Evidence zone --------------------------- */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
+            <Panel
+              title="最近行程"
+              action={<Link to="/drives" style={{ color: V3.tint, fontSize: 13.5, fontWeight: 600, textDecoration: 'none' }}>查看全部</Link>}
+            >
+              {drives == null ? (
+                <Skeleton height={120} radius={12} />
+              ) : !drives.length ? (
+                <p style={{ fontSize: 14, color: V3.label3 }}>暂无行程记录。</p>
+              ) : (
+                drives.slice(0, 3).map((drive, index) => (
+                  <Link key={drive.id} to="/drives" style={{ display: 'block', textDecoration: 'none', color: 'inherit', padding: '10px 0', borderTop: index === 0 ? 'none' : `0.5px solid ${V3.separator}` }}>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
+                      <span style={{ fontSize: 15, fontWeight: 500, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {drive.startAddress ?? '未知地点'} <span style={{ color: V3.label3 }}>→</span> {drive.endAddress ?? '未知地点'}
+                      </span>
+                      <span className="tabular" style={{ fontSize: 15, fontWeight: 600, color: V3.graphite }}>{fmt(drive.distanceKm, 1)} km</span>
+                    </div>
+                    <div style={{ fontSize: 13, color: V3.label3, marginTop: 4 }}>
+                      {drive.durationMinutes != null ? `${Math.round(drive.durationMinutes)} 分钟` : ''}
+                      {drive.startBatteryLevel != null && drive.endBatteryLevel != null ? ` · 电量 ${Math.round(drive.startBatteryLevel)}% → ${Math.round(drive.endBatteryLevel)}%` : ''}
+                      {drive.energyConsumedKwh != null ? ` · 耗电 ${fmt(drive.energyConsumedKwh, 1)} kWh` : ''}
+                    </div>
+                  </Link>
+                ))
+              )}
+            </Panel>
+
+            <Panel title="附近充电">
+              {nearby == null ? (
+                <Skeleton height={120} radius={12} />
+              ) : !nearby.sites.length ? (
+                <p style={{ fontSize: 14, color: V3.label3 }}>附近暂无充电站数据。</p>
+              ) : (
+                <>
+                  {nearby.sites.slice(0, 5).map((site, index) => {
+                    const url = amapMarkerUrl(site)
+                    return (
+                      <div key={index} style={{ padding: '10px 0', borderTop: index === 0 ? 'none' : `0.5px solid ${V3.separator}` }}>
+                        <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
+                          <span style={{ fontSize: 15, fontWeight: 500, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: site.siteClosed ? V3.label3 : V3.label }}>
+                            {site.name ?? '充电站'}
+                          </span>
+                          {site.siteClosed ? (
+                            <span style={{ fontSize: 12.5, fontWeight: 600, color: V3.errorText }}>已关闭</span>
+                          ) : null}
+                          <span className="tabular" style={{ fontSize: 15, fontWeight: 600, color: V3.graphite }}>{fmt(site.distanceKm, 1)} km</span>
+                          {url ? (
+                            <a href={url} target="_blank" rel="noreferrer" style={{ color: V3.tint, fontSize: 13.5, fontWeight: 600, textDecoration: 'none' }}>导航</a>
+                          ) : null}
+                        </div>
+                        <div style={{ fontSize: 13, color: V3.label3, marginTop: 4 }}>
+                          {site.availableStalls != null && site.totalStalls != null ? `空闲 ${site.availableStalls}/${site.totalStalls} 桩` : ''}
+                          {site.priceText ? ` · ${site.priceText}` : ''}
+                          {site.parkingPolicy ? ` · ${site.parkingPolicy}` : ''}
+                        </div>
+                      </div>
+                    )
+                  })}
+                  {nearby.source ? <div style={{ fontSize: 12, color: V3.label3, marginTop: 8 }}>数据来源：{nearby.source}</div> : null}
+                </>
+              )}
+            </Panel>
+
+            {/* Parked-energy row: the number disappears, never the row */}
+            {drives != null && drives.length >= 2 ? (
+              parked === undefined ? (
+                <Skeleton height={40} radius={12} />
+              ) : parked && parked.energyKwh != null ? (
+                <section style={{ background: V3.surface, borderRadius: 16, padding: '0 16px', height: 52, display: 'flex', alignItems: 'center', gap: 10, boxShadow: '0 1px 3px rgba(0,0,0,0.05)', border: `0.5px solid ${V3.separator}` }}>
+                  <span style={{ display: 'inline-flex', color: V3.teal }}><Icon name="moon" size={16} /></span>
+                  <span style={{ fontSize: 14.5, fontWeight: 500 }}>驻车耗电</span>
+                  <span className="tabular" style={{ fontSize: 15, fontWeight: 600 }}>
+                    {fmt(parked.energyKwh, 2)} kWh
+                    {parked.averagePowerW != null ? <span style={{ color: V3.label2, fontWeight: 500 }}> · 平均待机 {fmt(parked.averagePowerW, 0)} W</span> : null}
+                  </span>
+                  <span style={{ marginLeft: 'auto', fontSize: 13, color: V3.label3 }}>
+                    {parked.startDate && parked.endDate
+                      ? `驻车 ${Math.floor((new Date(parked.endDate).getTime() - new Date(parked.startDate).getTime()) / 3600000)} 小时 ${Math.round(((new Date(parked.endDate).getTime() - new Date(parked.startDate).getTime()) / 60000) % 60)} 分`
+                      : ''}
+                  </span>
+                </section>
+              ) : (
+                <div style={{ height: 36, display: 'flex', alignItems: 'center', gap: 8, padding: '0 12px', background: V3.surface2, borderRadius: 12, fontSize: 13, color: V3.label2 }}>
+                  <Icon name="info" size={14} />
+                  驻车耗电：本次驻车的证据条件不完整，未显示数值。
+                </div>
+              )
+            ) : drives != null ? (
+              <div style={{ height: 36, display: 'flex', alignItems: 'center', gap: 8, padding: '0 12px', background: V3.surface2, borderRadius: 12, fontSize: 13, color: V3.label2 }}>
+                <Icon name="info" size={14} />
+                驻车耗电：尚无相邻行程可供计算。
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
