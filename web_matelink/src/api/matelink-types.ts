@@ -31,6 +31,11 @@ export type WebCarStatus = {
   chargingState: string | null
   chargeEnergyAddedKwh: number | null
   chargerPowerKw: number | null
+  /** Live charging voltage/current from the status snapshot (charging only; history is not stored). */
+  liveVoltageV: number | null
+  liveCurrentA: number | null
+  /** Vehicle software version when the status payload carries it. */
+  firmware: string | null
   insideTempC: number | null
   outsideTempC: number | null
   latitude: number | null
@@ -97,6 +102,14 @@ export type WebDriveSummary = {
   energyConsumedKwh: number | null
   consumptionWhPerKm: number | null
   qualityState: string | null
+  /** Route endpoints (backend publishes start/end coordinates when the route has them). */
+  startLatitude: number | null
+  startLongitude: number | null
+  endLatitude: number | null
+  endLongitude: number | null
+  /** Odometer at session start/end (mileage-history stitching). */
+  odometerStartKm: number | null
+  odometerEndKm: number | null
 }
 
 export type WebCharge = {
@@ -115,6 +128,17 @@ export type WebCharge = {
   endBatteryLevel: number | null
   isCharging: boolean | null
   qualityState: string | null
+  /** Charge location (record-level coordinates when the backend resolved them). */
+  latitude: number | null
+  longitude: number | null
+  /** Pile-side energy used (kWh), published only via the energy contract (AC + qualified counters). */
+  energyUsedKwh: number | null
+  /** AC charging efficiency in percent from the energy contract, when qualified. */
+  acEfficiencyPct: number | null
+  /** AC loss in kWh from the energy contract, when qualified. */
+  acLossKwh: number | null
+  /** Chinese explanation when pile-side energy is unavailable (contract reason), else null. */
+  energyUsedNote: string | null
 }
 
 export type WebChargePoint = {
@@ -124,6 +148,10 @@ export type WebChargePoint = {
   voltageV: number | null
   currentA: number | null
   temperatureC: number | null
+  /** Cumulative energy added at this sample, when the backend includes it. */
+  energyAddedKwh: number | null
+  latitude: number | null
+  longitude: number | null
 }
 
 export type WebChargeSummary = {
@@ -142,6 +170,12 @@ export type WebDrivePoint = {
   powerKw: number | null
   batteryLevel: number | null
   elevationM: number | null
+  /** Route coordinates (stored in sessions.route_json; previously dropped by the web parser). */
+  latitude: number | null
+  longitude: number | null
+  heading: number | null
+  insideTempC: number | null
+  outsideTempC: number | null
 }
 
 export type WebParked = {

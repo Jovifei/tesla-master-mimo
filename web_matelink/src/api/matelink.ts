@@ -309,6 +309,9 @@ export function normalizeStatus(payload: unknown): WebCarStatus {
     chargingState: stringValue(charging.charging_state),
     chargeEnergyAddedKwh: finite(charging.charge_energy_added, 0),
     chargerPowerKw: finite(charging.charger_power, 0),
+    liveVoltageV: finite(charging.charger_voltage, 0) ?? finite(charging.pack_voltage, 0),
+    liveCurrentA: finite(charging.charger_actual_current) ?? finite(charging.charger_current),
+    firmware: stringValue(raw.car_version) ?? stringValue(raw.firmware),
     insideTempC: celsius(climate.inside_temp),
     outsideTempC: celsius(climate.outside_temp),
     latitude: hasLocation ? latitude : null,
@@ -342,11 +345,24 @@ function tempToC(value: unknown, temperatureUnit: string): number | null {
   return temperatureUnit === 'F' ? ((scalar - 32) * 5) / 9 : scalar
 }
 
+function coordPair(latValue: unknown, lngValue: unknown): { latitude: number | null; longitude: number | null } {
+  const latitude = finite(latValue, -90, 90)
+  const longitude = finite(lngValue, -180, 180)
+  const valid = latitude != null && longitude != null && (latitude !== 0 || longitude !== 0)
+  return { latitude: valid ? latitude : null, longitude: valid ? longitude : null }
+}
+
 export function normalizeDrive(raw: Record<string, unknown>, distanceUnit: string, temperatureUnit = 'C'): WebDriveSummary {
   const odometer = isRecord(raw.odometer_details) ? raw.odometer_details : {}
   const battery = isRecord(raw.battery_details) ? raw.battery_details : {}
   const distance = finite(odometer.odometer_distance, 0)
   const speedUnit = stringValue(raw.speed_unit)
+  const toKm = (value: unknown): number | null => {
+    const scalar = finite(value, 0)
+    return scalar == null ? null : scalar * (distanceUnit === 'mi' ? 1.609344 : 1)
+  }
+  const startCoord = coordPair(raw.start_latitude, raw.start_longitude)
+  const endCoord = coordPair(raw.end_latitude, raw.end_longitude)
   return {
     id: String(raw.drive_id ?? raw.session_id ?? ''),
     startDate: stringValue(raw.start_date),
@@ -363,6 +379,12 @@ export function normalizeDrive(raw: Record<string, unknown>, distanceUnit: strin
     energyConsumedKwh: finite(raw.energy_consumed_net),
     consumptionWhPerKm: finite(raw.consumption_net, 0),
     qualityState: stringValue(raw.quality_state),
+    startLatitude: startCoord.latitude,
+    startLongitude: startCoord.longitude,
+    endLatitude: endCoord.latitude,
+    endLongitude: endCoord.longitude,
+    odometerStartKm: toKm(odometer.odometer_start),
+    odometerEndKm: toKm(odometer.odometer_end),
   }
 }
 
@@ -411,8 +433,27 @@ function chargeCurrencyOf(raw: Record<string, unknown>): string | null {
   return stringValue(raw.currency) ?? stringValue(raw.currency_code) ?? stringValue(raw.cost_currency)
 }
 
+const ENERGY_USED_NOTES: Record<string, string> = {
+  unverified_full_ac_session: '桩侧用电量未通过完整会话校验，暂不发布',
+  partial_counter_window: '计数器仅覆盖部分时段，暂不发布整段用电量',
+  no_verified_driving_net_energy: '无可信计量来源',
+}
+
 export function normalizeCharge(raw: Record<string, unknown>): WebCharge {
   const battery = isRecord(raw.battery_details) ? raw.battery_details : {}
+  const coord = coordPair(raw.latitude, raw.longitude)
+  const contract = isRecord(raw.energy_contract) ? raw.energy_contract : {}
+  const acInput = isRecord(contract.ac_input) ? contract.ac_input : {}
+  const acLoss = isRecord(contract.ac_loss) ? contract.ac_loss : {}
+  const energyUsedKwh = finite(raw.charge_energy_used, 0)
+  const mode = chargeModeOf(raw)
+  let energyUsedNote: string | null = null
+  if (energyUsedKwh == null) {
+    const reason = stringValue(acInput.reason)
+    if (reason && ENERGY_USED_NOTES[reason]) energyUsedNote = ENERGY_USED_NOTES[reason]
+    else if (mode === 'dc') energyUsedNote = '直流充电无桩侧计量发布'
+    else if (Object.keys(contract).length) energyUsedNote = '桩侧用电量暂不可用'
+  }
   return {
     id: String(raw.charge_id ?? raw.session_id ?? ''),
     startDate: stringValue(raw.start_date),
@@ -422,12 +463,18 @@ export function normalizeCharge(raw: Record<string, unknown>): WebCharge {
     energyAddedKwh: finite(raw.charge_energy_added, 0),
     cost: finite(raw.cost, 0),
     currency: chargeCurrencyOf(raw),
-    chargeMode: chargeModeOf(raw),
+    chargeMode: mode,
     maxPowerKw: finite(raw.charger_power, 0),
     startBatteryLevel: finite(battery.start_battery_level, 0, 100),
     endBatteryLevel: finite(battery.end_battery_level, 0, 100),
     isCharging: boolValue(raw.is_charging),
     qualityState: stringValue(raw.quality_state),
+    latitude: coord.latitude,
+    longitude: coord.longitude,
+    energyUsedKwh,
+    acEfficiencyPct: finite(contract.ac_efficiency, 0, 100),
+    acLossKwh: finite(acLoss.value_kwh, 0),
+    energyUsedNote,
   }
 }
 
@@ -489,6 +536,7 @@ export function parseChargeDetail(payload: unknown): ChargeDetail {
     const at = Date.parse(date)
     if (!Number.isFinite(at) || !Number.isFinite(start) || !Number.isFinite(end) || at < start || at > end) continue
     const charger = isRecord(value.charger_details) ? value.charger_details : {}
+    const pointCoord = coordPair(value.latitude, value.longitude)
     points.push({
       date,
       batteryLevel: finite(value.battery_level, 0, 100),
@@ -496,6 +544,9 @@ export function parseChargeDetail(payload: unknown): ChargeDetail {
       voltageV: finite(charger.charger_voltage, 0),
       currentA: finite(charger.charger_actual_current),
       temperatureC: tempToC(value.outside_temp, temperatureUnit),
+      energyAddedKwh: finite(value.charge_energy_added, 0),
+      latitude: pointCoord.latitude,
+      longitude: pointCoord.longitude,
     })
   }
   points.sort((a, b) => Date.parse(a.date) - Date.parse(b.date))
@@ -539,12 +590,19 @@ export function parseDriveDetail(payload: unknown): DriveDetail {
     if (!date) continue
     const at = Date.parse(date)
     if (!Number.isFinite(at) || !Number.isFinite(start) || !Number.isFinite(end) || at < start || at > end) continue
+    const pointCoord = coordPair(value.latitude, value.longitude)
+    const climate = isRecord(value.climate_info) ? value.climate_info : {}
     points.push({
       date,
       speedKmh: speedToKmh(value.speed, speedUnit, distanceUnit),
       powerKw: finite(value.power),
       batteryLevel: finite(value.battery_level, 0, 100),
       elevationM: finite(value.elevation, -500, 10000),
+      latitude: pointCoord.latitude,
+      longitude: pointCoord.longitude,
+      heading: finite(value.heading),
+      insideTempC: tempToC(climate.inside_temp, temperatureUnit),
+      outsideTempC: tempToC(climate.outside_temp, temperatureUnit),
     })
   }
   points.sort((a, b) => Date.parse(a.date) - Date.parse(b.date))
