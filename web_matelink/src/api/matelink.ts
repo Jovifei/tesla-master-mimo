@@ -1,4 +1,4 @@
-import type { WebCar, WebCarStatus, WebCharge, WebChargePoint, WebChargeSummary, WebChargingSite, WebCommandResult, WebDrivePoint, WebDriveSummary, WebParked, WebPlace, WebSession } from './matelink-types'
+import type { WebCar, WebCarStatus, WebCharge, WebChargePoint, WebChargeSummary, WebChargingSite, WebCommandResult, WebDrivePoint, WebDriveSummary, WebParked, WebPlace, WebSession, WebTpms } from './matelink-types'
 
 /**
  * MateLink production API client (web, W1).
@@ -317,6 +317,7 @@ export function normalizeStatus(payload: unknown): WebCarStatus {
     observedAt: stringValue(data.observed_at),
     source: stringValue(data.source),
     driverTempC: celsius(climate.driver_temp_setting),
+    tpms: parseTpmsReport(raw.tpms_details, data.units),
     commandAuthorization: isRecord(raw.command_authorization)
       ? {
           ready: boolValue(raw.command_authorization.ready),
@@ -620,6 +621,24 @@ export async function getParkedBetween(carId: number, olderDriveId: string, newe
   }
 }
 
+/**
+ * Display-only TPMS report, ported from the miniprogram's
+ * parseTpmsReport: values count only when the unit is explicitly
+ * bar (from tpms_details.pressure_unit or the payload's
+ * unit_of_pressure) and each pressure is a plausible 0-15 bar.
+ */
+export function parseTpmsReport(tpmsDetails: unknown, unitsRaw: unknown): WebTpms | null {
+  if (!isRecord(tpmsDetails)) return null
+  const units = isRecord(unitsRaw) ? unitsRaw : {}
+  const unit = stringValue(tpmsDetails.pressure_unit) ?? stringValue(units.unit_of_pressure)
+  const wheel = (key: string): number | null => {
+    const value = tpmsDetails[`tpms_pressure_${key}`]
+    return unit === 'bar' && typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 15 ? value : null
+  }
+  const at = (key: string): string | null => stringValue(tpmsDetails[`tpms_pressure_${key}_observed_at`])
+  return { fl: wheel('fl'), fr: wheel('fr'), rl: wheel('rl'), rr: wheel('rr'), observedAt: { fl: at('fl'), fr: at('fr'), rl: at('rl'), rr: at('rr') } }
+}
+
 /* ---------------- nearby charging, places, commands (W3) ---------------- */
 
 export type NearbyCharging = { sites: WebChargingSite[]; source: string | null }
@@ -677,6 +696,37 @@ export async function createVehiclePlace(
 export async function deleteVehiclePlace(carId: number, placeId: number): Promise<boolean> {
   const payload = await authedRequest(`/api/v1/cars/${carId}/places/${placeId}`, { method: 'DELETE' })
   return Boolean(unwrap(payload).deleted)
+}
+
+/** Page through the full history for analysis; capped, with the cap reported honestly. */
+export async function getAllHistory(
+  carId: number
+): Promise<{ drives: WebDriveSummary[]; charges: WebCharge[]; complete: boolean }> {
+  const MAX_PAGES = 30
+  const drives: WebDriveSummary[] = []
+  const charges: WebCharge[] = []
+  let complete = true
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    const result = await getDrivesPage(carId, page)
+    drives.push(...result.rows)
+    if (page >= result.totalPages) break
+    if (page === MAX_PAGES) complete = false
+  }
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    const result = await getChargesPage(carId, page)
+    charges.push(...result.rows)
+    if (page >= result.totalPages) break
+    if (page === MAX_PAGES) complete = false
+  }
+  return { drives, charges, complete }
+}
+
+export async function claimInvite(code: string): Promise<Record<string, unknown>> {
+  const payload = await authedRequest('/v1/me/invite/claim', {
+    method: 'POST',
+    body: JSON.stringify({ code }),
+  })
+  return unwrap(payload)
 }
 
 export async function executeVehicleCommand(

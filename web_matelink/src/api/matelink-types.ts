@@ -42,6 +42,7 @@ export type WebCarStatus = {
   driverTempC: number | null
   /** Present only when the backend evaluated command authorization for this status. */
   commandAuthorization: { ready: boolean | null; missingScopes: string[] | null } | null
+  tpms: WebTpms | null
 }
 
 export type WebChargingSite = {
@@ -69,6 +70,15 @@ export type WebCommandResult = {
   command: string
   result: string | null
   verified: boolean | null
+}
+
+/** Display-only tire pressures in bar (unit must be explicitly bar, as in the miniprogram's TPMS report). */
+export type WebTpms = {
+  fl: number | null
+  fr: number | null
+  rl: number | null
+  rr: number | null
+  observedAt: { fl: string | null; fr: string | null; rl: string | null; rr: string | null }
 }
 
 export type WebDriveSummary = {

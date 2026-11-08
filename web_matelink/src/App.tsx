@@ -7,6 +7,8 @@ import WebDashboard from './pages/WebDashboard'
 import ChargesPage from './pages/ChargesPage'
 import DrivesPage from './pages/DrivesPage'
 import ControlsPage from './pages/ControlsPage'
+import AnalysisPage from './pages/AnalysisPage'
+import MePage from './pages/MePage'
 
 /**
  * MateLink Web shell (W1). The previous TeslaMate-style shell and its
@@ -22,17 +24,6 @@ const NAV = [
   { path: '/analysis', label: '分析', stage: 'W4' },
   { path: '/me', label: '我的', stage: 'W4' },
 ] as const
-
-function Placeholder({ title, stage }: { title: string; stage: string }) {
-  return (
-    <div className="apple-card">
-      <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 8 }}>{title}</h1>
-      <p className="text-secondary" style={{ fontSize: 14, lineHeight: 1.7 }}>
-        这一部分在网页版 {stage} 阶段交付（见 docs/WEB-PLAN-20261108.md）。当前 W1 已完成骨架、登录与只读仪表盘。
-      </p>
-    </div>
-  )
-}
 
 function Shell({ children }: { children: ReactNode }) {
   const navigate = useNavigate()
@@ -133,7 +124,7 @@ export default function App() {
           path="/analysis"
           element={
             <RequireSession>
-              <Placeholder title="分析" stage="W4" />
+              <AnalysisPage />
             </RequireSession>
           }
         />
@@ -141,7 +132,7 @@ export default function App() {
           path="/me"
           element={
             <RequireSession>
-              <Placeholder title="我的" stage="W4" />
+              <MePage />
             </RequireSession>
           }
         />
