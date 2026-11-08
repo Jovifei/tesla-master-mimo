@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useId, useState, type ReactNode } from 'react'
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 
 /**
@@ -50,6 +50,7 @@ const PATHS: Record<string, ReactNode> = {
   car: (<><path d="M4 16.5l1.6-6A3 3 0 0 1 8.5 8.3h7a3 3 0 0 1 2.9 2.2l1.6 6" /><path d="M3 16.5h18a1 1 0 0 1 1 1V19a1 1 0 0 1-1 1h-1.5a1 1 0 0 1-1-1v-.5h-13V19a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-1.5a1 1 0 0 1 1-1z" /><path d="M7.5 12.5h.01M16.5 12.5h.01" /></>),
   key: (<><circle cx="8" cy="14.5" r="4.5" /><path d="M11.5 11L20 2.5M16.5 6l3 3M14 8.5l2.2 2.2" /></>),
   clock: (<><circle cx="12" cy="12" r="8.5" /><path d="M12 7.5V12l3 2" /></>),
+  moon: (<path d="M20 13.5A8.5 8.5 0 1 1 10.5 4a6.8 6.8 0 0 0 9.5 9.5z" />),
   wallet: (<><path d="M3.5 7a2 2 0 0 1 2-2h12a1.5 1.5 0 0 1 0 3" /><path d="M3.5 7v10.5a2 2 0 0 0 2 2h14a1 1 0 0 0 1-1v-9a1 1 0 0 0-1-1h-14" /><path d="M16.8 14h.01" /></>),
 }
 
@@ -85,6 +86,7 @@ export function Ring({
     const frame = requestAnimationFrame(() => setShown(Math.max(0, Math.min(100, value))))
     return () => cancelAnimationFrame(frame)
   }, [value])
+  const gradientId = useId().replace(/[^a-zA-Z0-9]/g, '')
   const radius = (size - thickness) / 2
   const circumference = 2 * Math.PI * radius
   const color = TONES[tone]
@@ -92,7 +94,7 @@ export function Ring({
     <div style={{ position: 'relative', width: size, height: size }}>
       <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
         <defs>
-          <linearGradient id={`ring-${tone}`} x1="0%" y1="0%" x2="100%" y2="100%">
+          <linearGradient id={`ring-${gradientId}`} x1="0%" y1="0%" x2="100%" y2="100%">
             <stop offset="0%" stopColor={color} />
             <stop offset="100%" stopColor={tone === 'teal' ? TONES.green : color} stopOpacity="0.75" />
           </linearGradient>
@@ -103,7 +105,7 @@ export function Ring({
           cy={size / 2}
           r={radius}
           fill="none"
-          stroke={`url(#ring-${tone})`}
+          stroke={`url(#ring-${gradientId})`}
           strokeWidth={thickness}
           strokeLinecap="round"
           strokeDasharray={circumference}
@@ -176,7 +178,7 @@ function ChartTooltip({ active, payload, unit }: { active?: boolean; payload?: {
 
 export function AreaSeries({ points, unit, tone = 'teal', height = 180 }: { points: ChartPoint[]; unit: string; tone?: Tone; height?: number }) {
   const color = TONES[tone]
-  const id = `area-${tone}-${unit.replace(/\W/g, '')}`
+  const id = `area-${useId().replace(/[^a-zA-Z0-9]/g, '')}`
   if (!points.length) return <p className="text-tertiary" style={{ fontSize: 13 }}>暂无数据。</p>
   return (
     <ResponsiveContainer width="100%" height={height}>
