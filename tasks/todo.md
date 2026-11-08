@@ -4801,3 +4801,10 @@ Review：6 个已授权计划/交接文档已删除，引用已改写，docs 链
 - [x] 证书：Let's Encrypt 证书 jourvolt 已扩容，SAN 现为 teslalink / api / auth / web 四个域名；nginx -t 通过并已重载。
 - [x] 线上验收：服务器侧以系统 CA 校验证书访问 web 根路径 200（真实链+域名匹配）；公网检查 web 根 200（标题 MateLink）、SPA 路由 /drives 200、经 web 源的 /v1 start 200、/assets 长缓存头正确；既有 api healthz、photo 站点均 200 未受影响。回滚：删除 matelink-web.conf 后 reload 即下线 web 站点；静态目录可独立删除；证书扩容为增量变更无需回滚。
 - [ ] 待所有者：以本人 Tesla 账号在 https://web.teslalink.joviluma.com 完成首次真实登录验收（授权自动跳回 + 数据渲染）。
+
+### 2026-11-08 网页版视觉重做（设计系统 v2，团队并行）
+
+- [x] 所有者验收 W1–W5 后反馈：页面只有文字列表、没有面板与图表、不像苹果风格（登录与数据链路已确认正常）。据此按 docs/WEB-DESIGN.md 重做：设计系统负责人（Muse）定风格与组件库（viz.tsx：圆环/胶囊/图表/瓷砖/图标/胎压俯视图 + Recharts + 外壳图标导航），五个模块负责人并行改造仪表盘/充电/行程/远程控制/分析与我的，数据逻辑与诚实口径全部保持。
+- [x] 集成：修复组件库三处小问题（渐变 id 唯一化、Bars 工具提示、moon 图标）；门禁 npm test 26/26、构建通过、七路由冒烟 200。
+- [x] 重新部署至 https://web.teslalink.joviluma.com（静态包替换，接口零变化）。
+- [ ] 待所有者：刷新线上页面做视觉验收；如需微调（密度/配色/某页布局）按页反馈即可。
