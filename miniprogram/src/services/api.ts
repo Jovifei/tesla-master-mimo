@@ -1185,6 +1185,8 @@ export const matelinkApi = {
         available_stalls: finite(site.available_stalls, 0),
         total_stalls: finite(site.total_stalls, 0),
         site_closed: bool(site.site_closed),
+        price_text: stringValue(site.price_text),
+        parking_policy: stringValue(site.parking_policy),
       })) : [],
       meta: data.meta ? { source: stringValue(data.meta.source) } : null,
     }

@@ -7,6 +7,7 @@ import {
   needsCommandReauthorization,
   offeredCommands,
 } from '../../domain/vehicle_commands'
+import { isSuperchargerSite, siteDisplayParking, siteDisplayPrice, siteStallsText } from '../../domain/nearby'
 import DashboardIcon from './DashboardIcon'
 import VisualIcon from '../VisualIcon'
 import LoadingIndicator from '../LoadingIndicator'
@@ -32,6 +33,7 @@ export type VehicleRemoteSectionsProps = {
   nearbyLoading: boolean
   nearbyError: boolean
   onLoadNearby: () => void
+  onNavigateSite?: (site: ChargingSite) => void
 
   places: VehiclePlace[] | null
   placesLoading: boolean
@@ -54,6 +56,7 @@ export default function VehicleRemoteSections({
   nearbyLoading,
   nearbyError,
   onLoadNearby,
+  onNavigateSite,
   places,
   placesLoading,
   placesError,
@@ -65,6 +68,7 @@ export default function VehicleRemoteSections({
   const [climateModalOpen, setClimateModalOpen] = useState(false)
   const [chargeLimitModalOpen, setChargeLimitModalOpen] = useState(false)
   const [addPlaceModalOpen, setAddPlaceModalOpen] = useState(false)
+  const [placePendingDelete, setPlacePendingDelete] = useState<VehiclePlace | null>(null)
 
   const [driverTemp, setDriverTemp] = useState<number>(() => status.driverTempSetting ?? 21.0)
   const [passengerTemp, setPassengerTemp] = useState<number>(() => status.passengerTempSetting ?? 21.0)
@@ -371,24 +375,32 @@ export default function VehicleRemoteSections({
           <View className="nearby-list">
             {nearbySites && nearbySites.length > 0 ? (
               nearbySites.slice(0, 5).map(site => (
-                <View key={`${site.latitude}-${site.longitude}-${site.name}`} className="nearby-site-row">
-                  <View className={`site-type-badge ${site.type === 'supercharger' ? 'super' : 'dest'}`}>
-                    <DashboardIcon name="bolt" tone={site.type === 'supercharger' ? 'warning' : 'primary'} />
+                <View
+                  key={`${site.latitude}-${site.longitude}-${site.name}`}
+                  className="nearby-site-row"
+                  onClick={onNavigateSite ? () => onNavigateSite(site) : undefined}
+                >
+                  <View className="site-main-row">
+                    <View className={`site-type-badge ${isSuperchargerSite(site) ? 'super' : 'dest'}`}>
+                      <DashboardIcon name="bolt" tone={isSuperchargerSite(site) ? 'warning' : 'primary'} />
+                    </View>
+                    <View className="site-info">
+                      <Text className="site-name">{site.name || '充电站'}</Text>
+                      <Text className="site-desc">
+                        {isSuperchargerSite(site) ? '超级充电站' : '目的地充电'}
+                        {siteStallsText(site) ? ` · 空闲 ${siteStallsText(site)}` : ''}
+                      </Text>
+                    </View>
+                    {site.site_closed ? (
+                      <Text className="site-closed-tag">已关闭</Text>
+                    ) : site.distance_km != null ? (
+                      <Text className="site-distance">{site.distance_km.toFixed(1)} km</Text>
+                    ) : null}
                   </View>
-                  <View className="site-info">
-                    <Text className="site-name">{site.name || '充电站'}</Text>
-                    <Text className="site-desc">
-                      {site.type === 'supercharger' ? '超级充电站' : '目的地充电'}
-                      {site.available_stalls != null && site.total_stalls != null
-                        ? ` · 可用 ${site.available_stalls}/${site.total_stalls}`
-                        : ''}
-                    </Text>
+                  <View className="site-price-row">
+                    <Text className="site-price">{siteDisplayPrice(site)}</Text>
+                    <Text className="site-parking">🅿️ {siteDisplayParking(site)}</Text>
                   </View>
-                  {site.site_closed ? (
-                    <Text className="site-closed-tag">已关闭</Text>
-                  ) : site.distance_km != null ? (
-                    <Text className="site-distance">{site.distance_km.toFixed(1)} km</Text>
-                  ) : null}
                 </View>
               ))
             ) : (
@@ -435,7 +447,7 @@ export default function VehicleRemoteSections({
                   {place.id != null ? (
                     <Button
                       className="place-delete-btn"
-                      onClick={() => void onDeletePlace(place.id!)}
+                      onClick={() => setPlacePendingDelete(place)}
                     >
                       删除
                     </Button>
@@ -463,6 +475,30 @@ export default function VehicleRemoteSections({
           </View>
         )}
       </View>
+
+      {/* Place Delete Confirmation Modal (mirrors the App's pendingDelete dialog) */}
+      {placePendingDelete ? (
+        <View className="remote-modal-overlay" onClick={() => setPlacePendingDelete(null)}>
+          <View className="remote-modal-dialog" onClick={e => e.stopPropagation()}>
+            <Text className="modal-title">删除地点「{placePendingDelete.name}」？</Text>
+            <View className="modal-actions">
+              <Button
+                className="button place-delete-confirm-btn"
+                onClick={() => {
+                  const id = placePendingDelete.id
+                  setPlacePendingDelete(null)
+                  if (id != null) void onDeletePlace(id)
+                }}
+              >
+                确认执行
+              </Button>
+              <Button className="button button-secondary" onClick={() => setPlacePendingDelete(null)}>
+                取消
+              </Button>
+            </View>
+          </View>
+        </View>
+      ) : null}
 
       {/* Unlock Confirmation Modal */}
       {unlockConfirmOpen ? (

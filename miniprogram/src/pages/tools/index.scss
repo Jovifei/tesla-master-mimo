@@ -2,7 +2,57 @@
 
   background: var(--apple-bg);
   color: var(--apple-label-primary);
-  
+
+  /* Temperature history curve (shared EvidenceCurve component). */
+  .analysis-canvas {
+    display: block;
+    width: 100%;
+    height: 400rpx;
+    margin-top: 20rpx;
+  }
+  .analysis-curve-expand {
+    display: inline-block;
+    margin: 0;
+    padding: 8rpx 20rpx;
+    color: #157a86;
+    background: #ddf0f1;
+    border: 0;
+    border-radius: 999rpx;
+    font-size: 24rpx;
+    line-height: 1.4;
+    &::after { border: none; }
+  }
+  .analysis-curve-fullscreen {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    margin: 0;
+    border-radius: 0;
+    overflow-y: auto;
+    background: #ffffff;
+    padding: 40rpx 32rpx;
+    padding-bottom: calc(40rpx + env(safe-area-inset-bottom));
+    .analysis-canvas { height: 60vh; }
+  }
+  .analysis-axis {
+    display: flex;
+    justify-content: space-between;
+    gap: 16rpx;
+    font-size: 24rpx;
+    color: #6b7280;
+    > text {
+      flex: 1;
+      overflow-wrap: anywhere;
+      &:last-child { text-align: right; }
+    }
+  }
+  .analysis-cursor {
+    display: block;
+    color: #157a86;
+    font-size: 26rpx;
+    line-height: 1.5;
+  }
+
   .card {
     border-radius: var(--apple-radius-card, 28rpx);
     border: 0.5px solid var(--apple-separator);

@@ -3,7 +3,7 @@ import renderer, { act, type ReactTestRenderer } from 'react-test-renderer'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 const platform = vi.hoisted(() => ({ request: vi.fn(), login: vi.fn(), values: new Map<string, unknown>(), navigateTo: vi.fn(),
   show: (() => {}) as () => void, hide: (() => {}) as () => void, unload: (() => {}) as () => void }))
-vi.mock('@tarojs/components', () => ({ View: 'view', Text: 'text', Button: 'button', Picker: 'picker', Input: 'input', Image: 'image', Map: 'map', ScrollView: 'scroll-view' }))
+vi.mock('@tarojs/components', () => ({ View: 'view', Text: 'text', Button: 'button', Picker: 'picker', Input: 'input', Image: 'image', Map: 'map', ScrollView: 'scroll-view', Canvas: 'canvas', Slider: 'slider' }))
 vi.mock('@tarojs/taro', () => ({ default: {
   request: platform.request, login: platform.login, getStorageSync: (key: string) => platform.values.get(key),
   setStorageSync: (key: string, value: unknown) => { platform.values.set(key, JSON.parse(JSON.stringify(value))) },
@@ -282,15 +282,18 @@ it.each([{ change: 'power', resumeOffline: false }, { change: 'window', resumeOf
   }
   if (change === 'cost') expect(panel.findByProps({ ariaLabel: '充电费用 42 EUR' })).toBeDefined()
 })
-it('renders actual parsed charge detail in App section order, real sample extrema/zero and working five-curve entry', async () => {
+it('renders actual parsed charge detail in App section order, real sample extrema/zero and inline five curves', async () => {
   await mount(); await detail()
   const titles = tree!.root.findAllByProps({ className: 'section-title' }).map(node => node.children.join(''))
   const startIndex = titles.indexOf('充电详情')
-  expect(titles.slice(startIndex)).toEqual(['充电详情', '位置与费用', '电量', '电池', '功率', '电压与电流', '温度'])
+  expect(titles.slice(startIndex)).toEqual(['充电详情', '位置与费用', '电量', '电池', '功率', '电压与电流', '温度', '充电电量变化', '充电功率', '充电电压', '充电电流', '充电温度'])
   for (const label of ['AC输入效率 80%', '起始SOC 20%', '结束SOC 80%', '样本最高功率 10 kW', '样本最低功率 0 kW', '样本平均功率 5 kW', '样本平均电压 235 V', '样本平均电流 8 A', '样本平均温度 21 °C']) expect(tree!.root.findAllByProps({ ariaLabel: label }), label).toHaveLength(1)
   expect(shown()).toContain('功率 2 / 电压 2 / 电流 2 / 温度 2 点')
-  await click('查看SOC、功率、电压、电流、温度曲线')
-  expect(platform.navigateTo).toHaveBeenCalledWith({ url: '/pages/analysis/index?kind=chargeCurves&chargeId=1' })
+  // App parity: the five curves are inline in the detail; there is no
+  // jump-to-analysis entry anymore.
+  expect(tree!.root.findAllByType('button').some(node => node.children.join('') === '查看SOC、功率、电压、电流、温度曲线')).toBe(false)
+  expect(platform.navigateTo.mock.calls.some(([arg]) => String((arg as { url?: string })?.url ?? '').includes('chargeCurves'))).toBe(false)
+  for (const id of ['charge-detail-soc', 'charge-detail-power', 'charge-detail-voltage', 'charge-detail-current', 'charge-detail-temperature']) expect(tree!.root.findByProps({ id }), id).toBeDefined()
   expect(platform.request.mock.calls.filter(([request]) => request.url.endsWith('/charges/1'))).toHaveLength(1)
   const serialized = JSON.stringify([...platform.values.values()])
   expect(serialized).not.toContain('charge_details'); expect(serialized).not.toContain('charger_voltage')

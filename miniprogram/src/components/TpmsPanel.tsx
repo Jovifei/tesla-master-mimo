@@ -1,14 +1,23 @@
 import { Button, Text, View } from '@tarojs/components'
 import { useState } from 'react'
 import { restoreTpmsSnapshot, tpmsMissingLabel, TPMS_WHEELS, type TpmsReport, type TpmsSnapshot } from '../domain/tpms'
+import {
+  analyzeTpmsTrend,
+  groupTpmsSamples,
+  TPMS_COLD_CHECK_RECOMMENDATION,
+  TPMS_CONCLUSION_TEXTS,
+  TPMS_FACTOR_LABELS,
+  TPMS_TREND_DISCLAIMER,
+  type TpmsTrendDrive,
+} from '../domain/tpms_trend'
 import type { TpmsHistory } from '../services/tpms_cache'
 import MetricValue from './MetricValue'
 import TpmsHistoryChart from './TpmsHistoryChart'
 
 const wheelNames = { fl: '左前轮', fr: '右前轮', rl: '左后轮', rr: '右后轮' }
-type Props = { snapshot?: TpmsSnapshot | null; report?: TpmsReport | null; history?: TpmsHistory | null; cacheReason?: string | null; now?: number }
+type Props = { snapshot?: TpmsSnapshot | null; report?: TpmsReport | null; history?: TpmsHistory | null; cacheReason?: string | null; now?: number; trendDrives?: readonly TpmsTrendDrive[] }
 
-export default function TpmsPanel({ snapshot, report, history, cacheReason, now = Date.now() }: Props) {
+export default function TpmsPanel({ snapshot, report, history, cacheReason, now = Date.now(), trendDrives = [] }: Props) {
   const [evidenceExpanded, setEvidenceExpanded] = useState(false)
   const [expanded, setExpanded] = useState(false)
   const [historyPage, setHistoryPage] = useState(0)
@@ -42,6 +51,16 @@ export default function TpmsPanel({ snapshot, report, history, cacheReason, now 
     {history?.points.length ? <Text className="metric-source">本机覆盖：{history.oldestAt} 至 {history.latestAt} · {history.points.length} 点{history.limited ? ' · 已按保留上限截取' : ''}</Text>
       : <Text className="muted">暂无合格的本机前台历史；缺少逐轮值、bar单位、来源或独立时间时不生成样本。</Text>}
     <TpmsHistoryChart history={history} now={now} />
+    {history?.points.length ? (() => {
+      const trend = analyzeTpmsTrend(groupTpmsSamples(history.points), trendDrives)
+      return <View className="tpms-trend-conclusion">
+        <Text className="section-title">可能因素</Text>
+        <Text>{TPMS_CONCLUSION_TEXTS[trend.conclusion.factor]}</Text>
+        {trend.factors.filter(factor => factor.factor !== trend.conclusion.factor).map(factor => <Text key={factor.factor} className="metric-source">{TPMS_FACTOR_LABELS[factor.factor]}</Text>)}
+        {trend.conclusion.recommendation === 'manual_cold_check' ? <Text className="metric-source">{TPMS_COLD_CHECK_RECOMMENDATION}</Text> : null}
+        <Text className="metric-source">{TPMS_TREND_DISCLAIMER}</Text>
+      </View>
+    })() : null}
     {points.length ? <Button className="button-secondary" onClick={() => { setExpanded(!expanded); setHistoryPage(0) }}>{expanded ? '收起本机记录' : '查看本机记录'}</Button> : null}
     {expanded ? <View>
       {points.slice(page * 20, (page + 1) * 20).map(point => <View className="readiness-item" key={`${point.wheel}-${point.observedAt}`}>

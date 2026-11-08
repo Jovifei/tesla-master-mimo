@@ -483,7 +483,9 @@ it.each(fixture.readiness_cases)('shared synthetic $id runs through the API norm
   if (row.id === 'old_timestamp') expect(byKey.receive.freshness).toBe('stale_or_skewed')
   expect(visible()).toContain('订阅通知尚未接入（UNSUPPORTED）')
   expect(visible()).toContain('胎压为有界本机前台观测历史')
-  expect(platform.request).toHaveBeenCalledTimes(4)
+  // Load contract: cars + snapshot + readiness + pairing + latest drive
+  // (the recent-drive card loads with the dashboard, as in the App).
+  expect(platform.request).toHaveBeenCalledTimes(5)
 })
 
 it('actual scoped local cache proves saved summaries independently of current quality or receipt', async () => {

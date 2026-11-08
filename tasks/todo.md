@@ -4409,3 +4409,44 @@ Review: 小程序开发本阶段收口，后续改动应另开阶段。所有代
 - [x] 版本升至 0.6.7，更新 `package.json`、`package-lock.json`、`CHANGELOG.md`、关于页及任务台账。
 - [x] 提交至 `codex/miniprogram-e-migration-20261029` 分支并推送 GitHub 远端；保证与 `app_mimo` 物理隔离与 0 触碰。
 - [x] 关联 Figma 设计文件：https://www.figma.com/design/F112Y2qzAryxOfitvYumfT
+
+## 2026-11-08 小程序对齐 App v2.1.87 · 阶段一（首页）— 分支 muse/mini-align-20261108
+
+- [x] 分级配对 phase 移植（原 PR #43 单提交 cherry-pick 至当前线尖）：TelemetryPairing 增加 phase，诊断页改用后端分级口径（服务端值优先，旧后端回退本地推导）。
+- [x] 附近充电三件套对齐 App：ChargingSite 增加 price_text / parking_policy 并贯通 API 归一化；站点行新增电价（绿色加粗）+ 停车政策行，后端无值时按 App 同口径兜底（超充 ¥1.25/度（分时）/ 充电免费停车2小时；目的地 ¥1.15/度 / 前2小时免费停车）；桩位文案改「空闲 a/b」；整行点按打开地图定位导航（Taro.openLocation）。注：两端均只显示前 5 条，经核 App 同样 take(5)，不作改动。
+- [x] 删除地点二次确认：与 App pendingDelete 弹窗同构（删除地点「名称」？→ 确认执行/取消），点击删除不再直删。
+- [x] 首页最近行程卡（App DashboardRecentDriveCard 同构）：随仪表盘加载并行拉取最近一条行程（scopeGate 车道 recent-drive，失败静默隐藏不报错）；路线（formatRouteAddresses）+ 距离 + SOC 区间 + 能耗/里程/时长/极速四胶囊；点按切换到行程页。
+- [x] 位置卡地址对齐：围栏名优先 → 车仍停在最近行程终点 300 米内时显示该终点中文地址 → 否则保留简洁占位「已获取位置 · 点击查看地图」（小程序既有刻意设计：原始坐标留给地图页，此点与 App 的坐标兜底分支不同，属有意保留）。
+- [x] 验证（阶段门禁）：tsc 0 错误；定点测试全过（domain/nearby 4、domain/recent_drive 6、diagnostic 13、VehicleRemoteSections 5、vehicle_page 55——含加载请求数契约 4→5 的更新：仪表盘新增最近行程拉取，与 App 一致）。
+- [x] 全量门禁：npm test 81 文件 / 1008 项全过（exit 0）；build:weapp 成功（197 文件，资产校验通过）。
+
+## 2026-11-08 小程序对齐 App v2.1.87 · 阶段二（充电）— 分支 muse/mini-align-20261108
+
+- [x] 筛选维度复核：审计称小程序缺 AC/DC 与费用筛选、App 无地点筛选——经代码核实两项均不成立：小程序已有 AC/DC（按能量契约 chargeMode 判定）+ 有/无费用 + 地点三组次级筛选，App 同样有地点筛选。不作改动。
+- [x] 充电详情曲线内联（对齐 App ChargeDetailScreen）：原「查看曲线」按钮跳分析页，现将 SOC/功率/电压/电流/温度五曲线直接渲染在详情内（数据为详情已加载的同一份采样证据，统计值与曲线同源）。
+- [x] EvidenceCurve 抽为共享组件 src/components/EvidenceCurve.tsx（原在分析页内定义），分析页改为引用，行为不变；充电页补齐曲线样式（与分析页同规则）。
+- [x] 测试更新：charge_detail 详情顺序断言纳入五曲线标题并断言无跳转入口、五画布存在（补 Canvas/Slider 组件 mock）；history_pages 两处 charges 流程改断言旧跳转入口不存在（drives 分支不变）。
+- [x] 验证（阶段门禁）：tsc 0 错误；定点 128 项全过；npm test 全量 81 文件 / 1008 项全过（首跑有 1 项在与 ETF 测试并行负载下抖动，复跑全绿）；build:weapp 成功。
+
+## 2026-11-08 小程序对齐 App v2.1.87 · 阶段三（行程/驻车/胎压）— 分支 muse/mini-align-20261108
+
+- [x] 行程详情新增海拔统计组（样本最高/最低/累计爬升/累计下降）：domain/drive_elevation.ts 按 App DriveDetailMetrics 同算法（相邻有效样本差分累加、缺测对跳过、无有效对时增减为暂无数据），含 3 项单测；位置在电量组之后、环境温度组之前，与 App 分组顺序一致。
+- [x] 胎压趋势结论层（移植 App TpmsTrendAnalyzer）：新 domain/tpms_trend.ts——本机逐轮样本按观测时刻重组为四轮样本行，环境/高速/停车三因素证据判定（阈值与 App 一致：停车 ≥24h 且单轮独降 ≥0.2 bar；高速需最高速 ≥90 km/h 行程在末样本前 6h 内结束），结论取首个命中因素，停车因素附冷态复检建议，附证据免责说明；TpmsPanel 在历史图后渲染「可能因素」卡；工具页 tpms 种类追加行程历史拉取作为高速因素证据（失败静默降级）。含 6 项单测。本机缓存无环境温度序列，环境因素按契约实现但不会命中，不伪造。
+- [x] 驻车推算说明补齐 App 对话框的休眠功耗一行（<50 W）；核实结论：推算公式与 60 kWh 基准与 App 逐字一致（|ΔSOC|×3.8 km、×0.60 kWh），差异仅在 App 把说明放在弹窗、小程序内联展示，不改数值。
+- [x] 复核判定（不改动）：沿途天气卡——App 依赖外部天气数据源，小程序与后端均无天气数据合同，缺数据源不可对齐，待后端/服务合同另行立项；胎压"服务端历史"——经查 App 的 TpmsHistoryRepository 同为本机 Room 持久化（非服务端 API），小程序本机缓存架构相同，差异仅为小程序前台采集的平台限制，页面已自述，无后端工作可做。
+- [x] 验证（阶段门禁）：tsc 0 错误；定点 51 项 + 新增 9 项单测全过；全量 83 文件 / 1017 项全过（并行跑与 ETF 云端测试争抢 CPU 时有计时类抖动，单 worker 复跑全绿，抖动文件单独跑均全过）；build:weapp 成功。
+
+## 2026-11-08 小程序对齐 App v2.1.87 · 阶段四（远程控制门控）— 分支 muse/mini-align-20261108
+
+- [x] 复核判定（不改动）：审计称"授权未评估（null）时 App 不展示命令、小程序展示全量目录"。逐行核对 App 代码后不成立：VehicleCommandCatalog.offeredCommands 的注释虽称未评估不出，但 VehicleControlsSection 实际有兜底——offeredCommands 为空且 commandAuthorization == null 时回退全量目录（VehicleRemoteSections.kt:531-533），与小程序 offeredCommands 对 null 返回全目录、且 needsCommandReauthorization 口径一致的行为完全相同；小程序单测亦明确钉住"ready 或 null 时给目录"。以可观察行为为准，两端已对齐（命令执行仍由后端逐条授权 + 全局开关兜底）。
+- [x] 快捷控制底部表（App QuickStatusAndControlSheet）：仅形态差异、功能可达（审计同判），小程序沿用页内分区形态，不复制弹层。
+- [x] 本阶段无代码变更，仅记录复核结论。
+
+## 2026-11-08 小程序对齐 App v2.1.87 · 阶段五（分析/工具补尾）— 分支 muse/mini-align-20261108
+
+- [x] 温度历史曲线（新增，对齐 App TemperatureTrendScreen 的数据口径）：App 的历史温度源是行程记录本身（每行程开始时刻的报告温度 + 严格合格性判定），并非独立温度接口。小程序新 domain/temperature_trend.ts 同口径实现：7/30 天窗口、隔离/身份存疑行程排除、来源须为 teslamate_archive/fleet_api/telemetry_mqtt、温度须为有限报告值；工具页温度页加载行程后以共享 EvidenceCurve 渲染车外温度历史，并标注窗口内行程数与合格点数；无行程/无合格温度时按 App 的两种不可用原因分别说明。行程契约无逐行程车内温度，车内仅显示当前值，不伪造。含 3 项单测。原页面"接口未提供逐点温度历史"的说明已由上述行程口径取代（该说明针对的是状态接口，结论不变：不以状态报告时间造曲线）。
+- [x] 复核判定（不改动）：年度报告 PDF——小程序已有 domain/reports.ts 的 reportPdf 生成器且工具页报告种类有"导出年度 PDF"按钮并落盘分享，审计"无 PDF"已过时，两端对齐。
+- [x] 复核判定（后端合同阻塞）：到访国家/地区聚合——App 依赖地理编码后的国家/行政区结构化字段，后端接口未提供该合同；小程序页面现行为（拒绝从地点文字推断、仅列历史地点并声明不代表完整足迹）即诚实口径，待后端补结构化地理字段后另行立项，不以地址字符串解析伪造统计。
+- [x] 复核判定（平台限制）：软件更新发行说明外链（微信小程序无法打开任意外链）、3D 车辆预览形态、桌面小部件与系统通知（小程序无等价平台能力）——审计同判优先级低/不在对齐目标内，不处理。
+- [x] 验证（阶段门禁）：tsc 0 错误；全量 84 文件 / 1020 项全过（单 worker 口径，与 ETF 云端测试并行时计时类用例有抖动、单独跑均全过）；build:weapp 成功。
+- [x] 五阶段对齐收官：分支 muse/mini-align-20261108 含阶段一至五全部提交；合并与否由项目所有者决定。

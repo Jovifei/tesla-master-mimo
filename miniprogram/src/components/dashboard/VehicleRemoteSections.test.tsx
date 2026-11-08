@@ -146,6 +146,8 @@ describe('VehicleRemoteSections', () => {
         available_stalls: 6,
         total_stalls: 8,
         site_closed: false,
+        price_text: '¥0.95~1.65/度',
+        parking_policy: '超充免费停车2小时',
       },
       {
         name: '余杭目的地充电站',
@@ -156,6 +158,8 @@ describe('VehicleRemoteSections', () => {
         available_stalls: null,
         total_stalls: null,
         site_closed: false,
+        price_text: null,
+        parking_policy: null,
       },
     ]
 
@@ -189,6 +193,60 @@ describe('VehicleRemoteSections', () => {
     expect(rows.length).toBe(2)
     expect(rows[0].findByProps({ className: 'site-name' }).children.join('')).toContain('未来科技城超级充电站')
     expect(rows[0].findByProps({ className: 'site-distance' }).children.join('')).toContain('1.2 km')
+    // App parity: price + parking row, backend values win over defaults.
+    expect(rows[0].findByProps({ className: 'site-price' }).children.join('')).toContain('¥0.95~1.65/度')
+    expect(rows[0].findByProps({ className: 'site-parking' }).children.join('')).toContain('超充免费停车2小时')
+    expect(rows[1].findByProps({ className: 'site-price' }).children.join('')).toContain('¥1.15/度')
+    expect(rows[1].findByProps({ className: 'site-parking' }).children.join('')).toContain('前2小时免费停车')
+  })
+
+  it('navigates to a nearby site when its row is tapped', async () => {
+    const sites: ChargingSite[] = [
+      {
+        name: '未来科技城超级充电站',
+        type: 'supercharger',
+        latitude: 30.28,
+        longitude: 120.16,
+        distance_km: 1.2,
+        available_stalls: 6,
+        total_stalls: 8,
+        site_closed: false,
+        price_text: null,
+        parking_policy: null,
+      },
+    ]
+    const onNavigateSite = vi.fn()
+    let renderer: ReactTestRenderer.ReactTestRenderer | null = null
+    await act(async () => {
+      renderer = ReactTestRenderer.create(
+        <VehicleRemoteSections
+          carId={1}
+          status={testStatus}
+          onExecuteCommand={async () => {}}
+          busyCommand={null}
+          commandOutcome={null}
+          onDismissOutcome={() => {}}
+          nearbySites={sites}
+          nearbySource="fleet_api"
+          nearbyLoading={false}
+          nearbyError={false}
+          onLoadNearby={() => {}}
+          onNavigateSite={onNavigateSite}
+          places={null}
+          placesLoading={false}
+          placesError={false}
+          onLoadPlaces={() => {}}
+          onCreatePlace={async () => {}}
+          onDeletePlace={async () => {}}
+        />
+      )
+    })
+    const row = renderer!.root.findByProps({ className: 'nearby-site-row' })
+    await act(async () => {
+      row.props.onClick()
+    })
+    expect(onNavigateSite).toHaveBeenCalledTimes(1)
+    expect(onNavigateSite.mock.calls[0][0].name).toBe('未来科技城超级充电站')
   })
 
   it('renders vehicle places list and handles deletion', async () => {
@@ -231,6 +289,13 @@ describe('VehicleRemoteSections', () => {
     const deleteBtn = rows[0].findByProps({ className: 'place-delete-btn' })
     await act(async () => {
       deleteBtn.props.onClick()
+    })
+    // App parity: deletion requires the confirmation dialog first.
+    expect(onDelete).not.toHaveBeenCalled()
+    expect(root.findByProps({ className: 'modal-title' }).children.join('')).toContain('删除地点「家」')
+    const confirmBtn = root.findByProps({ className: 'button place-delete-confirm-btn' })
+    await act(async () => {
+      confirmBtn.props.onClick()
     })
     expect(onDelete).toHaveBeenCalledWith(10)
   })
