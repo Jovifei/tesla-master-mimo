@@ -194,11 +194,16 @@ test('chargeHeatmap buckets by local weekday and hour', () => {
   assert.equal(grid[(at.getDay() + 6) % 7][at.getHours()].kwh, 20)
 })
 
-test('temperatureBuckets averages consumption only from drives that carry it', () => {
+test('temperatureBuckets averages consumption only from drives that resolve it (local caliber)', () => {
+  // Since the 2026-11-08 caliber change, per-drive consumption is
+  // resolved locally (drive-energy.ts), not read from the backend's
+  // consumption_net field. Drive 1 resolves via its reported scalar
+  // (2 kWh / 10 km = 200 Wh/km); drives 2-3 have no resolvable source
+  // (unchanged SOC, no scalar) and stay out of the average.
   const buckets = temperatureBuckets([
-    driveRec({ outsideTempAvgC: 15, consumptionWhPerKm: 200, distanceKm: 10 }),
-    driveRec({ id: 'd2', outsideTempAvgC: 16, consumptionWhPerKm: null, distanceKm: 10 }),
-    driveRec({ id: 'd3', outsideTempAvgC: 15, consumptionWhPerKm: null, distanceKm: null }),
+    driveRec({ outsideTempAvgC: 15, energyConsumedKwh: 2, distanceKm: 10 }),
+    driveRec({ id: 'd2', outsideTempAvgC: 16, startBatteryLevel: 80, endBatteryLevel: 80, distanceKm: 10 }),
+    driveRec({ id: 'd3', outsideTempAvgC: 15, startBatteryLevel: 80, endBatteryLevel: 80, distanceKm: null }),
   ])
   const bucket = buckets.find(b => b.label === '10 ~ 20°C')
   assert.equal(bucket.driveCount, 3)

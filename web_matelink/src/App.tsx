@@ -5,8 +5,6 @@ import Login from './pages/Login'
 import AuthComplete from './pages/AuthComplete'
 import WebDashboard from './pages/WebDashboard'
 import ChargeLevelPage from './pages/ChargeLevelPage'
-import StatesPage from './pages/StatesPage'
-import TimelinePage from './pages/TimelinePage'
 import ChargesPage from './pages/ChargesPage'
 import ChargingStatsPage from './pages/ChargingStatsPage'
 import DrivesPage from './pages/DrivesPage'
@@ -42,8 +40,6 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { path: '/', label: '总览' },
       { path: '/charge-level', label: '电量历史' },
-      { path: '/states', label: '状态' },
-      { path: '/timeline', label: '时间线' },
     ],
   },
   {
@@ -226,8 +222,9 @@ function RequireSession({ children }: { children: ReactNode }) {
 const ROUTES: { path: string; element: ReactNode }[] = [
   { path: '/', element: <WebDashboard /> },
   { path: '/charge-level', element: <ChargeLevelPage /> },
-  { path: '/states', element: <StatesPage /> },
-  { path: '/timeline', element: <TimelinePage /> },
+  // 状态不再单独成页（所有者 2026-11-08 定版）：旧路由落到总览的状态条锚点。
+  { path: '/states', element: <Navigate to="/#states" replace /> },
+  { path: '/timeline', element: <Navigate to="/#states" replace /> },
   { path: '/charges', element: <ChargesPage /> },
   { path: '/charging-stats', element: <ChargingStatsPage /> },
   { path: '/drives', element: <DrivesPage /> },

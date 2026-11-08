@@ -4838,3 +4838,13 @@ Review：6 个已授权计划/交接文档已删除，引用已改写，docs 链
 - [x] 步骤3：新组件（弧形仪表/待补面板/地图面板/数据表/环形构成/条形排行/热图/温度包络）与分组导航外壳。
 - [x] 步骤4：逐组建页并逐组提交——总览组（外壳分组导航＋总览 Overview 复刻＋电量历史/状态/时间线）、充电组（Charges＋Charge Details＋充电统计）、行程组（Drives＋Drive Details＋Trip＋行程统计＋效率）、电池组（电池健康/预计续航/驻车掉电）、数据组（统计/里程/温度/地点/到访地图/软件更新/数据概况）。共 21 条业务路由；/analysis 重定向 /statistics。
 - [x] 步骤5：门禁实测——npm test 38/38（新增 chargeStationStats 单测）、npm run build 通过、vite preview 24 条路由（含 /login、/auth/complete、/analysis）全部 200。未部署、未合并、未 push（待所有者验收）。
+
+## 2026-11-08 Web 按所有者定版优化（18:39 指令，分支 muse/web-redesign-20261108）
+
+- [x] 所有者定版原则：文字少、大数字多、图多、数字按 TeslaMate 瓷砖语义带色区分；总览电量主角化、电压/功率移入充电区、能耗三档（月/周/每行程）、状态条并入总览、固件置页尾；充电逐列参数表 + 单次详情彩色瓷砖；行程参数做全；电池健康完全照 TeslaMate 构成。
+- [x] 能耗口径核查与移植：代码实证 App/小程序为客户端本机计算（miniprogram/src/domain/drive_energy.ts）——后端对原生遥测行程 energy_consumed_net 恒 null、contract.net_energy quality=unknown。新增 `src/api/drive-energy.ts` 移植全套优先级（contract 资格校验 → local_import 标量（标注未核验）→ 本机功率积分（>30s 断开、须覆盖全窗口）→ SOC 差 × 估算容量），效率本地计算；normalizeDrive 补读 source/energy_contract，normalizeCharge 补 outside_temp_avg，normalizeStatus 补 battery_heater_on；pairedEfficiency 与 temperatureBuckets 改走新口径。新增 tests/web-w6.test.mjs（12 项）；web-w5 温度桶用例按新口径迁移（断言强度不变）。门禁：npm test 50/50、tsc 干净。
+- [x] 总览定版：电量主角面板（56px 大数字 % + ChargeRuler 0–100 进度条 + 预计/额定续航大数字）；电压/功率仪表撤出总览，充电中在「充电中（实时）」区以功率（橙）为首呈现，电压/电流/电池加热仅快照有值才显示；电量曲线拼接图与曲线窗口默认 7 天，充电采样同图；瓷砖行改本月/本月平均能耗（蓝，本机口径 + 覆盖注记）+ 已记录总里程 + 里程表；温度只留车内/车外两仪表（驾驶员设定温度撤下）；状态时间条并入总览（默认近 7 天，#states 锚点）；固件版本移至页尾；导航删除状态/时间线入口，/states、/timeline 重定向 /#states，StatesPage/TimelinePage 删除。构建通过。
+- [ ] 充电定版：记录列表改 TeslaMate 逐列参数表；单次详情彩色大数字瓷砖 + 实时区（功率/电压/电池加热当前值）。
+- [ ] 行程定版：详情能耗走本机口径 + 方法标注，最大功率（采样有才显示），列表行每行程平均能耗。
+- [ ] 电池健康定版：完全照 TeslaMate 电池健康页构成（容量/额定续航/行程统计三组键值 + 预计衰减仪表 + 健康度渐变条 + 当前电量分段格 + 当前储存电量 + 效率 + 充电统计 + 交直流用电量饼图 + 容量-里程关系图位），缺口待补。
+- [ ] 全量门禁：npm test / lint / build / preview 全部路由 200。不部署、不合并、不 push（待所有者验收）。

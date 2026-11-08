@@ -1,19 +1,23 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { getCarStatus, getChargeDetail, type ChargeDetail } from '../api/matelink'
 import type { WebCarStatus, WebChargePoint } from '../api/matelink-types'
-import { pairedEfficiency, stateSegments } from '../api/panel-data'
+import { periodEfficiency } from '../api/drive-energy.ts'
+import { stateSegments } from '../api/panel-data'
 import { socSegments } from '../api/tm-data'
 import { AnomalyBand, ChargeRuler, Panel, PremiseStrip, V3 } from '../components/v3'
-import { DATA_COLORS, StackChart, StatTile, StatesBar, type ChartRow } from '../components/panels'
-import { CarPicker, ErrorNote, GapTile, GaugeArc, LoadingNote, MapPanel, PageTitle, SocStitchChart } from '../components/tm'
+import { DATA_COLORS, StackChart, StatTile, StatesBar, TILE_COLORS, type ChartRow } from '../components/panels'
+import { CarPicker, ErrorNote, GaugeArc, LoadingNote, MapPanel, PageTitle, SocStitchChart } from '../components/tm'
 import { useCar } from './useCar'
 import { useHistory } from './useHistory'
 
 /**
- * 总览 — TeslaMate Overview 的复刻构成：电量/电压/功率三仪表 + 电量
- * 曲线大图 + 能耗与里程瓷砖行 + 温度仪表 + 状态时间线，表面为我方
- * 暖纸面。缺失参数（毛能耗等）按待补数据呈现（docs/TESLAMATE-MAPPING.md）。
+ * 总览（所有者 2026-11-08 18:39 定版）：电量是主角（0–100% 大数字 +
+ * 进度条 + 预计续航）；电量曲线按 TeslaMate Charge Level 拼接呈现，
+ * 充电时充电曲线同图；平均能耗分月/周两档（本机口径，见
+ * api/drive-energy.ts）；温度只留车内/车外；状态时间条直接进总览，
+ * 默认最近一周；充电电压/功率只在充电区出现（功率突出，电压、
+ * 电池加热为状态快照当前值，有才显示）；固件版本置于页尾。
  */
 
 const DAY = 86_400_000
@@ -22,10 +26,11 @@ export default function WebDashboard() {
   const { cars, car, carId, setCarId, error: carError } = useCar()
   const [status, setStatus] = useState<WebCarStatus | null>(null)
   const [statusError, setStatusError] = useState<string | null>(null)
-  const [windowDays, setWindowDays] = useState(2)
+  const [windowDays, setWindowDays] = useState(7)
   const history = useHistory(carId)
   const [chargePoints, setChargePoints] = useState<ReadonlyMap<string, readonly WebChargePoint[]>>(new Map())
   const [liveDetail, setLiveDetail] = useState<ChargeDetail | null>(null)
+  const location = useLocation()
 
   const charging = status?.chargingState === 'Charging'
 
@@ -50,6 +55,13 @@ export default function WebDashboard() {
     const timer = window.setInterval(() => void loadStatus(), 20_000)
     return () => window.clearInterval(timer)
   }, [charging, loadStatus])
+
+  // /states、/timeline 已并入总览：带 #states 锚点进入时滚到状态条。
+  useEffect(() => {
+    if (location.hash !== '#states') return
+    const timer = window.setTimeout(() => document.getElementById('states')?.scrollIntoView({ block: 'start' }), 350)
+    return () => window.clearTimeout(timer)
+  }, [location.hash, history.loading, status])
 
   const windowStart = useMemo(() => Date.now() - windowDays * DAY, [windowDays])
   const windowEnd = Date.now()
@@ -113,7 +125,17 @@ export default function WebDashboard() {
     () => stateSegments(history.drives, history.charges, windowStart, windowEnd),
     [history.drives, history.charges, windowStart, windowEnd]
   )
-  const efficiency = useMemo(() => pairedEfficiency(history.drives), [history.drives])
+  // 平均能耗三档中的月/周两档：本机口径逐程解析后聚合（与 App 一致）。
+  const monthEfficiency = useMemo(() => {
+    const now = new Date()
+    return periodEfficiency(history.drives, car?.model ?? null, new Date(now.getFullYear(), now.getMonth(), 1).getTime(), Date.now() + 1)
+  }, [history.drives, car?.model])
+  const weekEfficiency = useMemo(() => {
+    const now = new Date()
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+    const monday = todayStart - ((now.getDay() + 6) % 7) * DAY
+    return periodEfficiency(history.drives, car?.model ?? null, monday, Date.now() + 1)
+  }, [history.drives, car?.model])
   const totalDistance = useMemo(
     () => history.drives.reduce((sum, d) => sum + (d.distanceKm ?? 0), 0),
     [history.drives]
@@ -136,6 +158,9 @@ export default function WebDashboard() {
         }
       : null
 
+  const efficiencyCaption = (agg: { resolvedCount: number; totalCount: number }) =>
+    agg.totalCount > 0 ? `本机口径 · 基于 ${agg.resolvedCount}/${agg.totalCount} 次可计算行程` : '本期内暂无行程'
+
   return (
     <div>
       <div style={{ margin: '-20px -32px 16px' }}>
@@ -154,109 +179,147 @@ export default function WebDashboard() {
       {!status && !statusError ? <LoadingNote text="正在读取车辆状态…" /> : null}
       {status ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 16 }}>
-            <GaugeArc label="电量" value={status.batteryLevel} unit="%" />
-            <GaugeArc
-              label="交流输入电压"
-              value={charging ? status.liveVoltageV : null}
-              max={400}
-              unit="V"
-              gapReason={charging ? '当前快照未提供电压' : '仅充电时有实时值；历史电压未记录'}
-            />
-            <GaugeArc label="充电功率" value={status.chargerPowerKw} max={250} unit="kW" digits={1} />
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16 }}>
+            <Panel
+              title="电量"
+              action={
+                <span style={{ fontSize: 12.5, color: V3.label2 }}>
+                  {charging ? '正在充电' : status.state ?? ''}
+                  <Link to="/charge-level" style={{ color: V3.tint, textDecoration: 'none', fontWeight: 600, marginLeft: 10 }}>电量历史 →</Link>
+                </span>
+              }
+            >
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                <span className="tabular" style={{ fontSize: 56, fontWeight: 800, lineHeight: 1, color: DATA_COLORS.tealDeep }}>
+                  {status.batteryLevel != null ? Math.round(status.batteryLevel) : '--'}
+                </span>
+                <span style={{ fontSize: 20, fontWeight: 600, color: V3.label2 }}>%</span>
+                {charging ? (
+                  <span style={{ marginLeft: 'auto', fontSize: 13, color: V3.label2 }}>
+                    已充入 <strong className="tabular" style={{ color: V3.label }}>{status.chargeEnergyAddedKwh ?? '--'} 度</strong>
+                  </span>
+                ) : null}
+              </div>
+              {status.batteryLevel != null ? <ChargeRuler soc={status.batteryLevel} snapshot={status.source === 'telemetry_cache'} /> : null}
+              <div style={{ display: 'flex', gap: 28, marginTop: 12, flexWrap: 'wrap' }}>
+                <div>
+                  <div style={{ fontSize: 12, color: V3.label3, fontWeight: 600 }}>预计续航</div>
+                  <div className="tabular" style={{ fontSize: 28, fontWeight: 700, color: V3.label }}>
+                    {status.estimatedRangeKm != null ? Math.round(status.estimatedRangeKm) : '--'}
+                    <span style={{ fontSize: 13, fontWeight: 500, color: V3.label3 }}> km</span>
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 12, color: V3.label3, fontWeight: 600 }}>额定续航</div>
+                  <div className="tabular" style={{ fontSize: 28, fontWeight: 700, color: V3.label }}>
+                    {status.ratedRangeKm != null ? Math.round(status.ratedRangeKm) : '--'}
+                    <span style={{ fontSize: 13, fontWeight: 500, color: V3.label3 }}> km</span>
+                  </div>
+                </div>
+              </div>
+            </Panel>
             <div style={{ gridColumn: 'span 2', minWidth: 0 }}>
-              <Panel title="电量曲线" action={<span style={{ fontSize: 12, color: V3.label3 }}>近 {windowDays} 天 · 拼接自会话边界与充电采样</span>}>
-                {segments.length ? <SocStitchChart segments={segments} height={158} /> : <div style={{ fontSize: 13, color: V3.label3 }}>该时段暂无可拼接的电量记录。</div>}
+              <Panel title="电量曲线" action={<span style={{ fontSize: 12, color: V3.label3 }}>近 {windowDays} 天 · 充电采样与行程边界拼接，充电过程同图呈现</span>}>
+                {segments.length ? <SocStitchChart segments={segments} height={216} /> : <div style={{ fontSize: 13, color: V3.label3 }}>该时段暂无可拼接的电量记录。</div>}
               </Panel>
             </div>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 16 }}>
-            {efficiency.kwhPer100km != null ? (
-              <StatTile label="平均能耗（净）" value={efficiency.kwhPer100km.toFixed(1)} unit="kWh/100km" caption={`基于 ${efficiency.pairedCount} 次有完整能耗的行程`} />
-            ) : (
-              <GapTile label="平均能耗（净）" need="行程净能耗的可信计量（后端当前明确不提供）" />
-            )}
-            <GapTile label="平均能耗（毛）" need="净能耗与全量交流输入电量" />
+            <StatTile
+              label="本月平均能耗"
+              value={monthEfficiency.kwhPer100km != null ? monthEfficiency.kwhPer100km.toFixed(1) : '--'}
+              unit="kWh/100km"
+              accent={TILE_COLORS.blue}
+              caption={efficiencyCaption(monthEfficiency)}
+            />
+            <StatTile
+              label="本周平均能耗"
+              value={weekEfficiency.kwhPer100km != null ? weekEfficiency.kwhPer100km.toFixed(1) : '--'}
+              unit="kWh/100km"
+              accent={TILE_COLORS.blue}
+              caption={efficiencyCaption(weekEfficiency)}
+            />
             <StatTile label="已记录总里程" value={totalDistance.toLocaleString('zh-CN', { maximumFractionDigits: 0 })} unit="km" caption={history.complete ? '全部已记录行程合计' : '历史较多，仅统计已加载部分'} />
-            <StatTile label="续航（预计）" value={status.estimatedRangeKm != null ? Math.round(status.estimatedRangeKm).toString() : '--'} unit="km" caption="按当前电量估算" />
-            {status.firmware ? (
-              <StatTile label="固件版本" value={status.firmware} />
-            ) : (
-              <GapTile label="固件版本" need="在车辆状态中提供软件版本（car_version）" />
-            )}
             <StatTile label="里程表" value={status.odometerKm != null ? Math.round(status.odometerKm).toLocaleString('zh-CN') : '--'} unit="km" />
           </div>
 
-          <Panel title="当前电量">
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
-              <span className="tabular" style={{ fontSize: 34, fontWeight: 700, color: V3.label }}>{status.batteryLevel != null ? Math.round(status.batteryLevel) : '--'}%</span>
-              <span style={{ fontSize: 13, color: V3.label2 }}>
-                {status.chargingState === 'Charging' ? `正在充电 · 已充入 ${status.chargeEnergyAddedKwh ?? '--'} 度` : status.state ?? '车辆状态未知'}
-              </span>
-              <span style={{ marginLeft: 'auto', fontSize: 12.5 }}>
-                <Link to="/charge-level" style={{ color: V3.tint, textDecoration: 'none', fontWeight: 600 }}>查看电量历史 →</Link>
-              </span>
-            </div>
-            {status.batteryLevel != null ? <ChargeRuler soc={status.batteryLevel} snapshot={status.source === 'telemetry_cache'} /> : null}
-          </Panel>
-
-          {liveDetail && liveRows.length >= 2 ? (
-            <Panel title="充电详情（实时）" action={<span style={{ fontSize: 12, color: V3.label3 }}>充电中 · 每 20 秒刷新</span>}>
-              <StackChart
-                data={liveRows}
-                series={[
-                  { key: 'power', title: '功率', unit: 'kW', color: DATA_COLORS.teal, height: 150, digits: 1, domain: [0, 'auto'] },
-                  { key: 'soc', title: '电量', unit: '%', color: DATA_COLORS.graphite, height: 80, domain: [0, 100] },
-                ]}
-              />
-              <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', marginTop: 10, fontSize: 13, color: V3.label2 }}>
-                <span>当前电压 <strong>{liveDetail.summary.chargerVoltageV ?? status.liveVoltageV ?? '--'} V</strong></span>
-                <span>当前电流 <strong>{liveDetail.summary.currentA ?? status.liveCurrentA ?? '--'} A</strong></span>
-                <span>预计充满还需 <strong>{liveDetail.summary.timeToFullHours != null ? `${liveDetail.summary.timeToFullHours.toFixed(1)} 小时` : '--'}</strong></span>
+          {charging ? (
+            <Panel title="充电中（实时）" action={<span style={{ fontSize: 12, color: V3.label3 }}>每 20 秒刷新 · 电压与电池加热为当前快照值</span>}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, marginBottom: liveRows.length >= 2 ? 14 : 0 }}>
+                <StatTile label="当前功率" value={status.chargerPowerKw != null ? status.chargerPowerKw.toFixed(1) : '--'} unit="kW" accent={TILE_COLORS.orange} />
+                {status.liveVoltageV != null ? <StatTile label="当前电压" value={Math.round(status.liveVoltageV).toString()} unit="V" accent={TILE_COLORS.purple} /> : null}
+                {status.liveCurrentA != null ? <StatTile label="当前电流" value={Math.round(status.liveCurrentA).toString()} unit="A" /> : null}
+                {status.batteryHeaterOn != null ? <StatTile label="电池加热" value={status.batteryHeaterOn ? '开' : '关'} accent={status.batteryHeaterOn ? TILE_COLORS.red : undefined} /> : null}
+                <StatTile label="已充入" value={status.chargeEnergyAddedKwh != null ? status.chargeEnergyAddedKwh.toFixed(1) : '--'} unit="kWh" accent={TILE_COLORS.green} />
+                {liveDetail?.summary.timeToFullHours != null ? (
+                  <StatTile label="预计充满还需" value={liveDetail.summary.timeToFullHours.toFixed(1)} unit="小时" accent={TILE_COLORS.blue} />
+                ) : null}
               </div>
+              {liveRows.length >= 2 ? (
+                <StackChart
+                  data={liveRows}
+                  series={[
+                    { key: 'power', title: '功率', unit: 'kW', color: TILE_COLORS.orange, height: 150, digits: 1, domain: [0, 'auto'] },
+                    { key: 'soc', title: '电量', unit: '%', color: DATA_COLORS.graphite, height: 80, domain: [0, 100] },
+                  ]}
+                />
+              ) : null}
             </Panel>
           ) : null}
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 16 }}>
-            <GaugeArc label="驾驶员设定温度" value={status.driverTempC} min={15} max={28} unit="°C" digits={1} />
-            <GaugeArc label="车外温度" value={status.outsideTempC} min={-20} max={45} unit="°C" digits={1} />
             <GaugeArc label="车内温度" value={status.insideTempC} min={-20} max={45} unit="°C" digits={1} />
-            <Panel title="安全与位置">
-              <div style={{ fontSize: 13.5, color: V3.label2, lineHeight: 1.9 }}>
-                <div>车锁：{status.locked == null ? '未知' : status.locked ? '已上锁' : '未上锁'} · 哨兵模式：{status.sentryMode == null ? '未知' : status.sentryMode ? '开启' : '关闭'} · 车窗：{status.windowsOpen == null ? '未知' : status.windowsOpen ? '未关' : '已关'}</div>
-                <div>位置：{status.geofence ?? '未知'}{status.latitude != null && status.longitude != null ? `（${status.latitude.toFixed(5)}, ${status.longitude.toFixed(5)}）` : ''}</div>
-              </div>
-            </Panel>
+            <GaugeArc label="车外温度" value={status.outsideTempC} min={-20} max={45} unit="°C" digits={1} />
+            <div style={{ gridColumn: 'span 2', minWidth: 0 }}>
+              <Panel title="安全与位置">
+                <div style={{ fontSize: 13.5, color: V3.label2, lineHeight: 1.9 }}>
+                  <div>车锁：{status.locked == null ? '未知' : status.locked ? '已上锁' : '未上锁'} · 哨兵模式：{status.sentryMode == null ? '未知' : status.sentryMode ? '开启' : '关闭'} · 车窗：{status.windowsOpen == null ? '未知' : status.windowsOpen ? '未关' : '已关'}</div>
+                  <div>位置：{status.geofence ?? '未知'}{status.latitude != null && status.longitude != null ? `（${status.latitude.toFixed(5)}, ${status.longitude.toFixed(5)}）` : ''}</div>
+                </div>
+              </Panel>
+            </div>
           </div>
 
           {status.latitude != null && status.longitude != null ? (
             <MapPanel title="车辆位置" points={[{ lat: status.latitude, lng: status.longitude, label: car?.name ?? '车辆' }]} height={240} />
           ) : null}
 
-          <Panel
-            title="状态时间线"
-            action={
-              <span style={{ display: 'inline-flex', gap: 6 }}>
-                {[2, 7].map(days => (
-                  <button
-                    key={days}
-                    onClick={() => setWindowDays(days)}
-                    style={{
-                      padding: '4px 12px', borderRadius: 999, border: 'none', cursor: 'pointer', fontFamily: 'inherit',
-                      fontSize: 12.5, fontWeight: windowDays === days ? 600 : 400,
-                      background: windowDays === days ? 'rgba(0,113,227,0.10)' : 'transparent',
-                      color: windowDays === days ? V3.tint : V3.label2,
-                    }}
-                  >
-                    近 {days} 天
-                  </button>
-                ))}
-              </span>
-            }
-          >
-            {history.loading && !history.drives.length ? <LoadingNote /> : <StatesBar segments={states} windowStart={windowStart} windowEnd={windowEnd} />}
-          </Panel>
+          <div id="states">
+            <Panel
+              title="状态"
+              action={
+                <span style={{ display: 'inline-flex', gap: 6 }}>
+                  {[7, 2].map(days => (
+                    <button
+                      key={days}
+                      onClick={() => setWindowDays(days)}
+                      style={{
+                        padding: '4px 12px', borderRadius: 999, border: 'none', cursor: 'pointer', fontFamily: 'inherit',
+                        fontSize: 12.5, fontWeight: windowDays === days ? 600 : 400,
+                        background: windowDays === days ? 'rgba(0,113,227,0.10)' : 'transparent',
+                        color: windowDays === days ? V3.tint : V3.label2,
+                      }}
+                    >
+                      近 {days} 天
+                    </button>
+                  ))}
+                </span>
+              }
+            >
+              {history.loading && !history.drives.length ? <LoadingNote /> : <StatesBar segments={states} windowStart={windowStart} windowEnd={windowEnd} />}
+              <div style={{ fontSize: 12, color: V3.label3, marginTop: 8 }}>默认最近一周；色段由行程与充电区间推导，空缺时段为驻车。</div>
+            </Panel>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '2px 4px', fontSize: 12.5, color: V3.label3 }}>
+            <span style={{ fontWeight: 600 }}>固件版本</span>
+            {status.firmware ? (
+              <span className="tabular" style={{ color: V3.label2, fontWeight: 600 }}>{status.firmware}</span>
+            ) : (
+              <span>待补数据：状态快照未提供 car_version</span>
+            )}
+          </div>
         </div>
       ) : null}
     </div>

@@ -1,4 +1,4 @@
-import type { WebCar, WebCarStatus, WebCharge, WebChargePoint, WebChargeSummary, WebChargingSite, WebCommandResult, WebDrivePoint, WebDriveSummary, WebParked, WebPlace, WebSession, WebTpms } from './matelink-types'
+import type { DriveNetMetric, WebCar, WebCarStatus, WebCharge, WebChargePoint, WebChargeSummary, WebChargingSite, WebCommandResult, WebDrivePoint, WebDriveSummary, WebParked, WebPlace, WebSession, WebTpms } from './matelink-types'
 
 /**
  * MateLink production API client (web, W1).
@@ -311,6 +311,7 @@ export function normalizeStatus(payload: unknown): WebCarStatus {
     chargerPowerKw: finite(charging.charger_power, 0),
     liveVoltageV: finite(charging.charger_voltage, 0) ?? finite(charging.pack_voltage, 0),
     liveCurrentA: finite(charging.charger_actual_current) ?? finite(charging.charger_current),
+    batteryHeaterOn: boolValue(charging.battery_heater_on),
     firmware: stringValue(raw.car_version) ?? stringValue(raw.firmware),
     insideTempC: celsius(climate.inside_temp),
     outsideTempC: celsius(climate.outside_temp),
@@ -352,6 +353,32 @@ function coordPair(latValue: unknown, lngValue: unknown): { latitude: number | n
   return { latitude: valid ? latitude : null, longitude: valid ? longitude : null }
 }
 
+/** Parse energy_contract.net_energy verbatim; qualification happens in drive-energy.ts. */
+export function parseDriveNetMetric(raw: Record<string, unknown>): DriveNetMetric | null {
+  const contract = isRecord(raw.energy_contract) ? raw.energy_contract : null
+  if (!contract || contract.version !== 1) return null
+  const metric = isRecord(contract.net_energy) ? contract.net_energy : null
+  if (!metric) return null
+  return {
+    valueKwh: finite(metric.value_kwh, 0),
+    unit: stringValue(metric.unit),
+    source: stringValue(metric.source),
+    method: stringValue(metric.method),
+    quality: stringValue(metric.quality),
+    reason: stringValue(metric.reason),
+    measurementPoint: stringValue(metric.measurement_point),
+    coverageKind: stringValue(metric.coverage_kind),
+    coverageRatio: finite(metric.coverage_ratio, 0, 1),
+    calculationVersion: typeof metric.calculation_version === 'number' ? metric.calculation_version : null,
+    capacityBasis: stringValue(metric.capacity_basis),
+    startDate: stringValue(metric.start_date),
+    endDate: stringValue(metric.end_date),
+    observedStartAt: stringValue(metric.observed_start_at),
+    observedEndAt: stringValue(metric.observed_end_at),
+    sourceField: stringValue(metric.source_field),
+  }
+}
+
 export function normalizeDrive(raw: Record<string, unknown>, distanceUnit: string, temperatureUnit = 'C'): WebDriveSummary {
   const odometer = isRecord(raw.odometer_details) ? raw.odometer_details : {}
   const battery = isRecord(raw.battery_details) ? raw.battery_details : {}
@@ -378,6 +405,8 @@ export function normalizeDrive(raw: Record<string, unknown>, distanceUnit: strin
     outsideTempAvgC: tempToC(raw.outside_temp_avg, temperatureUnit),
     energyConsumedKwh: finite(raw.energy_consumed_net),
     consumptionWhPerKm: finite(raw.consumption_net, 0),
+    source: stringValue(raw.source),
+    contractNet: parseDriveNetMetric(raw),
     qualityState: stringValue(raw.quality_state),
     startLatitude: startCoord.latitude,
     startLongitude: startCoord.longitude,
@@ -439,7 +468,7 @@ const ENERGY_USED_NOTES: Record<string, string> = {
   no_verified_driving_net_energy: '无可信计量来源',
 }
 
-export function normalizeCharge(raw: Record<string, unknown>): WebCharge {
+export function normalizeCharge(raw: Record<string, unknown>, temperatureUnit = 'C'): WebCharge {
   const battery = isRecord(raw.battery_details) ? raw.battery_details : {}
   const coord = coordPair(raw.latitude, raw.longitude)
   const contract = isRecord(raw.energy_contract) ? raw.energy_contract : {}
@@ -471,6 +500,7 @@ export function normalizeCharge(raw: Record<string, unknown>): WebCharge {
     qualityState: stringValue(raw.quality_state),
     latitude: coord.latitude,
     longitude: coord.longitude,
+    outsideTempAvgC: tempToC(raw.outside_temp_avg, temperatureUnit),
     energyUsedKwh,
     acEfficiencyPct: finite(contract.ac_efficiency, 0, 100),
     acLossKwh: finite(acLoss.value_kwh, 0),
@@ -483,8 +513,9 @@ export async function getChargesPage(carId: number, page: number, show = 20): Pr
   const data = unwrap(payload)
   const rows = Array.isArray(data.charges) ? data.charges : []
   const meta = isRecord(data.meta) ? data.meta : {}
+  const temperatureUnit = unitOf(data.units, 'unit_of_temperature', 'C')
   return {
-    rows: rows.filter(isRecord).map(normalizeCharge),
+    rows: rows.filter(isRecord).map(raw => normalizeCharge(raw, temperatureUnit)),
     totalPages: finite(meta.total_pages, 0) ?? page,
   }
 }
@@ -508,8 +539,8 @@ export function parseChargeDetail(payload: unknown): ChargeDetail {
       reason: 'detail_unavailable',
     }
   }
-  const charge = normalizeCharge(rawCharge)
   const temperatureUnit = unitOf(data.units, 'unit_of_temperature', 'C')
+  const charge = normalizeCharge(rawCharge, temperatureUnit)
   const phases = finite(rawCharge.charger_phases, 0, 3)
   const summary: WebChargeSummary = {
     chargerPowerKw: finite(rawCharge.charger_power),

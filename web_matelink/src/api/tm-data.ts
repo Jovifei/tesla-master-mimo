@@ -1,4 +1,5 @@
 import type { WebCharge, WebChargePoint, WebDriveSummary } from './matelink-types'
+import { resolveSummaryEnergy } from './drive-energy.ts'
 
 /**
  * Derivations for the TeslaMate panel reproduction (docs/TESLAMATE-MAPPING.md).
@@ -278,8 +279,12 @@ const TEMP_RANGES: { label: string; min: number; max: number }[] = [
   { label: '30°C 以上', min: 30, max: Infinity },
 ]
 
-/** Temperature – efficiency table: only drives carrying a consumption figure contribute to the average. */
-export function temperatureBuckets(drives: readonly WebDriveSummary[]): TempBucket[] {
+/**
+ * Temperature – efficiency table. Per-drive consumption comes from
+ * the local App caliber (drive-energy.ts), not the backend's
+ * consumption_net field (nil for native telemetry drives).
+ */
+export function temperatureBuckets(drives: readonly WebDriveSummary[], model?: string | null): TempBucket[] {
   return TEMP_RANGES.map(range => {
     let count = 0
     let weighted = 0
@@ -290,8 +295,9 @@ export function temperatureBuckets(drives: readonly WebDriveSummary[]): TempBuck
       if (drive.outsideTempAvgC < range.min || drive.outsideTempAvgC >= range.max) continue
       count++
       if (drive.distanceKm != null) distance += drive.distanceKm
-      if (drive.consumptionWhPerKm != null && drive.distanceKm != null && drive.distanceKm > 0) {
-        weighted += drive.consumptionWhPerKm * drive.distanceKm
+      const resolved = resolveSummaryEnergy(drive, model)
+      if (resolved.efficiencyWhKm != null && drive.distanceKm != null && drive.distanceKm > 0) {
+        weighted += resolved.efficiencyWhKm * drive.distanceKm
         weight += drive.distanceKm
       }
     }

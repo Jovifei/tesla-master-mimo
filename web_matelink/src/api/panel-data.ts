@@ -1,4 +1,5 @@
 import type { WebCharge, WebDriveSummary } from './matelink-types'
+import { aggregateEfficiency } from './drive-energy.ts'
 
 /**
  * Derivations for the TeslaMate-style panel composition (v4 rebuild).
@@ -129,20 +130,16 @@ export function averagePowerKw(charge: WebCharge): number | null {
 
 /* --------------------------- drive math ---------------------------- */
 
-export type PairedEfficiency = { kwhPer100km: number | null; pairedCount: number }
+export type PairedEfficiency = { kwhPer100km: number | null; pairedCount: number; totalCount: number }
 
-/** Fleet-style paired efficiency over drives carrying both energy and distance (analysis口径）. */
-export function pairedEfficiency(drives: readonly WebDriveSummary[]): PairedEfficiency {
-  let energy = 0
-  let distance = 0
-  let count = 0
-  for (const drive of drives) {
-    if (!notQuarantined(drive)) continue
-    if (drive.energyConsumedKwh != null && drive.distanceKm != null && drive.distanceKm > 0) {
-      energy += drive.energyConsumedKwh
-      distance += drive.distanceKm
-      count++
-    }
-  }
-  return { kwhPer100km: count && distance > 0 ? (100 * energy) / distance : null, pairedCount: count }
+/**
+ * Fleet efficiency under the local App caliber (drive-energy.ts):
+ * each drive's energy is resolved client-side first (qualified
+ * contract / legacy scalar / SOC-difference estimate), then
+ * Σenergy / Σdistance over the drives that resolved.
+ * pairedCount/totalCount expose the coverage honestly.
+ */
+export function pairedEfficiency(drives: readonly WebDriveSummary[], model?: string | null): PairedEfficiency {
+  const aggregate = aggregateEfficiency(drives, model)
+  return { kwhPer100km: aggregate.kwhPer100km, pairedCount: aggregate.resolvedCount, totalCount: aggregate.totalCount }
 }

@@ -25,6 +25,21 @@ export const DATA_COLORS = {
   graphiteLight: '#8e8e93',
 } as const
 
+/**
+ * Big-number colors in TeslaMate's tile semantics （费用绿、时长蓝、
+ * 功率橙、温度紫…), deepened for our light warm surface so the
+ * numbers stay legible — the owner's rule: numbers carry color,
+ * text does not.
+ */
+export const TILE_COLORS = {
+  green: '#4e9e57',
+  amber: '#c08a00',
+  blue: '#2f7fc4',
+  orange: '#d97a2b',
+  purple: '#7d5fc0',
+  red: '#d9534f',
+} as const
+
 const tabular = { fontVariantNumeric: 'tabular-nums' } as const
 
 export function fmtNum(value: number | null | undefined, digits = 0): string {
