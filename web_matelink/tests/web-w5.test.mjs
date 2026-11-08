@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { normalizeCharge, normalizeDrive, parseChargeDetail, parseDriveDetail } from '../src/api/matelink.ts'
 import {
-  socSegments, mileageSeries, parkedGaps, periodStats, chargeHeatmap, temperatureBuckets,
+  socSegments, mileageSeries, parkedGaps, periodStats, chargeHeatmap, temperatureBuckets, chargeStationStats,
 } from '../src/api/tm-data.ts'
 
 test('normalizeCharge reads coordinates and the energy contract', () => {
@@ -203,4 +203,21 @@ test('temperatureBuckets averages consumption only from drives that carry it', (
   const bucket = buckets.find(b => b.label === '10 ~ 20°C')
   assert.equal(bucket.driveCount, 3)
   assert.equal(bucket.avgConsumptionWhPerKm, 200)
+})
+
+test('chargeStationStats aggregates per address and keeps cost honest', () => {
+  const stats = chargeStationStats([
+    chargeRec({ id: 'a', address: '家', energyAddedKwh: 20, cost: 10 }),
+    chargeRec({ id: 'b', address: '家', energyAddedKwh: 10, cost: null }),
+    chargeRec({ id: 'c', address: '公司', energyAddedKwh: 30, cost: null }),
+    chargeRec({ id: 'd', address: null, energyAddedKwh: 5, cost: 2 }),
+  ])
+  const home = stats.find(s => s.address === '家')
+  assert.equal(home.count, 2)
+  assert.equal(home.energyKwh, 30)
+  assert.equal(home.cost, 10)
+  assert.equal(home.avgEnergyKwh, 15)
+  const office = stats.find(s => s.address === '公司')
+  assert.equal(office.cost, null)
+  assert.equal(stats.length, 2)
 })

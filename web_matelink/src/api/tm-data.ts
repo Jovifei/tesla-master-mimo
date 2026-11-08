@@ -339,6 +339,39 @@ export function addressStats(drives: readonly WebDriveSummary[], charges: readon
   return [...map.values()].sort((a, b) => b.lastAt - a.lastAt)
 }
 
+/* --------------------------- charge stations --------------------------- */
+
+export type ChargeStationStat = {
+  address: string
+  count: number
+  energyKwh: number
+  cost: number | null
+  avgEnergyKwh: number | null
+}
+
+/** Per-station aggregates for the charging-stats tables. */
+export function chargeStationStats(charges: readonly WebCharge[]): ChargeStationStat[] {
+  const map = new Map<string, { address: string; count: number; energyKwh: number; cost: number; hasCost: boolean }>()
+  for (const charge of charges) {
+    if (!notQuarantined(charge) || !charge.address) continue
+    const entry = map.get(charge.address) ?? { address: charge.address, count: 0, energyKwh: 0, cost: 0, hasCost: false }
+    entry.count++
+    entry.energyKwh += charge.energyAddedKwh ?? 0
+    if (charge.cost != null) {
+      entry.cost += charge.cost
+      entry.hasCost = true
+    }
+    map.set(charge.address, entry)
+  }
+  return [...map.values()].map(entry => ({
+    address: entry.address,
+    count: entry.count,
+    energyKwh: entry.energyKwh,
+    cost: entry.hasCost ? entry.cost : null,
+    avgEnergyKwh: entry.count > 0 ? entry.energyKwh / entry.count : null,
+  }))
+}
+
 /* --------------------------- speed histogram --------------------------- */
 
 export type SpeedBucket = { label: string; count: number }

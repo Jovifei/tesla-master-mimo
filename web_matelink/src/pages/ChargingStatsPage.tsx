@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { getChargeDetail } from '../api/matelink'
-import { addressStats, chargeHeatmap, topDestinations } from '../api/tm-data'
+import { chargeHeatmap, chargeStationStats } from '../api/tm-data'
 import { Panel } from '../components/v3'
 import { BarsPanel, DATA_COLORS, ScatterPanel, StatTile, fmtDuration, fmtNum } from '../components/panels'
 import { CarPicker, DataTable, DonutShares, ErrorNote, GapTile, HeatmapGrid, LoadingNote, PageTitle } from '../components/tm'
@@ -74,9 +74,9 @@ export default function ChargingStatsPage() {
 
   const monthly = useMemo(() => monthlyEnergy(history.charges), [history.charges])
   const heatmap = useMemo(() => chargeHeatmap(history.charges), [history.charges])
-  const byCount = useMemo(() => topDestinations(history.charges, 'count'), [history.charges])
-  const byEnergy = useMemo(() => topDestinations(history.charges, 'energy'), [history.charges])
-  const stations = useMemo(() => addressStats(history.charges), [history.charges])
+  const stations = useMemo(() => chargeStationStats(history.charges), [history.charges])
+  const byCount = useMemo(() => [...stations].sort((a, b) => b.count - a.count), [stations])
+  const byEnergy = useMemo(() => [...stations].sort((a, b) => b.energyKwh - a.energyKwh), [stations])
 
   // DC charge curves: fetch a bounded number of DC charge details.
   useEffect(() => {
