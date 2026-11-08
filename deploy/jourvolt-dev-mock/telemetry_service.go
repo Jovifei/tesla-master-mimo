@@ -366,6 +366,26 @@ func (s *telemetryService) mergeOrFallback(ctx context.Context, ref telemetryVeh
 	return merged, !fresh
 }
 
+// staleTelemetryCacheStatus builds the asleep-vehicle fallback status: the
+// latest telemetry snapshot served whole, without the freshness filter used
+// for live merges. It is only used when the Fleet provider reports the
+// vehicle unavailable (408, wake attempt exhausted). The result keeps the
+// snapshot's real ObservedAt and is relabelled Source="telemetry_cache" so
+// no client can mistake it for live data. Snapshots older than
+// telemetryCacheMaxAge, or timestamped in the future, are rejected.
+func staleTelemetryCacheStatus(base vehicleStatus, snapshot telemetrySnapshot, now time.Time) (vehicleStatus, bool) {
+	if snapshot.ObservedAt.IsZero() || snapshot.ObservedAt.After(now.Add(time.Minute)) ||
+		now.Sub(snapshot.ObservedAt) > telemetryCacheMaxAge {
+		return vehicleStatus{}, false
+	}
+	cached := mergeTelemetryStatus(base, snapshot)
+	if cached.ObservedAt.IsZero() {
+		return vehicleStatus{}, false
+	}
+	cached.Source = "telemetry_cache"
+	return cached, true
+}
+
 func mergeFreshTelemetryStatus(base vehicleStatus, snapshot telemetrySnapshot, now time.Time) vehicleStatus {
 	fresh := telemetrySnapshot{Fields: make(map[string]any), FieldObservedAt: make(map[string]time.Time), FieldSources: make(map[string]string), Source: snapshot.Source}
 	for field, value := range snapshot.Fields {

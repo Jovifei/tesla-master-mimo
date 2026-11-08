@@ -21,6 +21,10 @@ const (
 	maxTelemetryPayloadBytes = 64 << 10
 	telemetryStaleAfter      = 2 * time.Minute
 	telemetryEventTTL        = 24 * time.Hour
+	// telemetryCacheMaxAge bounds the asleep-vehicle cache fallback in
+	// currentVehicleStatus: a snapshot older than this is never served as
+	// a stand-in status.
+	telemetryCacheMaxAge     = 24 * time.Hour
 	defaultDriveStopDebounce = 20 * time.Second
 )
 

@@ -279,9 +279,59 @@ func fleetVehicleCoreDataPath(vin string) string {
 	return "/api/1/vehicles/" + url.PathEscape(vin) + "/vehicle_data"
 }
 
+var (
+	// Bounded wake window for a sleeping vehicle: one wake_up call, then
+	// poll vehicle_data until the window closes. Package-level variables
+	// so tests can shrink the window.
+	wakePollInterval = 5 * time.Second
+	wakePollTimeout  = 60 * time.Second
+)
+
+// vehicleData fetches the vehicle's data, waking it first when necessary.
+// A 408 from the core endpoint means the car is asleep: issue exactly one
+// wake_up for this refresh — never a wake loop, so quota is not burned on
+// repeated wakes — then poll inside the bounded wake window. Any other
+// error class (auth, billing, rate limit, transport) is returned at once.
+func (p *fleetProvider) vehicleData(ctx context.Context, userID, vin string) (teslaVehicleDataEnvelope, bool, error) {
+	payload, locationPermissionRequired, err := p.vehicleDataOnce(ctx, userID, vin)
+	if err == nil || !isVehicleUnavailable(err) {
+		return payload, locationPermissionRequired, err
+	}
+	if wakeErr := p.wakeUp(ctx, userID, vin); wakeErr != nil {
+		if ctx.Err() != nil {
+			return payload, locationPermissionRequired, ctx.Err()
+		}
+		if !isVehicleUnavailable(wakeErr) {
+			return payload, locationPermissionRequired, wakeErr
+		}
+	}
+	deadline := time.Now().Add(wakePollTimeout)
+	for {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			return payload, locationPermissionRequired, err
+		}
+		wait := wakePollInterval
+		if wait > remaining {
+			wait = remaining
+		}
+		timer := time.NewTimer(wait)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return payload, locationPermissionRequired, ctx.Err()
+		case <-timer.C:
+		}
+		payload, locationPermissionRequired, err = p.vehicleDataOnce(ctx, userID, vin)
+		if err == nil || !isVehicleUnavailable(err) {
+			return payload, locationPermissionRequired, err
+		}
+	}
+}
+
 // Core and location are independent capabilities. A successful location-only
 // response is not a complete snapshot and must never replace charge/config data.
-func (p *fleetProvider) vehicleData(ctx context.Context, userID, vin string) (teslaVehicleDataEnvelope, bool, error) {
+func (p *fleetProvider) vehicleDataOnce(ctx context.Context, userID, vin string) (teslaVehicleDataEnvelope, bool, error) {
 	var core teslaVehicleDataEnvelope
 	if err := p.get(ctx, userID, fleetVehicleCoreDataPath(vin), &core); err != nil {
 		return teslaVehicleDataEnvelope{}, false, err
@@ -565,7 +615,14 @@ func (p *fleetProvider) get(ctx context.Context, userID, path string, target any
 	case http.StatusTooManyRequests:
 		logFleetAPI("GET", path, response.StatusCode, body)
 		return errTeslaRateLimited
-	case http.StatusRequestTimeout, http.StatusMisdirectedRequest:
+	case http.StatusRequestTimeout:
+		// 408 is Tesla's "vehicle unavailable" answer (the car is asleep).
+		// Keep the status code on the error so the refresh path can
+		// recognise it and attempt a wake_up; errors.Is(err,
+		// errTeslaUnavailable) keeps working through Unwrap.
+		logFleetAPI("GET", path, response.StatusCode, body)
+		return &fleetAPIError{class: "vehicle_unavailable", statusCode: response.StatusCode, cause: errTeslaUnavailable}
+	case http.StatusMisdirectedRequest:
 		logFleetAPI("GET", path, response.StatusCode, body)
 		return errTeslaUnavailable
 	}
@@ -583,6 +640,78 @@ func (p *fleetProvider) get(ctx context.Context, userID, path string, target any
 	return nil
 }
 
+// post issues an authenticated Fleet API POST with the same one-time token
+// refresh behaviour as get. The response body is discarded; only the
+// outcome class matters to callers.
+func (p *fleetProvider) post(ctx context.Context, userID, path string) error {
+	accessToken, err := p.tokens.accessToken(ctx, userID, "")
+	if err != nil {
+		return err
+	}
+	response, err := p.requestMethod(ctx, http.MethodPost, path, accessToken)
+	if err != nil {
+		return err
+	}
+	if response.StatusCode == http.StatusUnauthorized {
+		response.Body.Close()
+		accessToken, err = p.tokens.accessToken(ctx, userID, accessToken)
+		if err != nil {
+			return err
+		}
+		response, err = p.requestMethod(ctx, http.MethodPost, path, accessToken)
+		if err != nil {
+			return err
+		}
+	}
+	defer response.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(response.Body, 4096))
+	if err != nil {
+		return fmt.Errorf("read Fleet API response: %w", err)
+	}
+	logFleetAPI("POST", path, response.StatusCode, body)
+	switch {
+	case response.StatusCode >= 200 && response.StatusCode < 300:
+		return nil
+	case response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden:
+		if errors.Is(teslaTokenFailure(response.StatusCode, body), errTeslaConfiguration) {
+			return errTeslaConfiguration
+		}
+		if fleetResponseErrorClass(response.StatusCode, body) == "billing_blocked" {
+			return &fleetAPIError{class: "billing_blocked", statusCode: response.StatusCode, cause: errTeslaBillingBlocked}
+		}
+		return errTeslaReauthorization
+	case response.StatusCode == http.StatusNotFound:
+		return errVehicleNotFound
+	case response.StatusCode == http.StatusTooManyRequests:
+		return errTeslaRateLimited
+	case response.StatusCode == http.StatusRequestTimeout:
+		return &fleetAPIError{class: "vehicle_unavailable", statusCode: response.StatusCode, cause: errTeslaUnavailable}
+	default:
+		if fleetResponseErrorClass(response.StatusCode, body) == "billing_blocked" {
+			return &fleetAPIError{class: "billing_blocked", statusCode: response.StatusCode, cause: errTeslaBillingBlocked}
+		}
+		return errTeslaUnavailable
+	}
+}
+
+func fleetWakeUpPath(vin string) string {
+	return "/api/1/vehicles/" + url.PathEscape(vin) + "/wake_up"
+}
+
+// wakeUp asks the vehicle to wake. A 408 answer means the wake is still in
+// progress, not that it failed; the caller polls vehicle_data afterwards.
+func (p *fleetProvider) wakeUp(ctx context.Context, userID, vin string) error {
+	return p.post(ctx, userID, fleetWakeUpPath(vin))
+}
+
+// isVehicleUnavailable reports whether err is the Fleet API 408 "vehicle
+// unavailable" outcome (car asleep), as opposed to an auth, billing,
+// rate-limit or transport failure.
+func isVehicleUnavailable(err error) bool {
+	var apiErr *fleetAPIError
+	return errors.As(err, &apiErr) && apiErr.statusCode == http.StatusRequestTimeout
+}
+
 func logFleetAPI(method, path string, status int, body []byte) {
 	log.Print(sanitizeFleetLog(method, path, status, body))
 }
@@ -597,6 +726,8 @@ func fleetEndpointLabel(path string) string {
 		return "vehicles"
 	case strings.HasPrefix(path, "/api/1/vehicles/") && strings.Contains(path, "/vehicle_data"):
 		return "vehicle_data"
+	case strings.HasPrefix(path, "/api/1/vehicles/") && strings.HasSuffix(path, "/wake_up"):
+		return "wake_up"
 	case path == "/api/1/partner_accounts":
 		return "partner_accounts"
 	default:
@@ -688,7 +819,11 @@ func fleetExplicitBillingCode(field, value string) bool {
 }
 
 func (p *fleetProvider) request(ctx context.Context, path, accessToken string) (*http.Response, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.baseURL+path, nil)
+	return p.requestMethod(ctx, http.MethodGet, path, accessToken)
+}
+
+func (p *fleetProvider) requestMethod(ctx context.Context, method, path, accessToken string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, method, p.baseURL+path, nil)
 	if err != nil {
 		return nil, err
 	}
