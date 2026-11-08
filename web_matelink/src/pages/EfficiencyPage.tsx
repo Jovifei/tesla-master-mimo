@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { resolveSummaryEnergy } from '../api/drive-energy.ts'
 import { temperatureBuckets } from '../api/tm-data'
 import { Panel } from '../components/v3'
 import { BarGaugeList, CarPicker, ErrorNote, GapPanel, LoadingNote, PageTitle } from '../components/tm'
@@ -6,19 +7,19 @@ import { useCar } from './useCar'
 import { useHistory } from './useHistory'
 
 /**
- * 效率 — TeslaMate Efficiency 的复刻：按温度区间的平均能耗。核心
- * 输入是行程净能耗——后端当前明确不提供可信来源，整页按所有者
- * 选项 A 建成待补形态；个别带能耗证据的行程（如归档导入）会进入
- * 温度桶统计并注明样本数。
+ * 效率 — TeslaMate Efficiency 的复刻：按温度区间的平均能耗。每程
+ * 能耗走本机口径（api/drive-energy.ts，与 App 一致：功率积分/
+ * 电量差估算等），不再依赖后端恒为空的 consumption_net 字段；
+ * 无任何可计算行程时整页按待补形态并说明缺的是什么。
  */
 
 export default function EfficiencyPage() {
-  const { cars, carId, setCarId, error: carError } = useCar()
+  const { cars, car, carId, setCarId, error: carError } = useCar()
   const history = useHistory(carId)
-  const buckets = useMemo(() => temperatureBuckets(history.drives), [history.drives])
+  const buckets = useMemo(() => temperatureBuckets(history.drives, car?.model ?? null), [history.drives, car?.model])
   const withEnergy = useMemo(
-    () => history.drives.filter(d => d.consumptionWhPerKm != null && d.distanceKm != null && d.distanceKm > 0),
-    [history.drives]
+    () => history.drives.filter(d => resolveSummaryEnergy(d, car?.model ?? null).efficiencyWhKm != null),
+    [history.drives, car?.model]
   )
   const usable = buckets.filter(b => b.avgConsumptionWhPerKm != null)
 
@@ -41,14 +42,14 @@ export default function EfficiencyPage() {
             }))}
           />
           <p style={{ fontSize: 12, color: '#8a8478', marginTop: 10, lineHeight: 1.6 }}>
-            仅统计带净能耗证据的 {withEnergy.length} 次行程，按行程距离加权平均；其余行程后端未提供净能耗，不纳入。
+            能耗为本机口径（与 App 一致：功率积分 / 电量差估算 / 合格的后端报告值），共 {withEnergy.length} 次行程可计算并纳入，按行程距离加权平均；暂不可计算的行程不纳入。
           </p>
         </Panel>
       ) : (
         <GapPanel
           title="效率（按温度区间的平均能耗）"
-          meaning="把行程按车外温度分组，比较各温度下的平均净能耗（Wh/km），看低温对效率的影响。"
-          need="行程净能耗的可信计量——后端当前明确不提供（代码注释禁止用充电电量替代行程消耗）"
+          meaning="把行程按车外温度分组，比较各温度下的平均能耗（Wh/km），看低温对效率的影响。"
+          need="可计算能耗的行程样本——本机口径下需要行程功率采样、电量变化或合格的后端能耗证据，当前记录尚不足"
           height={220}
         />
       )}

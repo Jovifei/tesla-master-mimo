@@ -3,14 +3,14 @@ import { pairedEfficiency } from '../api/panel-data'
 import { topDestinations } from '../api/tm-data'
 import { Panel } from '../components/v3'
 import { BarsPanel, DATA_COLORS, StatTile, fmtDuration, fmtNum } from '../components/panels'
-import { CarPicker, DataTable, ErrorNote, GapTile, LoadingNote, PageTitle } from '../components/tm'
+import { CarPicker, DataTable, ErrorNote, LoadingNote, PageTitle } from '../components/tm'
 import { useCar } from './useCar'
 import { useHistory } from './useHistory'
 
 /**
  * 行程统计 — TeslaMate Drive Stats 的复刻：距离/次数/时长统计、
- * 月度行驶距离、净/毛能耗、热门目的地表。净能耗缺失时按待补呈现，
- * 毛能耗恒为待补（依赖净能耗与交流输入全量数据）。
+ * 月度行驶距离、平均能耗、热门目的地表。平均能耗走本机口径
+ * （api/drive-energy.ts，与 App 一致），以覆盖数注记可信度。
  */
 
 function monthlyDistance(rows: readonly { startDate: string | null; distanceKm: number | null }[]): { label: string; value: number }[] {
@@ -31,7 +31,7 @@ function monthlyDistance(rows: readonly { startDate: string | null; distanceKm: 
 }
 
 export default function DriveStatsPage() {
-  const { cars, carId, setCarId, error: carError } = useCar()
+  const { cars, car, carId, setCarId, error: carError } = useCar()
   const history = useHistory(carId)
 
   const stats = useMemo(() => {
@@ -46,7 +46,7 @@ export default function DriveStatsPage() {
       avgDuration: all.length ? durationMin / all.length : null,
     }
   }, [history.drives])
-  const efficiency = useMemo(() => pairedEfficiency(history.drives), [history.drives])
+  const efficiency = useMemo(() => pairedEfficiency(history.drives, car?.model ?? null), [history.drives, car?.model])
   const monthly = useMemo(() => monthlyDistance(history.drives), [history.drives])
   const destinations = useMemo(() => topDestinations(history.drives, 10), [history.drives])
 
@@ -67,12 +67,12 @@ export default function DriveStatsPage() {
             <StatTile label="总行驶时长" value={fmtDuration(stats.durationMin)} />
             <StatTile label="平均每次距离" value={stats.avgDistance != null ? fmtNum(stats.avgDistance, 1) : '--'} unit="km" />
             <StatTile label="平均每次时长" value={stats.avgDuration != null ? fmtDuration(stats.avgDuration) : '--'} />
-            {efficiency.kwhPer100km != null ? (
-              <StatTile label="平均能耗（净）" value={fmtNum(efficiency.kwhPer100km, 1)} unit="kWh/100km" caption={`基于 ${efficiency.pairedCount} 次完整能耗行程`} />
-            ) : (
-              <GapTile label="平均能耗（净）" need="行程净能耗的可信计量（后端当前明确不提供）" />
-            )}
-            <GapTile label="平均能耗（毛）" need="净能耗与全量交流输入电量" />
+            <StatTile
+              label="平均能耗"
+              value={efficiency.kwhPer100km != null ? fmtNum(efficiency.kwhPer100km, 1) : '--'}
+              unit="kWh/100km"
+              caption={efficiency.totalCount > 0 ? `本机口径 · 基于 ${efficiency.pairedCount}/${efficiency.totalCount} 次可计算行程` : '暂无行程'}
+            />
           </div>
 
           <Panel title="行驶距离（按月）">

@@ -3,20 +3,23 @@ import { ApiError, getCarStatus, getDriveDetail, getDrivesPage, getParkedBetween
 import type { WebCarStatus, WebCharge, WebDriveSummary, WebParked } from '../api/matelink-types'
 import { recentDriveModel } from '../api/recent-drive'
 import { elevationStats } from '../api/drive-elevation'
+import { driveEnergyMethodLabel, resolveDriveEnergy, resolveSummaryEnergy } from '../api/drive-energy.ts'
 import { pairedEfficiency, stateSegments } from '../api/panel-data'
 import { socSegments, speedHistogram } from '../api/tm-data'
 import { BatteryPill, Icon, Skeleton, TONES, type IconName, type Tone } from '../components/viz'
 import { Panel, V3 } from '../components/v3'
-import { BarsPanel, DATA_COLORS, StackChart, StatesBar, StatTile, fmtDuration, fmtNum, type ChartRow, type StackSeriesDef } from '../components/panels'
-import { DataTable, DonutShares, GapPanel, GapTile, MapPanel, SocStitchChart } from '../components/tm'
+import { BarsPanel, DATA_COLORS, StackChart, StatesBar, StatTile, TILE_COLORS, fmtDuration, fmtNum, type ChartRow, type StackSeriesDef } from '../components/panels'
+import { DataTable, DonutShares, GapPanel, MapPanel, SocStitchChart } from '../components/tm'
 import { useCar } from './useCar'
 import { useHistory } from './useHistory'
 
 /**
- * 行程记录 — TeslaMate Drives + Drive Details + Trip 的复刻：详情页
- * 上半是 Drive Details（轨迹地图、速度图、里程与速度瓷砖），下半是
- * Trip（当日时间分配、当日状态线、当日行程/充电表）。海拔后端未
- * 记录 → 待补面板；行程功率生产采样稀疏 → 按稀疏规则降级。
+ * 行程记录 — TeslaMate Drives + Drive Details + Trip 的复刻（所有者
+ * 2026-11-08 18:39 定版）：详情页上半是 Drive Details（轨迹地图、
+ * 速度图、参数瓷砖做全：时长/里程/电量变化/最高速度/最大功率/
+ * 能耗/效率），下半是 Trip。能耗走本机口径（api/drive-energy.ts，
+ * 与 App 一致：功率积分/电量差估算等，瓷砖标注来源）；最大功率
+ * 仅采样存在时显示。海拔后端未记录 → 待补面板。
  */
 
 const num = (value: number | null, digits = 0): string => (value == null ? '--' : value.toFixed(digits))
@@ -90,6 +93,7 @@ function countOf(rows: ChartRow[], key: string): number {
 
 function DriveDetailView({
   carId,
+  carModel,
   drive,
   newerDriveId,
   allDrives,
@@ -97,6 +101,7 @@ function DriveDetailView({
   onBack,
 }: {
   carId: number
+  carModel: string | null
   drive: WebDriveSummary
   newerDriveId: string | null
   allDrives: readonly WebDriveSummary[]
@@ -135,10 +140,17 @@ function DriveDetailView({
   const current = detail?.drive ?? drive
   const points = useMemo(() => detail?.points ?? [], [detail])
   const elevation = elevationStats(points)
-  const efficiency =
-    current.energyConsumedKwh != null && current.distanceKm != null && current.distanceKm > 0
-      ? (current.energyConsumedKwh / current.distanceKm) * 100
-      : null
+  // 能耗：本机口径解析（详情带逐点采样，可走功率积分）。
+  const energy = useMemo(
+    () => resolveDriveEnergy(current, { points, model: carModel }),
+    [current, points, carModel]
+  )
+  const efficiency = energy.efficiencyWhKm != null ? energy.efficiencyWhKm / 10 : null
+  // 最大功率：仅当逐点采样带功率值时才有（生产遥测通常无此字段）。
+  const maxPowerKw = useMemo(() => {
+    const values = points.flatMap(p => (p.powerKw != null ? [p.powerKw] : []))
+    return values.length ? Math.max(...values) : null
+  }, [points])
   const parkedMinutes = parked?.startDate && parked?.endDate ? Math.round((Date.parse(parked.endDate) - Date.parse(parked.startDate)) / 60000) : null
 
   const rows: ChartRow[] = useMemo(
@@ -260,17 +272,18 @@ function DriveDetailView({
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
         <StatTile label="距离" value={num(current.distanceKm, 1)} unit="km" />
-        <StatTile label="时长" value={fmtDuration(current.durationMinutes)} />
-        {current.energyConsumedKwh != null ? (
-          <StatTile label="耗电量" value={num(current.energyConsumedKwh, 1)} unit="kWh" accent={V3.teal} />
+        <StatTile label="时长" value={fmtDuration(current.durationMinutes)} accent={TILE_COLORS.blue} />
+        {energy.energyKwh != null ? (
+          <StatTile label="耗电量" value={num(energy.energyKwh, 1)} unit="kWh" accent={TILE_COLORS.green} caption={`本机口径 · ${driveEnergyMethodLabel(energy)}`} />
         ) : (
-          <StatTile label="耗电量" value="--" caption="后端未提供行程净能耗" />
+          <StatTile label="耗电量" value="--" caption="本机口径暂不可计算（无合格来源）" />
         )}
-        <StatTile label="平均能耗" value={efficiency != null ? fmtNum(efficiency, 1) : '--'} unit="kWh/100km" />
+        <StatTile label="平均能耗" value={efficiency != null ? fmtNum(efficiency, 1) : '--'} unit="kWh/100km" accent={TILE_COLORS.blue} caption={energy.method ? `本机口径 · ${driveEnergyMethodLabel(energy)}` : undefined} />
         <StatTile label="平均速度" value={num(current.speedAvgKmh)} unit="km/h" />
         <StatTile label="最高速度" value={num(current.speedMaxKmh)} unit="km/h" caption="本段行程记录值" />
+        {maxPowerKw != null ? <StatTile label="最大功率" value={fmtNum(maxPowerKw, 1)} unit="kW" accent={TILE_COLORS.orange} caption="逐点采样峰值" /> : null}
         <BatteryTile from={current.startBatteryLevel} to={current.endBatteryLevel} />
-        <StatTile label="车外平均温度" value={num(current.outsideTempAvgC, 1)} unit="°C" />
+        <StatTile label="车外平均温度" value={num(current.outsideTempAvgC, 1)} unit="°C" accent={TILE_COLORS.purple} />
         <StatTile
           label="里程表"
           value={current.odometerStartKm != null && current.odometerEndKm != null ? `${Math.round(current.odometerStartKm).toLocaleString('zh-CN')} → ${Math.round(current.odometerEndKm).toLocaleString('zh-CN')}` : '--'}
@@ -404,7 +417,7 @@ function DriveDetailView({
 /* ---------------------------- List view ---------------------------- */
 
 export default function DrivesPage() {
-  const { cars, carId, setCarId, error: carError } = useCar()
+  const { cars, car, carId, setCarId, error: carError } = useCar()
   const [rows, setRows] = useState<WebDriveSummary[]>([])
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
@@ -443,13 +456,14 @@ export default function DrivesPage() {
       durationMin: all.reduce((sum, d) => sum + (d.durationMinutes ?? 0), 0),
     }
   }, [history.drives])
-  const efficiency = useMemo(() => pairedEfficiency(history.drives), [history.drives])
+  const efficiency = useMemo(() => pairedEfficiency(history.drives, car?.model ?? null), [history.drives, car?.model])
   const incomplete = useMemo(() => history.drives.filter(d => d.endDate == null), [history.drives])
 
   if (selected && carId != null) {
     return (
       <DriveDetailView
         carId={carId}
+        carModel={car?.model ?? null}
         drive={selected.drive}
         newerDriveId={selected.newerDriveId}
         allDrives={history.drives}
@@ -477,12 +491,14 @@ export default function DrivesPage() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12 }}>
         <StatTile label="总里程" value={fmtNum(summary.distance, 0)} unit="km" caption={history.complete ? '全部已记录行程' : '已加载行程'} />
         <StatTile label="行程次数" value={summary.count.toLocaleString('zh-CN')} />
-        <StatTile label="总时长" value={fmtDuration(summary.durationMin)} />
-        {efficiency.kwhPer100km != null ? (
-          <StatTile label="平均能耗（净）" value={fmtNum(efficiency.kwhPer100km, 1)} unit="kWh/100km" caption={`基于 ${efficiency.pairedCount} 次完整能耗行程`} />
-        ) : (
-          <GapTile label="平均能耗（净）" need="行程净能耗的可信计量（后端当前明确不提供）" />
-        )}
+        <StatTile label="总时长" value={fmtDuration(summary.durationMin)} accent={TILE_COLORS.blue} />
+        <StatTile
+          label="平均能耗"
+          value={efficiency.kwhPer100km != null ? fmtNum(efficiency.kwhPer100km, 1) : '--'}
+          unit="kWh/100km"
+          accent={TILE_COLORS.blue}
+          caption={efficiency.totalCount > 0 ? `本机口径 · 基于 ${efficiency.pairedCount}/${efficiency.totalCount} 次可计算行程` : '暂无行程'}
+        />
       </div>
 
       {incomplete.length ? (
@@ -502,6 +518,7 @@ export default function DrivesPage() {
         {rows.map((drive, index) => {
           const model = recentDriveModel(drive)
           const newerDriveId = index > 0 ? rows[index - 1].id : null
+          const driveEnergy = resolveSummaryEnergy(drive, car?.model ?? null)
           return (
             <button
               key={drive.id}
@@ -527,6 +544,7 @@ export default function DrivesPage() {
                   <Chip icon="clock" tone="blue" text={model.durationText} />
                   {drive.speedAvgKmh != null ? <Chip icon="gauge" tone="teal" text={`平均 ${num(drive.speedAvgKmh)} km/h`} /> : null}
                   {drive.speedMaxKmh != null ? <Chip icon="zap" tone="amber" text={`最高 ${num(drive.speedMaxKmh)} km/h`} /> : null}
+                  {driveEnergy.efficiencyWhKm != null ? <Chip icon="chart" tone="blue" text={`能耗 ${(driveEnergy.efficiencyWhKm / 10).toFixed(1)} kWh/100km`} /> : null}
                 </span>
               </div>
             </button>
