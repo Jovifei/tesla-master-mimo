@@ -4755,3 +4755,49 @@ Review：6 个已授权计划/交接文档已删除，引用已改写，docs 链
 - [x] PR #45 已开（base 集成线，合并仍归所有者决定）。
 - [x] 部署 2026-11-08 ~10:20 CST：镜像 matelink-production:api-6da817b8 在服务器侧由分支 tarball 构建；切换脚本先建容器、挂齐双网络再启动（本次 restarts=0，无上次的自愈重启）；env 新增 JOURVOLT_WEB_RETURN_ALLOWLIST=https://web.teslalink.joviluma.com/auth/complete,http://localhost:5173/auth/complete。回滚保留：rollback-b9259501（刚替换）与 rollback-d61d6c7 均停机待命。
 - [x] 线上验证：healthz build_sha=6da817b8、readyz ok/telemetry ok；start 无 return_to 200（App 路径不变）、白名单 web 源 200、伪造后缀域名 return_to 被 400 invalid_return_to 拒绝。真人 Tesla 授权全程回跳待网页端 W2 接入 return_to 后由所有者在浏览器验证。
+## 2026-11-08 MateLink 网页版立项 — 分支 muse/web-apple-ui-20261108
+
+- [x] 现状核查：仓库既有 web_matelink 为 TeslaMate 风格自备服务器客户端（填地址+Token、/api/ping），与生产账号 API 合同不同；页面清单可参考，数据层需按 /v1 合同重建。后端登录链核对完毕：Tesla OAuth start → login ticket（2 分钟）→ /v1/auth/exchange 换会话，网页版可直接复用，无需后端改造。
+- [x] 规划文档 docs/WEB-PLAN-20261108.md 已提交本分支：信息架构、苹果风设计令牌（与小程序同源）、W1–W5 分阶段交付、部署路线（推荐 web.teslalink.joviluma.com）、四项待所有者确认事项。
+- [ ] 待所有者确认规划后进入 W1（骨架+登录+仪表盘只读）。
+
+### 2026-11-08 W1 完成（骨架 + 登录 + 只读仪表盘）
+
+- [x] 设计令牌：src/index.css 换为与小程序同一套 Apple 令牌（rpx→px、系统深色模式）；新壳 App.tsx（侧边栏导航 仪表盘/充电/行程/远程控制/分析/我的，后四者为阶段占位）；旧 TeslaMate 页面保留在树内未路由（W2–W4 逐页迁移时处置）。
+- [x] 数据层 src/api/matelink.ts：会话存取/过期判断、tesla/start（同意头 2026-08-21）→ exchange（票据换会话）→ refresh 轮换 → logout 撤销；getCars/getCarStatus/getRecentDrives 按 /api/v1 合同实现，normalize 与小程序同口径（单位换算 mi→km、°F→°C，0,0 坐标视为无位置，telemetry_cache 来源透传）。旧 client.ts 未动。
+- [x] 登录页：Tesla OAuth 跳转 + 「粘贴授权返回链接完成登录」+ /auth/complete 自动接收本源票据。**约束（如实记录）**：后端 OAuth 回调把票据 303 到 App Link 宿主（auth.teslalink.joviluma.com 的后端回退页），网页源无法自动截获——无缝回跳需后端给 start 增加 web return 支持，属生产授权面改动，待所有者决定（建议列入 W2 前置）。另：后端无 CORS 头，网页必须同源部署（开发走 Vite 代理；生产由静态宿主反代 /v1 与 /api，见 W5）。
+- [x] 仪表盘（只读）：电量大字、续航、里程、温度、锁/哨兵/车窗、充电块、位置卡（围栏名或坐标文本，地图待高德 Key/W3）、最近 5 条行程卡、刷新（直接吃后端唤醒修复）、多车切换、退出登录。
+- [x] 门禁：npm test 21/21（存量 13 + W1 新增 8：票据提取、会话过期、单位换算、最近行程模型）；npm run build 通过（tsc + vite，产物 253 kB JS）。生产冒烟：start 返回真实 Tesla 授权 URL（client_id 与 MateLink 应用一致）、伪造票据 exchange 返回 401 invalid_login_ticket、无会话 cars 返回 401 session_required、refresh 端点形状已核对。vite preview 产物可正常提供（含 /login SPA 回退）。
+- [ ] 待所有者：① 真人浏览器走一遍 Tesla 授权 + 粘贴完成登录（需其 Tesla 账号在场）；② 是否批准后端 web return 小改（无缝登录）；③ 高德 Web JS Key（W3 地图）；④ W2 阶段确认。
+
+### 2026-11-08 W2 完成（充电 + 行程）与无缝登录接入
+
+- [x] 后端无缝登录已部署（见上方 web-return 节，生产 6da817b8）；网页客户端 start 现携带本源 return_to（后端未登记的源会 400，客户端自动降级为无 return_to 重试，粘贴兜底保留）；登录页文案已改为自动跳回优先。
+- [x] 充电页：分页列表（加载更多）、当前充电卡（来自状态接口）、筛选（交流/直流、地点、仅有费用——与小程序同口径，含 AC+快充冲突判空规则）；详情：汇总指标（电量/时长/费用/最大功率/电压/电流/相数）+ 五曲线（电量/功率/电压/电流/温度，SVG 图表带悬停读数），隔离/无样本如实标注。
+- [x] 行程页：分页列表；详情指标组（行程/电量与能耗（含 kWh/100km 换算）/海拔（移植小程序 elevation 口径：相邻有效样本差分、缺端点跳过）+ 速度/功率/电量/海拔四曲线 + 「之后驻车」段（parked 接口，能量仅在后端证据全项合格时显示——与小程序同一套严格校验移植）。
+- [x] 门禁：npm test 28/28（W1 8 + W2 7 新增：模式冲突、样本窗口过滤、隔离态、海拔跳空、驻车证据校验、筛选）；npm run build 通过（277 kB JS）；vite preview 四个路由均 200。真实数据渲染待所有者在本地 dev（5173 已在后端白名单）或正式部署后以本人账号验收。
+- [ ] 下一阶段 W3（远程控制+附近充电+地点）待所有者确认；高德 Web Key 仍待所有者侧提供（W3 地图）。
+
+### 2026-11-08 W3 完成（远程控制 + 附近充电 + 我的地点）
+
+- [x] 远程控制页 /controls：状态接口的 command_authorization 门控与 App/小程序同口径（未评估→全目录；已评估未就绪→空目录+重新授权横幅（含缺失范围）；就绪→全目录）；16 命令三档分组，set_climate_temp 发送 driver_temp/passenger_temp（后端校验 15–28°C）、set_charge_limit 发送 percent（50–100 整数）；unlock 目录级确认 + 后端 confirmation_required 时弹窗二次确认（confirm=true 重试）；结果横幅（已受理/已回读确认/错误类中文文案与小程序同表）；受理后自动刷新状态回读。生产现状如实说明：总开关在服务端，未开启时返回「车辆控制尚未开启」。
+- [x] 仪表盘新增两段：附近充电（前 5，电价/停车缺省按 App 类型回退口径、空闲桩、已关闭标注、高德 marker 导航链接）；我的地点（列表、删除带确认弹窗——小程序同款；新增表单经纬度按车辆当前位置预填、半径默认 200 m）。位置卡改为高德打开链接（嵌入地图仍待高德 Web Key，属所有者侧）。
+- [x] 门禁：npm test 34/34（新增 6：目录/门控平价/错误文案/状态新字段/附近回退/高德链接）；npm run build 通过（293 kB JS）；preview /controls 200。
+- [ ] 下一阶段 W4（分析/胎压/我的）待所有者确认。
+
+### 2026-11-08 W4 完成（分析 + 胎压 + 我的）——网页版 W1–W4 全部交付
+
+- [x] 分析页：全量历史分页汇总（每类上限 600 条，超限如实标注）；年度汇总（总里程/行程/净耗电/平均能耗（配对法）/充电次数/充入电量/按币种费用，全部带覆盖率，隔离记录排除——与小程序 reports 口径一致）；月度概览表（最近 12 个月，混合币种不合并）；CSV/JSON 导出（非位置投影，与小程序同字段口径，导出不含地点）。
+- [x] 胎压卡（分析页）：当前四轮 bar 值（单位必须显式为 bar 才显示，与小程序 parseTpmsReport 同规则）+ 逐轮采样时间；趋势结论由本浏览器 localStorage 累计样本得出（≥2 样本且跨度 ≥24 h 才下结论；下降 ≥0.2 bar 提示查漏；明确标注无温度序列、不做环境因素分析——与小程序在小程序端记录的同一限制）。
+- [x] 我的页：账号（用户 ID、OAuth 登录说明、已同意条款版本 2026-08-21）、车辆列表（名称+车型）、邀请码领取（POST /v1/me/invite/claim，错误透传后端文案）、退出登录。
+- [x] 旧代码清理：删除已无路由的 TeslaMate 式旧页面 18 个 + 旧 api 层（client/types/history-pages）+ store/mock/messages/assets 与其专属测试；移除 leaflet/react-leaflet/recharts/zustand 四个依赖（新代码零引用；旧页面保留在 git 历史中）。CSS 27.8→10.1 kB。
+- [x] 全量验收：npm test 26/26（W1–W4 自有套件；旧 history-pages 测试随其被测代码一并删除）；npm run build 通过（307.77 kB JS）；七个路由 preview 均 200。
+- [ ] W5 部署（web.teslalink.joviluma.com + 同源反代）待所有者单独批准；嵌入式地图待高德 Web Key。
+
+### 2026-11-08 W5 部署完成（web.teslalink.joviluma.com 上线）
+
+- [x] 静态包安装至服务器 /srv/jourvolt/web；新站点配置 /etc/nginx/conf.d/matelink-web.conf（静态 + /v1、/api 同源反代 127.0.0.1:18090 + /assets 长缓存 + index no-cache）；jourvolt.conf 的 :80 server_name 已加入 web 子域（原文件备份 jourvolt.conf.bak-20261108030654）。执行通道：claude-ops 经 host-nginx-runner 运维容器（host 根目录挂载）写入并 chroot 调用宿主机 nginx/certbot——所有者 2026-11-08 11:05 明确授权 Muse 自行操作（其在外无法提供 root 登录）。
+- [x] DNS：joviluma.com 托管于 Cloudflare；A 记录 web.teslalink → 120.55.64.11（DNS only、TTL Auto）已添加并公开解析验证。过程注记：自动浏览器被 Cloudflare Turnstile 挡住（8 次失败、未填任何凭据、未动既有记录），所有者亲自在云浏览器完成登录后由 Muse 续加记录（区域记录 25→26 条，复核无误）。
+- [x] 证书：Let's Encrypt 证书 jourvolt 已扩容，SAN 现为 teslalink / api / auth / web 四个域名；nginx -t 通过并已重载。
+- [x] 线上验收：服务器侧以系统 CA 校验证书访问 web 根路径 200（真实链+域名匹配）；公网检查 web 根 200（标题 MateLink）、SPA 路由 /drives 200、经 web 源的 /v1 start 200、/assets 长缓存头正确；既有 api healthz、photo 站点均 200 未受影响。回滚：删除 matelink-web.conf 后 reload 即下线 web 站点；静态目录可独立删除；证书扩容为增量变更无需回滚。
+- [ ] 待所有者：以本人 Tesla 账号在 https://web.teslalink.joviluma.com 完成首次真实登录验收（授权自动跳回 + 数据渲染）。
