@@ -1,4 +1,4 @@
-import type { WebCar, WebCarStatus, WebCharge, WebChargePoint, WebChargeSummary, WebDrivePoint, WebDriveSummary, WebParked, WebSession } from './matelink-types'
+import type { WebCar, WebCarStatus, WebCharge, WebChargePoint, WebChargeSummary, WebChargingSite, WebCommandResult, WebDrivePoint, WebDriveSummary, WebParked, WebPlace, WebSession } from './matelink-types'
 
 /**
  * MateLink production API client (web, W1).
@@ -134,18 +134,18 @@ async function request(path: string, init: RequestInit & { accessToken?: string 
 }
 
 /** Authenticated request with one transparent refresh-and-retry on 401. */
-async function authedRequest(path: string): Promise<unknown> {
+async function authedRequest(path: string, init: Omit<RequestInit, 'headers'> = {}): Promise<unknown> {
   let session = loadSession()
   if (!session) throw new ApiError('尚未登录。', 'session_required', 401)
   if (!sessionIsUsable(session, Date.now())) {
     session = await refreshSession()
   }
   try {
-    return await request(path, { accessToken: session.accessToken })
+    return await request(path, { ...init, accessToken: session.accessToken })
   } catch (error) {
     if (error instanceof ApiError && error.status === 401) {
       const refreshed = await refreshSession()
-      return request(path, { accessToken: refreshed.accessToken })
+      return request(path, { ...init, accessToken: refreshed.accessToken })
     }
     throw error
   }
@@ -316,6 +316,15 @@ export function normalizeStatus(payload: unknown): WebCarStatus {
     geofence: stringValue(geodata.geofence)?.slice(0, 256) ?? null,
     observedAt: stringValue(data.observed_at),
     source: stringValue(data.source),
+    driverTempC: celsius(climate.driver_temp_setting),
+    commandAuthorization: isRecord(raw.command_authorization)
+      ? {
+          ready: boolValue(raw.command_authorization.ready),
+          missingScopes: Array.isArray(raw.command_authorization.missing_scopes)
+            ? raw.command_authorization.missing_scopes.filter((scope): scope is string => typeof scope === 'string')
+            : null,
+        }
+      : null,
   }
 }
 
@@ -608,5 +617,82 @@ export async function getParkedBetween(carId: number, olderDriveId: string, newe
   } catch (error) {
     if (error instanceof ApiError && error.code === 'parked_history_bounds_unavailable') return null
     throw error
+  }
+}
+
+/* ---------------- nearby charging, places, commands (W3) ---------------- */
+
+export type NearbyCharging = { sites: WebChargingSite[]; source: string | null }
+
+export async function getNearbyChargingSites(carId: number): Promise<NearbyCharging> {
+  const payload = await authedRequest(`/api/v1/cars/${carId}/nearby-charging-sites`)
+  const data = unwrap(payload)
+  const rows = Array.isArray(data.sites) ? data.sites : []
+  const meta = isRecord(data.meta) ? data.meta : {}
+  return {
+    sites: rows.filter(isRecord).map(site => ({
+      name: stringValue(site.name),
+      type: stringValue(site.type),
+      latitude: finite(site.latitude, -90, 90),
+      longitude: finite(site.longitude, -180, 180),
+      distanceKm: finite(site.distance_km, 0),
+      availableStalls: finite(site.available_stalls, 0),
+      totalStalls: finite(site.total_stalls, 0),
+      siteClosed: boolValue(site.site_closed),
+      priceText: stringValue(site.price_text),
+      parkingPolicy: stringValue(site.parking_policy),
+    })),
+    source: stringValue(meta.source),
+  }
+}
+
+function normalizePlace(raw: Record<string, unknown>): WebPlace {
+  return {
+    id: finite(raw.id, 1),
+    name: stringValue(raw.name),
+    latitude: finite(raw.latitude, -90, 90),
+    longitude: finite(raw.longitude, -180, 180),
+    radiusM: finite(raw.radius_m, 1),
+  }
+}
+
+export async function getVehiclePlaces(carId: number): Promise<WebPlace[]> {
+  const payload = await authedRequest(`/api/v1/cars/${carId}/places`)
+  const data = unwrap(payload)
+  const rows = Array.isArray(data.places) ? data.places : []
+  return rows.filter(isRecord).map(normalizePlace)
+}
+
+export async function createVehiclePlace(
+  carId: number,
+  place: { name: string; latitude: number; longitude: number; radius_m: number }
+): Promise<WebPlace> {
+  const payload = await authedRequest(`/api/v1/cars/${carId}/places`, {
+    method: 'POST',
+    body: JSON.stringify(place),
+  })
+  return normalizePlace(unwrap(payload))
+}
+
+export async function deleteVehiclePlace(carId: number, placeId: number): Promise<boolean> {
+  const payload = await authedRequest(`/api/v1/cars/${carId}/places/${placeId}`, { method: 'DELETE' })
+  return Boolean(unwrap(payload).deleted)
+}
+
+export async function executeVehicleCommand(
+  carId: number,
+  command: string,
+  params?: Record<string, unknown>,
+  confirm = false
+): Promise<WebCommandResult> {
+  const payload = await authedRequest(`/api/v1/cars/${carId}/commands/${encodeURIComponent(command)}`, {
+    method: 'POST',
+    body: JSON.stringify({ params: params ?? null, confirm }),
+  })
+  const data = unwrap(payload)
+  return {
+    command: stringValue(data.command) ?? command,
+    result: stringValue(data.result),
+    verified: boolValue(data.verified),
   }
 }

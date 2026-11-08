@@ -39,6 +39,36 @@ export type WebCarStatus = {
   observedAt: string | null
   /** e.g. live telemetry, or telemetry_cache when the backend served a snapshot while the car was unreachable. */
   source: string | null
+  driverTempC: number | null
+  /** Present only when the backend evaluated command authorization for this status. */
+  commandAuthorization: { ready: boolean | null; missingScopes: string[] | null } | null
+}
+
+export type WebChargingSite = {
+  name: string | null
+  type: string | null
+  latitude: number | null
+  longitude: number | null
+  distanceKm: number | null
+  availableStalls: number | null
+  totalStalls: number | null
+  siteClosed: boolean | null
+  priceText: string | null
+  parkingPolicy: string | null
+}
+
+export type WebPlace = {
+  id: number | null
+  name: string | null
+  latitude: number | null
+  longitude: number | null
+  radiusM: number | null
+}
+
+export type WebCommandResult = {
+  command: string
+  result: string | null
+  verified: boolean | null
 }
 
 export type WebDriveSummary = {
