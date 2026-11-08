@@ -4836,5 +4836,5 @@ Review：6 个已授权计划/交接文档已删除，引用已改写，docs 链
 - [x] 步骤1：抓取 teslamate-org/teslamate 的 grafana/dashboards/*.json（含 internal 的 charge-details/drive-details）提取面板构成；结合后端/web 代码审计写成 docs/TESLAMATE-MAPPING.md（23 个仪表盘逐一对照：参数含义、数据来源、后端待补清单 10 项）。
 - [x] 步骤2：API 层补齐审计确认存在但 web 未读的字段（行程轨迹坐标/起止坐标/里程起止、充电坐标/用电量/效率 contract、逐点累计充入、状态实时电压电流/固件）。
 - [x] 步骤3：新组件（弧形仪表/待补面板/地图面板/数据表/环形构成/条形排行/热图/温度包络）与分组导航外壳。
-- [ ] 步骤4：逐组建页（总览组/充电组/行程组/电池组/数据组），逐组提交。
-- [ ] 步骤5：门禁 npm test / build / preview 全路由 200；未部署、未合并、未 push（待所有者验收）。
+- [x] 步骤4：逐组建页并逐组提交——总览组（外壳分组导航＋总览 Overview 复刻＋电量历史/状态/时间线）、充电组（Charges＋Charge Details＋充电统计）、行程组（Drives＋Drive Details＋Trip＋行程统计＋效率）、电池组（电池健康/预计续航/驻车掉电）、数据组（统计/里程/温度/地点/到访地图/软件更新/数据概况）。共 21 条业务路由；/analysis 重定向 /statistics。
+- [x] 步骤5：门禁实测——npm test 38/38（新增 chargeStationStats 单测）、npm run build 通过、vite preview 24 条路由（含 /login、/auth/complete、/analysis）全部 200。未部署、未合并、未 push（待所有者验收）。
