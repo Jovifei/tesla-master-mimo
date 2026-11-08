@@ -25,6 +25,9 @@ type oauthConsent struct {
 type authTransaction struct {
 	Nonce   string
 	Consent oauthConsent
+	// ReturnTo is the allowlisted web return URL captured at start
+	// time (empty for app clients, which use the app link instead).
+	ReturnTo string
 }
 
 func currentOAuthConsent(termsVersion, privacyVersion string) (oauthConsent, error) {
@@ -42,15 +45,16 @@ func (s *store) createAuthTransaction(
 	ctx context.Context,
 	state, transactionID, nonce string,
 	consent oauthConsent,
+	returnTo string,
 	expiresAt time.Time,
 ) error {
 	_, err := s.pool.Exec(ctx, `
 INSERT INTO jourvolt_auth_transactions(
-    state_hash, transaction_hash, nonce, terms_version, privacy_version, expires_at
+    state_hash, transaction_hash, nonce, terms_version, privacy_version, return_to, expires_at
 )
-VALUES ($1, $2, $3, $4, $5, $6)`,
+VALUES ($1, $2, $3, $4, $5, $6, $7)`,
 		hashToken(state), hashToken(transactionID), nonce,
-		consent.TermsVersion, consent.PrivacyVersion, expiresAt)
+		consent.TermsVersion, consent.PrivacyVersion, returnTo, expiresAt)
 	return err
 }
 
@@ -60,10 +64,11 @@ func (s *store) consumeAuthState(ctx context.Context, state string) (authTransac
 UPDATE jourvolt_auth_transactions
 SET consumed_at=now()
 WHERE state_hash=$1 AND consumed_at IS NULL AND expires_at > now()
-RETURNING nonce, terms_version, privacy_version`, hashToken(state)).Scan(
+RETURNING nonce, terms_version, privacy_version, COALESCE(return_to, '')`, hashToken(state)).Scan(
 		&transaction.Nonce,
 		&transaction.Consent.TermsVersion,
 		&transaction.Consent.PrivacyVersion,
+		&transaction.ReturnTo,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return authTransaction{}, errors.New("invalid_oauth_state")

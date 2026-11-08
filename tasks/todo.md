@@ -4747,3 +4747,9 @@ Review：6 个已授权计划/交接文档已删除，引用已改写，docs 链
 - [x] 上线实证：01:06 首次真实刷新遇 408 → 自动 wake_up 200 → 车辆唤醒、遥测恢复 ok（修复前此处直接失败）。
 - [ ] Jovi 真车验收：App 手动刷新一次，确认休眠时显示缓存数据与时间戳、唤醒后转实时。
 - [ ] PR #44 合并进集成线（Jovi 决定）。备注：本次为手工 docker run 复制旧容器配置切换（双网络/只读/cap_drop/no-new-privileges）；启动瞬间因第二网络后挂导致 DB 解析失败、自愈重启一次——后续手工切换应先挂齐网络再启动，或由本地团队 compose 发布接管。
+
+## 2026-11-08 网页无缝登录（后端 web return）— 分支 muse/web-return-login-20261108
+
+- [x] 实现（基线 = 已部署的唤醒修复线 b9259501 同树）：start 接受可选 return_to，仅当与环境变量 JOURVOLT_WEB_RETURN_ALLOWLIST 中的条目**逐字全等**才接受（票据是凭证，拒绝一切前缀/后缀/大小写/查询串变体）；条目在配置加载时校验（必须 https，本机回环可 http，禁 userinfo/fragment）。事务表新增 return_to 列（CREATE + ADD COLUMN IF NOT EXISTS，与既有模式一致），回调按事务里的 return_to 改向（成功带 ticket、失败带 error），无 return_to 时走原 App Link 路径，行为不变。
+- [x] 测试：新增 web_return_test.go（条目校验、逐字匹配拒绝 8 种欺骗形态、returnLink 构造、配置加载拒绝非回环 http）；存量集成测试调用点已适配新签名。全量 go test 通过。
+- [ ] 部署与 PR：待本节后续记录。

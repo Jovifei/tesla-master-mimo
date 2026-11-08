@@ -31,7 +31,7 @@ func TestStoreConsumesOAuthStateAndLoginTicketOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.createAuthTransaction(ctx, state, transactionID, nonce, consent, time.Now().UTC().Add(time.Minute)); err != nil {
+	if err := store.createAuthTransaction(ctx, state, transactionID, nonce, consent, "", time.Now().UTC().Add(time.Minute)); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
@@ -44,7 +44,7 @@ func TestStoreConsumesOAuthStateAndLoginTicketOnce(t *testing.T) {
 		t.Fatal("OAuth state replay must fail")
 	}
 	expiredState, _ := randomToken()
-	if err := store.createAuthTransaction(ctx, expiredState, transactionID+"expired", nonce, consent, time.Now().UTC().Add(-time.Second)); err != nil {
+	if err := store.createAuthTransaction(ctx, expiredState, transactionID+"expired", nonce, consent, "", time.Now().UTC().Add(-time.Second)); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
