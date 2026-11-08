@@ -140,10 +140,12 @@ export function DataTable({
   columns,
   rows,
   emptyText = '暂无数据',
+  onRowClick,
 }: {
   columns: { label: string; align?: 'left' | 'right' | 'center' }[]
   rows: ReactNode[][]
   emptyText?: string
+  onRowClick?: (index: number) => void
 }) {
   return (
     <div style={{ overflowX: 'auto' }}>
@@ -164,7 +166,7 @@ export function DataTable({
             </tr>
           ) : (
             rows.map((row, i) => (
-              <tr key={i}>
+              <tr key={i} onClick={onRowClick ? () => onRowClick(i) : undefined} style={onRowClick ? { cursor: 'pointer' } : undefined}>
                 {row.map((cell, j) => (
                   <td key={j} className="tabular" style={{ ...tabular, padding: '8px 10px', color: V3.label, borderBottom: `0.5px solid ${V3.separator}`, textAlign: columns[j]?.align ?? 'left', whiteSpace: 'nowrap' }}>
                     {cell}

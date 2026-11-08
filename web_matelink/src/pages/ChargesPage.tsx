@@ -3,19 +3,20 @@ import { ApiError, getCarStatus, getChargeDetail, getChargesPage, type ChargeDet
 import type { WebCarStatus, WebCharge } from '../api/matelink-types'
 import { EMPTY_CHARGE_FILTER, chargeAddresses, filterCharges, type ChargeFilter } from '../api/charge-filter'
 import { averagePowerKw, unitPricePerKwh } from '../api/panel-data'
-import { BatteryPill, Icon, SegControl, Skeleton, TONES, type IconName } from '../components/viz'
+import { BatteryPill, Icon, SegControl, Skeleton } from '../components/viz'
 import { ChargeRuler, Panel, V3 } from '../components/v3'
-import { BarsPanel, DATA_COLORS, ScatterPanel, StackChart, StatTile, fmtDuration, fmtNum, type ChartRow, type StackSeriesDef } from '../components/panels'
+import { BarsPanel, DATA_COLORS, ScatterPanel, StackChart, StatTile, TILE_COLORS, fmtDuration, fmtNum, type ChartRow, type StackSeriesDef } from '../components/panels'
 import { DataTable, GapTile, MapPanel } from '../components/tm'
 import { useCar } from './useCar'
 import { useHistory } from './useHistory'
 
 /**
- * 充电记录 — TeslaMate Charges + Charge Details 的复刻：列表页有汇总
- * 统计与未完成充电表；详情页是 TeslaMate Charge Details 的构成
- * （堆叠功率/电量/累计电量大图 + 大数字瓷砖 + 充电曲线 + 地图）。
- * 充电中的会话每 20 秒实时刷新（所有者选项 A）。电压/电流历史采样
- * 后端不记录——仅实时区给出当前值，历史曲线标注待补。
+ * 充电记录 — TeslaMate Charges + Charge Details 的复刻（所有者
+ * 2026-11-08 18:39 定版）：列表为 TeslaMate 式逐列参数表（位置/
+ * 时间/类型/温度/功率/电量/费用/效率），点击进单次详情；详情以
+ * 彩色大数字瓷砖呈现（费用绿、时长蓝、功率橙、温度紫），图为
+ * 电量变化 + 功率变化曲线。充电中的会话每 20 秒实时刷新；电压、
+ * 电池加热只有状态快照当前值，进实时区展示，历史不造假面板。
  */
 
 const num = (value: number | null, digits = 0): string => (value == null ? '--' : value.toFixed(digits))
@@ -43,12 +44,6 @@ function monthlyEnergy(rows: WebCharge[]): { label: string; value: number }[] {
     .map(entry => ({ label: entry.label, value: Math.round(entry.value * 10) / 10 }))
 }
 
-function modeVisual(mode: WebCharge['chargeMode']): { icon: IconName; color: string } {
-  if (mode === 'dc') return { icon: 'zap', color: DATA_COLORS.tealDeep }
-  if (mode === 'ac') return { icon: 'plug', color: DATA_COLORS.teal }
-  return { icon: 'battery', color: TONES.gray }
-}
-
 function countOf(rows: ChartRow[], key: string): number {
   return rows.reduce((count, row) => (row[key] != null ? count + 1 : count), 0)
 }
@@ -56,6 +51,7 @@ function countOf(rows: ChartRow[], key: string): number {
 function ChargeDetailView({ carId, charge, onBack }: { carId: number; charge: WebCharge; onBack: () => void }) {
   const [detail, setDetail] = useState<ChargeDetail | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [liveStatus, setLiveStatus] = useState<WebCarStatus | null>(null)
 
   const loadDetail = useCallback(async () => {
     try {
@@ -77,6 +73,27 @@ function ChargeDetailView({ carId, charge, onBack }: { carId: number; charge: We
     const timer = window.setInterval(() => void loadDetail(), 20_000)
     return () => window.clearInterval(timer)
   }, [charge.isCharging, loadDetail])
+
+  // 实时区：状态快照的当前功率/电压/电流/电池加热（仅充电中存在当前值；
+  // 电池加热无历史序列，历史详情不设加热面板）。
+  useEffect(() => {
+    if (!charge.isCharging) return
+    let cancelled = false
+    const fetchStatus = async () => {
+      try {
+        const next = await getCarStatus(carId)
+        if (!cancelled) setLiveStatus(next)
+      } catch {
+        /* keep last good status */
+      }
+    }
+    void fetchStatus()
+    const timer = window.setInterval(() => void fetchStatus(), 20_000)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [carId, charge.isCharging])
 
   const current = detail?.charge ?? charge
   const summary = detail?.summary
@@ -146,6 +163,20 @@ function ChargeDetailView({ carId, charge, onBack }: { carId: number; charge: We
 
       {error ? <Panel><p style={{ color: V3.errorText, fontSize: 14.5 }}>{error}</p></Panel> : null}
 
+      {charge.isCharging && liveStatus ? (
+        <Panel title="实时充电" action={<span style={{ fontSize: 12, color: V3.label3 }}>状态快照当前值 · 每 20 秒刷新</span>}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12 }}>
+            <StatTile label="当前功率" value={liveStatus.chargerPowerKw != null ? fmtNum(liveStatus.chargerPowerKw, 1) : '--'} unit="kW" accent={TILE_COLORS.orange} />
+            {liveStatus.liveVoltageV != null ? <StatTile label="当前电压" value={String(Math.round(liveStatus.liveVoltageV))} unit="V" accent={TILE_COLORS.purple} /> : null}
+            {liveStatus.liveCurrentA != null ? <StatTile label="当前电流" value={fmtNum(liveStatus.liveCurrentA, 1)} unit="A" /> : null}
+            {liveStatus.batteryHeaterOn != null ? (
+              <StatTile label="电池加热" value={liveStatus.batteryHeaterOn ? '开' : '关'} accent={liveStatus.batteryHeaterOn ? TILE_COLORS.red : undefined} caption="当前状态（无历史记录）" />
+            ) : null}
+            <StatTile label="当前电量" value={liveStatus.batteryLevel != null ? String(Math.round(liveStatus.batteryLevel)) : '--'} unit="%" accent={TILE_COLORS.green} />
+          </div>
+        </Panel>
+      ) : null}
+
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 8fr) minmax(0, 4fr)', gap: 16, alignItems: 'start' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
           {!detail ? (
@@ -188,29 +219,30 @@ function ChargeDetailView({ carId, charge, onBack }: { carId: number; charge: We
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <StatTile label="费用" value={current.cost != null ? num(current.cost, 2) : '--'} unit={current.cost != null ? (current.currency ?? '元') : undefined} />
-            <StatTile label="时长" value={fmtDuration(current.durationMinutes)} />
-            <StatTile label="充入电量" value={num(current.energyAddedKwh, 1)} unit="kWh" accent={V3.teal} caption="进入电池的电量" />
+            <StatTile label="费用" value={current.cost != null ? num(current.cost, 2) : '--'} unit={current.cost != null ? (current.currency ?? '元') : undefined} accent={TILE_COLORS.green} />
+            <StatTile label="时长" value={fmtDuration(current.durationMinutes)} accent={TILE_COLORS.blue} />
+            <StatTile label="充电类型" value={current.chargeMode === 'dc' ? '直流快充' : current.chargeMode === 'ac' ? '交流充电' : '未知'} />
+            <StatTile label="充入电量" value={num(current.energyAddedKwh, 1)} unit="kWh" accent={TILE_COLORS.green} caption="进入电池的电量" />
             {current.energyUsedKwh != null ? (
-              <StatTile label="用电量（桩侧）" value={num(current.energyUsedKwh, 1)} unit="kWh" caption="交流输入侧计量" />
+              <StatTile label="用电量（桩侧）" value={num(current.energyUsedKwh, 1)} unit="kWh" accent={TILE_COLORS.amber} caption="交流输入侧计量" />
             ) : (
               <StatTile label="用电量（桩侧）" value="--" caption={current.energyUsedNote ?? '本次未发布桩侧计量'} />
             )}
             {current.acEfficiencyPct != null ? (
-              <StatTile label="充电效率" value={fmtNum(current.acEfficiencyPct, 1)} unit="%" caption={current.acLossKwh != null ? `交流损耗 ${fmtNum(current.acLossKwh, 1)} kWh` : '进电池 ÷ 桩侧输入'} />
+              <StatTile label="充电效率" value={fmtNum(current.acEfficiencyPct, 1)} unit="%" accent={TILE_COLORS.blue} caption={current.acLossKwh != null ? `交流损耗 ${fmtNum(current.acLossKwh, 1)} kWh` : '进电池 ÷ 桩侧输入'} />
             ) : null}
             {unitPrice != null ? <StatTile label="单价" value={fmtNum(unitPrice, 2)} unit="元/kWh" caption="费用 ÷ 充入电量" /> : null}
-            <StatTile label="平均功率" value={avgPower != null ? fmtNum(avgPower, 1) : '--'} unit="kW" caption="充入电量 ÷ 时长" />
-            <StatTile label="峰值功率" value={peakPower != null ? fmtNum(peakPower, 1) : '--'} unit="kW" caption={samplePeak != null ? '采样峰值' : '记录峰值'} />
+            <StatTile label="平均功率" value={avgPower != null ? fmtNum(avgPower, 1) : '--'} unit="kW" accent={TILE_COLORS.orange} caption="充入电量 ÷ 时长" />
+            <StatTile label="峰值功率" value={peakPower != null ? fmtNum(peakPower, 1) : '--'} unit="kW" accent={TILE_COLORS.orange} caption={samplePeak != null ? '采样峰值' : '记录峰值'} />
             <StatTile label="电量变化">
               <div className="tabular" style={{ marginTop: 5, fontSize: 24, fontWeight: 700, lineHeight: 1.15, fontVariantNumeric: 'tabular-nums' }}>
-                {current.startBatteryLevel != null ? `${Math.round(current.startBatteryLevel)}%` : '--'}
+                <span style={{ color: TILE_COLORS.green }}>{current.startBatteryLevel != null ? `${Math.round(current.startBatteryLevel)}%` : '--'}</span>
                 <span style={{ color: V3.label3, fontSize: 17, margin: '0 4px' }}>→</span>
-                {current.endBatteryLevel != null ? `${Math.round(current.endBatteryLevel)}%` : '--'}
+                <span style={{ color: TILE_COLORS.blue }}>{current.endBatteryLevel != null ? `${Math.round(current.endBatteryLevel)}%` : '--'}</span>
               </div>
             </StatTile>
-            {summary?.outsideTempC != null ? <StatTile label="室外温度" value={fmtNum(summary.outsideTempC, 1)} unit="°C" /> : null}
-            {summary?.chargerVoltageV != null ? <StatTile label="当前电压" value={String(summary.chargerVoltageV)} unit="V" caption="实时值（仅当前快照）" /> : null}
+            {summary?.outsideTempC != null ? <StatTile label="室外温度" value={fmtNum(summary.outsideTempC, 1)} unit="°C" accent={TILE_COLORS.purple} /> : null}
+            {summary?.chargerVoltageV != null ? <StatTile label="当前电压" value={String(summary.chargerVoltageV)} unit="V" accent={TILE_COLORS.purple} caption="实时值（仅当前快照）" /> : null}
             {summary?.currentA != null ? <StatTile label="当前电流" value={fmtNum(summary.currentA, 1)} unit="A" caption="实时值（仅当前快照）" /> : null}
           </div>
 
@@ -331,25 +363,26 @@ export default function ChargesPage() {
             </div>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginTop: 16 }}>
-            <StatTile label="当前功率" value={num(status.chargerPowerKw, 1)} unit="kW" accent={V3.teal} />
-            <StatTile label="已充入" value={num(status.chargeEnergyAddedKwh, 1)} unit="kWh" />
+            <StatTile label="当前功率" value={num(status.chargerPowerKw, 1)} unit="kW" accent={TILE_COLORS.orange} />
+            <StatTile label="已充入" value={num(status.chargeEnergyAddedKwh, 1)} unit="kWh" accent={TILE_COLORS.green} />
             <StatTile label="预计续航" value={num(status.estimatedRangeKm)} unit="km" caption="按当前电量估算" />
-            {status.liveVoltageV != null ? <StatTile label="当前电压" value={String(status.liveVoltageV)} unit="V" /> : null}
+            {status.liveVoltageV != null ? <StatTile label="当前电压" value={String(Math.round(status.liveVoltageV))} unit="V" accent={TILE_COLORS.purple} /> : null}
             {status.liveCurrentA != null ? <StatTile label="当前电流" value={num(status.liveCurrentA, 1)} unit="A" /> : null}
+            {status.batteryHeaterOn != null ? <StatTile label="电池加热" value={status.batteryHeaterOn ? '开' : '关'} accent={status.batteryHeaterOn ? TILE_COLORS.red : undefined} caption="当前状态（无历史记录）" /> : null}
           </div>
         </Panel>
       ) : null}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12 }}>
         <StatTile label="充电次数" value={summary.count.toLocaleString('zh-CN')} caption={history.complete ? '全部记录' : '已加载记录'} />
-        <StatTile label="总充电时长" value={fmtDuration(summary.totalDurationMin)} />
-        <StatTile label="总充入电量" value={fmtNum(summary.totalAdded, 1)} unit="kWh" accent={V3.teal} />
+        <StatTile label="总充电时长" value={fmtDuration(summary.totalDurationMin)} accent={TILE_COLORS.blue} />
+        <StatTile label="总充入电量" value={fmtNum(summary.totalAdded, 1)} unit="kWh" accent={TILE_COLORS.green} />
         {summary.totalUsed != null ? (
-          <StatTile label="总用电量（桩侧）" value={fmtNum(summary.totalUsed, 1)} unit="kWh" caption={`基于 ${summary.usedCount} 次已发布桩侧计量的充电`} />
+          <StatTile label="总用电量（桩侧）" value={fmtNum(summary.totalUsed, 1)} unit="kWh" accent={TILE_COLORS.amber} caption={`基于 ${summary.usedCount} 次已发布桩侧计量的充电`} />
         ) : (
           <GapTile label="总用电量（桩侧）" need="交流充电的桩侧输入计量（本次数据尚无已发布值）" />
         )}
-        <StatTile label="总费用" value={summary.hasCost ? fmtNum(summary.totalCost, 2) : '--'} unit={summary.hasCost ? '元' : undefined} />
+        <StatTile label="总费用" value={summary.hasCost ? fmtNum(summary.totalCost, 2) : '--'} unit={summary.hasCost ? '元' : undefined} accent={TILE_COLORS.green} />
       </div>
 
       {incomplete.length ? (
@@ -421,52 +454,49 @@ export default function ChargesPage() {
           <Skeleton height={132} />
         </>
       ) : (
-        <section
-          style={{
-            background: V3.surface, borderRadius: 20, boxShadow: V3.cardShadow,
-            border: `0.5px solid ${V3.separator}`, overflow: 'hidden',
-          }}
-        >
-          {visible.map(charge => {
-            const visual = modeVisual(charge.chargeMode)
-            return (
-              <button
-                key={charge.id}
-                onClick={() => setSelected(charge)}
-                style={{ display: 'flex', alignItems: 'center', gap: 14, width: '100%', textAlign: 'left', background: 'none', border: 'none', borderTop: `0.5px solid ${V3.separator}`, padding: '14px 16px', cursor: 'pointer', color: 'inherit' }}
-              >
-                <span style={{ flexShrink: 0, width: 40, height: 40, borderRadius: 20, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: `${visual.color}1f`, color: visual.color }}>
-                  <Icon name={visual.icon} size={20} />
-                </span>
-                <span style={{ flex: 1, minWidth: 0 }}>
-                  <span style={{ display: 'block', fontSize: 14.5, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{charge.address ?? '未知地点'}</span>
-                  <span className="text-secondary tabular" style={{ display: 'block', fontSize: 12.5, marginTop: 3 }}>
-                    {formatTime(charge.startDate)}
-                    {charge.chargeMode ? ` · ${charge.chargeMode === 'dc' ? '直流快充' : '交流充电'}` : ''}
-                  </span>
-                  <span style={{ display: 'block', marginTop: 7 }}>
-                    <BatteryPill from={charge.startBatteryLevel} to={charge.endBatteryLevel} />
-                  </span>
-                </span>
-                <span style={{ flexShrink: 0, textAlign: 'right' }}>
-                  <span className="tabular" style={{ display: 'block', fontSize: 20, fontWeight: 700, lineHeight: 1.1 }}>
-                    {num(charge.energyAddedKwh, 1)}
-                    <span className="text-secondary" style={{ fontSize: 12, fontWeight: 500, marginLeft: 3 }}>kWh</span>
-                  </span>
-                  {charge.cost != null ? (
-                    <span style={{ display: 'inline-block', marginTop: 6, background: 'var(--apple-teal-soft)', color: 'var(--apple-teal)', borderRadius: 999, padding: '2px 9px', fontSize: 12, fontWeight: 600 }} className="tabular">
-                      {num(charge.cost, 2)} {charge.currency ?? '元'}
-                    </span>
-                  ) : null}
-                </span>
-                <span className="text-tertiary" style={{ flexShrink: 0, display: 'inline-flex' }}><Icon name="chevron" size={16} /></span>
-              </button>
-            )
-          })}
-          {!visible.length && !loading ? (
-            <p className="text-secondary" style={{ fontSize: 14, padding: 16 }}>没有符合条件的充电记录。</p>
-          ) : null}
-        </section>
+        <Panel title="充电记录" action={<span style={{ fontSize: 12, color: V3.label3 }}>逐列参数 · 点击任意一行查看单次充电详情</span>}>
+          <DataTable
+            columns={[
+              { label: '开始时间' },
+              { label: '地点' },
+              { label: '类型' },
+              { label: '时长', align: 'right' },
+              { label: '充入 (kWh)', align: 'right' },
+              { label: '用电量 (kWh)', align: 'right' },
+              { label: '效率', align: 'right' },
+              { label: '平均功率 (kW)', align: 'right' },
+              { label: '峰值功率 (kW)', align: 'right' },
+              { label: '电量变化' },
+              { label: '温度', align: 'right' },
+              { label: '单价 (元/kWh)', align: 'right' },
+              { label: '费用', align: 'right' },
+            ]}
+            rows={visible.map(charge => {
+              const unitPrice = unitPricePerKwh(charge)
+              const avgPower = averagePowerKw(charge)
+              return [
+                formatTime(charge.startDate),
+                charge.address ?? '未知地点',
+                charge.chargeMode === 'dc' ? '直流' : charge.chargeMode === 'ac' ? '交流' : '--',
+                fmtDuration(charge.durationMinutes),
+                num(charge.energyAddedKwh, 1),
+                num(charge.energyUsedKwh, 1),
+                charge.acEfficiencyPct != null ? `${fmtNum(charge.acEfficiencyPct, 1)}%` : '--',
+                avgPower != null ? fmtNum(avgPower, 1) : '--',
+                num(charge.maxPowerKw, 1),
+                <BatteryPill key={charge.id} from={charge.startBatteryLevel} to={charge.endBatteryLevel} />,
+                charge.outsideTempAvgC != null ? `${fmtNum(charge.outsideTempAvgC, 1)}°C` : '--',
+                unitPrice != null ? fmtNum(unitPrice, 2) : '--',
+                charge.cost != null ? `${num(charge.cost, 2)} ${charge.currency ?? '元'}` : '--',
+              ]
+            })}
+            emptyText="没有符合条件的充电记录。"
+            onRowClick={index => {
+              const charge = visible[index]
+              if (charge) setSelected(charge)
+            }}
+          />
+        </Panel>
       )}
       {loading && visible.length ? <Skeleton height={72} radius={14} /> : null}
 
