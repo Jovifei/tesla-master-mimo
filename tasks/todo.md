@@ -4776,3 +4776,11 @@ Review：6 个已授权计划/交接文档已删除，引用已改写，docs 链
 - [x] 旧代码清理：删除已无路由的 TeslaMate 式旧页面 18 个 + 旧 api 层（client/types/history-pages）+ store/mock/messages/assets 与其专属测试；移除 leaflet/react-leaflet/recharts/zustand 四个依赖（新代码零引用；旧页面保留在 git 历史中）。CSS 27.8→10.1 kB。
 - [x] 全量验收：npm test 26/26（W1–W4 自有套件；旧 history-pages 测试随其被测代码一并删除）；npm run build 通过（307.77 kB JS）；七个路由 preview 均 200。
 - [ ] W5 部署（web.teslalink.joviluma.com + 同源反代）待所有者单独批准；嵌入式地图待高德 Web Key。
+
+### 2026-11-08 W5 部署完成（web.teslalink.joviluma.com 上线）
+
+- [x] 静态包安装至服务器 /srv/jourvolt/web；新站点配置 /etc/nginx/conf.d/matelink-web.conf（静态 + /v1、/api 同源反代 127.0.0.1:18090 + /assets 长缓存 + index no-cache）；jourvolt.conf 的 :80 server_name 已加入 web 子域（原文件备份 jourvolt.conf.bak-20261108030654）。执行通道：claude-ops 经 host-nginx-runner 运维容器（host 根目录挂载）写入并 chroot 调用宿主机 nginx/certbot——所有者 2026-11-08 11:05 明确授权 Muse 自行操作（其在外无法提供 root 登录）。
+- [x] DNS：joviluma.com 托管于 Cloudflare；A 记录 web.teslalink → 120.55.64.11（DNS only、TTL Auto）已添加并公开解析验证。过程注记：自动浏览器被 Cloudflare Turnstile 挡住（8 次失败、未填任何凭据、未动既有记录），所有者亲自在云浏览器完成登录后由 Muse 续加记录（区域记录 25→26 条，复核无误）。
+- [x] 证书：Let's Encrypt 证书 jourvolt 已扩容，SAN 现为 teslalink / api / auth / web 四个域名；nginx -t 通过并已重载。
+- [x] 线上验收：服务器侧以系统 CA 校验证书访问 web 根路径 200（真实链+域名匹配）；公网检查 web 根 200（标题 MateLink）、SPA 路由 /drives 200、经 web 源的 /v1 start 200、/assets 长缓存头正确；既有 api healthz、photo 站点均 200 未受影响。回滚：删除 matelink-web.conf 后 reload 即下线 web 站点；静态目录可独立删除；证书扩容为增量变更无需回滚。
+- [ ] 待所有者：以本人 Tesla 账号在 https://web.teslalink.joviluma.com 完成首次真实登录验收（授权自动跳回 + 数据渲染）。
