@@ -4829,3 +4829,12 @@ Review：6 个已授权计划/交接文档已删除，引用已改写，docs 链
 - [x] 口径修正一处：充电实时区原「续航」数值取的是额定续航（ratedRangeKm），按 V3 §2.8 改为预计续航（estimatedRangeKm），标注「按当前电量估算」。
 - [x] 门禁（本源码树实测）：npm test 26/26（API 层套件，组件重构未触碰其断言）；npm run lint 0 errors（8 warnings：5 为既有同类，新增 3 为 panels.tsx 的 only-export-components，与 v3.tsx/viz.tsx 既有模式一致）；npm run build 通过；vite preview 七路由（/、/charges、/drives、/controls、/analysis、/me、/login）全部 200。
 - [ ] 待所有者视觉验收；本次未部署、未合并。偏差记录：瓷砖大数字取 30/700（健康台基线 28–32 大数字家族）；「最高速度」按所有者本次任务清单保留为行程瓷砖（V3 曾将其列为虚荣参数禁入 KPI，本次以所有者明示清单为准）。
+
+## 2026-11-08 Web 全量复刻 TeslaMate 面板（所有者裁决 17:52，分支 muse/web-redesign-20261108）
+
+- [x] 所有者最终裁决：直接以 TeslaMate 仪表盘为底稿完整复刻页面、全中文、我方暖面风格替换现有网页；缺数据面板按 A 建成占位（待补数据＋后端清单）；充电曲线按 A 实时刷新；TeslaMate 独有仪表盘按 B 同样建页。此前"融合构成"口径作废。
+- [x] 步骤1：抓取 teslamate-org/teslamate 的 grafana/dashboards/*.json（含 internal 的 charge-details/drive-details）提取面板构成；结合后端/web 代码审计写成 docs/TESLAMATE-MAPPING.md（23 个仪表盘逐一对照：参数含义、数据来源、后端待补清单 10 项）。
+- [ ] 步骤2：API 层补齐审计确认存在但 web 未读的字段（行程轨迹坐标/起止坐标/里程起止、充电坐标/用电量/效率 contract、逐点累计充入、状态实时电压电流/固件）。
+- [ ] 步骤3：新组件（弧形仪表/待补面板/地图面板/数据表/环形构成/条形排行/热图/温度包络）与分组导航外壳。
+- [ ] 步骤4：逐组建页（总览组/充电组/行程组/电池组/数据组），逐组提交。
+- [ ] 步骤5：门禁 npm test / build / preview 全路由 200；未部署、未合并、未 push（待所有者验收）。
