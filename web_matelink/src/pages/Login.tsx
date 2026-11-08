@@ -1,0 +1,85 @@
+import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { ApiError, extractTicket, exchangeTicket, startTeslaAuthorization } from '../api/matelink'
+
+/**
+ * Web login (W1): Tesla OAuth is the only credential path — the web
+ * app never sees a Tesla password. The backend's OAuth callback
+ * returns the one-shot login ticket to the MateLink app link, so
+ * until the backend grows a web return target, the user completes
+ * the loop by pasting the callback link (or the ticket) here; the
+ * /auth/complete route accepts the same paste and also handles a
+ * ticket that lands on this origin directly.
+ */
+export default function Login() {
+  const navigate = useNavigate()
+  const [starting, setStarting] = useState(false)
+  const [paste, setPaste] = useState('')
+  const [exchanging, setExchanging] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const begin = async () => {
+    setError(null)
+    setStarting(true)
+    try {
+      const { authorizationUrl } = await startTeslaAuthorization()
+      window.location.assign(authorizationUrl)
+    } catch (reason) {
+      setError(reason instanceof ApiError ? reason.message : '无法发起 Tesla 授权，请稍后重试。')
+      setStarting(false)
+    }
+  }
+
+  const completeWithPaste = async () => {
+    setError(null)
+    const ticket = extractTicket(paste)
+    if (!ticket) {
+      setError('没有在粘贴内容里找到有效的登录票据，请粘贴授权完成后地址栏里的完整链接。')
+      return
+    }
+    setExchanging(true)
+    try {
+      await exchangeTicket(ticket)
+      navigate('/', { replace: true })
+    } catch (reason) {
+      setError(reason instanceof ApiError ? `完成登录失败：${reason.message}（票据 2 分钟内有效，过期请重新授权）` : '完成登录失败，请重新授权。')
+      setExchanging(false)
+    }
+  }
+
+  return (
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <div className="apple-card" style={{ maxWidth: 420, width: '100%' }}>
+        <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 8 }}>MateLink</h1>
+        <p className="text-secondary" style={{ fontSize: 14, lineHeight: 1.6, marginBottom: 20 }}>
+          使用 Tesla 官方授权登录。MateLink 不会接触你的 Tesla 账号密码；授权经 Tesla 官网完成，可随时在 Tesla 账号里撤销。
+        </p>
+        <button className="apple-btn-primary" style={{ width: '100%' }} disabled={starting} onClick={() => void begin()}>
+          {starting ? '正在打开 Tesla 授权…' : '使用 Tesla 账号登录'}
+        </button>
+        <p className="text-tertiary" style={{ fontSize: 12, lineHeight: 1.6, marginTop: 12 }}>
+          点击即表示同意《服务条款》与《隐私政策》（版本 2026-08-21，与 App、小程序相同）。
+        </p>
+
+        <div style={{ borderTop: '0.5px solid var(--apple-separator)', marginTop: 24, paddingTop: 20 }}>
+          <h2 style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>已完成授权？粘贴返回链接完成登录</h2>
+          <p className="text-secondary" style={{ fontSize: 13, lineHeight: 1.6, marginBottom: 12 }}>
+            授权完成后浏览器会停在“授权成功，正在返回 MateLink…”页面，把那个页面地址栏里的完整链接粘贴到这里即可完成网页登录。票据 2 分钟内有效且只能用一次。
+          </p>
+          <textarea
+            className="apple-input"
+            rows={3}
+            value={paste}
+            onChange={event => setPaste(event.target.value)}
+            placeholder="粘贴 https://auth.teslalink.joviluma.com/oauth/callback?ticket=… 链接"
+          />
+          <button className="apple-btn-secondary" style={{ marginTop: 12 }} disabled={exchanging || !paste.trim()} onClick={() => void completeWithPaste()}>
+            {exchanging ? '正在完成登录…' : '完成登录'}
+          </button>
+        </div>
+
+        {error ? <p className="text-error" style={{ fontSize: 13, marginTop: 16, lineHeight: 1.6 }}>{error}</p> : null}
+      </div>
+    </div>
+  )
+}

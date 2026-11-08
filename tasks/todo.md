@@ -4743,3 +4743,12 @@ Review：6 个已授权计划/交接文档已删除，引用已改写，docs 链
 - [x] 现状核查：仓库既有 web_matelink 为 TeslaMate 风格自备服务器客户端（填地址+Token、/api/ping），与生产账号 API 合同不同；页面清单可参考，数据层需按 /v1 合同重建。后端登录链核对完毕：Tesla OAuth start → login ticket（2 分钟）→ /v1/auth/exchange 换会话，网页版可直接复用，无需后端改造。
 - [x] 规划文档 docs/WEB-PLAN-20261108.md 已提交本分支：信息架构、苹果风设计令牌（与小程序同源）、W1–W5 分阶段交付、部署路线（推荐 web.teslalink.joviluma.com）、四项待所有者确认事项。
 - [ ] 待所有者确认规划后进入 W1（骨架+登录+仪表盘只读）。
+
+### 2026-11-08 W1 完成（骨架 + 登录 + 只读仪表盘）
+
+- [x] 设计令牌：src/index.css 换为与小程序同一套 Apple 令牌（rpx→px、系统深色模式）；新壳 App.tsx（侧边栏导航 仪表盘/充电/行程/远程控制/分析/我的，后四者为阶段占位）；旧 TeslaMate 页面保留在树内未路由（W2–W4 逐页迁移时处置）。
+- [x] 数据层 src/api/matelink.ts：会话存取/过期判断、tesla/start（同意头 2026-08-21）→ exchange（票据换会话）→ refresh 轮换 → logout 撤销；getCars/getCarStatus/getRecentDrives 按 /api/v1 合同实现，normalize 与小程序同口径（单位换算 mi→km、°F→°C，0,0 坐标视为无位置，telemetry_cache 来源透传）。旧 client.ts 未动。
+- [x] 登录页：Tesla OAuth 跳转 + 「粘贴授权返回链接完成登录」+ /auth/complete 自动接收本源票据。**约束（如实记录）**：后端 OAuth 回调把票据 303 到 App Link 宿主（auth.teslalink.joviluma.com 的后端回退页），网页源无法自动截获——无缝回跳需后端给 start 增加 web return 支持，属生产授权面改动，待所有者决定（建议列入 W2 前置）。另：后端无 CORS 头，网页必须同源部署（开发走 Vite 代理；生产由静态宿主反代 /v1 与 /api，见 W5）。
+- [x] 仪表盘（只读）：电量大字、续航、里程、温度、锁/哨兵/车窗、充电块、位置卡（围栏名或坐标文本，地图待高德 Key/W3）、最近 5 条行程卡、刷新（直接吃后端唤醒修复）、多车切换、退出登录。
+- [x] 门禁：npm test 21/21（存量 13 + W1 新增 8：票据提取、会话过期、单位换算、最近行程模型）；npm run build 通过（tsc + vite，产物 253 kB JS）。生产冒烟：start 返回真实 Tesla 授权 URL（client_id 与 MateLink 应用一致）、伪造票据 exchange 返回 401 invalid_login_ticket、无会话 cars 返回 401 session_required、refresh 端点形状已核对。vite preview 产物可正常提供（含 /login SPA 回退）。
+- [ ] 待所有者：① 真人浏览器走一遍 Tesla 授权 + 粘贴完成登录（需其 Tesla 账号在场）；② 是否批准后端 web return 小改（无缝登录）；③ 高德 Web JS Key（W3 地图）；④ W2 阶段确认。
