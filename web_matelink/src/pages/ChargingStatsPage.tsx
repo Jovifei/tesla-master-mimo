@@ -165,7 +165,7 @@ export default function ChargingStatsPage() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
             <Panel title="充电电量构成（交流 / 直流）">
               <DonutShares
-                slices={[
+                parts={[
                   { label: '交流', value: stats.acEnergy, color: DATA_COLORS.teal },
                   { label: '直流', value: stats.dcEnergy, color: DATA_COLORS.tealDeep },
                 ]}
@@ -174,7 +174,7 @@ export default function ChargingStatsPage() {
             </Panel>
             <Panel title="充电费用构成（交流 / 直流）">
               <DonutShares
-                slices={[
+                parts={[
                   { label: '交流', value: stats.acCost, color: DATA_COLORS.teal },
                   { label: '直流', value: stats.dcCost, color: DATA_COLORS.tealDeep },
                 ]}
