@@ -142,7 +142,7 @@ export default function ChargingStatsPage() {
           </div>
 
           <Panel title="充电时间分布（星期 × 小时）">
-            <HeatmapGrid cells={heatmap} />
+            <HeatmapGrid grid={heatmap} metric="count" />
           </Panel>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16 }}>
