@@ -531,3 +531,73 @@ export function ErrorNote({ text }: { text: string }) {
 }
 
 export { Panel }
+
+/* ---------------------------- SocStitchChart --------------------------- */
+
+import { Line, LineChart } from 'recharts'
+import type { SocSegment } from '../api/tm-data'
+
+/**
+ * SOC history rendered from stitched segments: real charge samples are
+ * solid lines, boundary-only segments (drives, unfetched charges) are
+ * dashed to mark them as stitches, and parked intervals stay blank.
+ */
+export function SocStitchChart({ segments, height = 260 }: { segments: SocSegment[]; height?: number }) {
+  const [active, setActive] = useState<number | null>(null)
+  const times = new Set<number>()
+  for (const segment of segments) for (const point of segment.points) times.add(point.t)
+  const sorted = [...times].sort((a, b) => a - b)
+  const data = sorted.map(t => {
+    const row: { t: number } & Record<string, number | null> = { t }
+    segments.forEach((segment, i) => {
+      const hit = segment.points.find(p => p.t === t)
+      row[`seg${i}`] = hit ? hit.soc : null
+    })
+    return row
+  })
+  const fmtTime = (t: number) => {
+    const d = new Date(t)
+    return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  }
+  const activeRow = active != null ? data[active] : null
+  const activeSoc = activeRow ? segments.map((_, i) => activeRow[`seg${i}`]).find(v => v != null) : null
+  return (
+    <div>
+      <div className="tabular" style={{ ...tabular, minHeight: 20, fontSize: 12.5, color: V3.label2, marginBottom: 6 }}>
+        {activeRow && activeSoc != null ? (
+          <span>
+            <span style={{ fontWeight: 600, color: V3.label }}>{fmtTime(activeRow.t)}</span>
+            {' · '}电量 {fmtNum(activeSoc)}%
+          </span>
+        ) : (
+          <span style={{ color: V3.label3 }}>实线为充电采样，虚线为行程起止电量拼接，空白为驻车时段</span>
+        )}
+      </div>
+      <ResponsiveContainer width="100%" height={height}>
+        <LineChart data={data} margin={{ top: 4, right: 8, bottom: 0, left: 0 }} onMouseMove={state => {
+          const index = (state as { activeTooltipIndex?: unknown } | null)?.activeTooltipIndex
+          setActive(typeof index === 'number' && index >= 0 && index < data.length ? index : null)
+        }} onMouseLeave={() => setActive(null)}>
+          <CartesianGrid vertical={false} stroke={V3.separator} />
+          <XAxis dataKey="t" type="number" domain={['dataMin', 'dataMax']} tickFormatter={(v: number) => fmtTime(v)} tick={{ fontSize: 11, fill: V3.label3 }} axisLine={false} tickLine={false} height={22} minTickGap={60} />
+          <YAxis domain={[0, 100]} tick={{ fontSize: 11, fill: V3.label3 }} axisLine={false} tickLine={false} width={40} tickFormatter={(v: number) => `${v}%`} />
+          <Tooltip content={() => null} cursor={{ stroke: V3.label3, strokeWidth: 1 }} />
+          {segments.map((segment, i) => (
+            <Line
+              key={i}
+              type="linear"
+              dataKey={`seg${i}`}
+              stroke={DATA_COLORS.teal}
+              strokeWidth={2}
+              strokeDasharray={segment.approx ? '5 4' : undefined}
+              dot={false}
+              activeDot={{ r: 3.5, fill: DATA_COLORS.teal, stroke: '#fff', strokeWidth: 1.5 }}
+              connectNulls
+              isAnimationActive={false}
+            />
+          ))}
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  )
+}
