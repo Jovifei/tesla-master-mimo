@@ -40,7 +40,7 @@ export default function ProjectedRangePage() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
           <StatTile label="额定续航（当前）" value={status?.ratedRangeKm != null ? Math.round(status.ratedRangeKm).toString() : '--'} unit="km" />
           <StatTile label="预计续航（当前）" value={status?.estimatedRangeKm != null ? Math.round(status.estimatedRangeKm).toString() : '--'} unit="km" />
-          <StatTile label="充电限值" value={status?.chargeLimitSoc != null ? Math.round(status.chargeLimitSoc).toString() : '--'} unit="%" caption="车辆当前充电上限设置" />
+          <StatTile label="当前里程表" value={status?.odometerKm != null ? Math.round(status.odometerKm).toLocaleString('zh-CN') : '--'} unit="km" />
           <StatTile label="当前电量" value={status?.batteryLevel != null ? Math.round(status.batteryLevel).toString() : '--'} unit="%" />
         </div>
         <GapPanel
