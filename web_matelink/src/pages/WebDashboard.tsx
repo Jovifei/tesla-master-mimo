@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { ApiError, getCarStatus, getCars, getRecentDrives } from '../api/matelink'
 import type { WebCar, WebCarStatus, WebDriveSummary } from '../api/matelink-types'
 import { recentDriveModel } from '../api/recent-drive'
+import { NearbySection, PlacesSection } from './DashboardSections'
+import { amapCoordinateUrl } from '../api/nearby'
 
 function stateLabel(status: WebCarStatus): string {
   if (status.chargingState && status.chargingState.toLowerCase() === 'charging') return '充电中'
@@ -177,7 +179,13 @@ export default function WebDashboard() {
             ) : (
               <p className="text-secondary" style={{ fontSize: 14 }}>暂无位置数据。</p>
             )}
-            <p className="text-tertiary" style={{ fontSize: 12, marginTop: 8 }}>地图将在接入高德 Web Key 后显示（W3）。</p>
+            {status.latitude != null && status.longitude != null ? (
+              <p style={{ fontSize: 13, marginTop: 8 }}>
+                <a className="text-teal" href={amapCoordinateUrl(status.latitude, status.longitude, car?.name ?? '车辆位置')} target="_blank" rel="noreferrer">
+                  在高德地图打开
+                </a>
+              </p>
+            ) : null}
           </div>
 
           <div className="apple-card">
@@ -200,6 +208,9 @@ export default function WebDashboard() {
               <p className="text-secondary" style={{ fontSize: 14 }}>暂无行程记录。</p>
             )}
           </div>
+
+          {carId != null ? <NearbySection carId={carId} /> : null}
+          {carId != null ? <PlacesSection carId={carId} status={status} /> : null}
         </>
       ) : null}
     </div>

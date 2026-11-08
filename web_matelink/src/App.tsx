@@ -6,6 +6,7 @@ import AuthComplete from './pages/AuthComplete'
 import WebDashboard from './pages/WebDashboard'
 import ChargesPage from './pages/ChargesPage'
 import DrivesPage from './pages/DrivesPage'
+import ControlsPage from './pages/ControlsPage'
 
 /**
  * MateLink Web shell (W1). The previous TeslaMate-style shell and its
@@ -124,7 +125,7 @@ export default function App() {
           path="/controls"
           element={
             <RequireSession>
-              <Placeholder title="远程控制" stage="W3" />
+              <ControlsPage />
             </RequireSession>
           }
         />
