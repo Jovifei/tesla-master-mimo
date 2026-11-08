@@ -43,7 +43,8 @@ export default function ChargingStatsPage() {
     const ac = all.filter(c => c.chargeMode === 'ac')
     const sumEnergy = (list: typeof all) => list.reduce((sum, c) => sum + (c.energyAddedKwh ?? 0), 0)
     const sumCost = (list: typeof all) => list.reduce((sum, c) => sum + (c.cost ?? 0), 0)
-    const superchargerCost = all.filter(c => c.isSupercharger).reduce((sum, c) => sum + (c.cost ?? 0), 0)
+    const isSuper = (c: (typeof all)[number]) => /超级充电|超充|Tesla|特斯拉/.test(c.address ?? '')
+    const superchargerCost = all.filter(isSuper).reduce((sum, c) => sum + (c.cost ?? 0), 0)
     const perKwh = (list: typeof all): number | null => {
       const priced = list.filter(c => c.cost != null && c.energyAddedKwh != null && c.energyAddedKwh > 0)
       const cost = priced.reduce((sum, c) => sum + (c.cost ?? 0), 0)
@@ -59,7 +60,7 @@ export default function ChargingStatsPage() {
       dcCost: sumCost(dc),
       acCost: sumCost(ac),
       superchargerCost,
-      hasSuperchargerCost: all.some(c => c.isSupercharger && c.cost != null),
+      hasSuperchargerCost: all.some(c => isSuper(c) && c.cost != null),
       perKwhDc: perKwh(dc),
       perKwhAc: perKwh(ac),
     }
