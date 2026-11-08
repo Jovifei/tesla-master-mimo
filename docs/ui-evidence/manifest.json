@@ -1,0 +1,77 @@
+{
+  "generated_at": "2026-11-09T00:54:44.335335",
+  "session_type": "UI Status Evidence & Remote Design Handoff (多端 UI 现状取证与远端设计交接)",
+  "reporter": "Antigravity Local Android Pairing Assistant",
+  "target_recipient": "Tesla_MateLink Remote Design Agent (ChatGPT / Figma)",
+  "environment": {
+    "device_model": "OnePlus 7 Pro (GM1910)",
+    "device_serial": "6e4fa92f",
+    "os_version": "Android 11 (API 30)",
+    "physical_resolution": "1440 x 3120 px",
+    "density_dpi": 600,
+    "logical_viewport": "384 x 832 dp",
+    "font_scale": 1.0,
+    "locale": "zh-CN"
+  },
+  "installed_app": {
+    "package_name": "com.matelink",
+    "version_code": 107,
+    "version_name": "2.1.87",
+    "git_sha_tag": "3cc34dc",
+    "first_install_time": "2026-08-31 22:36:47",
+    "last_update_time": "2026-11-08 00:23:08"
+  },
+  "multi_platform_source_audit": {
+    "android": {
+      "repo_path": "E:\\project\\tesla_master\\app_mimo",
+      "branch": "codex/ui-evidence-20261108",
+      "commit_sha": "050568b734429c65755b9cc202e72c1d4ec8cc45",
+      "parent_sha": "3cc34dc2f2c7b19d09b25e1e093aa27559120d95",
+      "tree_sha": "47816a6172ad875c30cc6ed6e256689051a8a072",
+      "dirty": false,
+      "installed_match": "Exact Match (v2.1.87 / 107)"
+    },
+    "miniprogram": {
+      "repo_path": "E:\\project\\tesla_master\\miniprogram_Weixin",
+      "branch": "codex/miniprogram-e-migration-20261029",
+      "commit_sha": "4ee0c0479450a27a10e3a845f063e7ddd49f6b23",
+      "tree_sha": "c4f9e25b2c50a06b75b6fc1a5e9d6be70db72f7a",
+      "dirty": true
+    },
+    "web": {
+      "repo_path": "E:\\project\\tesla_master\\web_matelink",
+      "branch": "main",
+      "commit_sha": "717a343741a2678cbff33cfbe35d6be8db33e086",
+      "tree_sha": "240aee4c9b828944886c5a9c0cc137fc19599cb9",
+      "dirty": true
+    },
+    "ios": {
+      "repo_path": "E:\\project\\tesla_ios",
+      "branch": "feature/ios-apple-redesign",
+      "commit_sha": "18a0b65a9b3ccb39acdd695f95883f9e13522c5e",
+      "tree_sha": "e81c1efd1988b28513119c6a11e7cefe12efc315",
+      "dirty": false,
+      "installed_status": "UNKNOWN (No physical Mac/iOS connected in local Windows environment)"
+    }
+  },
+  "backend_endpoint": {
+    "production_api": "https://api.teslalink.joviluma.com/",
+    "status": "200 OK (Healthy)"
+  },
+  "safety_attestation": {
+    "vehicle_control_commands_sent": 0,
+    "vehicle_wakeups_triggered": 0,
+    "app_data_cleared": false,
+    "database_modified": false,
+    "privacy_masking_applied": true
+  },
+  "artifacts": {
+    "index": "INDEX.md",
+    "screen_inventory": "screen-inventory.csv",
+    "design_tokens": "current-design-tokens.json",
+    "findings": "ui-findings.md",
+    "video_flow": "videos/interaction_flow.mp4",
+    "overview_grid": "screenshots/OVERVIEW-GRID.png",
+    "screenshots_count": 39
+  }
+}

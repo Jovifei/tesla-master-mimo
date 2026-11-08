@@ -1,0 +1,193 @@
+{
+  "meta": {
+    "generator": "Antigravity Local Evidence Suite",
+    "platform": "Android (Jetpack Compose)",
+    "source_files": [
+      "android/app/src/main/java/com/matelink/ui/theme/AppleTokens.kt",
+      "android/app/src/main/java/com/matelink/ui/theme/Color.kt",
+      "android/app/src/main/java/com/matelink/ui/theme/Type.kt",
+      "android/app/src/main/java/com/matelink/ui/theme/TelemetryPalette.kt"
+    ]
+  },
+  "layout": {
+    "pageHorizontal": "16.dp",
+    "pageBottom": "24.dp",
+    "sectionGap": "20.dp",
+    "rowMinHeight": "56.dp",
+    "rowHorizontal": "16.dp",
+    "rowVertical": "12.dp",
+    "hairline": "0.5.dp",
+    "groupCornerRadius": "16.dp",
+    "groupHeaderStart": "16.dp",
+    "groupHeaderTop": "16.dp",
+    "groupHeaderBottom": "8.dp",
+    "dividerIndent": "56.dp"
+  },
+  "colors": {
+    "semantic": {
+      "StatusSuccess": "#047857",
+      "StatusWarning": "#B45309",
+      "StatusError": "#DC2626",
+      "BoundaryColor": "#059669"
+    },
+    "light": {
+      "PrimaryLight": "#157A86",
+      "OnPrimaryLight": "#FFFFFF",
+      "PrimaryContainerLight": "#DDF0F1",
+      "OnPrimaryContainerLight": "#164E63",
+      "SecondaryLight": "#2C3138",
+      "OnSecondaryLight": "#FFFFFF",
+      "SecondaryContainerLight": "#F5F5F5",
+      "OnSecondaryContainerLight": "#1F2329",
+      "TertiaryLight": "#5F6670",
+      "OnTertiaryLight": "#FFFFFF",
+      "BackgroundLight": "#F5F7F9",
+      "OnBackgroundLight": "#1F2937",
+      "SurfaceLight": "#FFFFFF",
+      "OnSurfaceLight": "#1F2937",
+      "SurfaceVariantLight": "#F7F7F8",
+      "OnSurfaceVariantLight": "#6B7280",
+      "OutlineLight": "#E5E5E5",
+      "OutlineVariantLight": "#E9EDF2",
+      "SurfaceContainerLight": "#F9F9FA",
+      "SurfaceContainerHighLight": "#F4F5F6",
+      "SurfaceContainerHighestLight": "#EDEFF2"
+    },
+    "dark": {
+      "PrimaryDark": "#8CCCD2",
+      "OnPrimaryDark": "#083344",
+      "PrimaryContainerDark": "#164E63",
+      "OnPrimaryContainerDark": "#CFFAFE",
+      "SecondaryDark": "#CDD2D8",
+      "OnSecondaryDark": "#1A1D22",
+      "SecondaryContainerDark": "#2B3038",
+      "OnSecondaryContainerDark": "#E6E9ED",
+      "TertiaryDark": "#AEB5BE",
+      "OnTertiaryDark": "#171A1F",
+      "BackgroundDark": "#111315",
+      "OnBackgroundDark": "#F5F6F7",
+      "SurfaceDark": "#15181C",
+      "OnSurfaceDark": "#F5F6F7",
+      "SurfaceVariantDark": "#242A31",
+      "OnSurfaceVariantDark": "#B7BDC6",
+      "OutlineDark": "#505862",
+      "OutlineVariantDark": "#323840",
+      "SurfaceContainerDark": "#191D22",
+      "SurfaceContainerHighDark": "#20252B",
+      "SurfaceContainerHighestDark": "#282D34"
+    },
+    "swiss_shell": {
+      "SwissWhite": "#FFFFFF",
+      "SwissInk": "#171717",
+      "SwissOutline": "#E5E5E5",
+      "SwissSubtle": "#F5F5F5",
+      "SwissMuted": "#737373"
+    }
+  },
+  "typography": {
+    "fontFamilies": {
+      "sans": "Inter (Regular 400, Medium 500, SemiBold 600, Bold 700)",
+      "mono": "JetBrains Mono (Regular 400, Medium 500)"
+    },
+    "textStyles": {
+      "displayLarge": {
+        "font": "JetBrainsMono",
+        "size": "57.sp",
+        "lineHeight": "64.sp",
+        "weight": "SemiBold",
+        "tnum": true
+      },
+      "displayMedium": {
+        "font": "JetBrainsMono",
+        "size": "45.sp",
+        "lineHeight": "52.sp",
+        "weight": "SemiBold",
+        "tnum": true
+      },
+      "displaySmall": {
+        "font": "JetBrainsMono",
+        "size": "36.sp",
+        "lineHeight": "44.sp",
+        "weight": "Medium",
+        "tnum": true
+      },
+      "headlineLarge": {
+        "font": "Inter",
+        "size": "32.sp",
+        "lineHeight": "40.sp",
+        "weight": "SemiBold"
+      },
+      "headlineMedium": {
+        "font": "Inter",
+        "size": "28.sp",
+        "lineHeight": "36.sp",
+        "weight": "SemiBold"
+      },
+      "headlineSmall": {
+        "font": "Inter",
+        "size": "24.sp",
+        "lineHeight": "32.sp",
+        "weight": "Medium"
+      },
+      "titleLarge": {
+        "font": "Inter",
+        "size": "22.sp",
+        "lineHeight": "28.sp",
+        "weight": "SemiBold"
+      },
+      "titleMedium": {
+        "font": "Inter",
+        "size": "16.sp",
+        "lineHeight": "24.sp",
+        "weight": "Medium"
+      },
+      "titleSmall": {
+        "font": "Inter",
+        "size": "14.sp",
+        "lineHeight": "20.sp",
+        "weight": "Medium"
+      },
+      "bodyLarge": {
+        "font": "Inter",
+        "size": "16.sp",
+        "lineHeight": "24.sp",
+        "weight": "Normal"
+      },
+      "bodyMedium": {
+        "font": "Inter",
+        "size": "14.sp",
+        "lineHeight": "20.sp",
+        "weight": "Normal"
+      },
+      "bodySmall": {
+        "font": "Inter",
+        "size": "12.sp",
+        "lineHeight": "16.sp",
+        "weight": "Normal"
+      },
+      "labelLarge": {
+        "font": "Inter",
+        "size": "14.sp",
+        "lineHeight": "20.sp",
+        "weight": "Medium"
+      },
+      "labelMedium": {
+        "font": "Inter",
+        "size": "12.sp",
+        "lineHeight": "16.sp",
+        "weight": "Medium"
+      },
+      "labelSmall": {
+        "font": "Inter",
+        "size": "11.sp",
+        "lineHeight": "16.sp",
+        "weight": "Medium"
+      }
+    }
+  },
+  "motion": {
+    "tab_transition": "EnterTransition.None / ExitTransition.None (instant switch, eliminates ghosting / crossfade artifacts)",
+    "dialog_animation": "Default Material3 fade + scale (fade in 200ms, fade out 150ms)",
+    "scroll_physics": "Compose FlingBehavior / Smooth spring scroll"
+  }
+}
