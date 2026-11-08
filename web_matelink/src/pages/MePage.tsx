@@ -1,9 +1,59 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ApiError, claimInvite, getCars, loadSession, logout } from '../api/matelink'
 import type { WebCar } from '../api/matelink-types'
+import { Icon, TONES, type IconName } from '../components/viz'
 
 export const CONSENT_VERSION = '2026-08-21'
+
+function IconChip({ name, tone = TONES.teal, size = 32 }: { name: IconName; tone?: string; size?: number }) {
+  return (
+    <span
+      style={{
+        width: size,
+        height: size,
+        borderRadius: size / 3,
+        background: 'var(--apple-surface-secondary)',
+        color: tone,
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexShrink: 0,
+      }}
+    >
+      <Icon name={name} size={Math.round(size * 0.52)} />
+    </span>
+  )
+}
+
+function CardTitle({ icon, children }: { icon: IconName; children: ReactNode }) {
+  return (
+    <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
+      <span style={{ color: TONES.teal, display: 'inline-flex' }}><Icon name={icon} size={18} /></span>
+      {children}
+    </h2>
+  )
+}
+
+function InfoRow({ icon, label, value, first }: { icon: IconName; label: string; value: string; first?: boolean }) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+        padding: '10px 0',
+        borderTop: first ? 'none' : '0.5px solid var(--apple-separator)',
+      }}
+    >
+      <IconChip name={icon} size={30} />
+      <span style={{ fontSize: 14, fontWeight: 500, flexShrink: 0 }}>{label}</span>
+      <span className="text-secondary tabular" style={{ marginLeft: 'auto', fontSize: 13, textAlign: 'right', wordBreak: 'break-all' }}>
+        {value}
+      </span>
+    </div>
+  )
+}
 
 export default function MePage() {
   const navigate = useNavigate()
@@ -41,28 +91,68 @@ export default function MePage() {
     navigate('/login', { replace: true })
   }
 
+  const avatarChar = session?.userId ? session.userId.charAt(0).toUpperCase() : null
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <h1 style={{ fontSize: 28, fontWeight: 700 }}>我的</h1>
+    <div className="page-in" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <h1 className="hero-title">我的</h1>
 
       <div className="apple-card">
-        <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 12 }}>账号</h2>
-        <p className="text-secondary tabular" style={{ fontSize: 14, lineHeight: 1.8 }}>
-          用户 ID：{session?.userId ?? '--'}
-          <br />
-          登录方式：Tesla 官方授权（OAuth）。MateLink 不会收集或保存你的 Tesla 密码。
-          <br />
-          已同意条款版本：{CONSENT_VERSION}（用户协议与隐私政策）
-        </p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 6 }}>
+          <span
+            style={{
+              width: 60,
+              height: 60,
+              borderRadius: 30,
+              background: 'linear-gradient(135deg, #157a86, #34c759)',
+              color: '#fff',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: 24,
+              fontWeight: 700,
+              flexShrink: 0,
+              boxShadow: '0 6px 18px rgba(21, 122, 134, 0.28)',
+            }}
+          >
+            {avatarChar ?? <Icon name="person" size={28} />}
+          </span>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 17, fontWeight: 700 }}>MateLink 账号</div>
+            <div className="text-secondary tabular" style={{ fontSize: 12.5, marginTop: 3, wordBreak: 'break-all' }}>
+              {session?.userId ?? '--'}
+            </div>
+          </div>
+        </div>
+        <InfoRow icon="person" label="用户 ID" value={session?.userId ?? '--'} first />
+        <InfoRow icon="key" label="登录方式" value="Tesla 官方授权（OAuth）" />
+        <InfoRow icon="shield" label="隐私" value="不会收集或保存你的 Tesla 密码" />
+        <InfoRow icon="calendar" label="已同意条款版本" value={`${CONSENT_VERSION}（用户协议与隐私政策）`} />
       </div>
 
       <div className="apple-card">
-        <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 12 }}>我的车辆</h2>
+        <CardTitle icon="car">我的车辆</CardTitle>
         {cars.length ? (
-          cars.map(car => (
-            <div key={car.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderTop: '0.5px solid var(--apple-separator)', fontSize: 14 }}>
-              <span style={{ fontWeight: 600 }}>{car.name}</span>
-              <span className="text-secondary">{car.model ?? ''}</span>
+          cars.map((car, index) => (
+            <div
+              key={car.id}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
+                padding: '10px 0',
+                borderTop: index === 0 ? 'none' : '0.5px solid var(--apple-separator)',
+              }}
+            >
+              <IconChip name="car" size={36} />
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 14.5, fontWeight: 600 }}>{car.name}</div>
+                {car.model ? <div className="text-secondary" style={{ fontSize: 12.5, marginTop: 1 }}>{car.model}</div> : null}
+              </div>
+              <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                <span style={{ width: 8, height: 8, borderRadius: 4, background: TONES.green, boxShadow: `0 0 0 3px ${TONES.green}22` }} />
+                <span className="text-tertiary" style={{ fontSize: 12 }}>已绑定</span>
+              </span>
             </div>
           ))
         ) : (
@@ -71,7 +161,7 @@ export default function MePage() {
       </div>
 
       <div className="apple-card">
-        <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>邀请码</h2>
+        <CardTitle icon="key">邀请码</CardTitle>
         <p className="text-secondary" style={{ fontSize: 13, lineHeight: 1.7, marginBottom: 12 }}>
           如果你有邀请码，可以在这里领取绑定到当前账号。
         </p>
@@ -88,14 +178,32 @@ export default function MePage() {
           </button>
         </div>
         {inviteState ? (
-          <p className={inviteState.kind === 'error' ? 'text-error' : 'text-teal'} style={{ fontSize: 13, marginTop: 10 }}>
+          <p className={inviteState.kind === 'error' ? 'text-error' : 'text-teal'} style={{ fontSize: 13, marginTop: 10, display: 'flex', alignItems: 'center', gap: 7 }}>
+            <span style={{ width: 7, height: 7, borderRadius: 4, background: inviteState.kind === 'error' ? 'var(--apple-error)' : TONES.green, flexShrink: 0 }} />
             {inviteState.text}
           </p>
         ) : null}
       </div>
 
-      <div className="apple-card">
-        <button className="apple-btn-secondary" style={{ color: 'var(--apple-error)' }} onClick={() => void handleLogout()}>
+      <div className="apple-card" style={{ padding: '10px 16px' }}>
+        <button
+          onClick={() => void handleLogout()}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            width: '100%',
+            padding: '8px 2px',
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            color: 'var(--apple-error)',
+            fontSize: 15,
+            fontWeight: 600,
+            textAlign: 'left',
+          }}
+        >
+          <Icon name="logout" size={19} />
           退出登录
         </button>
       </div>
