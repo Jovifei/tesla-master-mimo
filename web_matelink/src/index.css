@@ -175,3 +175,64 @@ body {
 .text-error { color: var(--apple-error); }
 .text-teal { color: var(--apple-teal); }
 .tabular { font-family: var(--apple-font-mono); font-variant-numeric: tabular-nums; }
+
+/* ================= Design system v2 (2026-11-08 redesign) =================
+ * See docs/WEB-DESIGN.md. Cards gain volume, pages gain motion. */
+
+.apple-card {
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.05), 0 1px 3px rgba(0, 0, 0, 0.04);
+  border: 0.5px solid rgba(0, 0, 0, 0.03);
+  border-radius: 20px;
+}
+
+.hover-lift {
+  transition: transform 180ms ease, box-shadow 180ms ease;
+}
+.hover-lift:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.07);
+}
+
+@keyframes page-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.page-in {
+  animation: page-in 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes banner-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.banner-in {
+  animation: banner-in 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes shimmer {
+  from { background-position: -400px 0; }
+  to { background-position: 400px 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, var(--apple-surface-secondary) 25%, var(--apple-surface-tertiary) 50%, var(--apple-surface-secondary) 75%);
+  background-size: 800px 100%;
+  animation: shimmer 1.4s infinite linear;
+}
+
+.hero-title {
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border-radius: 999px;
+  background: var(--apple-surface-secondary);
+  border: 0.5px solid var(--apple-separator);
+  font-size: 12.5px;
+  font-weight: 600;
+}
