@@ -1,18 +1,22 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ApiError, getDriveDetail, getDrivesPage, getParkedBetween, type DriveDetail } from '../api/matelink'
-import type { WebDriveSummary, WebParked } from '../api/matelink-types'
+import { ApiError, getCarStatus, getDriveDetail, getDrivesPage, getParkedBetween, type DriveDetail } from '../api/matelink'
+import type { WebCarStatus, WebCharge, WebDriveSummary, WebParked } from '../api/matelink-types'
 import { recentDriveModel } from '../api/recent-drive'
 import { elevationStats } from '../api/drive-elevation'
+import { pairedEfficiency, stateSegments } from '../api/panel-data'
+import { socSegments, speedHistogram } from '../api/tm-data'
 import { BatteryPill, Icon, Skeleton, TONES, type IconName, type Tone } from '../components/viz'
 import { Panel, V3 } from '../components/v3'
-import { DATA_COLORS, StackChart, StatTile, fmtDuration, fmtNum, type ChartRow, type StackSeriesDef } from '../components/panels'
+import { BarsPanel, DATA_COLORS, StackChart, StatesBar, StatTile, fmtDuration, fmtNum, type ChartRow, type StackSeriesDef } from '../components/panels'
+import { DataTable, DonutShares, GapPanel, GapTile, MapPanel, SocStitchChart } from '../components/tm'
 import { useCar } from './useCar'
+import { useHistory } from './useHistory'
 
 /**
- * Drives v4 — TeslaMate composition: the detail view leads with a route
- * panel and a big-number tile row, then one stacked chart group
- * （功率/速度/电量/海拔 sharing the time axis, no dual axes) built from
- * the drive's real samples. The list stays the supporting table.
+ * 行程记录 — TeslaMate Drives + Drive Details + Trip 的复刻：详情页
+ * 上半是 Drive Details（轨迹地图、速度图、里程与速度瓷砖），下半是
+ * Trip（当日时间分配、当日状态线、当日行程/充电表）。海拔后端未
+ * 记录 → 待补面板；行程功率生产采样稀疏 → 按稀疏规则降级。
  */
 
 const num = (value: number | null, digits = 0): string => (value == null ? '--' : value.toFixed(digits))
@@ -23,9 +27,6 @@ function formatTime(iso: string | null): string {
   return Number.isNaN(date.getTime()) ? '--' : date.toLocaleString('zh-CN', { hour12: false })
 }
 
-/* ------------------------- Route visual ------------------------- */
-
-/** Start/end dots joined by a line, addresses stacked beside them. */
 function RouteVisual({ start, end, large = false }: { start: string; end: string; large?: boolean }) {
   const dot = large ? 13 : 11
   const fontSize = large ? 16.5 : 14
@@ -44,8 +45,6 @@ function RouteVisual({ start, end, large = false }: { start: string; end: string
   )
 }
 
-/* ---------------------------- Chips ----------------------------- */
-
 function Chip({ icon, tone, text }: { icon: IconName; tone: Tone; text: string }) {
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: 'var(--apple-surface-tertiary)', borderRadius: 999, padding: '4px 10px', fontSize: 12, fontWeight: 500 }}>
@@ -55,9 +54,6 @@ function Chip({ icon, tone, text }: { icon: IconName; tone: Tone; text: string }
   )
 }
 
-/* ------------------------- Parked power bar ------------------------- */
-
-/** Average standby power against the 100 W scale, ticked at the 50 W sleep reference. */
 function PowerBar({ watts }: { watts: number }) {
   const pct = Math.max(0, Math.min(100, watts))
   const color = watts < 50 ? TONES.green : TONES.amber
@@ -76,7 +72,6 @@ function PowerBar({ watts }: { watts: number }) {
   )
 }
 
-/** BatteryPill hosted in a StatTile-shaped cell. */
 function BatteryTile({ from, to }: { from: number | null; to: number | null }) {
   return (
     <StatTile label="电量变化">
@@ -93,9 +88,24 @@ function countOf(rows: ChartRow[], key: string): number {
 
 /* --------------------------- Detail view --------------------------- */
 
-function DriveDetailView({ carId, drive, newerDriveId, onBack }: { carId: number; drive: WebDriveSummary; newerDriveId: string | null; onBack: () => void }) {
+function DriveDetailView({
+  carId,
+  drive,
+  newerDriveId,
+  allDrives,
+  allCharges,
+  onBack,
+}: {
+  carId: number
+  drive: WebDriveSummary
+  newerDriveId: string | null
+  allDrives: readonly WebDriveSummary[]
+  allCharges: readonly WebCharge[]
+  onBack: () => void
+}) {
   const [detail, setDetail] = useState<DriveDetail | null>(null)
   const [parked, setParked] = useState<WebParked | null>(null)
+  const [status, setStatus] = useState<WebCarStatus | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -107,6 +117,7 @@ function DriveDetailView({ carId, drive, newerDriveId, onBack }: { carId: number
       .catch((reason: unknown) => {
         if (live) setError(reason instanceof ApiError ? reason.message : '读取行程详情失败。')
       })
+    getCarStatus(carId).then(result => { if (live) setStatus(result) }).catch(() => {})
     if (newerDriveId && /^\d+$/.test(drive.id) && /^\d+$/.test(newerDriveId)) {
       getParkedBetween(carId, drive.id, newerDriveId)
         .then(result => {
@@ -138,6 +149,8 @@ function DriveDetailView({ carId, drive, newerDriveId, onBack }: { carId: number
         speed: point.speedKmh,
         soc: point.batteryLevel,
         elev: point.elevationM,
+        inside: point.insideTempC,
+        outside: point.outsideTempC,
       })),
     [points]
   )
@@ -147,11 +160,61 @@ function DriveDetailView({ carId, drive, newerDriveId, onBack }: { carId: number
     return count === 1 ? `仅 1 个采样点，无法绘制${name}曲线` : `无${name}采样数据`
   }
   const series: StackSeriesDef[] = [
-    { key: 'power', title: '功率', unit: 'kW', color: DATA_COLORS.teal, height: 148, digits: 1, emptyReason: insufficient('power', '功率') },
-    { key: 'speed', title: '速度', unit: 'km/h', color: DATA_COLORS.graphite, height: 108, domain: [0, 'auto'], emptyReason: insufficient('speed', '速度') },
+    { key: 'power', title: '功率', unit: 'kW', color: DATA_COLORS.teal, height: 148, digits: 1, emptyReason: insufficient('power', '功率') ?? (countOf(rows, 'power') < points.length * 0.5 ? '功率采样稀疏，仅显示已有采样点' : undefined) },
+    { key: 'speed', title: '速度', unit: 'km/h', color: DATA_COLORS.graphite, height: 130, domain: [0, 'auto'], emptyReason: insufficient('speed', '速度') },
     { key: 'soc', title: '电量', unit: '%', color: DATA_COLORS.tealDeep, height: 70, domain: [0, 100], emptyReason: insufficient('soc', '电量') },
-    { key: 'elev', title: '海拔', unit: 'm', color: DATA_COLORS.graphiteLight, height: 80, emptyReason: insufficient('elev', '海拔') },
   ]
+  const tempSeries: StackSeriesDef[] = [
+    { key: 'outside', title: '车外温度', unit: '°C', color: DATA_COLORS.graphite, height: 80, digits: 1, emptyReason: insufficient('outside', '车外温度') },
+    { key: 'inside', title: '车内温度', unit: '°C', color: DATA_COLORS.tealLight, height: 80, digits: 1, emptyReason: insufficient('inside', '车内温度') },
+  ]
+  const hasTemp = tempSeries.some(def => def.emptyReason == null)
+  const hasElevation = countOf(rows, 'elev') >= 2
+
+  const routePoints = useMemo(
+    () => points.flatMap(p => (p.latitude != null && p.longitude != null ? [{ lat: p.latitude, lng: p.longitude }] : [])),
+    [points]
+  )
+  const startPoint = routePoints[0] ?? (current.startLatitude != null && current.startLongitude != null ? { lat: current.startLatitude, lng: current.startLongitude } : null)
+  const endPoint = routePoints[routePoints.length - 1] ?? (current.endLatitude != null && current.endLongitude != null ? { lat: current.endLatitude, lng: current.endLongitude } : null)
+
+  const speedBuckets = useMemo(
+    () => speedHistogram(points.flatMap(p => (p.speedKmh != null ? [p.speedKmh] : []))),
+    [points]
+  )
+  const hasSpeedSamples = speedBuckets.some(b => b.count > 0)
+
+  // ---- Trip: the calendar day of this drive ----
+  const day = useMemo(() => {
+    const start = Date.parse(current.startDate ?? '')
+    if (!Number.isFinite(start)) return null
+    const d = new Date(start)
+    const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+    const dayEnd = dayStart + 86_400_000
+    const dayDrives = allDrives.filter(x => {
+      const t = Date.parse(x.startDate ?? '')
+      return Number.isFinite(t) && t >= dayStart && t < dayEnd
+    })
+    const dayCharges = allCharges.filter(x => {
+      const t = Date.parse(x.startDate ?? '')
+      return Number.isFinite(t) && t >= dayStart && t < dayEnd
+    })
+    const drivingMin = dayDrives.reduce((sum, x) => sum + (x.durationMinutes ?? 0), 0)
+    const chargingMin = dayCharges.reduce((sum, x) => sum + (x.durationMinutes ?? 0), 0)
+    const parkedMin = Math.max(0, 1440 - drivingMin - chargingMin)
+    return {
+      label: d.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' }),
+      dayStart,
+      dayEnd,
+      dayDrives,
+      dayCharges,
+      drivingMin,
+      chargingMin,
+      parkedMin,
+      states: stateSegments(allDrives, allCharges, dayStart, dayEnd),
+      soc: socSegments(dayCharges, dayDrives, new Map(), dayStart, dayEnd),
+    }
+  }, [current.startDate, allDrives, allCharges])
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -179,42 +242,93 @@ function DriveDetailView({ carId, drive, newerDriveId, onBack }: { carId: number
           <span style={{ color: TONES.blue, display: 'inline-flex' }}><Icon name="clock" size={14} /></span>
           {formatTime(current.startDate)} → {formatTime(current.endDate)}
         </p>
-        <p style={{ fontSize: 12, color: V3.label3, marginTop: 10, lineHeight: 1.6 }}>
-          本次行程记录未包含可绘制的路线轨迹坐标，路线以起终点文字呈现。
-        </p>
       </Panel>
+
+      {startPoint || endPoint ? (
+        <MapPanel
+          title="行程轨迹"
+          points={[
+            ...(startPoint ? [{ ...startPoint, label: '起点' }] : []),
+            ...(endPoint ? [{ ...endPoint, label: '终点' }] : []),
+          ]}
+          polyline={routePoints}
+          height={300}
+        />
+      ) : null}
 
       {error ? <Panel><p style={{ color: V3.errorText, fontSize: 14.5 }}>{error}</p></Panel> : null}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
         <StatTile label="距离" value={num(current.distanceKm, 1)} unit="km" />
         <StatTile label="时长" value={fmtDuration(current.durationMinutes)} />
-        <StatTile label="耗电量" value={num(current.energyConsumedKwh, 1)} unit="kWh" accent={V3.teal} />
+        {current.energyConsumedKwh != null ? (
+          <StatTile label="耗电量" value={num(current.energyConsumedKwh, 1)} unit="kWh" accent={V3.teal} />
+        ) : (
+          <StatTile label="耗电量" value="--" caption="后端未提供行程净能耗" />
+        )}
         <StatTile label="平均能耗" value={efficiency != null ? fmtNum(efficiency, 1) : '--'} unit="kWh/100km" />
         <StatTile label="平均速度" value={num(current.speedAvgKmh)} unit="km/h" />
         <StatTile label="最高速度" value={num(current.speedMaxKmh)} unit="km/h" caption="本段行程记录值" />
         <BatteryTile from={current.startBatteryLevel} to={current.endBatteryLevel} />
         <StatTile label="车外平均温度" value={num(current.outsideTempAvgC, 1)} unit="°C" />
+        <StatTile
+          label="里程表"
+          value={current.odometerStartKm != null && current.odometerEndKm != null ? `${Math.round(current.odometerStartKm).toLocaleString('zh-CN')} → ${Math.round(current.odometerEndKm).toLocaleString('zh-CN')}` : '--'}
+          unit={current.odometerStartKm != null ? 'km' : undefined}
+        />
       </div>
 
       {detail && detail.reason === 'quarantined_history' ? (
         <Panel><p style={{ fontSize: 14, color: V3.label2 }}>这条记录处于隔离状态，曲线不可用。</p></Panel>
       ) : detail && points.length ? (
-        <Panel title="采样曲线">
-          <StackChart data={rows} series={series} syncKey={`drive-${drive.id}`} />
-          {elevation ? (
-            <p className="tabular" style={{ fontSize: 12.5, color: V3.label3, marginTop: 10, fontVariantNumeric: 'tabular-nums' }}>
-              海拔采样：最高 {fmtNum(elevation.maxM)} m · 最低 {fmtNum(elevation.minM)} m
-              {elevation.gainM != null ? ` · 累计爬升 +${fmtNum(elevation.gainM)} m` : ''}
-              {elevation.lossM != null ? ` · 累计下降 −${fmtNum(elevation.lossM)} m` : ''}
-            </p>
+        <>
+          <Panel title="采样曲线">
+            <StackChart data={rows} series={series} syncKey={`drive-${drive.id}`} />
+          </Panel>
+          {hasTemp ? (
+            <Panel title="温度（逐点采样）">
+              <StackChart data={rows} series={tempSeries} syncKey={`drive-temp-${drive.id}`} />
+            </Panel>
           ) : null}
-        </Panel>
+          {hasElevation ? (
+            <Panel title="海拔">
+              <StackChart data={rows} series={[{ key: 'elev', title: '海拔', unit: 'm', color: DATA_COLORS.graphiteLight, height: 110, emptyReason: undefined }]} syncKey={`drive-elev-${drive.id}`} />
+              {elevation ? (
+                <p className="tabular" style={{ fontSize: 12.5, color: V3.label3, marginTop: 10, fontVariantNumeric: 'tabular-nums' }}>
+                  海拔采样：最高 {fmtNum(elevation.maxM)} m · 最低 {fmtNum(elevation.minM)} m
+                  {elevation.gainM != null ? ` · 累计爬升 +${fmtNum(elevation.gainM)} m` : ''}
+                  {elevation.lossM != null ? ` · 累计下降 −${fmtNum(elevation.lossM)} m` : ''}
+                </p>
+              ) : null}
+            </Panel>
+          ) : (
+            <GapPanel title="海拔" meaning="行程沿途的海拔变化与累计爬升/下降。" need="在行程轨迹点中记录海拔（当前轨迹点无海拔字段）" />
+          )}
+          {hasSpeedSamples ? (
+            <Panel title="速度分布">
+              <BarsPanel data={speedBuckets.map(b => ({ label: b.label, value: b.count }))} unit="次" color={DATA_COLORS.graphite} height={150} />
+            </Panel>
+          ) : null}
+        </>
       ) : detail ? (
         <Panel><p style={{ fontSize: 14, color: V3.label2 }}>这段行程没有可用的采样曲线。</p></Panel>
       ) : (
         <Skeleton height={420} />
       )}
+
+      {status?.tpms ? (
+        <Panel title="轮胎气压（当前快照）">
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 12 }}>
+            <StatTile label="左前" value={num(status.tpms.fl, 1)} unit="bar" />
+            <StatTile label="右前" value={num(status.tpms.fr, 1)} unit="bar" />
+            <StatTile label="左后" value={num(status.tpms.rl, 1)} unit="bar" />
+            <StatTile label="右后" value={num(status.tpms.rr, 1)} unit="bar" />
+          </div>
+          <p style={{ fontSize: 12, color: V3.label3, marginTop: 10, lineHeight: 1.6 }}>
+            服务端只保存当前胎压快照；历史趋势由本浏览器本地采样记录（见温度与统计相关页面说明）。
+          </p>
+        </Panel>
+      ) : null}
 
       {parked ? (
         <Panel title="之后驻车">
@@ -231,9 +345,57 @@ function DriveDetailView({ carId, drive, newerDriveId, onBack }: { carId: number
           </div>
           {parked.averagePowerW != null ? <PowerBar watts={parked.averagePowerW} /> : null}
           <p className="text-tertiary" style={{ fontSize: 12, lineHeight: 1.6, marginTop: 12 }}>
-            驻车地点：{parked.address ?? '未知地点'}。待机能耗仅在后端能量证据完整时给出估算；车辆休眠状态功耗通常低于 50 W。
+            驻车地点：{parked.address ?? '未知地点'}。待机能耗仅在后端能量证据完整时给出；原生记录的驻车耗电量见「驻车掉电」页的口径说明。
           </p>
         </Panel>
+      ) : null}
+
+      {day ? (
+        <>
+          <h2 style={{ fontSize: 20, fontWeight: 700, marginTop: 8 }}>{day.label} · 当日概览（行程回顾）</h2>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
+            <Panel title="当日时间分配">
+              <DonutShares
+                parts={[
+                  { label: '行驶', value: day.drivingMin, color: DATA_COLORS.teal },
+                  { label: '充电', value: day.chargingMin, color: "#d97706" },
+                  { label: '驻车', value: day.parkedMin, color: DATA_COLORS.graphiteLight },
+                ]}
+                unit="分钟"
+              />
+            </Panel>
+            <Panel title="当日状态线">
+              <StatesBar segments={day.states} windowStart={day.dayStart} windowEnd={day.dayEnd} />
+            </Panel>
+          </div>
+          <Panel title="当日电量">
+            {day.soc.length ? <SocStitchChart segments={day.soc} height={180} /> : <p style={{ fontSize: 13.5, color: V3.label3 }}>当日暂无可拼接的电量记录。</p>}
+          </Panel>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 16 }}>
+            <Panel title="当日行程">
+              <DataTable
+                columns={[{ label: '时间' }, { label: '起点 → 终点' }, { label: '距离' }]}
+                rows={day.dayDrives.map(d => [
+                  formatTime(d.startDate),
+                  `${d.startAddress ?? '未知'} → ${d.endAddress ?? '未知'}`,
+                  d.distanceKm != null ? `${fmtNum(d.distanceKm, 1)} km` : '--',
+                ])}
+                emptyText="当日无其他行程。"
+              />
+            </Panel>
+            <Panel title="当日充电">
+              <DataTable
+                columns={[{ label: '时间' }, { label: '地点' }, { label: '充入电量' }]}
+                rows={day.dayCharges.map(c => [
+                  formatTime(c.startDate),
+                  c.address ?? '未知地点',
+                  c.energyAddedKwh != null ? `${fmtNum(c.energyAddedKwh, 1)} kWh` : '--',
+                ])}
+                emptyText="当日无充电。"
+              />
+            </Panel>
+          </div>
+        </>
       ) : null}
     </div>
   )
@@ -249,6 +411,7 @@ export default function DrivesPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [selected, setSelected] = useState<{ drive: WebDriveSummary; newerDriveId: string | null } | null>(null)
+  const history = useHistory(carId)
 
   const loadPage = useCallback(async (targetCar: number, targetPage: number, append: boolean) => {
     setLoading(true)
@@ -272,14 +435,34 @@ export default function DrivesPage() {
     void loadPage(carId, 1, false)
   }, [carId, loadPage])
 
+  const summary = useMemo(() => {
+    const all = history.drives
+    return {
+      count: all.length,
+      distance: all.reduce((sum, d) => sum + (d.distanceKm ?? 0), 0),
+      durationMin: all.reduce((sum, d) => sum + (d.durationMinutes ?? 0), 0),
+    }
+  }, [history.drives])
+  const efficiency = useMemo(() => pairedEfficiency(history.drives), [history.drives])
+  const incomplete = useMemo(() => history.drives.filter(d => d.endDate == null), [history.drives])
+
   if (selected && carId != null) {
-    return <DriveDetailView carId={carId} drive={selected.drive} newerDriveId={selected.newerDriveId} onBack={() => setSelected(null)} />
+    return (
+      <DriveDetailView
+        carId={carId}
+        drive={selected.drive}
+        newerDriveId={selected.newerDriveId}
+        allDrives={history.drives}
+        allCharges={history.charges}
+        onBack={() => setSelected(null)}
+      />
+    )
   }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
-        <h1 style={{ fontSize: 28, fontWeight: 700 }}>行程</h1>
+        <h1 style={{ fontSize: 28, fontWeight: 700 }}>行程记录</h1>
         {cars.length > 1 ? (
           <select className="apple-input" style={{ width: 'auto' }} value={carId ?? ''} onChange={event => setCarId(Number(event.target.value))}>
             {cars.map(item => (
@@ -290,6 +473,30 @@ export default function DrivesPage() {
       </div>
       {carError ? <Panel><p style={{ color: V3.errorText, fontSize: 14.5 }}>{carError}</p></Panel> : null}
       {error ? <Panel><p style={{ color: V3.errorText, fontSize: 14.5 }}>{error}</p></Panel> : null}
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12 }}>
+        <StatTile label="总里程" value={fmtNum(summary.distance, 0)} unit="km" caption={history.complete ? '全部已记录行程' : '已加载行程'} />
+        <StatTile label="行程次数" value={summary.count.toLocaleString('zh-CN')} />
+        <StatTile label="总时长" value={fmtDuration(summary.durationMin)} />
+        {efficiency.kwhPer100km != null ? (
+          <StatTile label="平均能耗（净）" value={fmtNum(efficiency.kwhPer100km, 1)} unit="kWh/100km" caption={`基于 ${efficiency.pairedCount} 次完整能耗行程`} />
+        ) : (
+          <GapTile label="平均能耗（净）" need="行程净能耗的可信计量（后端当前明确不提供）" />
+        )}
+      </div>
+
+      {incomplete.length ? (
+        <Panel title="未完成行程">
+          <DataTable
+            columns={[{ label: '开始时间' }, { label: '起点' }, { label: '当前电量' }]}
+            rows={incomplete.map(d => [
+              formatTime(d.startDate),
+              d.startAddress ?? '未知地点',
+              d.endBatteryLevel != null ? `${Math.round(d.endBatteryLevel)}%` : '--',
+            ])}
+          />
+        </Panel>
+      ) : null}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         {rows.map((drive, index) => {
