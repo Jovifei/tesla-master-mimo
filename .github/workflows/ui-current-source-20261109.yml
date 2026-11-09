@@ -1,0 +1,43 @@
+name: Current web and test source 20261109
+on:
+  push:
+    branches: [codex/ui-product-web-20261109]
+    paths: ['.github/workflows/ui-current-source-20261109.yml']
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Export bounded committed source only
+        run: |
+          git fetch --no-tags --depth=1 origin 929a63eeb46f36feb9295400da96d5382127068d 0913bf3795069e02a03dcae2c02dc8b05c09651e cb500aef439d31b1ae09dc2f16e191da267d5afd 6e910ed16287fa3af769aba49b60e33f269a222f
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess,json,hashlib
+          out=Path('source');out.mkdir()
+          refs={'app':('929a63eeb46f36feb9295400da96d5382127068d',['.github/workflows/','tools/']), 'mini':('0913bf3795069e02a03dcae2c02dc8b05c09651e',['miniprogram/test-tooling/','.github/workflows/','tools/miniprogram/']), 'web':('6e910ed16287fa3af769aba49b60e33f269a222f',['web_matelink/','.github/workflows/']), 'ios':('cb500aef439d31b1ae09dc2f16e191da267d5afd',['ios/','.github/workflows/'])}
+          receipt={}
+          for name,(ref,prefixes) in refs.items():
+              paths=subprocess.check_output(['git','ls-tree','-r','--name-only',ref],text=True).splitlines();files=[]
+              for p in paths:
+                  if not any(p.startswith(x) for x in prefixes):continue
+                  if any(x in p.lower() for x in ['node_modules/','/build/','/dist/','.env','local.properties','signing.properties','keystore','service-account','google-services.json']):continue
+                  if Path(p).suffix.lower() not in {'.ts','.tsx','.js','.jsx','.mjs','.mts','.cjs','.cts','.json','.html','.css','.scss','.yml','.yaml','.md','.py','.sh','.swift','.pbxproj','.plist','.xcconfig','.entitlements','.xcscheme','.xcworkspacedata','.lock'}:continue
+                  data=subprocess.check_output(['git','show',ref+':'+p]);dest=out/name/p.replace('.github/','workflow-source/',1);dest.parent.mkdir(parents=True,exist_ok=True);dest.write_bytes(data)
+                  files.append({'path':p,'dest':str(dest.relative_to(out)),'sha256':hashlib.sha256(data).hexdigest()})
+              receipt[name]={'sha':ref,'files':files}
+          (out/'receipt.json').write_text(json.dumps(receipt,indent=2))
+          print({k:len(v['files']) for k,v in receipt.items()})
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ui-current-web-and-tools
+          path: source/
+          retention-days: 7
+          include-hidden-files: true
+          if-no-files-found: error
