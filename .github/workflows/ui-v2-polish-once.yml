@@ -1,0 +1,108 @@
+name: MateLink V2 bounded visual-review repair
+on:
+  push:
+    branches: [codex/ui-design-20261109]
+    paths: ['.github/workflows/ui-v2-polish-once.yml']
+permissions:
+  contents: write
+jobs:
+  scoped-source-repair:
+    if: github.repository == 'Jovifei/tesla-master-mimo' && github.ref == 'refs/heads/codex/ui-design-20261109'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Verify exact reviewed source and apply ordinary source fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = 7449857721b7d7fc34d0d2ee01a52880369fbb35
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          root=Path('docs/ui-design-v2-20261109')
+          p=root/'preview.template.html';data=p.read_bytes()
+          assert hashlib.sha256(data).hexdigest()=='cb0db45a64aa3c0cac3dda0edfb59e03d0168544b64cc3884368f0b6be23924d'
+          s=data.decode()
+          def replace(old,new):
+              global s
+              assert s.count(old)==1,(old[:80],s.count(old))
+              s=s.replace(old,new)
+          replace("function bars(values=[4,6,3,8,5,7,6],unit='次')", "function bars(values=[4,6,3,8,5,7,6],unit='次',labels=null)")
+          replace('<span>11/${i+3}</span></div>`).join(\'\')}</div>`;', '<span>${labels?labels[i]:`11/${i+3}`}</span></div>`).join(\'\')}</div>`;')
+          replace("['单次均价','22.1','元/已记账次']", "['平均电价','1.10','元/kWh']")
+          replace('实际账单覆盖 9 / 12 次 · 另外 3 次未知，不计为零。', '实际账单覆盖 9 / 12 次；均价分母为已记账的180.5 kWh，未记账不计为零。')
+          a=s.index('function analytics(id){');b=s.index('function battery(){',a)
+          s=s[:a]+'''const analyticCharts={
+          stats:{title:'分周行驶里程',unit:'km',values:[278.5,312.1,290,368],labels:['第1周','第2周','第3周','第4周'],kind:'bars'},
+          chargeStats:{title:'分周充入电量',unit:'kWh',values:[48.8,63.2,44.6,70.2],labels:['第1周','第2周','第3周','第4周'],kind:'bars'},
+          mileage:{title:'近7天行驶里程',unit:'km',values:[21,35,26,41,34,46,28],kind:'bars'},
+          efficiency:{title:'分段加权能耗趋势',unit:'kWh/100km',values:[14.4,15.2,14.1,null,14.8,15.1,14.9],min:10,max:20,kind:'line'},
+          cost:{title:'分周已记录费用',unit:'元',values:[48.5,62.1,39.4,48.6],labels:['第1周','第2周','第3周','第4周'],kind:'bars'},
+          range:{title:'估算达成率趋势',unit:'%',values:[82,85,81,null,86,83,84],min:60,max:100,kind:'line'},
+          standby:{title:'驻车净电量变化',unit:'百分点/天',values:[-.7,-.9,-.8,null,-.6,-1,-.8],min:-1.5,max:.3,kind:'line'}
+          };
+          function analytics(id){const meta={stats:['行驶里程','1,248.6','km','加权效率','14.8 kWh/100km','充入电量','206.4 kWh'],chargeStats:['充入电量','226.8','kWh','充电次数','12 次','实际账单覆盖','9 / 12 次'],mileage:['累计里程','12,480.8','km','本月里程','1,248.6 km','年化推算','14,982 km'],efficiency:['加权能耗','14.8','kWh/100km','参与里程','1,248.6 km','合格行程','64 次'],cost:['已记录费用','198.60','元','实际账单','9 次','费用未知','3 次'],range:['估算达成率','84','%','有效行程','48 次','样本时间范围','近 30 天'],standby:['净电量变化','−0.8','百分点/天','合格驻车时段','8 段','能量 kWh','未知']}[id];
+          const spec=analyticCharts[id];const visual=spec.kind==='bars'?bars(spec.values,spec.unit,spec.labels):lineChart([spec.values],spec.title+' · '+spec.unit,['第1周','第2周','第3周','第4周'],spec.min,spec.max);
+          const chart=`<div id="analysis-chart" data-unit="${spec.unit}" data-min="${spec.min??0}" data-max="${spec.max??Math.max(...spec.values)}"><div class="row" style="margin-top:20px"><span class="sub">${spec.title}</span><span class="sub">${spec.unit}</span></div>${visual}</div>`;
+          const context={stats:'同一车辆、同一来源、同一时间窗汇总。',chargeStats:'费用统计只纳入已记录账单，估算另列。',mileage:'年化是按当前时间窗外推的估算，不是已经行驶。',efficiency:'使用能量与里程汇总后的加权能耗，不平均单次比率。',cost:'已记录与估算分区显示；实际费用为 0 时保留 0.00。',range:'达成率与续航均为模型估算，不承诺实际可行驶距离。',standby:'驻车内充电单独标记；不能由 SOC 变化乘猜测容量得到真实电量。'}[id];
+          return heading(pages[id])+period()+card(`<div class="row"><span class="sub">${meta[0]}</span><span class="pill">${id==='range'?'估算示例':'合成示例'}</span></div><div class="bigmetric num">${meta[1]} <small>${meta[2]}</small></div>${chart}<div class="summarypair"><div><span class="sub">${meta[3]}</span><b>${meta[4]}</b></div><div><span class="sub">${meta[5]}</span><b>${meta[6]}</b></div></div>`)+card(`<h3>这组数字说明什么</h3><p class="insight">${context}</p>${go('查看相关记录',id==='cost'||id==='chargeStats'?'charges':id==='standby'?'parkDetail':'history','clock')}`)+notice('来源与覆盖范围在同一位置显示。此页全部为设计示例，不代表你的车辆数据。');}
+          '''+s[b:]
+          replace("${bars([380,620,410,880,560,790,640],'km')}","<p class=\"sub\">分季度里程 · 第4季度截至11月9日</p>${bars([1862,2100,2380,2120],'km',['Q1','Q2','Q3','Q4'])}")
+          replace("phone.dataset.reduced=String(state.reduced);let html", "phone.dataset.reduced=String(state.reduced);phone.classList.toggle('auth-screen',['login','authorize'].includes(state.page));phone.classList.toggle('vehicle-login',state.page==='login'&&state.loginmode==='vehicle');let html")
+          replace("state.page==='history'?'drives':'more'", "['history','driveDetail','parkDetail'].includes(state.page)?'drives':state.page==='chargeDetail'?'charges':'more'")
+          replace('沿用现有账号会话流程','登录后继续连接你的车辆')
+          replace('不新增未实现的微信、Apple 或密码登录方式。','授权过程可随时取消，连接后才读取车辆数据。')
+          replace('微信绑定仅在已有能力可用时展示；不会代替 Tesla 官方授权。','微信关联与 Tesla 官方授权相互独立。')
+          replace('</style>','''
+          .auth-screen .nav{display:none}.auth-screen .scroll{height:816px}
+          .auth-screen .login-hero{margin:14px 0 18px}.auth-screen .mark{width:48px;height:48px;margin-bottom:16px}
+          .auth-screen .login-hero h1{font-size:27px}.auth-screen .login-hero p{margin:10px 0}
+          .vehicle-login .login-hero{margin:6px 0 10px}.vehicle-login .mark{display:none}
+          .vehicle-login .login-hero h1{font-size:25px}.vehicle-login .login-hero img{height:116px}
+          .auth-screen .step{margin:12px 0}.auth-screen .plain-button{padding:12px}
+          </style>''')
+          p.write_text(s,encoding='utf-8')
+          t=root/'test.py';raw=t.read_bytes();assert hashlib.sha256(raw).hexdigest()=='632353b654a464cd1db68cf68a0d1c90fd2263a2592f42220361942cdbfbe68d'
+          v=raw.decode();needle="    # Inspect actual Chinese font use, not just declared family."
+          assert v.count(needle)==1
+          extra='''    # Visual-review regressions: native field meaning and above-fold login action.
+              for key,unit in [('stats','km'),('chargeStats','kWh'),('mileage','km'),('efficiency','kWh/100km'),('cost','元'),('range','%'),('standby','百分点/天')]:
+                  p.evaluate('(id)=>MateLinkReview.navigate(id)',key)
+                  check('metric-specific chart unit '+key,p.locator('#analysis-chart').get_attribute('data-unit')==unit)
+              p.evaluate("MateLinkReview.navigate('standby')")
+              check('standby chart retains negative SOC change',float(p.locator('#analysis-chart').get_attribute('data-min'))<0)
+              p.evaluate("MateLinkReview.navigate('range')")
+              check('range percentage uses appropriate scale',p.locator('#analysis-chart').get_attribute('data-max')=='100')
+              p.evaluate("MateLinkReview.navigate('charges')")
+              check('charging fourth summary retains original average price meaning','平均电价' in p.locator('#view').inner_text() and '元/kWh' in p.locator('#view').inner_text())
+              for width in [393,320]:
+                  p.set_viewport_size({'width':width,'height':1100})
+                  for mode in ['minimal','vehicle']:
+                      p.select_option('#loginmode',mode)
+                      p.evaluate('document.querySelector("#view").scrollTop=0')
+                      check('login primary action above fold '+str(width)+' '+mode,p.eval_on_selector('[data-action="login"]',"e=>{const r=e.getBoundingClientRect(),v=document.querySelector('#view').getBoundingClientRect();return r.top>=v.top&&r.bottom<=v.bottom}"))
+                      check('auth does not expose confusing inactive bottom tabs '+str(width)+' '+mode,p.eval_on_selector('#tabs',"e=>getComputedStyle(e).display==='none'"))
+              p.set_viewport_size({'width':1380,'height':1000})
+          '''
+          # The multiline string is dedented by one workflow level below.
+          import textwrap
+          extra=textwrap.dedent(extra)
+          extra='\n'.join('    '+line if line else '' for line in extra.splitlines())+'\n'
+          v=v.replace(needle,extra+needle);compile(v,'test.py','exec');t.write_text(v,encoding='utf-8')
+          review=root/'CI-REVIEW.md';review.write_text(review.read_text()+"\nPixel review of artifact 13677593639 (128 checks passed) found two design issues not covered by the original checks: vehicle-login CTA below the fold, and reused non-specific analytics scales. Fixed login viewport, metric-specific units/ranges, original charging average-price meaning, and detail Tab association. New assertions cover both login variants at 393/320px and each chart unit. No tests or semantic gates were removed.\n")
+          PY
+      - name: Commit only reviewed source and retire this one-shot runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'Jovifei'
+          git config user.email '110970864+Jovifei@users.noreply.github.com'
+          git add docs/ui-design-v2-20261109/preview.template.html docs/ui-design-v2-20261109/test.py docs/ui-design-v2-20261109/CI-REVIEW.md
+          git rm .github/workflows/ui-v2-polish-once.yml
+          git diff --cached --check
+          git commit -m 'fix(design): keep login action visible and restore truthful chart units'
+          git push origin HEAD:refs/heads/codex/ui-design-20261109
+          git rev-parse HEAD HEAD^{tree} HEAD^
