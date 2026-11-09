@@ -1,0 +1,70 @@
+name: App UI product apply and compile 20261109
+on:
+  push:
+    branches: [codex/ui-product-app-20261109]
+    paths: ['.github/workflows/ui-product-app-apply-once.yml', 'tools/ui-product-20261109/app-source.patch.gz']
+permissions:
+  contents: write
+jobs:
+  implement:
+    if: github.repository == 'Jovifei/tesla-master-mimo' && github.ref == 'refs/heads/codex/ui-product-app-20261109'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Validate reviewed source transport before any product change
+        run: |
+          set -euo pipefail
+          mkdir -p transport-check
+          cp tools/ui-product-20261109/app-source.patch.gz transport-check/
+          python3 - <<'PY'
+          from pathlib import Path
+          import gzip,hashlib,subprocess
+          raw=Path('tools/ui-product-20261109/app-source.patch.gz').read_bytes()
+          Path('transport-check/check.txt').write_text('gzip_sha256='+hashlib.sha256(raw).hexdigest())
+          patch=gzip.decompress(raw)
+          assert hashlib.sha256(patch).hexdigest()=='09cdb49821813e8df6f06ce988ff10f1d12a849b4ff8b5c9bb63a8adb23a8835','Transport mismatch; do not apply'
+          text=patch.decode('utf-8')
+          targets=[line[6:] for line in text.splitlines() if line.startswith('+++ b/')]
+          assert len(targets)==16 and all(p.startswith('android/app/src/') and '..' not in p for p in targets)
+          assert not any(line.startswith('+++ /dev/null') for line in text.splitlines())
+          subprocess.run(['git','apply','--check','--whitespace=error','-'],input=patch,check=True)
+          subprocess.run(['git','apply','--whitespace=error','-'],input=patch,check=True)
+          Path('transport-check/reviewed.patch').write_bytes(patch)
+          PY
+      - name: Commit ordinary product source and retire transport
+        run: |
+          set -euo pipefail
+          git config user.name 'Jovifei'
+          git config user.email '110970864+Jovifei@users.noreply.github.com'
+          git add android/app/src/
+          git rm tools/ui-product-20261109/app-source.patch.gz .github/workflows/ui-product-app-apply-once.yml
+          git diff --cached --check
+          git commit -m 'feat(android): neutral and cream themes, vertical day stack, charge cells and minimal login'
+          git push origin HEAD:refs/heads/codex/ui-product-app-20261109
+          git rev-parse HEAD HEAD^{tree} HEAD^ > transport-check/implemented-source.txt
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+          log-accepted-android-sdk-licenses: false
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Complete isolated unit lint and Debug Release builds
+        run: bash tools/energy-stage/android-ci.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: app-ui-product-implementation-evidence
+          path: |
+            transport-check/
+            android-evidence/
+            android/app/build/test-results/
+            android/app/build/reports/
+            android/app/build/outputs/apk/
+          retention-days: 7
+          if-no-files-found: error
