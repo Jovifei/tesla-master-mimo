@@ -67,6 +67,24 @@ with sync_playwright() as pw:
     p.select_option('#reduced','false');p.emulate_media(reduced_motion='reduce')
     check('system reduced motion also stops animations',p.evaluate("[...document.querySelectorAll('#view *')].every(e=>getComputedStyle(e).animationName==='none')"))
     p.emulate_media(reduced_motion='no-preference')
+    # Visual-review regressions: native field meaning and above-fold login action.
+    for key,unit in [('stats','km'),('chargeStats','kWh'),('mileage','km'),('efficiency','kWh/100km'),('cost','元'),('range','%'),('standby','百分点/天')]:
+        p.evaluate('(id)=>MateLinkReview.navigate(id)',key)
+        check('metric-specific chart unit '+key,p.locator('#analysis-chart').get_attribute('data-unit')==unit)
+    p.evaluate("MateLinkReview.navigate('standby')")
+    check('standby chart retains negative SOC change',float(p.locator('#analysis-chart').get_attribute('data-min'))<0)
+    p.evaluate("MateLinkReview.navigate('range')")
+    check('range percentage uses appropriate scale',p.locator('#analysis-chart').get_attribute('data-max')=='100')
+    p.evaluate("MateLinkReview.navigate('charges')")
+    check('charging fourth summary retains original average price meaning','平均电价' in p.locator('#view').inner_text() and '元/kWh' in p.locator('#view').inner_text())
+    for width in [393,320]:
+        p.set_viewport_size({'width':width,'height':1100})
+        for mode in ['minimal','vehicle']:
+            p.select_option('#loginmode',mode)
+            p.evaluate('document.querySelector("#view").scrollTop=0')
+            check('login primary action above fold '+str(width)+' '+mode,p.eval_on_selector('[data-action="login"]',"e=>{const r=e.getBoundingClientRect(),v=document.querySelector('#view').getBoundingClientRect();return r.top>=v.top&&r.bottom<=v.bottom}"))
+            check('auth does not expose confusing inactive bottom tabs '+str(width)+' '+mode,p.eval_on_selector('#tabs',"e=>getComputedStyle(e).display==='none'"))
+    p.set_viewport_size({'width':1380,'height':1000})
     # Inspect actual Chinese font use, not just declared family.
     p.evaluate("MateLinkReview.navigate('home')")
     cdp=p.context.new_cdp_session(p);cdp.send('DOM.enable');cdp.send('CSS.enable')
