@@ -549,9 +549,8 @@ internal fun SettingsContent(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // TODO(parity): iOS SettingsView has an explicit dark mode toggle (isDarkMode).
-        //  Android currently follows system theme only.
-        //  Ref: app_mimo/ios/MateLink/Features/Settings/SettingsView.swift
+        com.matelink.ui.theme.AppearancePreferencePanel()
+        Spacer(modifier = Modifier.height(16.dp))
 
         // Language selection
         val languageOptions = com.matelink.locale.LocaleHelper.SUPPORTED_LOCALES

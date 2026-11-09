@@ -254,7 +254,7 @@ private fun LoginEntryPanels(
                 onClick = { viewModel.startTeslaLogin(termsAccepted, privacyAccepted) },
                 enabled = termsAccepted && privacyAccepted && legalDocumentsConfigured &&
                     BuildConfig.JOURVOLT_CLOUD_LOGIN && uiState !is TeslaLoginUiState.Loading,
-                shape = RoundedCornerShape(24.dp),
+                shape = RoundedCornerShape(12.dp),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(52.dp)
@@ -262,7 +262,7 @@ private fun LoginEntryPanels(
                 Icon(Icons.Filled.Lock, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    text = "使用 Tesla 账号安全连接",
+                    text = stringResource(R.string.ui_login_connect),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold
                 )
@@ -443,26 +443,18 @@ private fun TeslaBlockedOnboardingPanel(reason: String?, onRetry: () -> Unit, on
 
 @Composable
 private fun LoginHeaderPanel(phase: ConnectionVisualPhase, pairing: Boolean) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 12.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        ConnectionVisual(phase = phase, vehicle = pairing)
-        Text(
-            text = stringResource(R.string.app_name),
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold
-        )
-        Text(
-            text = "连接你的 Tesla 智能座驾，安全同步行车与充电数据",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-            modifier = Modifier.padding(horizontal = 16.dp)
-        )
+    Column(Modifier.fillMaxWidth().padding(vertical = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.primary) {
+            Box(Modifier.size(52.dp), contentAlignment = Alignment.Center) {
+                Icon(Icons.Filled.Lock, null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(24.dp))
+            }
+        }
+        Text("MateLink", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Text(stringResource(R.string.ui_login_tagline), style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        Text(stringResource(if (pairing) R.string.ui_login_confirm_vehicle else R.string.ui_login_steps),
+            style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -514,7 +506,7 @@ private fun DocumentButton(
     enabled: Boolean,
     onClick: () -> Unit
 ) {
-    OutlinedButton(
+    TextButton(
         onClick = onClick,
         enabled = enabled,
         modifier = Modifier.fillMaxWidth()

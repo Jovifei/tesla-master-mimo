@@ -81,6 +81,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.HorizontalDivider
+import com.matelink.ui.components.VerticalDayStack
 import com.matelink.ui.components.AppleDateGroupHeader
 import com.matelink.ui.components.HistoryDateGroup
 import com.matelink.ui.theme.AppleTokens
@@ -218,6 +219,7 @@ fun DrivesScreen(
                 .padding(padding)
         ) {
             DrivesContent(
+                historyScopeKey = "${carId}:${uiState.historyNoticeLocalCarId}:${uiState.dateFilter}:${uiState.distanceFilter}:${uiState.customStartDate}:${uiState.customEndDate}",
                 isLoading = uiState.isLoading,
                 isRefreshing = uiState.isRefreshing,
                 isLoadingMore = uiState.isLoadingMore,
@@ -262,6 +264,7 @@ fun DrivesScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun DrivesContent(
+    historyScopeKey: String,
     isLoading: Boolean = false,
     isRefreshing: Boolean = false,
     isLoadingMore: Boolean = false,
@@ -318,19 +321,6 @@ private fun DrivesContent(
         }
         groups
     }
-    // Summary, optional chart, then history heading precede the records.
-    val headerCount = 2 + (if (chartData.isNotEmpty()) 1 else 0)
-
-    val indexToDate = remember(headerCount, groupedDriveHistory) {
-        buildList {
-            repeat(headerCount) { add(null) }
-            for (group in groupedDriveHistory) {
-                add(group.date) // header item
-                add(group.date) // group container item
-            }
-        }
-    }
-
     Box(modifier = Modifier.fillMaxSize()) {
     LazyColumn(
         state = listState,
@@ -406,45 +396,28 @@ private fun DrivesContent(
                 }
             }
         } else {
-            groupedDriveHistory.forEach { group ->
-                item(key = "header_${group.dateKey}") {
-                    AppleDateGroupHeader(date = group.date)
-                }
-                item(key = "group_${group.dateKey}") {
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(AppleTokens.groupCornerRadius),
-                        color = MaterialTheme.colorScheme.surfaceContainer,
-                        tonalElevation = 0.dp
-                    ) {
-                        Column(modifier = Modifier.fillMaxWidth()) {
-                            group.items.forEachIndexed { index, item ->
-                                if (index > 0) {
-                                    HorizontalDivider(
-                                        modifier = Modifier.padding(
-                                            start = AppleTokens.dividerIndent,
-                                            end = AppleTokens.rowHorizontal
-                                        ),
-                                        thickness = AppleTokens.hairline,
-                                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
-                                    )
+            item(key = "history_day_stack") {
+                VerticalDayStack(groups = groupedDriveHistory, scopeKey = historyScopeKey) { group ->
+                    Column(Modifier.fillMaxWidth()) {
+                        group.items.forEachIndexed { index, item ->
+                            if (index > 0) HorizontalDivider(Modifier.padding(horizontal = AppleTokens.rowHorizontal),
+                                thickness = AppleTokens.hairline, color = MaterialTheme.colorScheme.outlineVariant)
+                            when (item) {
+                                is DriveHistoryItem.Drive -> DriveRowItem(item.drive, driveMetrics[item.drive.id], units, palette) {
+                                    onDriveClick(item.drive.id)
                                 }
-                                when (item) {
-                                    is DriveHistoryItem.Drive -> DriveRowItem(
-                                        drive = item.drive,
-                                        metrics = driveMetrics[item.drive.id],
-                                        units = units,
-                                        palette = palette,
-                                        onClick = { onDriveClick(item.drive.id) }
-                                    )
-                                    is DriveHistoryItem.Parked -> ParkedRowItem(
-                                        item = item,
-                                        palette = palette,
-                                        onClick = { onParkedClick(item.olderDrive.id, item.newerDrive.id, item.location) }
-                                    )
+                                is DriveHistoryItem.Parked -> ParkedRowItem(item, palette) {
+                                    onParkedClick(item.olderDrive.id, item.newerDrive.id, item.location)
                                 }
                             }
                         }
+                    }
+                }
+            }
+            if (canLoadMore && !isLoadingMore) {
+                item(key = "day_stack_load_older") {
+                    TextButton(onClick = onLoadMore, modifier = Modifier.fillMaxWidth()) {
+                        Text(stringResource(R.string.ui_load_older_days))
                     }
                 }
             }
@@ -475,13 +448,6 @@ private fun DrivesContent(
         }
 
     }
-
-    MonthScrollIndicator(
-        state = listState,
-        dateAt = { index -> indexToDate.getOrNull(index) },
-        accent = palette.accent,
-        modifier = Modifier.align(Alignment.CenterEnd),
-    )
 
     // Sub-100ms loads never see a spinner — only sustained ones cross the
     // perceptual threshold worth giving feedback for.

@@ -96,6 +96,8 @@ import com.matelink.ui.components.HistoryDateGroup
 import com.matelink.ui.theme.AppleTokens
 import com.matelink.data.api.models.ChargeData
 import com.matelink.data.repository.HISTORY_IDENTITY_UNAVAILABLE
+import com.matelink.ui.components.ChargeActivityCell
+import com.matelink.ui.components.ChargeActivityGrid
 import com.matelink.ui.components.BarChartData
 import com.matelink.ui.components.BarSegment
 import com.matelink.ui.components.DateRangePickerDialog
@@ -1263,65 +1265,25 @@ private fun ChargesChartPage(
             )
         }
 
-        val barData = when (chartType) {
-            ChargesChartType.ENERGY -> chartData.map { data ->
-                BarChartData(
-                    label = data.label,
-                    value = data.totalEnergy,
-                    color = palette.accent,
-                    displayValue = if (data.energyCoverage > 0) {
-                        (if (data.partialEnergyCount > 0) "≈" else "") + "%.1f 度".format(data.totalEnergy)
-                    } else stringResource(R.string.not_available)
-                )
+        val unavailable = stringResource(R.string.not_available)
+        val cells = chartData.map { data ->
+            val value = when (chartType) {
+                ChargesChartType.ENERGY -> data.totalEnergy.takeIf { data.energyCoverage > 0 }
+                ChargesChartType.COST -> data.totalCost.takeIf { data.costCoverage > 0 }
+                ChargesChartType.COUNT -> data.count.toDouble()
+            }?.takeIf { it.isFinite() && it >= 0 }
+            val approximate = when (chartType) {
+                ChargesChartType.ENERGY -> data.partialEnergyCount > 0 || data.energyCoverage < data.count
+                ChargesChartType.COST -> data.estimatedCostCount > 0 || data.costCoverage < data.count
+                ChargesChartType.COUNT -> false
             }
-            ChargesChartType.COST -> chartData.map { data ->
-                BarChartData(
-                    label = data.label,
-                    value = data.totalCost,
-                    color = palette.accent,
-                    displayValue = if (data.costCoverage > 0) {
-                        val value = "$currencySymbol%.2f".format(data.totalCost)
-                        if (data.estimatedCostCount > 0) "≈$value" else value
-                    } else stringResource(R.string.not_available)
-                )
-            }
-            ChargesChartType.COUNT -> chartData.map { data ->
-                BarChartData(
-                    label = data.label,
-                    value = data.count.toDouble(),
-                    color = palette.accent,
-                    displayValue = data.count.toString()
-                )
-            }
+            val display = value?.let {
+                (if (approximate) "≈" else "") +
+                    com.matelink.ui.components.formatTelemetryNumber(it, if (chartType == ChargesChartType.COST) 2 else 1) + " $axisUnit"
+            } ?: unavailable
+            ChargeActivityCell(data.label, value, display)
         }
-
-        val valueFormatter: (Double) -> String = when (chartType) {
-            ChargesChartType.ENERGY -> { v -> "%.1f 度".format(v) }
-            ChargesChartType.COST -> { v -> "$currencySymbol%.2f".format(v) }
-            ChargesChartType.COUNT -> { v -> v.toInt().toString() }
-        }
-
-        // Set number of labels to display
-        val labelInterval = when {
-            barData.size <= 7 -> 1  // Show all for Today and last 7 days
-            barData.size <= 30 -> 3 // Show 1 label every 3 bars for last 30 days
-            else -> ((barData.size + 5) / 6).coerceAtLeast(1)
-        }
-
-        val yAxisFormatter: (Double) -> String = when (chartType) {
-            ChargesChartType.COUNT -> { v -> "%,d".format(v.toInt()) }
-            else -> { v -> if (v >= 1000) "%.0fk".format(v / 1000) else "%.0f".format(v) }
-        }
-
-        InteractiveBarChart(
-            data = barData,
-            modifier = Modifier.fillMaxWidth(),
-            barColor = palette.accent,
-            labelColor = palette.onSurfaceVariant,
-            showEveryNthLabel = labelInterval,
-            valueFormatter = valueFormatter,
-            yAxisFormatter = yAxisFormatter
-        )
+        ChargeActivityGrid(cells = cells)
     }
 }
 

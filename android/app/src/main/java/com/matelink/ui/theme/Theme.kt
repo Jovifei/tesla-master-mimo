@@ -7,6 +7,7 @@ import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
@@ -77,14 +78,19 @@ fun MateLinkTheme(
     dynamicColor: Boolean = false,
     content: @Composable () -> Unit
 ) {
-    val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
-
-    MaterialTheme(
-        colorScheme = colorScheme,
-        typography = Typography,
-        shapes = MateLinkShapes,
-        content = content
-    )
+    val appearance = rememberAppearancePreferences()
+    val light = if (appearance.palette == AppearancePalette.CREAM) {
+        LightColorScheme.copy(
+            background = Color(0xFFF3F2EE), surface = Color(0xFFFFFEFA),
+            surfaceVariant = Color(0xFFF5F3ED), surfaceContainer = Color(0xFFFFFEFA),
+            surfaceContainerHigh = Color(0xFFF3F0E8), surfaceContainerHighest = Color(0xFFEBE7DE),
+            outlineVariant = Color(0xFFE4E0D6)
+        )
+    } else LightColorScheme
+    val colorScheme = if (darkTheme) DarkColorScheme else light
+    CompositionLocalProvider(LocalAppearance provides appearance) {
+        MaterialTheme(colorScheme = colorScheme, typography = Typography, shapes = MateLinkShapes, content = content)
+    }
 }
 
 /**
@@ -103,21 +109,9 @@ data class SwissPalette(
 )
 
 @Composable
-fun swissPalette(darkTheme: Boolean = isSystemInDarkTheme()): SwissPalette =
-    if (darkTheme) {
-        SwissPalette(
-            surface = SwissWhiteDark,
-            ink = SwissInkDark,
-            outline = SwissOutlineDark,
-            subtle = SwissSubtleDark,
-            muted = SwissMutedDark
-        )
-    } else {
-        SwissPalette(
-            surface = SwissWhite,
-            ink = SwissInk,
-            outline = SwissOutline,
-            subtle = SwissSubtle,
-            muted = SwissMuted
-        )
-    }
+fun swissPalette(darkTheme: Boolean = isSystemInDarkTheme()): SwissPalette {
+    // Shell and content consume one theme, including the user's milk-white choice.
+    val colors = MaterialTheme.colorScheme
+    return SwissPalette(colors.surface, colors.onSurface, colors.outlineVariant,
+        colors.surfaceVariant, colors.onSurfaceVariant)
+}
