@@ -9,12 +9,25 @@ permissions:
 jobs:
   evidence-and-design:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
           fetch-depth: 2
+      - name: Install isolated review dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check --retries 1 --timeout 30 -r docs/ui-design-20261109/requirements.txt
+          if command -v google-chrome >/dev/null; then
+            echo "CHROME_BIN=$(command -v google-chrome)" >> "$GITHUB_ENV"
+          elif command -v chromium >/dev/null; then
+            echo "CHROME_BIN=$(command -v chromium)" >> "$GITHUB_ENV"
+          else
+            echo 'Hosted runner has no approved existing Chrome/Chromium; fail closed.' >&2
+            exit 1
+          fi
       - name: Collect immutable non-production design inputs
         shell: bash
         run: |
@@ -26,6 +39,7 @@ jobs:
           git fetch --no-tags --depth=1 origin 929a63eeb46f36feb9295400da96d5382127068d
           python3 - <<'PY'
           import pathlib, subprocess, json, hashlib
+          from PIL import Image
           root=pathlib.Path('review')
           mini='0913bf3795069e02a03dcae2c02dc8b05c09651e'
           app='929a63eeb46f36feb9295400da96d5382127068d'
@@ -38,27 +52,48 @@ jobs:
               if p.startswith('docs/assets/ui-evidence/') and pathlib.Path(p).name in ['01-dashboard.jpg','02-drives.jpg','03-charges.jpg','04-more.jpg','05-tools.jpg','06-analysis.jpg']:
                   save(mini,p,'mini/'+pathlib.Path(p).name); selected.append(p)
           assert len(selected)==6, 'Expected six known unbound mini simulator captures'
+          for p in (root/'mini').glob('*.jpg'): assert Image.open(p).size==(230,500)
           for p in paths(app):
               n=pathlib.Path(p).name
               if n in ['AppleTokens.kt','TpmsTrendScreen.kt','ParkedDetailScreen.kt','ChargeDetailScreen.kt','TemperatureTrendScreen.kt','DashboardScreen.kt','NavGraph.kt'] and p.startswith('android/app/src/main/'):
                   save(app,p,'source/'+n)
-          png=[p for p in paths(app) if p.endswith(('.png','.webp')) and ('juniper' in p.lower() or 'model_y' in p.lower()) and ('black' in p.lower() or 'pbsb' in p.lower())]
-          for p in png[:4]: save(app,p,'assets/'+pathlib.Path(p).name)
-          inventory={'evidence_app_sha':app,'evidence_mini_sha':mini,'mini_images':selected,'vehicle_assets':png[:4],'local_install_source':'unverified: dossier 050568b vs About image 3cc34dc','no_production_requests':True}
+          evidence='docs/ui-evidence/Tesla_MateLink_UI_Full_Handoff.html'
+          assert pathlib.Path(evidence).read_bytes()==subprocess.check_output(['git','show',app+':'+evidence]), 'Evidence changed: do not crop an unreviewed image'
+          inventory={'evidence_app_sha':app,'evidence_mini_sha':mini,'mini_images':selected,'local_install_source':'unverified: dossier 050568b vs About image 3cc34dc','no_production_requests':True}
           (root/'input-receipt.json').write_text(json.dumps(inventory,indent=2))
-          manifest={str(p.relative_to(root)):hashlib.sha256(p.read_bytes()).hexdigest() for p in root.rglob('*') if p.is_file()}
-          (root/'sha256.json').write_text(json.dumps(manifest,indent=2))
-          print('Collected six mini simulator captures and bounded source inputs; excluded preview QR and production requests.')
+          print('Collected six mini simulator captures and bounded source; excluded QR, full original screenshots and production requests.')
           PY
-      - name: Validate authored design contract when present
+      - name: Build and validate offline design contract
         shell: bash
         run: |
-          if [ -f docs/ui-design-20261109/validate.py ]; then
-            python3 docs/ui-design-20261109/validate.py
-          else
-            echo 'Evidence collection only; no completed-design claim.'
-          fi
+          set -euo pipefail
+          python3 docs/ui-design-20261109/build_preview.py
+          python3 docs/ui-design-20261109/validate.py
+      - name: Exercise actual isolated Chromium consumers
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 docs/ui-design-20261109/test_preview.py
+      - name: Assemble delivery and hashes without original private screenshots
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p review/delivery
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib, json, shutil
+          src=Path('docs/ui-design-20261109'); out=Path('review/delivery')
+          names=['README.md','LOCAL-RECEIVE.md','design-contract.json','figma-repair.mjs','preview.template.html','build_preview.py','test_preview.py','validate.py','requirements.txt','preview.html','vehicle-reference.jpg','preview-test-report.json','preview-home-light.png','preview-home-dark.png','preview-tpms.png']
+          for name in names:
+              p=src/name
+              if p.is_file(): shutil.copyfile(p,out/name)
+          root=Path('review')
+          hashes={str(p.relative_to(root)):hashlib.sha256(p.read_bytes()).hexdigest() for p in root.rglob('*') if p.is_file() and p.name!='sha256.json'}
+          (root/'sha256.json').write_text(json.dumps(hashes,indent=2))
+          PY
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: matelink-ui-design-review-${{ github.sha }}
           path: review/

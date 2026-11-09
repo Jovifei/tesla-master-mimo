@@ -1,0 +1,42 @@
+{
+  "date": "2026-11-09",
+  "repository": "Jovifei/tesla-master-mimo",
+  "branch": "codex/ui-design-20261109",
+  "evidence": {
+    "app_commit": "929a63eeb46f36feb9295400da96d5382127068d",
+    "mini_commit": "0913bf3795069e02a03dcae2c02dc8b05c09651e",
+    "android_unique_screenshots": 38,
+    "overview_images": 1,
+    "embedded_video_count": 0,
+    "mini_screenshots": 6,
+    "mini_dimensions": [230,500],
+    "mini_class": "unbound developer-tool simulator",
+    "input_artifact_sha256": "77cb2acaef867c88ec2840b5026e1a4c5ca23baff928cedc166aa1592ba45522",
+    "phone_source_verified": false
+  },
+  "figma": {
+    "file_key": "Otvrx2SzylGWkHBX9lYpAR",
+    "android_page": "0:1",
+    "mini_page": "4:2",
+    "system_page": "4:3",
+    "android_frames": {
+      "A01":"6:2","D01":"6:70","D02":"6:133","D03":"6:195","C01":"6:231","C02":"6:292","C03":"6:346","C04":"6:368","T01":"6:392","T02":"6:483","H01":"6:549","A02":"6:579",
+      "D04":"14:16","D05":"14:57","D06":"14:74","C06":"14:95","C05":"14:114","C07":"14:127","H02":"14:140","A03":"14:155","A04":"14:170",
+      "X01":"16:39","X02":"16:145","X03":"16:198","X04":"16:245","X05":"16:281","X06":"16:314","X07":"16:347","X08":"16:370","X09":"16:403","X10":"16:423","X11":"16:452","X12":"16:471","X13":"16:487","X14":"16:508","X15":"16:529","X16":"16:549","X17":"16:569","X18":"16:586","X19":"16:611","X20":"16:629","X21":"16:648","X22":"16:664",
+      "T03":"19:65","T04":"19:131","T05":"19:197","D07":"19:263","D08":"19:308","A01D":"19:371","T01D":"19:439","A01R":"19:530"
+    },
+    "mini_frames": {"M01":"17:65","M02":"17:109","M03":"17:148","M04":"17:186","M05":"17:234","M06":"17:273","M07":"17:310","M08":"17:332","M09":"17:353","M10":"17:407"},
+    "frame_count":61,
+    "android_click_nodes":202,
+    "mini_click_nodes":48,
+    "unresolved_navigation_targets_at_wiring":0,
+    "final_visual_acceptance":false,
+    "quota_failure":"Starter plan tool call limit: get_screenshot and use_figma rejected",
+    "pending_repairs":["T01 pressure text/fill fallback contrast","T03/T04/T05 still have cloned left-front sample paths","dark theme and remaining frames need rendered inspection"],
+    "repair_script_applied":false
+  },
+  "motion_ms":{"tab":0,"detail":180,"tpms":160,"overlay":240,"reduced":0},
+  "truth_contract":{"unknown_is_not_zero":true,"valid_zero_preserved":true,"estimated_cost_separate":true,"scope_required":["account","vehicle","source","session"],"weather_must_not_replace_vehicle_temperature":true,"legacy_unverified_tpms_excluded":true},
+  "preview":{"kind":"independent offline implementation of key design intentions; NOT Figma export","sha256":"0e1145b2239c979ff44105e93489b940d1283b3e8748d45535caaa21789e6dd6","isolated_chromium_checks":27,"external_requests":0,"runtime_errors":0},
+  "not_done":["production_app_ui_code","phone_install","mini_publish","production_deploy","provider_natural_acceptance","full_figma_visual_acceptance","ios_native_redesign_verification","web_production_redesign"]
+}
