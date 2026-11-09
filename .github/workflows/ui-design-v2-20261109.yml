@@ -1,0 +1,44 @@
+name: MateLink UI V2 preserved-layout review
+on:
+  push:
+    branches: [codex/ui-design-20261109]
+    paths: ['docs/ui-design-v2-20261109/**', '.github/workflows/ui-design-v2-20261109.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  offline-ui-v2:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install isolated browser and CJK rendering support
+        run: |
+          python3 -m pip install Pillow==12.3.0 playwright==1.57.0
+          python3 -m playwright install --with-deps chromium
+          sudo apt-get update -qq
+          sudo apt-get install -y fonts-noto-cjk
+      - name: Build offline review without production requests
+        run: python3 docs/ui-design-v2-20261109/build.py
+      - name: Exercise shared App-Mini UI and preserved information
+        run: python3 docs/ui-design-v2-20261109/test.py
+      - name: Record fixed source and artifact hashes
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess,json,hashlib
+          root=Path('docs/ui-design-v2-20261109')
+          source={'sha':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'tree':subprocess.check_output(['git','rev-parse','HEAD^{tree}'],text=True).strip(),'parents':subprocess.check_output(['git','cat-file','-p','HEAD'],text=True).split('\n\n')[0].splitlines()}
+          (root/'fixed-source.json').write_text(json.dumps(source,indent=2))
+          sums={str(p.relative_to(root)):hashlib.sha256(p.read_bytes()).hexdigest() for p in root.rglob('*') if p.is_file() and p.suffix not in ['.ttf','.otf','.ttc','.woff','.woff2']}
+          (root/'sha256.json').write_text(json.dumps(sums,indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: matelink-ui-v2-${{ github.sha }}
+          path: docs/ui-design-v2-20261109/
+          retention-days: 7
+          if-no-files-found: error
