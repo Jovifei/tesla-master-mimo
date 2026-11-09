@@ -21,9 +21,15 @@ jobs:
           cp tools/ui-product-20261109/app-source.patch.gz transport-check/
           python3 - <<'PY'
           from pathlib import Path
-          import gzip,hashlib,subprocess
+          import gzip,hashlib,subprocess,base64
           raw=Path('tools/ui-product-20261109/app-source.patch.gz').read_bytes()
-          Path('transport-check/check.txt').write_text('gzip_sha256='+hashlib.sha256(raw).hexdigest())
+          original_hash=hashlib.sha256(raw).hexdigest()
+          if original_hash=='6e48013e92241fdb9d60cf48df4ca9b02782a29ea51786ab867245977ac15b62':
+              encoded=base64.b64encode(raw).decode()
+              assert encoded[7297]=='7'
+              raw=base64.b64decode(encoded[:7297]+encoded[7298:]+'=',validate=True)
+          assert hashlib.sha256(raw).hexdigest()=='5e72ebeb7de929da04956cdd4b135ccf69349f98f21e13aa1c838173f1664a97'
+          Path('transport-check/check.txt').write_text('transport_received_sha256='+original_hash+'\nrestored_gzip_sha256='+hashlib.sha256(raw).hexdigest())
           patch=gzip.decompress(raw)
           assert hashlib.sha256(patch).hexdigest()=='09cdb49821813e8df6f06ce988ff10f1d12a849b4ff8b5c9bb63a8adb23a8835','Transport mismatch; do not apply'
           text=patch.decode('utf-8')
