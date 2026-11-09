@@ -14,13 +14,16 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Collect immutable, non-production design inputs
+          fetch-depth: 2
+      - name: Collect immutable non-production design inputs
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p review/mini review/source review/assets
-          git rev-parse HEAD HEAD^{tree} HEAD^ > review/design-source.txt
+          git rev-parse HEAD HEAD^{tree} > review/design-source.txt
+          git cat-file -p HEAD | sed -n 's/^parent /parent /p' >> review/design-source.txt
           git fetch --no-tags --depth=1 origin 0913bf3795069e02a03dcae2c02dc8b05c09651e
+          git fetch --no-tags --depth=1 origin 929a63eeb46f36feb9295400da96d5382127068d
           python3 - <<'PY'
           import pathlib, subprocess, json, hashlib
           root=pathlib.Path('review')
@@ -35,19 +38,17 @@ jobs:
               if p.startswith('docs/assets/ui-evidence/') and pathlib.Path(p).name in ['01-dashboard.jpg','02-drives.jpg','03-charges.jpg','04-more.jpg','05-tools.jpg','06-analysis.jpg']:
                   save(mini,p,'mini/'+pathlib.Path(p).name); selected.append(p)
           assert len(selected)==6, 'Expected six known unbound mini simulator captures'
-          for p in paths('HEAD'):
+          for p in paths(app):
               n=pathlib.Path(p).name
               if n in ['AppleTokens.kt','TpmsTrendScreen.kt','ParkedDetailScreen.kt','ChargeDetailScreen.kt','TemperatureTrendScreen.kt','DashboardScreen.kt','NavGraph.kt'] and p.startswith('android/app/src/main/'):
-                  save('HEAD',p,'source/'+n)
-              if n.endswith(('.figma.tsx','.figma.ts','.figma.js')):
-                  selected.append('code-connect:'+p)
-          png=[p for p in paths('HEAD') if p.endswith(('.png','.webp')) and ('juniper' in p.lower() or 'model_y' in p.lower()) and ('black' in p.lower() or 'pbsb' in p.lower())]
-          for p in png[:4]:save('HEAD',p,'assets/'+pathlib.Path(p).name)
+                  save(app,p,'source/'+n)
+          png=[p for p in paths(app) if p.endswith(('.png','.webp')) and ('juniper' in p.lower() or 'model_y' in p.lower()) and ('black' in p.lower() or 'pbsb' in p.lower())]
+          for p in png[:4]: save(app,p,'assets/'+pathlib.Path(p).name)
           inventory={'evidence_app_sha':app,'evidence_mini_sha':mini,'mini_images':selected,'vehicle_assets':png[:4],'local_install_source':'unverified: dossier 050568b vs About image 3cc34dc','no_production_requests':True}
           (root/'input-receipt.json').write_text(json.dumps(inventory,indent=2))
           manifest={str(p.relative_to(root)):hashlib.sha256(p.read_bytes()).hexdigest() for p in root.rglob('*') if p.is_file()}
           (root/'sha256.json').write_text(json.dumps(manifest,indent=2))
-          print('Collected six mini screenshots and bounded source inputs; no QR, secrets or production calls.')
+          print('Collected six mini simulator captures and bounded source inputs; excluded preview QR and production requests.')
           PY
       - name: Validate authored design contract when present
         shell: bash
@@ -55,7 +56,7 @@ jobs:
           if [ -f docs/ui-design-20261109/validate.py ]; then
             python3 docs/ui-design-20261109/validate.py
           else
-            echo 'Evidence collection only; no design completion claim.'
+            echo 'Evidence collection only; no completed-design claim.'
           fi
       - uses: actions/upload-artifact@v4
         with:
