@@ -15,6 +15,12 @@ with sync_playwright() as p:
     page.on('pageerror',lambda e:errors.append(str(e)))
     page.set_content(HTML.read_text(),wait_until='load');page.wait_for_selector('[data-tab="home"]')
     check('home car loads',page.locator('.car').evaluate('(x)=>x.complete && x.naturalWidth>0'))
+    cdp=page.context.new_cdp_session(page)
+    cdp.send('DOM.enable');cdp.send('CSS.enable')
+    document=cdp.send('DOM.getDocument')
+    heading=cdp.send('DOM.querySelector',{'nodeId':document['root']['nodeId'],'selector':'#heading h1'})
+    rendered_fonts=cdp.send('CSS.getPlatformFontsForNode',{'nodeId':heading['nodeId']})['fonts']
+    check('actual Chinese glyphs rendered',any('CJK' in f['familyName'] and f['glyphCount']>=2 for f in rendered_fonts))
     page.locator('[data-tab="drives"]').click()
     check('tab uses no fade', 'fade' not in page.locator('#content').get_attribute('class'))
     page.locator('#content [data-go="parked"]').click();page.locator('[data-action="retry"]').click()
@@ -57,6 +63,6 @@ with sync_playwright() as p:
     check('no external requests',not external)
     check('no runtime errors',not errors)
     browser.close()
-report={'html_sha256':hashlib.sha256(HTML.read_bytes()).hexdigest(),'checks':results,'passed':sum(x['pass'] for x in results),'failed':sum(not x['pass'] for x in results),'network_requests':external,'runtime_errors':errors,'evidence_class':'isolated desktop Chromium on generated offline design prototype; NOT Figma render, device or provider acceptance'}
+report={'html_sha256':hashlib.sha256(HTML.read_bytes()).hexdigest(),'rendered_heading_fonts':rendered_fonts,'checks':results,'passed':sum(x['pass'] for x in results),'failed':sum(not x['pass'] for x in results),'network_requests':external,'runtime_errors':errors,'evidence_class':'isolated desktop Chromium on generated offline design prototype; NOT Figma render, device or provider acceptance'}
 (ROOT/'preview-test-report.json').write_text(json.dumps(report,ensure_ascii=False,indent=2))
 print(json.dumps({k:v for k,v in report.items() if k!='checks'},ensure_ascii=False,indent=2))

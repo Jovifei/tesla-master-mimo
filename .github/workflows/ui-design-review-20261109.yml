@@ -19,6 +19,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          test "$RUNNER_ENVIRONMENT" = github-hosted
           python3 -m pip install --disable-pip-version-check --retries 1 --timeout 30 -r docs/ui-design-20261109/requirements.txt
           if command -v google-chrome >/dev/null; then
             echo "CHROME_BIN=$(command -v google-chrome)" >> "$GITHUB_ENV"
@@ -27,6 +28,19 @@ jobs:
           else
             echo 'Hosted runner has no approved existing Chrome/Chromium; fail closed.' >&2
             exit 1
+          fi
+      - name: Require real Chinese glyph coverage on isolated hosted runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          if ! python3 docs/ui-design-20261109/verify_cjk.py; then
+            if ! sudo env DEBIAN_FRONTEND=noninteractive timeout 120s apt-get -o Acquire::Retries=1 -o DPkg::Lock::Timeout=30 install -y --no-install-recommends fonts-noto-cjk; then
+              sudo timeout 120s apt-get -o Acquire::Retries=1 update
+              sudo env DEBIAN_FRONTEND=noninteractive timeout 120s apt-get -o Acquire::Retries=1 -o DPkg::Lock::Timeout=30 install -y --no-install-recommends fonts-noto-cjk
+            fi
+            timeout 60s fc-cache -f
+            python3 docs/ui-design-20261109/verify_cjk.py
           fi
       - name: Collect immutable non-production design inputs
         shell: bash
@@ -69,7 +83,7 @@ jobs:
           set -euo pipefail
           python3 docs/ui-design-20261109/build_preview.py
           python3 docs/ui-design-20261109/validate.py
-      - name: Exercise actual isolated Chromium consumers
+      - name: Exercise actual isolated Chromium consumers and glyphs
         shell: bash
         run: |
           set -euo pipefail
@@ -84,7 +98,7 @@ jobs:
           from pathlib import Path
           import hashlib, json, shutil
           src=Path('docs/ui-design-20261109'); out=Path('review/delivery')
-          names=['README.md','LOCAL-RECEIVE.md','design-contract.json','figma-repair.mjs','preview.template.html','build_preview.py','test_preview.py','validate.py','requirements.txt','preview.html','vehicle-reference.jpg','preview-test-report.json','preview-home-light.png','preview-home-dark.png','preview-tpms.png']
+          names=['README.md','LOCAL-RECEIVE.md','CJK-REVIEW.md','design-contract.json','figma-repair.mjs','preview.template.html','build_preview.py','test_preview.py','validate.py','verify_cjk.py','font-coverage.json','requirements.txt','preview.html','vehicle-reference.jpg','preview-test-report.json','preview-home-light.png','preview-home-dark.png','preview-tpms.png']
           for name in names:
               p=src/name
               if p.is_file(): shutil.copyfile(p,out/name)
