@@ -69,7 +69,7 @@ it('opens the real readiness panel from More for the same signed-in owner', asyn
 it('keeps the normal dashboard at the capsule-safe top and moves diagnostics into More', async () => {
   platform.request.mockImplementation(async ({ url }: { url: string }) => online(url))
   const page = await mount(false)
-  expect(page.root.findByProps({ className: 'page vehicle-page' }).props.style.paddingTop).toBe('84px')
+  expect(page.root.findByProps({ className: 'page vehicle-page appearance-neutral' }).props.style.paddingTop).toBe('84px')
   expect(visible()).not.toContain('查看数据状态')
   expect(page.root.findAllByProps({ className: 'dashboard-readiness-panel' })).toHaveLength(0)
 })
@@ -78,12 +78,12 @@ it('keeps the title beside the capsule and shields the system bar while scrollin
   platform.menuLeft = 280
   platform.request.mockImplementation(async ({ url }: { url: string }) => online(url))
   const page = await mount(false)
-  expect(page.root.findByProps({ className: 'page vehicle-page' }).props.style.paddingTop).toBe('48px')
+  expect(page.root.findByProps({ className: 'page vehicle-page appearance-neutral' }).props.style.paddingTop).toBe('48px')
   expect(page.root.findByProps({ className: 'dashboard-toolbar-right' }).props.style.paddingTop).toBe('40px')
   await act(async () => { platform.scroll({ scrollTop: 5 }) })
   const coverHeight = page.root.findByProps({ className: 'dashboard-system-bar-cover' }).props.style.height
   expect(coverHeight).toBe('40px')
-  expect(parseInt(coverHeight)).toBeLessThan(parseInt(page.root.findByProps({ className: 'page vehicle-page' }).props.style.paddingTop))
+  expect(parseInt(coverHeight)).toBeLessThan(parseInt(page.root.findByProps({ className: 'page vehicle-page appearance-neutral' }).props.style.paddingTop))
   expect(page.root.findByProps({ className: 'dashboard-capsule-cover' }).props.style).toEqual({ top: '40px', left: '256px', height: '44px' })
   await act(async () => { platform.scroll({ scrollTop: 0 }) })
   expect(page.root.findAllByProps({ className: 'dashboard-system-bar-cover' })).toHaveLength(0)
@@ -406,7 +406,7 @@ it('matches the actual Dashboard hierarchy, App InfoCard ordering, four state ch
   const map = page.root.findByType('map' as React.ElementType)
   expect(map.props.showLocation).toBe(false)
   expect(map.props.latitude).not.toBe(31.2)
-  const sections = page.root.findByProps({ className: 'page vehicle-page' }).findAllByType('view').map(node => node.props.className)
+  const sections = page.root.findByProps({ className: 'page vehicle-page appearance-neutral' }).findAllByType('view').map(node => node.props.className)
   expect(sections.indexOf('dashboard-location-row')).toBeLessThan(sections.indexOf('dashboard-temperature-row'))
   expect(sections.indexOf('dashboard-temperature-row')).toBeLessThan(sections.indexOf('dashboard-tpms'))
   expect(sections.indexOf('dashboard-tpms')).toBeLessThan(sections.indexOf('dashboard-map-card'))

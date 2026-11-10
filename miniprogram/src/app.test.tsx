@@ -19,13 +19,13 @@ vi.mock('@tarojs/taro', () => ({ default: {
 
 import App from './app'
 
-it('keeps the App teal selected tab color after runtime theme application', async () => {
+it('keeps the approved neutral selected tab color and contrasting dark chrome', async () => {
   let tree: renderer.ReactTestRenderer
   await act(async () => { tree = renderer.create(<App><div /></App>) })
-  expect(platform.setTabBarStyle).toHaveBeenCalledWith(expect.objectContaining({ selectedColor: '#157a86' }))
+  expect(platform.setTabBarStyle).toHaveBeenCalledWith(expect.objectContaining({ selectedColor: '#1d1d1f' }))
   const onTheme = platform.onThemeChange.mock.calls[0]?.[0] as ((value: { theme: string }) => void) | undefined
   expect(onTheme).toBeDefined()
   await act(async () => { onTheme?.({ theme: 'dark' }) })
-  expect(platform.setTabBarStyle).toHaveBeenLastCalledWith(expect.objectContaining({ selectedColor: '#8cccd2' }))
+  expect(platform.setTabBarStyle).toHaveBeenLastCalledWith(expect.objectContaining({ selectedColor: '#f5f6f7' }))
   await act(async () => { tree!.unmount() })
 })

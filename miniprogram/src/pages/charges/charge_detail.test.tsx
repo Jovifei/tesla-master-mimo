@@ -303,7 +303,7 @@ it('does not expose manual cost editing to users, keeping read-only accounting d
   expect(tree!.root.findAllByType('button').some(node => node.children.join('') === '编辑本机费用')).toBe(false)
   expect(shown()).not.toContain('本机手动费用')
 })
-it('shows an App-style short address, marked default-price estimate and only returned-month chart data', async () => {
+it('shows an App-style short address, marked default-price estimate and only returned-day cell data', async () => {
   const legacy = { ...charge, source: 'teslamate_archive', cost: null, currency_code: null, charge_type: null, energy_contract: null,
     charge_energy_added: 24.0175, address: '合成路, Test District, Test City', latitude: null, longitude: null, charge_details: [] }
   Reflect.deleteProperty(legacy, 'currency_code')
@@ -324,9 +324,12 @@ it('shows an App-style short address, marked default-price estimate and only ret
   expect(shown()).toContain('费用按 App 默认 ¥1.14/kWh 估算')
   await click('费用')
   const chart = tree!.root.findByProps({ className: 'card charge-month-chart' })
-  expect(chart.findAllByProps({ className: 'charge-chart-column' })).toHaveLength(1)
-  expect(chart.findByProps({ className: 'charge-chart-value' }).children.join('')).toBe('≈¥27.38')
-  expect(chart.findByProps({ className: 'muted' }).children.join('')).toContain('已返回的 1 条记录')
+  const cells = chart.findAllByType('button').filter(node => node.props.className?.includes('charge-activity-cell'))
+  expect(cells).toHaveLength(1)
+  expect(cells[0].props.ariaLabel).toContain('含估算 27.38 CNY')
+  await act(async () => cells[0].props.onClick())
+  expect(chart.findByProps({ className: 'charge-activity-selection' }).children.join('')).toContain('含估算 27.38 CNY')
+  expect(chart.findAllByProps({ className: 'muted' }).some(node => node.children.join('').includes('已返回的 1 条记录'))).toBe(true)
   await detail()
   const panel = tree!.root.findByProps({ className: 'history-detail-overlay' })
   expect(panel.findByProps({ ariaLabel: '充电费用 ≈¥27.38' })).toBeDefined()
@@ -397,7 +400,8 @@ it.each([
   expect(row.findByProps({ ariaLabel: card })).toBeDefined()
   expect(shown()).toContain(source)
   await click('费用')
-  expect(tree!.root.findByProps({ className: 'charge-chart-value' }).children.join('')).toBe(chart)
+  const cell = tree!.root.findAllByType('button').find(node => node.props.className?.includes('charge-activity-cell'))!
+  expect(cell.props.ariaLabel).toContain(chart.startsWith('≈¥') ? chart.replace('≈¥', '含估算 ') + ' CNY' : chart.replace('≈', '含估算 '))
   await detail()
   expect(shown()).toContain(`费用来源：按 ${source} 与合格电池充入量估算`)
   const { historyCacheKey, readHistoryCache } = await import('../../services/history_cache')
