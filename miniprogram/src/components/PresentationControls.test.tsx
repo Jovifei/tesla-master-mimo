@@ -9,7 +9,7 @@ vi.mock('@tarojs/taro', () => ({ default: {
   getStorageSync: (key: string) => storage.values.get(key),
   setStorageSync: (key: string, value: unknown) => { if (storage.fail) throw new Error('quota'); storage.writes.push(key); storage.values.set(key, value) },
 } }))
-import { ChargeActivityGrid, PresentationPreferences, VerticalDayStack } from './PresentationControls'
+import { activityNumber, ChargeActivityGrid, PresentationPreferences, VerticalDayStack } from './PresentationControls'
 import { APPEARANCE_KEY, readAppearance, writeAppearance } from '../services/appearance'
 let tree: TestRenderer.ReactTestRenderer | null = null
 const groups = historyDayGroups([
@@ -91,4 +91,36 @@ it('charge cells retain zero, unknown and full-date identity with bounded paging
   expect(tree!.root.findByProps({ className: 'charge-activity-selection' }).children.join('')).toBe('2026-10-30 · 0 kWh')
   await act(async () => buttons().find(node => node.props.ariaLabel.endsWith('，未知'))!.props.onClick())
   expect(tree!.root.findByProps({ className: 'charge-activity-selection' }).children.join('')).toContain('未知')
+})
+
+it('preserves cost cents and estimate labels while rejecting invalid numeric cells', () => {
+  const cell = { key: '2026-11-09', label: '11/09', value: 1.25, display: '含估算 1.25 CNY', precision: 2, approximate: true }
+  expect(activityNumber(cell, 'CNY')).toBe('≈1.25')
+  expect(activityNumber({ ...cell, value: 0, approximate: false }, 'CNY')).toBe('0.00')
+  expect(activityNumber({ ...cell, value: -1 }, 'CNY')).toBe('—')
+  expect(activityNumber({ ...cell, value: Infinity }, 'CNY')).toBe('—')
+  expect(civilDay('2026-11-09')).toBe('2026-11-09')
+  expect(civilDay('2026-02-30')).toBeNull()
+  expect(civilDay('2026-02-30T01:00:00Z')).toBeNull()
+})
+it('refreshes the selected day, forgets a removed selection and cancels multi-touch', async () => {
+  const scene = (data = groups) => <VerticalDayStack groups={data} scopeKey="stable">{group => <span>{group.items.map(item => item.key).join(',')}</span>}</VerticalDayStack>
+  await act(async () => { tree = TestRenderer.create(scene()) })
+  const body = () => tree!.root.findByType('span').children.join('')
+  const gesture = () => tree!.root.findByProps({ className: 'day-stack-header' })
+  await act(async () => tree!.root.findByProps({ ariaLabel: '较旧日期' }).props.onClick())
+  expect(body()).toBe('d1,p1')
+  const changed = groups.map((group, index) => index === 1 ? { ...group, items: [{ key: 'corrected', date: group.key }] } : group)
+  await act(async () => tree!.update(scene(changed)))
+  expect(body()).toBe('corrected')
+  await act(async () => {
+    gesture().props.onTouchStart({ touches: [{ pageX: 0, pageY: 100 }] })
+    gesture().props.onTouchMove({ touches: [{ pageX: 0, pageY: 80 }, { pageX: 10, pageY: 80 }] })
+    gesture().props.onTouchEnd({ changedTouches: [{ pageX: 0, pageY: 0 }] })
+  })
+  expect(body()).toBe('corrected')
+  await act(async () => tree!.update(scene(groups.slice(0, 1))))
+  expect(body()).toBe('d0,p0')
+  await act(async () => tree!.update(scene()))
+  expect(body()).toBe('d0,p0')
 })

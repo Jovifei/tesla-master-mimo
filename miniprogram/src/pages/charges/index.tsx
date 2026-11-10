@@ -695,6 +695,8 @@ export default function ChargesPage() {
         </View>
         <ChargeActivityGrid unit={chartKind === 'energy' ? 'kWh' : chartKind === 'count' ? '次' : chartCurrency || '币种待确认'} cells={chartMonths.map(month => ({
           key: month.label, label: month.label.slice(5), value: chartKnown(month) ? chartValue(month) : null,
+          precision: chartKind === 'cost' ? 2 : chartKind === 'count' ? 0 : 1,
+          approximate: (chartKind === 'cost' && month.costEstimated) || chartKnown(month) < month.count,
           display: `${chartKnown(month) ? `${chartKind === 'cost' && month.costEstimated ? '含估算 ' : ''}${chartValue(month).toFixed(chartKind === 'count' ? 0 : 2)} ${chartKind === 'energy' ? 'kWh' : chartKind === 'count' ? '次' : chartCurrency}` : '未知'} · 已知 ${chartKnown(month)} / ${month.count} 条`,
         }))} />
         <Text className="muted">统计已返回的 {chartItems.length} 条记录；费用仅在同币种时合计。</Text>

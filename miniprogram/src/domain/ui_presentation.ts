@@ -14,6 +14,14 @@ export function verticalDayTarget(index: number, count: number, dx: number, dy: 
 }
 export function civilDay(value: string | null | undefined): string | null {
   if (!value) return null
+  // A civil date is not UTC midnight: keep it on the same day in every timezone.
+  const date = /^(\d{4})-(\d{2})-(\d{2})(?:$|T)/.exec(value)
+  if (date) {
+    const check = new Date(`${date[1]}-${date[2]}-${date[3]}T12:00:00Z`)
+    if (!Number.isFinite(check.getTime()) || check.getUTCFullYear() !== Number(date[1]) ||
+        check.getUTCMonth() + 1 !== Number(date[2]) || check.getUTCDate() !== Number(date[3])) return null
+    if (value.length === 10) return value
+  }
   const d = new Date(value)
   if (!Number.isFinite(d.getTime())) return null
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`

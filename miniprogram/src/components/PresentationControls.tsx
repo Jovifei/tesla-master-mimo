@@ -1,5 +1,5 @@
 import { Button, Switch, Text, View } from '@tarojs/components'
-import { useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { activityLevel, dayCaption, verticalDayTarget, type DayGroup } from '../domain/ui_presentation'
 import { useAppearance, writeAppearance } from '../services/appearance'
 
@@ -30,6 +30,10 @@ function DayStackState<T>({ groups, children }: { groups: DayGroup<T>[]; childre
   const [selected, setSelected] = useState<string | null>(null)
   const touch = useRef<{ x: number; y: number } | null>(null)
   const appearance = useAppearance()
+  useEffect(() => {
+    if (selected != null && !groups.some(group => group.key === selected)) setSelected(null)
+    touch.current = null
+  }, [groups, selected])
   const index = Math.max(0, groups.findIndex(group => group.key === selected))
   if (!groups.length) return null
   const active = groups[index]
@@ -40,18 +44,21 @@ function DayStackState<T>({ groups, children }: { groups: DayGroup<T>[]; childre
     const point = event.touches?.length === 1 ? event.touches[0] : null
     touch.current = point ? { x: point.pageX, y: point.pageY } : null
   }
+  const move = (input: unknown) => {
+    if ((input as TouchEvent).touches?.length !== 1) touch.current = null
+  }
   const end = (input: unknown) => {
     const event = input as TouchEvent
     const from = touch.current; touch.current = null
     const point = event.changedTouches?.length === 1 ? event.changedTouches[0] : null
-    if (from && point) selectIndex(verticalDayTarget(index, groups.length, point.pageX - from.x, point.pageY - from.y))
+    if (from && point && !event.touches?.length) selectIndex(verticalDayTarget(index, groups.length, point.pageX - from.x, point.pageY - from.y))
   }
   return <View className={`day-stack${appearance.reducedMotion ? ' reduce-motion' : ''}`}>
     {rear.map(({ group, depth }) => <View key={group.key} className={`day-stack-rear depth-${depth}`}>
       <Button className="day-stack-date" ariaLabel={`查看 ${dayCaption(group.key)}`} onClick={() => setSelected(group.key)}>{dayCaption(group.key)}</Button>
     </View>)}
     <View className="day-stack-front">
-      <View className="day-stack-header" catchMove onTouchStart={start} onTouchEnd={end} onTouchCancel={() => { touch.current = null }}>
+      <View className="day-stack-header" catchMove onTouchStart={start} onTouchMove={move} onTouchEnd={end} onTouchCancel={() => { touch.current = null }}>
         <Text className="section-title">{dayCaption(active.key)}</Text>
         <Text className="muted">在日期抬头上下滑动切换 · 正文正常滚动</Text>
       </View>
@@ -65,7 +72,12 @@ function DayStackState<T>({ groups, children }: { groups: DayGroup<T>[]; childre
   </View>
 }
 
-export type ActivityCell = { key: string; label: string; value: number | null; display: string }
+export type ActivityCell = { key: string; label: string; value: number | null; display: string; precision?: number; approximate?: boolean }
+export function activityNumber(cell: ActivityCell, unit: string): string {
+  if (cell.value == null || !Number.isFinite(cell.value) || cell.value < 0) return '—'
+  const precision = Number.isInteger(cell.precision) ? Math.max(0, Math.min(2, cell.precision!)) : unit === '次' ? 0 : 1
+  return `${cell.approximate ? '≈' : ''}${cell.value.toFixed(precision)}`
+}
 export function ChargeActivityGrid({ cells, unit }: { cells: ActivityCell[]; unit: string }) {
   return <ChargeGridState key={JSON.stringify(cells.map(cell => cell.key)) + unit} cells={cells} unit={unit} />
 }
@@ -82,7 +94,7 @@ function ChargeGridState({ cells, unit }: { cells: ActivityCell[]; unit: string 
       {cells.slice(page * pageSize, (page + 1) * pageSize).map(cell => <Button key={cell.key}
         className={`charge-activity-cell level-${activityLevel(cell.value, max)}${selected === cell.key ? ' is-selected' : ''}`}
         ariaLabel={`${cell.key}，${cell.display}`} onClick={() => setSelected(cell.key)}>
-        <Text>{cell.label}</Text><Text className="activity-number">{cell.value == null ? '—' : Number.isFinite(cell.value) ? cell.value.toFixed(unit === '次' ? 0 : 1) : '—'}</Text>
+        <Text>{cell.label}</Text><Text className="activity-number">{activityNumber(cell, unit)}</Text>
       </Button>)}
     </View>
     <Text className="charge-activity-selection">{chosen ? `${chosen.key} · ${chosen.display}` : '点选小格查看数值与覆盖情况'}</Text>
