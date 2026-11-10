@@ -1,0 +1,73 @@
+name: Android UI isolated native acceptance
+on:
+  push:
+    branches: [codex/ui-product-app-20261109]
+    paths: ['.github/workflows/ui-app-native-20261110.yml']
+permissions:
+  contents: read
+jobs:
+  native-ui:
+    if: github.repository == 'Jovifei/tesla-master-mimo' && github.ref == 'refs/heads/codex/ui-product-app-20261109'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: f387c7dbcaa75678bc4794bd9fd86f6cc177437f
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+          log-accepted-android-sdk-licenses: false
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+      - name: Disposable hosted runner only
+        run: |
+          set -euo pipefail
+          test "$GITHUB_ACTIONS" = true
+          test -c /dev/kvm
+          sudo chmod 0666 /dev/kvm
+          mkdir -p emulator-evidence
+          git rev-parse HEAD HEAD^{tree} HEAD^ > emulator-evidence/SOURCE_HEAD.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('android/gradle.properties')
+          keys={'systemProp.http.proxyHost','systemProp.http.proxyPort','systemProp.https.proxyHost','systemProp.https.proxyPort','systemProp.http.nonProxyHosts'}
+          p.write_text('\n'.join(x for x in p.read_text().splitlines() if x.split('=',1)[0] not in keys)+'\n')
+          PY
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: aosp_atd
+          arch: x86_64
+          profile: pixel_4
+          cores: 2
+          ram-size: 3072M
+          heap-size: 384M
+          disk-size: 8G
+          emulator-boot-timeout: 700
+          disable-animations: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot-load -no-snapshot-save -no-metrics -accel on
+          script: |
+            test "$(adb devices | awk 'NR>1 && $2=="device" {print $1}')" = emulator-5554
+            adb shell settings put global airplane_mode_on 1
+            adb shell svc wifi disable
+            adb shell svc data disable
+            cd android && bash gradlew :app:connectedDebugAndroidTest --no-daemon --max-workers=1 -Dorg.gradle.jvmargs='-Xmx4g -XX:MaxMetaspaceSize=1g -XX:+UseSerialGC' -Pkotlin.compiler.execution.strategy=in-process -PallowConnectedDeviceTests=isolated-device -PMATELINK_INSTRUMENTATION_CLASSES=com.matelink.ui.components.UiProductContractAndroidTest -PJOURVOLT_API_BASE_URL=http://127.0.0.1:18090/ -PJOURVOLT_AUTH_HOST=auth.teslalink.joviluma.com
+            adb pull /sdcard/Android/data/com.matelink.test.mock/files/ui-product-evidence emulator-evidence/screenshots
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-ui-native-f387c7d
+          path: |
+            emulator-evidence/
+            android/app/build/outputs/androidTest-results/
+            android/app/build/reports/androidTests/
+          retention-days: 7
+          if-no-files-found: error
