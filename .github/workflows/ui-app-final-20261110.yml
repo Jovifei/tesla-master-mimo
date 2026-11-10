@@ -1,0 +1,146 @@
+name: Android product UI final qualification
+on:
+  push:
+    branches: [codex/ui-product-app-20261109]
+    paths: ['.github/workflows/ui-app-final-20261110.yml']
+permissions:
+  contents: read
+jobs:
+  repair:
+    if: github.repository == 'Jovifei/tesla-master-mimo' && github.ref == 'refs/heads/codex/ui-product-app-20261109'
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      source: ${{ steps.source.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = 99a602df71b1ba4eb646028314882157a9399551
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('android/app/src/main/java/com/matelink/ui/screens/charges/ChargesViewModel.kt');s=p.read_text()
+          a=s.index('    private fun applyFiltersAndUpdateState(');b=s.index('    private fun determineGranularity(',a)
+          section=s[a:b]
+          needle='        // Keep selection tied to the original address or same-record coordinates.'
+          assert section.count(needle)==1
+          section=section.replace(needle,'''        // Capture labels once. A concurrent lookup must not publish a new card
+                  // address with a previous-generation filter label in the same UI state.
+                  val presentationAddresses = visibleCharges.associate { it.chargeId to displayAddress(it) }
+          '''+needle)
+          assert section.count('displayAddress(charge)')==3
+          section=section.replace('displayAddress(charge)','presentationAddresses[charge.chargeId]')
+          s=s[:a]+section+s[b:];p.write_text(s)
+          p=Path('android/app/src/test/java/com/matelink/data/local/TpmsPersistentRecoveryTest.kt');s=p.read_text()
+          for old,new,n in [('TpmsHistoryRepository(interruptedDao), stores.rules)', 'TpmsHistoryRepository(interruptedDao), stores.rules, executionNow = receiptAt)',1),('TpmsHistoryRepository(dao), stores.rules)', 'TpmsHistoryRepository(dao), stores.rules, executionNow = receiptAt)',2)]:
+              assert s.count(old)==n,(old,s.count(old));s=s.replace(old,new)
+          p.write_text(s)
+          p=Path('docs/ui-product-20261110/APP.md');p.write_text(p.read_text()+'''\n## Final regression review\nThe fixed 2026-10-11 TPMS fixture crossed the production 30-day expiry window on 2026-11-10. The recovery scenario now supplies its already-declared receipt clock; production expiry gates and all assertions remain unchanged. Chinese display labels are captured once per UI projection so delayed lookups cannot mix a new card label with a previous filter label. Actual emulator tests use only the isolated test application and synthetic component data, not MainActivity or a provider.\n''')
+          PY
+      - id: source
+        run: |
+          set -euo pipefail
+          git config user.name Jovifei
+          git config user.email 110970864+Jovifei@users.noreply.github.com
+          git add android/app/src/main/java/com/matelink/ui/screens/charges/ChargesViewModel.kt android/app/src/test/java/com/matelink/data/local/TpmsPersistentRecoveryTest.kt docs/ui-product-20261110/APP.md
+          git diff --cached --check
+          git commit -m 'fix(android): make charge labels atomic and use explicit recovery fixture time'
+          git push origin HEAD:refs/heads/codex/ui-product-app-20261109
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+  full-build:
+    needs: repair
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.repair.outputs.source }}
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+          log-accepted-android-sdk-licenses: false
+      - uses: gradle/actions/setup-gradle@v4
+      - run: bash tools/energy-stage/android-ci.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: app-ui-final-${{ needs.repair.outputs.source }}
+          path: |
+            android-evidence/
+            android/app/build/test-results/
+            android/app/build/reports/
+            android/app/build/outputs/apk/
+          retention-days: 7
+          if-no-files-found: error
+  native-ui:
+    needs: repair
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.repair.outputs.source }}
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+          log-accepted-android-sdk-licenses: false
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Isolated runner and KVM preparation
+        run: |
+          set -euo pipefail
+          test -c /dev/kvm
+          sudo chmod 0666 /dev/kvm
+          mkdir -p emulator-evidence
+          git rev-parse HEAD HEAD^{tree} HEAD^ > emulator-evidence/SOURCE_HEAD.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('android/gradle.properties')
+          keys={'systemProp.http.proxyHost','systemProp.http.proxyPort','systemProp.https.proxyHost','systemProp.https.proxyPort','systemProp.http.nonProxyHosts'}
+          p.write_text('\n'.join(x for x in p.read_text().splitlines() if x.split('=',1)[0] not in keys)+'\n')
+          PY
+      - name: Synthetic native component gestures and persistence
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: aosp_atd
+          arch: x86_64
+          profile: pixel_4
+          cores: 2
+          ram-size: 3072M
+          heap-size: 384M
+          disk-size: 8G
+          emulator-boot-timeout: 700
+          disable-animations: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot-load -no-snapshot-save -accel on
+          script: |
+            adb shell settings put global airplane_mode_on 1
+            adb shell svc wifi disable
+            adb shell svc data disable
+            cd android && bash gradlew :app:connectedDebugAndroidTest --no-daemon --max-workers=1 -Dorg.gradle.jvmargs='-Xmx4g -XX:MaxMetaspaceSize=1g -XX:+UseSerialGC' -Pkotlin.compiler.execution.strategy=in-process -PMATELINK_INSTRUMENTATION_CLASSES=com.matelink.ui.components.UiProductContractAndroidTest -PJOURVOLT_API_BASE_URL=http://127.0.0.1:18090/ -PJOURVOLT_AUTH_HOST=auth.teslalink.joviluma.com
+            adb pull /sdcard/Android/data/com.matelink.test.mock/files/ui-product-evidence ../emulator-evidence/screenshots
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: app-ui-native-${{ needs.repair.outputs.source }}
+          path: |
+            emulator-evidence/
+            android/app/build/outputs/androidTest-results/
+            android/app/build/reports/androidTests/
+          retention-days: 7
+          if-no-files-found: error
