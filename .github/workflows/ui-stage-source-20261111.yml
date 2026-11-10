@@ -1,0 +1,46 @@
+name: UI stage pinned source 20261111
+on:
+  push:
+    branches: [codex/ui-product-web-20261109]
+    paths: ['.github/workflows/ui-stage-source-20261111.yml']
+permissions:
+  contents: read
+jobs:
+  source:
+    if: github.repository == 'Jovifei/tesla-master-mimo'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Export immutable source only
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin 1c02bf28ad726ddd6836f883e86d9adbf7c27aba 5f435359d9400cc85fbaedec1f5aaf5a72023714 58540024b7d00a69edf902cc82d554e9eeb77dc4 520680a708b60589fbf3910871cc259bf1f01251
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess,hashlib,json
+          refs={'app':('1c02bf28ad726ddd6836f883e86d9adbf7c27aba',['android/','tools/','.github/workflows/','docs/REMOTE-FULL-DATA-STAGE-MANDATE-20261007.md']), 'mini':('5f435359d9400cc85fbaedec1f5aaf5a72023714',['miniprogram/','tools/miniprogram/','.github/workflows/']), 'web':('58540024b7d00a69edf902cc82d554e9eeb77dc4',['web_matelink/','.github/workflows/']), 'web-base':('520680a708b60589fbf3910871cc259bf1f01251',['web_matelink/','.github/workflows/'])}
+          out=Path('source');out.mkdir();receipt={}
+          for name,(ref,prefixes) in refs.items():
+              entries=[]
+              paths=subprocess.check_output(['git','ls-tree','-r','--name-only',ref],text=True).splitlines()
+              for p in paths:
+                  if not any(p.startswith(x) for x in prefixes):continue
+                  if any(x in p.lower() for x in ['node_modules/','/build/','/dist/','.env','local.properties','signing.properties','keystore','service-account','google-services.json']):continue
+                  if Path(p).suffix.lower() not in {'.kt','.kts','.java','.xml','.properties','.ts','.tsx','.js','.jsx','.mjs','.mts','.cjs','.cts','.json','.html','.css','.scss','.yml','.yaml','.md','.py','.sh','.lock','.svg'}:continue
+                  raw=subprocess.check_output(['git','show',ref+':'+p]);dest=out/name/p
+                  dest.parent.mkdir(parents=True,exist_ok=True);dest.write_bytes(raw)
+                  entries.append({'path':p,'sha256':hashlib.sha256(raw).hexdigest()})
+              receipt[name]={'sha':ref,'tree':subprocess.check_output(['git','rev-parse',ref+'^{tree}'],text=True).strip(),'files':entries}
+          (out/'receipt.json').write_text(json.dumps(receipt,indent=2))
+          print({k:len(v['files']) for k,v in receipt.items()})
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ui-stage-pinned-source
+          path: source/
+          include-hidden-files: true
+          retention-days: 7
+          if-no-files-found: error
