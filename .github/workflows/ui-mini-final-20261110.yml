@@ -1,0 +1,106 @@
+name: Mini product UI final qualification
+on:
+  push:
+    branches: [codex/ui-product-mini-20261109]
+    paths: ['.github/workflows/ui-mini-final-20261110.yml']
+permissions:
+  contents: read
+jobs:
+  align-tests:
+    if: github.repository == 'Jovifei/tesla-master-mimo' && github.ref == 'refs/heads/codex/ui-product-mini-20261109'
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      source: ${{ steps.source.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Update explicit user-changed presentation expectations; preserve every safety assertion
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = 5319a62e5f423aa8f7b2451dfd3dd1bb5c875e9e
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          root=Path('miniprogram/src')
+          def edit(name,sha,pairs):
+              p=root/name;assert hashlib.sha256(p.read_bytes()).hexdigest()==sha,name
+              s=p.read_text()
+              for old,new,count in pairs:
+                  assert s.count(old)==count,(name,old,s.count(old));s=s.replace(old,new)
+              p.write_text(s)
+          edit('app.test.tsx','91ceb3179ca00efb9f267baf067cbceaa6d05a2d644a1c6347dc7fa78d3ec703',[
+            ('keeps the App teal selected tab color after runtime theme application','keeps the approved neutral selected tab color and contrasting dark chrome',1),
+            ("selectedColor: '#157a86'","selectedColor: '#1d1d1f'",1),("selectedColor: '#8cccd2'","selectedColor: '#f5f6f7'",1)])
+          edit('pages/vehicle/vehicle_page.test.tsx','1c1f149a0a01f3289c2fe4f5fe4c6695f2ba603475ddc285639cbde4ff2d5a7f',[("className: 'page vehicle-page'","className: 'page vehicle-page appearance-neutral'",4)])
+          edit('domain/history_pages.test.tsx','9020e27cd78204e71a9cf9d5c09ccc3a4e074a2f02b361084971c82c1afbd54a',[
+            ("kind === 'drives' ? 'page history-page drives-page' : 'page history-page charges-page'","kind === 'drives' ? 'page history-page drives-page appearance-neutral' : 'page history-page charges-page appearance-neutral'",1),
+            ("className: 'charge-chart-value'","className: 'activity-number'",1)])
+          edit('domain/recent_drive.test.ts','582ea031a93be8a933a299a9b893d92085b72faaa29b36a6f7d396aea344a63e',[
+            ("expect(model.endTimeText).toBe('11-07 08:42')","const localEnd = new Date('2026-11-07T08:42:00+08:00')\n    expect(model.endTimeText).toBe(`11-07 ${String(localEnd.getHours()).padStart(2, '0')}:42`)",1)])
+          edit('pages/charges/charge_detail.test.tsx','51a894b60b3ba495d80f408d08fccc9e6f2cd5b93ade35094d69816d7970ebc1',[
+            ('only returned-month chart data','only returned-day cell data',1),
+            ("expect(chart.findAllByProps({ className: 'charge-chart-column' })).toHaveLength(1)","const cells = chart.findAllByType('button').filter(node => node.props.className?.includes('charge-activity-cell'))\n  expect(cells).toHaveLength(1)",1),
+            ("expect(chart.findByProps({ className: 'charge-chart-value' }).children.join('')).toBe('≈¥27.38')","expect(cells[0].props.ariaLabel).toContain('含估算 27.38 CNY')\n  await act(async () => cells[0].props.onClick())\n  expect(chart.findByProps({ className: 'charge-activity-selection' }).children.join('')).toContain('含估算 27.38 CNY')",1),
+            ("expect(chart.findByProps({ className: 'muted' }).children.join('')).toContain('已返回的 1 条记录')","expect(chart.findAllByProps({ className: 'muted' }).some(node => node.children.join('').includes('已返回的 1 条记录'))).toBe(true)",1),
+            ("expect(tree!.root.findByProps({ className: 'charge-chart-value' }).children.join('')).toBe(chart)","const cell = tree!.root.findAllByType('button').find(node => node.props.className?.includes('charge-activity-cell'))!\n  expect(cell.props.ariaLabel).toContain(chart.startsWith('≈¥') ? chart.replace('≈¥', '含估算 ') + ' CNY' : chart.replace('≈', '含估算 '))",1)])
+          p=Path('docs/ui-product-20261110/MINIPROGRAM.md')
+          p.write_text(p.read_text()+'''\n## Regression migration\nThe full suite initially found 11 old-presentation assertions: exact root classes now include the selected palette; selected native tab colors are neutral instead of teal; monthly chart selectors now target actual recorded-day cells; precise estimated costs are verified in their accessible label and selected readout; local end-time tests now calculate the expected local hour from the explicit timestamp instead of assuming Shanghai. No tests or safety assertions were removed. All new gesture, scope reset, preference persistence/quota, unknown/zero and paging tests remain.\n''')
+          PY
+      - id: source
+        run: |
+          set -euo pipefail
+          git config user.name Jovifei
+          git config user.email 110970864+Jovifei@users.noreply.github.com
+          git add miniprogram/src/app.test.tsx miniprogram/src/domain/history_pages.test.tsx miniprogram/src/domain/recent_drive.test.ts miniprogram/src/pages/charges/charge_detail.test.tsx miniprogram/src/pages/vehicle/vehicle_page.test.tsx docs/ui-product-20261110/MINIPROGRAM.md
+          git diff --cached --check
+          git commit -m 'test(mini): qualify approved neutral chrome and actual daily charge cells without weakening contracts'
+          git push origin HEAD:refs/heads/codex/ui-product-mini-20261109
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+  verify:
+    needs: align-tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.align-tests.outputs.source }}
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - working-directory: miniprogram
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm ci --prefix test-tooling --ignore-scripts --no-audit --no-fund
+          mkdir -p evidence/ui-product
+          git rev-parse HEAD HEAD^{tree} HEAD^ > evidence/ui-product/SOURCE_HEAD.txt
+      - name: Typecheck
+        working-directory: miniprogram
+        shell: bash --noprofile --norc -eo pipefail {0}
+        run: npm run typecheck 2>&1 | tee evidence/ui-product/typecheck.log
+      - name: All original and new product consumer tests
+        working-directory: miniprogram
+        env:
+          TZ: Asia/Tokyo
+        shell: bash --noprofile --norc -eo pipefail {0}
+        run: npm test -- --reporter=default --reporter=junit --outputFile.junit=evidence/ui-product/tests.xml 2>&1 | tee evidence/ui-product/tests.log
+      - name: Actual WeChat compilation and asset budgets
+        working-directory: miniprogram
+        shell: bash --noprofile --norc -eo pipefail {0}
+        run: |
+          npm run build:weapp 2>&1 | tee evidence/ui-product/build.log
+          node ../tools/miniprogram/build-vehicle-assets.mjs --check-dist > evidence/ui-product/package-integrity.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mini-ui-final-${{ needs.align-tests.outputs.source }}
+          path: |
+            miniprogram/evidence/ui-product/
+            miniprogram/dist/
+          retention-days: 7
+          if-no-files-found: error
