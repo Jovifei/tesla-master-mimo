@@ -35,11 +35,13 @@ function DayStackState<T>({ groups, children }: { groups: DayGroup<T>[]; childre
   const active = groups[index]
   const selectIndex = (target: number) => setSelected(groups[Math.max(0, Math.min(groups.length - 1, target))].key)
   const rear = groups.slice(index + 1, index + 3).map((group, i) => ({ group, depth: i + 1 })).reverse()
-  const start = (event: TouchEvent) => {
+  const start = (input: unknown) => {
+    const event = input as TouchEvent
     const point = event.touches?.length === 1 ? event.touches[0] : null
     touch.current = point ? { x: point.pageX, y: point.pageY } : null
   }
-  const end = (event: TouchEvent) => {
+  const end = (input: unknown) => {
+    const event = input as TouchEvent
     const from = touch.current; touch.current = null
     const point = event.changedTouches?.length === 1 ? event.changedTouches[0] : null
     if (from && point) selectIndex(verticalDayTarget(index, groups.length, point.pageX - from.x, point.pageY - from.y))
