@@ -724,8 +724,7 @@ class ChargesViewModel @Inject constructor(
         drivesJob?.cancel()
         drivesJob = viewModelScope.launch {
             try {
-                val flow = driveSummaryDao?.observeAllAnyCar()
-                    ?: driveSummaryDao?.observeAll(localHistoryCarId)
+                val flow = driveSummaryDao?.observeAll(localHistoryCarId)
                 flow?.collect { drives ->
                     allDrives = drives
                     activeHistoryProof?.let(::requestChargeAddresses)
@@ -738,9 +737,10 @@ class ChargesViewModel @Inject constructor(
     }
 
     private fun displayAddress(charge: ChargeData): String? {
-        val currentAddr = charge.address?.takeIf { !it.contains("未知") && it.isNotBlank() }
-        if (currentAddr != null) return currentAddr
+        // Presentation labels must not change the original filter/session identity.
         chargeAddressKey(charge, allReferenceRows, allDrives)?.let(resolvedAddresses::get)?.let { return it }
+        val currentAddr = charge.address?.toChineseDisplayAddress()?.usableChineseChargeAddress()
+        if (currentAddr != null) return currentAddr
         val refAddr = allReferenceRows[charge.chargeId]?.address?.takeIf { !it.contains("未知") && it.isNotBlank() }
         if (refAddr != null) return refAddr
         val correlated = correlateChargeAddress(charge.startDate, charge.endDate, allDrives)
@@ -784,9 +784,7 @@ class ChargesViewModel @Inject constructor(
                     .mapNotNull { chargeAddressKey(it, allReferenceRows, allDrives) }.toSet()
                 for (key in keys.filter { it in currentKeys }) {
                     resolvedAddresses[key] = chinese
-                    try {
-                        chargeSummaryDao.updateAddressIfMissing(proof.context.localHistoryCarId, key.chargeId, chinese)
-                    } catch (_: Exception) {}
+                    // Keep original archive bytes and stable keys unchanged; this is a scoped display label.
                 }
                 applyFiltersAndUpdateState(preserveLoading = true)
             }

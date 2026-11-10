@@ -75,7 +75,7 @@ fun TelemetryPanel(
         shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surface,
         tonalElevation = 0.dp,
-        shadowElevation = 0.dp,
+        shadowElevation = 1.dp,
         border = BorderStroke(
             0.5.dp,
             MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.48f)
