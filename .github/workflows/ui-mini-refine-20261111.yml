@@ -1,0 +1,145 @@
+name: Mini UI refinement 20261111
+on:
+  push:
+    branches: [codex/ui-product-mini-20261109]
+    paths: ['.github/workflows/ui-mini-refine-20261111.yml']
+permissions:
+  contents: read
+jobs:
+  apply:
+    if: github.repository == 'Jovifei/tesla-master-mimo' && github.ref == 'refs/heads/codex/ui-product-mini-20261109'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    outputs:
+      sha: ${{ steps.commit.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Apply reviewed scoped refinements
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = 5f435359d9400cc85fbaedec1f5aaf5a72023714
+          python3 - <<'PY'
+          from pathlib import Path
+          def edit(rel,old,new):
+              p=Path(rel);s=p.read_bytes().decode();assert s.count(old)==1,(rel,s.count(old));p.write_bytes(s.replace(old,new).encode())
+          p='miniprogram/src/components/PresentationControls.tsx'
+          edit(p,'import { useRef, useState, type ReactNode }','import { useEffect, useRef, useState, type ReactNode }')
+          edit(p,'  const appearance = useAppearance()\n  const index','  const appearance = useAppearance()\n  useEffect(() => {\n    if (selected != null && !groups.some(group => group.key === selected)) setSelected(null)\n    touch.current = null\n  }, [groups, selected])\n  const index')
+          edit(p,'  const end = (input: unknown) => {','  const move = (input: unknown) => {\n    if ((input as TouchEvent).touches?.length !== 1) touch.current = null\n  }\n  const end = (input: unknown) => {')
+          edit(p,'if (from && point) selectIndex','if (from && point && !event.touches?.length) selectIndex')
+          edit(p,'catchMove onTouchStart={start} onTouchEnd={end}','catchMove onTouchStart={start} onTouchMove={move} onTouchEnd={end}')
+          edit(p,'export type ActivityCell = { key: string; label: string; value: number | null; display: string }', '''export type ActivityCell = { key: string; label: string; value: number | null; display: string; precision?: number; approximate?: boolean }
+          export function activityNumber(cell: ActivityCell, unit: string): string {
+            if (cell.value == null || !Number.isFinite(cell.value) || cell.value < 0) return '—'
+            const precision = Number.isInteger(cell.precision) ? Math.max(0, Math.min(2, cell.precision!)) : unit === '次' ? 0 : 1
+            return `${cell.approximate ? '≈' : ''}${cell.value.toFixed(precision)}`
+          }''')
+          edit(p,"cell.value == null ? '—' : Number.isFinite(cell.value) ? cell.value.toFixed(unit === '次' ? 0 : 1) : '—'",'activityNumber(cell, unit)')
+          edit('miniprogram/src/pages/charges/index.tsx','          key: month.label, label: month.label.slice(5), value: chartKnown(month) ? chartValue(month) : null,', '''          key: month.label, label: month.label.slice(5), value: chartKnown(month) ? chartValue(month) : null,
+                    precision: chartKind === 'cost' ? 2 : chartKind === 'count' ? 0 : 1,
+                    approximate: (chartKind === 'cost' && month.costEstimated) || chartKnown(month) < month.count,''')
+          edit('miniprogram/src/domain/ui_presentation.ts','  if (!value) return null\n  const d = new Date(value)', '''  if (!value) return null
+            // A civil date is not UTC midnight: keep it on the same day in every timezone.
+            const date = /^(\\d{4})-(\\d{2})-(\\d{2})(?:$|T)/.exec(value)
+            if (date) {
+              const check = new Date(`${date[1]}-${date[2]}-${date[3]}T12:00:00Z`)
+              if (!Number.isFinite(check.getTime()) || check.getUTCFullYear() !== Number(date[1]) ||
+                  check.getUTCMonth() + 1 !== Number(date[2]) || check.getUTCDate() !== Number(date[3])) return null
+              if (value.length === 10) return value
+            }
+            const d = new Date(value)''')
+          t=Path('miniprogram/src/components/PresentationControls.test.tsx')
+          s=t.read_text().replace('import { ChargeActivityGrid, PresentationPreferences, VerticalDayStack }','import { activityNumber, ChargeActivityGrid, PresentationPreferences, VerticalDayStack }')
+          s+='''
+          it('preserves cost cents and estimate labels while rejecting invalid numeric cells', () => {
+            const cell = { key: '2026-11-09', label: '11/09', value: 1.25, display: '含估算 1.25 CNY', precision: 2, approximate: true }
+            expect(activityNumber(cell, 'CNY')).toBe('≈1.25')
+            expect(activityNumber({ ...cell, value: 0, approximate: false }, 'CNY')).toBe('0.00')
+            expect(activityNumber({ ...cell, value: -1 }, 'CNY')).toBe('—')
+            expect(activityNumber({ ...cell, value: Infinity }, 'CNY')).toBe('—')
+            expect(civilDay('2026-11-09')).toBe('2026-11-09')
+            expect(civilDay('2026-02-30')).toBeNull()
+            expect(civilDay('2026-02-30T01:00:00Z')).toBeNull()
+          })
+          it('refreshes the selected day, forgets a removed selection and cancels multi-touch', async () => {
+            const scene = (data = groups) => <VerticalDayStack groups={data} scopeKey="stable">{group => <span>{group.items.map(item => item.key).join(',')}</span>}</VerticalDayStack>
+            await act(async () => { tree = TestRenderer.create(scene()) })
+            const body = () => tree!.root.findByType('span').children.join('')
+            const gesture = () => tree!.root.findByProps({ className: 'day-stack-header' })
+            await act(async () => tree!.root.findByProps({ ariaLabel: '较旧日期' }).props.onClick())
+            expect(body()).toBe('d1,p1')
+            const changed = groups.map((group, index) => index === 1 ? { ...group, items: [{ key: 'corrected', date: group.key }] } : group)
+            await act(async () => tree!.update(scene(changed)))
+            expect(body()).toBe('corrected')
+            await act(async () => {
+              gesture().props.onTouchStart({ touches: [{ pageX: 0, pageY: 100 }] })
+              gesture().props.onTouchMove({ touches: [{ pageX: 0, pageY: 80 }, { pageX: 10, pageY: 80 }] })
+              gesture().props.onTouchEnd({ changedTouches: [{ pageX: 0, pageY: 0 }] })
+            })
+            expect(body()).toBe('corrected')
+            await act(async () => tree!.update(scene(groups.slice(0, 1))))
+            expect(body()).toBe('d0,p0')
+            await act(async () => tree!.update(scene()))
+            expect(body()).toBe('d0,p0')
+          })
+          '''
+          t.write_text(s)
+          PY
+      - id: commit
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add miniprogram/src/
+          git rm .github/workflows/ui-mini-refine-20261111.yml
+          git diff --cached --check
+          git commit -m 'feat(mini): preserve date selection and cost precision; cancel multi-touch; validate civil dates'
+          git push origin HEAD:refs/heads/codex/ui-product-mini-20261109
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+  verify:
+    needs: apply
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: miniprogram
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.apply.outputs.sha }}
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm ci --prefix test-tooling --ignore-scripts --no-audit --no-fund
+          mkdir -p evidence/ui-stage
+          git rev-parse HEAD HEAD^{tree} HEAD^ > evidence/ui-stage/SOURCE_HEAD.txt
+      - name: Typecheck
+        run: npm run typecheck 2>&1 | tee evidence/ui-stage/typecheck.log
+      - name: Complete regression suite and unchanged asset integrity
+        env:
+          TZ: Asia/Tokyo
+        run: npm test -- --reporter=default --reporter=junit --outputFile.junit=evidence/ui-stage/tests.xml 2>&1 | tee evidence/ui-stage/tests.log
+      - name: Presentation timezone regressions
+        env:
+          TZ: America/Los_Angeles
+        run: node test-tooling/node_modules/vitest/vitest.mjs run --config test-tooling/vitest.config.mts src/components/PresentationControls.test.tsx 2>&1 | tee evidence/ui-stage/timezone.log
+      - name: WeChat build and original package budgets
+        run: |
+          npm run build:weapp 2>&1 | tee evidence/ui-stage/build.log
+          node ../tools/miniprogram/build-vehicle-assets.mjs --check-dist 2>&1 | tee evidence/ui-stage/budgets.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mini-stage-${{ needs.apply.outputs.sha }}
+          path: |
+            miniprogram/evidence/ui-stage/
+            miniprogram/dist/
+          retention-days: 7
+          if-no-files-found: error
