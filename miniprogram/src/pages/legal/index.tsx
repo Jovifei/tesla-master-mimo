@@ -1,3 +1,4 @@
+import { useAppearance } from '../../services/appearance'
 import { Text, View } from '@tarojs/components'
 import { useLoad } from '@tarojs/taro'
 import { useState } from 'react'
@@ -5,6 +6,7 @@ import { legalDocumentFor, legalDocuments, type LegalDocument } from '../../doma
 import SubpageHeader from '../../components/SubpageHeader'
 
 export default function LegalPage() {
+  const appearance = useAppearance()
   const [document, setDocument] = useState<LegalDocument>(legalDocuments.terms)
 
   useLoad(options => {
@@ -13,7 +15,7 @@ export default function LegalPage() {
   })
 
   return (
-    <View className="page legal-page subpage-page">
+    <View className={`page legal-page subpage-page ${appearance.className}`}>
       <SubpageHeader title={document.title} subtitle="MateLink 法律文件" />
       <View className="legal-hero">
         <Text className="eyebrow">MATELINK · LEGAL</Text>

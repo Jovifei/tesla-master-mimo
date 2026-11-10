@@ -1,3 +1,5 @@
+import { PresentationPreferences } from '../../components/PresentationControls'
+import { useAppearance } from '../../services/appearance'
 import { Button, Input, Map, Picker, Slider, Switch, Text, View } from '@tarojs/components'
 const APP_MINIPROGRAM_VERSION: string = process.env.TARO_APP_MINIPROGRAM_VERSION ?? '未确认'
 import Taro, { useDidHide, useDidShow, useRouter, useUnload } from '@tarojs/taro'
@@ -38,6 +40,7 @@ function previewTouches(event: unknown): Array<{ clientX: number; clientY: numbe
 }
 
 export default function ToolsPage() {
+  const appearance = useAppearance()
   const params = useRouter().params
   const requested = params.kind || 'settings'
   const kind = Object.prototype.hasOwnProperty.call(titles, requested) ? requested : 'settings'
@@ -205,11 +208,11 @@ export default function ToolsPage() {
   const coordinate = mapCoordinate(status?.location?.latitude, status?.location?.longitude)
   const historicCoordinate = mapCoordinate(historicPosition?.latitude, historicPosition?.longitude)
   const profileEpoch = epoch.current
-  return <View className="page tools-page subpage-page">
+  return <View className={`page tools-page subpage-page ${appearance.className}`}>
     <SubpageHeader title={titles[kind]} subtitle={car?.displayName || car?.name || (noFetch.has(kind) ? null : '所选车辆')} />
     {!noFetch.has(kind) ? <Button className="button button-secondary" loading={loading} onClick={() => { void load() }}>刷新数据</Button> : null}
     {error ? <Text className="error">{error}</Text> : null}
-    {kind === 'settings' ? <>
+    {kind === 'settings' ? <><PresentationPreferences />
       <View className="card local-data-status">
         <SectionHeading icon="shield" title="本机数据与升级" />
         <Text className="muted">正常升级保留有效登录、费用、手动旅程和设置；不清空历史，也不要求重新授权。退出登录与删除账号是不同操作。</Text>

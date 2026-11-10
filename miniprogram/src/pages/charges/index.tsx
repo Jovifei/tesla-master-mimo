@@ -1,3 +1,6 @@
+import { ChargeActivityGrid } from '../../components/PresentationControls'
+import { civilDay } from '../../domain/ui_presentation'
+import { useAppearance } from '../../services/appearance'
 import { Button, Map as TaroMap, Picker, ScrollView, Text, View } from '@tarojs/components'
 import Taro, { useDidHide, useDidShow, usePageScroll, useUnload } from '@tarojs/taro'
 import { useEffect, useRef, useState } from 'react'
@@ -102,6 +105,7 @@ const emptyMeta: HistoryPageMeta = {
 }
 
 export default function ChargesPage() {
+  const appearance = useAppearance()
   const [cars, setCars] = useState<Car[]>([])
   const [car, setCar] = useState<Car | null>(null)
   const [items, setItems] = useState<Charge[]>([])
@@ -618,17 +622,16 @@ export default function ChargesPage() {
   for (const row of chartItems) {
     const date = row.startDate ? new Date(row.startDate) : null
     if (!date || !Number.isFinite(date.getTime())) continue
-    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
-    const month = months.get(key) ?? { label: `${date.getMonth() + 1}月`, energy: 0, energyKnown: 0, cost: 0, costKnown: 0, costEstimated: false, count: 0 }
+    const key = civilDay(row.startDate)!
+    const month = months.get(key) ?? { label: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`, energy: 0, energyKnown: 0, cost: 0, costKnown: 0, costEstimated: false, count: 0 }
     month.count++
     if (row.energyAddedKwh != null && Number.isFinite(row.energyAddedKwh) && row.energyAddedKwh >= 0) { month.energy += row.energyAddedKwh; month.energyKnown++ }
     if (row.cost != null && Number.isFinite(row.cost) && row.cost >= 0 && chartCurrency != null && (row.currencyCode ?? row.currency) === chartCurrency) { month.cost += row.cost; month.costKnown++; month.costEstimated ||= row.costProvenance === 'estimate' }
     months.set(key, month)
   }
-  const chartMonths = [...months.entries()].sort(([a], [b]) => a.localeCompare(b)).slice(-6).map(([, month]) => month)
+  const chartMonths = [...months.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([, month]) => month)
   const chartValue = (month: typeof chartMonths[number]) => chartKind === 'energy' ? month.energy : chartKind === 'cost' ? month.cost : month.count
   const chartKnown = (month: typeof chartMonths[number]) => chartKind === 'energy' ? month.energyKnown : chartKind === 'cost' ? month.costKnown : month.count
-  const chartMaximum = Math.max(0, ...chartMonths.map(chartValue))
   const detailCoordinate = selectedEvidence?.charge ? mapCoordinate(selectedEvidence.charge.latitude, selectedEvidence.charge.longitude) : null
   const sampleStats = (key: 'powerKw' | 'voltageV' | 'currentA' | 'temperatureC') => {
     const values = (selectedEvidence?.points ?? []).map(point => point[key]).filter((value): value is number => value != null && Number.isFinite(value))
@@ -638,7 +641,7 @@ export default function ChargesPage() {
   const powerStats = sampleStats('powerKw'), voltageStats = sampleStats('voltageV'), currentStats = sampleStats('currentA'), temperatureStats = sampleStats('temperatureC')
   const navGeo = getAppNavGeometry()
   return (
-    <View className="page history-page charges-page">
+    <View className={`page history-page charges-page ${appearance.className}`}>
       <View className="history-page-header" style={{ paddingTop: `${navGeo.navBarTop}px`, paddingRight: `${navGeo.capsuleRightPadding}px` }}>
         <Text className="title">{copy('charges.title')}</Text>
         {cars.length > 1 ? (
@@ -690,13 +693,10 @@ export default function ChargesPage() {
           {([['energy', '电量'], ['cost', '费用'], ['count', '次数']] as const).map(([kind, label]) =>
             <Button key={kind} className={`charge-chart-tab ${chartKind === kind ? 'charge-chart-tab-active' : ''}`} onClick={() => setChartKind(kind)}>{label}</Button>)}
         </View>
-        <View className="charge-chart-bars">
-          {chartMonths.map((month, index) => <View className="charge-chart-column" key={`${index}-${month.label}`}>
-            <Text className="charge-chart-value">{chartKnown(month) ? chartKind === 'count' ? String(month.count) : chartKind === 'energy' ? `${month.energy.toFixed(1)} kWh` : chartCurrency === 'CNY' ? `${month.costEstimated ? '≈' : ''}¥${month.cost.toFixed(2)}` : `${month.costEstimated ? '≈' : ''}${month.cost.toFixed(2)} ${chartCurrency}` : '—'}</Text>
-            <View className="charge-chart-track"><View className="charge-chart-bar" style={{ height: chartKnown(month) && chartMaximum > 0 ? `${Math.max(5, chartValue(month) / chartMaximum * 100)}%` : '0%' }} /></View>
-            <Text className="charge-chart-month">{month.label}</Text>
-          </View>)}
-        </View>
+        <ChargeActivityGrid unit={chartKind === 'energy' ? 'kWh' : chartKind === 'count' ? '次' : chartCurrency || '币种待确认'} cells={chartMonths.map(month => ({
+          key: month.label, label: month.label.slice(5), value: chartKnown(month) ? chartValue(month) : null,
+          display: `${chartKnown(month) ? `${chartKind === 'cost' && month.costEstimated ? '含估算 ' : ''}${chartValue(month).toFixed(chartKind === 'count' ? 0 : 2)} ${chartKind === 'energy' ? 'kWh' : chartKind === 'count' ? '次' : chartCurrency}` : '未知'} · 已知 ${chartKnown(month)} / ${month.count} 条`,
+        }))} />
         <Text className="muted">统计已返回的 {chartItems.length} 条记录；费用仅在同币种时合计。</Text>
       </View> : null}
       {noticeLimited ? <Text className="muted history-notice-limit">本机前台提示记录不可写或已达上限，后续提示暂停；历史仍可查看</Text> : null}
@@ -720,7 +720,7 @@ export default function ChargesPage() {
       ) : null}
 
       {!readAppSession(Taro) && loading ? <LoadingIndicator label="正在恢复会话…" /> : !readAppSession(Taro) ? (
-        <View className="card empty-state"><VisualIcon name="account" /><Text className="section-title">等待特斯拉账号登录</Text><Text className="muted">请先在“更多”中登录特斯拉账号。</Text></View>
+        <View className="card empty-state"><VisualIcon name="account" /><Text className="section-title">等待特斯拉账号登录</Text><Text className="muted">请先在“更多”中登录特斯拉账号。</Text><Button className="button" onClick={() => Taro.switchTab({ url: '/pages/me/index' })}>前往登录与授权</Button></View>
       ) : trustedItems.length === 0 && !loading ? (
         <View className="card empty-state"><VisualIcon name="energy" /><Text className="section-title">暂无可展示的充电记录</Text><Text className="muted">{items.some(item => !isHistoryQuarantined(item)) && !showShortCharges ? '当前记录均为短充；可选择“显示短充”查看。' : '当前没有可展示的充电记录，空响应不会生成示例数据。'}</Text>
           {!offline && meta?.hasMore ? <Button className="button" loading={loadingMore} onClick={loadMore}>{copy('common.loadMore')}</Button> : null}

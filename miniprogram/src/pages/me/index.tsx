@@ -1,3 +1,4 @@
+import { useAppearance } from '../../services/appearance'
 import VisualIcon from '../../components/VisualIcon'
 import { Button, Checkbox, CheckboxGroup, Text, View } from '@tarojs/components'
 import Taro, { useDidHide, useDidShow, useUnload } from '@tarojs/taro'
@@ -30,6 +31,7 @@ function errorMessagesForStatus(status: string): string {
 }
 
 export default function MePage() {
+  const appearance = useAppearance()
   const initialSession = readAppSession(Taro)
   const initialConsent = readStoredConsent(Taro)
   const hasConsent = initialConsent !== null
@@ -366,10 +368,47 @@ export default function MePage() {
   let recoveryEnabled = false
   try { recoveryEnabled = Boolean(session?.userId && isWechatRecoveryEnabledForAccount(getApiOrigin(), session.userId)) } catch { /* no preference */ }
   return (
-    <View className="page more-page">
+    <View className={`page more-page ${appearance.className}${session ? '' : ' minimal-login'}`}>
       <View className="app-toolbar" style={{ paddingTop: `${navGeo.navBarTop}px`, paddingRight: `${navGeo.capsuleRightPadding}px` }}><Text className="title">更多</Text></View>
       {MOCK_FIXTURE_ENABLED ? <Text className="muted">合成数据模式——账号状态为模拟，授权流程不可用；全部记录为 source=mock_fixture 的测试数据。</Text> : null}
-      <View className="more-status">
+      {!session ? <View className="login-welcome"><Text className="title">每一程，都有记录。</Text><Text className="muted">连接你的 Tesla，查看车辆状态、行程与充电。账号登录、官方授权和车辆确认各自独立。</Text></View> : null}
+      <View className="card account-hero">
+        <View className="account-heading">
+          <View>
+            <View className="visual-heading"><VisualIcon name="account" /><Text className="section-title">账号与授权</Text></View>
+          </View>
+          <Text className={`state-pill ${session ? 'state-pill-ready' : ''}`}>{session ? '会话已建立' : '尚未登录'}</Text>
+        </View>
+        <Text className="muted">使用特斯拉账号登录，授权在 Tesla 官方页面完成。与 App 使用同一特斯拉账号，可查看该账号已有的车辆和历史数据。</Text>
+      </View>
+
+      <View className="card consent-card">
+        <View className="visual-heading"><VisualIcon name="shield" /><Text className="section-title">授权前确认</Text></View>
+        <Text className="muted">请先阅读并确认以下文件。点击下方链接可查看完整内容。</Text>
+        <View className="legal-links">
+          <Text className="legal-link" onClick={() => openLegal('terms')}>查看服务条款</Text>
+          <Text className="legal-link" onClick={() => openLegal('privacy')}>查看隐私指引</Text>
+        </View>
+        <CheckboxGroup onChange={onConsentChange}>
+          <View className="consent-row"><Checkbox value="terms" checked={termsAccepted}>同意服务条款（{TERMS_VERSION}）</Checkbox></View>
+          <View className="consent-row"><Checkbox value="privacy" checked={privacyAccepted}>同意隐私指引（{PRIVACY_VERSION}）</Checkbox></View>
+        </CheckboxGroup>
+        {restoring ? <LoadingIndicator label="正在恢复会话…" compact /> : null}
+        {!session ? <Button className="button" loading={loading} disabled={loading || restoring || !termsAccepted || !privacyAccepted} onClick={startTeslaAuthorization}>特斯拉账号登录</Button> : null}
+        {!session && !MOCK_FIXTURE_ENABLED ? <Button className="button button-secondary" disabled={loading || restoring || authorizationPending || !termsAccepted || !privacyAccepted} onClick={() => { void enterWithWechat() }}>使用已绑定微信进入</Button> : null}
+        {session ? <Text className="muted">MateLink 会话已建立{session.expiresAt ? `，有效期至 ${session.expiresAt}` : ''}。</Text> : null}
+      </View>
+
+      {authorizationPending ? (
+        <View className="card">
+          <View className="visual-heading"><VisualIcon name="shield" /><Text className="section-title">等待特斯拉账号授权</Text></View>
+          <Text className="muted">请在 Tesla 官方页面完成登录，然后返回本小程序检查授权状态。</Text>
+          <Button className="button" loading={loading} onClick={() => { void resumePendingAuthorization() }}>检查授权状态</Button>
+          <Button className="button button-secondary" disabled={loading} onClick={() => { void cancelTeslaAuthorization() }}>取消本次授权</Button>
+        </View>
+      ) : null}
+
+      {session ? <>      <View className="more-status">
         <VisualIcon name="shield" />
         <View className="more-status-copy">
           <Text className="more-status-title">数据状态</Text>
@@ -409,42 +448,7 @@ export default function MePage() {
           void Taro.switchTab({ url: '/pages/vehicle/index' })
         } else void Taro.navigateTo({ url: `/pages/tools/index?kind=${item.kind}` })
       }}><VisualIcon name={item.icon} /><Text className="more-system-label">{item.label}</Text><Text className="more-system-chevron">›</Text></Button>)}</View>
-      <View className="card account-hero">
-        <View className="account-heading">
-          <View>
-            <View className="visual-heading"><VisualIcon name="account" /><Text className="section-title">账号与授权</Text></View>
-          </View>
-          <Text className={`state-pill ${session ? 'state-pill-ready' : ''}`}>{session ? '会话已建立' : '尚未登录'}</Text>
-        </View>
-        <Text className="muted">使用特斯拉账号登录，授权在 Tesla 官方页面完成。与 App 使用同一特斯拉账号，可查看该账号已有的车辆和历史数据。</Text>
-      </View>
-
-      <View className="card consent-card">
-        <View className="visual-heading"><VisualIcon name="shield" /><Text className="section-title">授权前确认</Text></View>
-        <Text className="muted">请先阅读并确认以下文件。点击下方链接可查看完整内容。</Text>
-        <View className="legal-links">
-          <Text className="legal-link" onClick={() => openLegal('terms')}>查看服务条款</Text>
-          <Text className="legal-link" onClick={() => openLegal('privacy')}>查看隐私指引</Text>
-        </View>
-        <CheckboxGroup onChange={onConsentChange}>
-          <View className="consent-row"><Checkbox value="terms" checked={termsAccepted}>同意服务条款（{TERMS_VERSION}）</Checkbox></View>
-          <View className="consent-row"><Checkbox value="privacy" checked={privacyAccepted}>同意隐私指引（{PRIVACY_VERSION}）</Checkbox></View>
-        </CheckboxGroup>
-        {restoring ? <LoadingIndicator label="正在恢复会话…" compact /> : null}
-        {!session ? <Button className="button" loading={loading} disabled={loading || restoring || !termsAccepted || !privacyAccepted} onClick={startTeslaAuthorization}>特斯拉账号登录</Button> : null}
-        {!session && !MOCK_FIXTURE_ENABLED ? <Button className="button button-secondary" disabled={loading || restoring || authorizationPending || !termsAccepted || !privacyAccepted} onClick={() => { void enterWithWechat() }}>使用已绑定微信进入</Button> : null}
-        {session ? <Text className="muted">MateLink 会话已建立{session.expiresAt ? `，有效期至 ${session.expiresAt}` : ''}。</Text> : null}
-      </View>
-
-      {authorizationPending ? (
-        <View className="card">
-          <View className="visual-heading"><VisualIcon name="shield" /><Text className="section-title">等待特斯拉账号授权</Text></View>
-          <Text className="muted">请在 Tesla 官方页面完成登录，然后返回本小程序检查授权状态。</Text>
-          <Button className="button" loading={loading} onClick={() => { void resumePendingAuthorization() }}>检查授权状态</Button>
-          <Button className="button button-secondary" disabled={loading} onClick={() => { void cancelTeslaAuthorization() }}>取消本次授权</Button>
-        </View>
-      ) : null}
-
+</> : null}
       {session ? (
         <View className="card">
           <View className="visual-heading"><VisualIcon name="account" /><Text className="section-title">账号管理</Text></View>

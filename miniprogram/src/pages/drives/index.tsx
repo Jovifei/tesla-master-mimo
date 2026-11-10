@@ -1,3 +1,6 @@
+import { VerticalDayStack } from '../../components/PresentationControls'
+import { historyDayGroups } from '../../domain/ui_presentation'
+import { useAppearance } from '../../services/appearance'
 import { Button, Map as TaroMap, Picker, ScrollView, Text, View } from '@tarojs/components'
 import Taro, { useDidHide, useDidShow, usePageScroll, useUnload } from '@tarojs/taro'
 import { useEffect, useRef, useState } from 'react'
@@ -69,6 +72,7 @@ const emptyMeta: HistoryPageMeta = {
 }
 
 export default function DrivesPage() {
+  const appearance = useAppearance()
   const [cars, setCars] = useState<Car[]>([])
   const [car, setCar] = useState<Car | null>(null)
   const [items, setItems] = useState<Drive[]>([])
@@ -543,7 +547,7 @@ export default function DrivesPage() {
   const chartRows = statisticsInterval ? filterHistory(statisticsInterval.items, query) : []
   const navGeo = getAppNavGeometry()
   return (
-    <View className="page history-page drives-page">
+    <View className={`page history-page drives-page ${appearance.className}`}>
       <View className="history-page-header" style={{ paddingTop: `${navGeo.navBarTop}px`, paddingRight: `${navGeo.capsuleRightPadding}px` }}>
         <Text className="title">{copy('drives.title')}</Text>
         {cars.length > 1 ? (
@@ -590,7 +594,7 @@ export default function DrivesPage() {
         : car && visibleItems.length > 0 && (query.startDate || query.endDate) ? <LoadedDriveChart items={visibleItems.filter(isAppStatisticsDrive)} /> : null}
 
       {!readAppSession(Taro) && loading ? <LoadingIndicator label="正在恢复会话…" /> : !readAppSession(Taro) ? (
-        <View className="card empty-state"><VisualIcon name="account" /><Text className="section-title">等待特斯拉账号登录</Text><Text className="muted">请先在“更多”中建立会话。</Text></View>
+        <View className="card empty-state"><VisualIcon name="account" /><Text className="section-title">等待特斯拉账号登录</Text><Text className="muted">请先在“更多”中建立会话。</Text><Button className="button" onClick={() => Taro.switchTab({ url: '/pages/me/index' })}>前往登录与授权</Button></View>
       ) : trustedItems.length === 0 && !loading ? (
         <View className="card empty-state"><VisualIcon name="route" /><Text className="section-title">暂无可展示的行程</Text><Text className="muted">当前没有可展示的行程记录，空响应不会生成示例数据。</Text>
           {!offline && meta?.hasMore ? <Button className="button" loading={loadingMore} onClick={loadMore}>{copy('common.loadMore')}</Button> : null}
@@ -600,7 +604,9 @@ export default function DrivesPage() {
           <Text className="section-title">行程历史</Text>
           {loading ? <LoadingIndicator label="正在读取行程…" compact /> : null}
           {historyItems.length === 0 && visibleItems.length === 0 && trustedItems.length > 0 ? <Text className="muted">{copy('history.noMatchedDrives')}</Text> : null}
-          {historyItems.map(item => item.kind === 'parked' ? (
+          <VerticalDayStack groups={historyDayGroups(historyItems, item => item.kind === 'drive' ? item.drive.startDate : item.startDate)}
+            scopeKey={JSON.stringify([getApiOrigin(), readAppSession(Taro)?.userId, getApiSessionGeneration(), car?.stableId, query])}>
+          {group => group.items.map(item => item.kind === 'parked' ? (
             <View key={item.key} className="history-record history-parked" onClick={() => { void openParked(item) }}>
               <View className="parked-heading">
                 <View className="parked-icon"><VisualIcon name="vehicle" /></View>
@@ -641,6 +647,7 @@ export default function DrivesPage() {
               </View>
             </View>
           ))}
+          </VerticalDayStack>
           {!offline && meta?.hasMore ? <Button className="button" loading={loadingMore} onClick={loadMore}>{copy('common.loadMore')}</Button> : null}
         </View>
       )}
@@ -847,23 +854,12 @@ export default function DrivesPage() {
             const startSoc = parkedCloud?.startBatteryLevel ?? null, endSoc = parkedCloud?.endBatteryLevel ?? null
             const delta = startSoc != null && endSoc != null ? endSoc - startSoc : parkedCloud?.batteryDelta ?? null
             const duration = parkedOpen.minutes >= 60 ? `${Math.floor(parkedOpen.minutes / 60)}h ${parkedOpen.minutes % 60}m` : `${parkedOpen.minutes}m`
-            const estRangeLossKm = delta != null ? Math.abs(delta) * 3.8 : null
-            const standbyWatts = delta != null && parkedOpen.minutes > 0
-              ? ((Math.abs(delta) * 0.60) / (parkedOpen.minutes / 60.0)) * 1000.0
-              : null
-            const socPointsPerHour = delta != null && parkedOpen.minutes > 0
-              ? (delta / (parkedOpen.minutes / 60.0))
-              : null
+            const standbyWatts = parkedCloud?.averagePowerW ?? null
+            const socPointsPerHour = delta != null && parkedOpen.minutes > 0 ? delta / (parkedOpen.minutes / 60) : null
             const heroMetrics = [
-              delta != null ? `≈${(Math.abs(delta) * 0.60).toFixed(2)} kWh` : null,
-              estRangeLossKm != null && estRangeLossKm > 0 ? `预估消耗续航 ≈${Math.round(estRangeLossKm)} km` : null,
-              standbyWatts != null && standbyWatts > 0 ? `待机功率 ≈${Math.round(standbyWatts)} W` : null,
-            ].filter((m): m is string => Boolean(m))
-            const statusText = (() => {
-              if (socPointsPerHour == null || Math.abs(socPointsPerHour) < 0.05) return '深度睡眠休眠 (超低功耗)'
-              if (Math.abs(socPointsPerHour) >= 0.05 && Math.abs(socPointsPerHour) <= 0.45) return '哨兵模式 / 车机唤醒 (常态待机)'
-              return '车机活跃 / 驻车保温'
-            })()
+              parkedCloud?.energyKwh != null ? `已记录 ${parkedCloud.energyKwh.toFixed(2)} kWh` : null,
+              standbyWatts != null ? `平均功率 ${Math.round(standbyWatts)} W` : null,
+            ].filter((metric): metric is string => metric != null)
             const cloudDetail = parkedCloud != null && (parkedCloud.energyKwh != null || parkedCloud.averagePowerW != null ||
               parkedCloud.insideTempC != null || parkedCloud.outsideTempC != null || (parkedCloud.sampleCount ?? 0) > 0)
             return <>
@@ -885,11 +881,11 @@ export default function DrivesPage() {
                   <MetricValue label="起始电量" value={startSoc} unit="%" icon="battery" digits={0} />
                   <MetricValue label="结束电量" value={endSoc} unit="%" icon="battery" digits={0} />
                   <MetricValue label="电量变化" value={delta} unit="%" icon="battery" digits={0} />
-                  <MetricValue label="续航损失" value={estRangeLossKm != null ? (delta != null && delta < 0 ? -Math.round(estRangeLossKm) : 0) : null} unit="km" icon="energy" digits={0} />
+                  <MetricValue label="平均功率" value={standbyWatts} unit="W" icon="energy" digits={0} />
                 </View>
                 {socPointsPerHour != null ? (
                   <Text className="muted" style={{ display: 'block', fontSize: '22rpx', marginTop: '10rpx' }}>
-                    驻车电量下降 {Math.abs(socPointsPerHour).toFixed(1)} 百分点/小时{standbyWatts != null ? ` · 待机功耗 ≈${Math.round(standbyWatts)} W` : ''}
+                    驻车净电量变化 {socPointsPerHour.toFixed(1)} 百分点/小时；不能据此判定休眠或哨兵状态。
                   </Text>
                 ) : null}
               </View>
@@ -898,7 +894,7 @@ export default function DrivesPage() {
                   <View className="section-card-title"><VisualIcon name="cloud" /><Text>能耗与环境</Text></View>
                 </View>
                 {cloudDetail && parkedCloud ? <View className="telemetry-metric-strip">
-                  <MetricValue label="估算能耗" value={parkedCloud.energyKwh} unit="kWh" icon="energy" digits={2} />
+                  <MetricValue label="已记录能量" value={parkedCloud.energyKwh} unit="kWh" icon="energy" digits={2} />
                   <MetricValue label="平均功率" value={parkedCloud.averagePowerW} unit="W" icon="energy" digits={0} />
                   <MetricValue label="车内温度" value={parkedCloud.insideTempC} unit="°C" icon="cloud" digits={1} />
                   <MetricValue label="车外温度" value={parkedCloud.outsideTempC} unit="°C" icon="cloud" digits={1} />
@@ -906,24 +902,8 @@ export default function DrivesPage() {
                 <Text className="muted" style={{ display: 'block', fontSize: '22rpx', marginTop: '12rpx' }}>数据来源：{sourceLabel(parkedCloud?.source)}</Text>
               </View>
               <View className="section-card parked-standby-analysis">
-                <View className="section-card-header">
-                  <View className="section-card-title"><VisualIcon name="energy" /><Text>驻车待机能耗分析</Text></View>
-                </View>
-                <View className="parked-analysis-row">
-                  <Text className="analysis-label">预估续航损失</Text>
-                  <Text className="analysis-value highlight-loss">{estRangeLossKm != null ? `≈${estRangeLossKm.toFixed(1)} km` : '—'}</Text>
-                </View>
-                <View className="parked-analysis-row">
-                  <Text className="analysis-label">等效待机功耗</Text>
-                  <Text className="analysis-value highlight-power">{standbyWatts != null ? `≈${Math.round(standbyWatts)} W` : '—'}</Text>
-                </View>
-                <View className="parked-analysis-row">
-                  <Text className="analysis-label">待机工况推算</Text>
-                  <Text className="analysis-value highlight-status">{statusText}</Text>
-                </View>
-                <Text className="muted parked-analysis-note">
-                  推算说明：按 Tesla 标准续航版约 60 kWh 电池容量基准，1% 约对应 0.60 kWh 及 3.8 km 额定续航；车辆休眠状态功耗通常低于 50 W，开启哨兵模式或车机活跃保温时待机功耗为 200~350 W。
-                </Text>
+                <View className="section-card-header"><View className="section-card-title"><VisualIcon name="energy" /><Text>驻车数据说明</Text></View></View>
+                <Text className="muted parked-analysis-note">电量变化包含驻车期间可能的充电；休眠、哨兵状态与续航损失需要各自的记录。缺少能量或功率证据时保持未知，不使用猜测的电池容量换算。</Text>
               </View>
             </>
           })()}

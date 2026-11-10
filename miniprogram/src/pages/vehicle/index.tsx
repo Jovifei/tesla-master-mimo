@@ -1,3 +1,4 @@
+import { useAppearance } from '../../services/appearance'
 import { Button, Map, Picker, Text, View } from '@tarojs/components'
 import Taro, { useDidHide, useDidShow, usePageScroll, useUnload } from '@tarojs/taro'
 import { useEffect, useRef, useState } from 'react'
@@ -59,6 +60,7 @@ function dashboardHeaderGeometry(): { top: number; toolbarOffset: number; coverH
 }
 
 export default function VehiclePage() {
+  const appearance = useAppearance()
   const [coverSystemBar, setCoverSystemBar] = useState(false)
   usePageScroll(event => setCoverSystemBar(event.scrollTop > 4))
   const [cars, setCars] = useState<Car[]>([])
@@ -558,7 +560,7 @@ export default function VehiclePage() {
   const location = locationDisplayText({ geofence: status?.geofence, location: status?.location, recentDrive }) ?? '暂无数据'
   const headerGeometry = dashboardHeaderGeometry()
   return (
-    <View className="page vehicle-page" style={{ paddingTop: `${headerGeometry.top}px` }}>
+    <View className={`page vehicle-page ${appearance.className}`} style={{ paddingTop: `${headerGeometry.top}px` }}>
       {coverSystemBar ? <View className="dashboard-system-bar-cover" style={{ height: `${headerGeometry.coverHeight}px` }} /> : null}
       {coverSystemBar && headerGeometry.capsuleCover ? <View className="dashboard-capsule-cover" style={{ top: `${headerGeometry.capsuleCover.top}px`, left: `${headerGeometry.capsuleCover.left}px`, height: `${headerGeometry.capsuleCover.height}px` }} /> : null}
       <View className="dashboard-toolbar">

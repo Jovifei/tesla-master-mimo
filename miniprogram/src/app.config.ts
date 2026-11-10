@@ -16,14 +16,14 @@ export default defineAppConfig({
   subpackages: vehicleAssetPackages,
   window: {
     navigationBarTitleText: 'MateLink',
-    navigationBarBackgroundColor: '#f5f7f9',
+    navigationBarBackgroundColor: '#f5f5f7',
     navigationBarTextStyle: 'black',
-    backgroundColor: '#f5f7f9',
+    backgroundColor: '#f5f5f7',
     backgroundTextStyle: 'light',
   },
   tabBar: {
     color: '#737373',
-    selectedColor: '#157a86',
+    selectedColor: '#1d1d1f',
     backgroundColor: '#ffffff',
     borderStyle: 'white',
     list: [

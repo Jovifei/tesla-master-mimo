@@ -1,3 +1,4 @@
+import { useAppearance } from '../../services/appearance'
 import { Button, Text, View, WebView } from '@tarojs/components'
 import Taro, { useDidHide, useDidShow, useLoad, useUnload } from '@tarojs/taro'
 import { useRef, useState } from 'react'
@@ -33,6 +34,7 @@ function hasAuthorizationHint(value: unknown): boolean {
 }
 
 export default function AuthPage() {
+  const appearance = useAppearance()
   const [url, setUrl] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [exchanging, setExchanging] = useState(false)
@@ -143,12 +145,12 @@ export default function AuthPage() {
   }
 
   if (exchanging) {
-    return <View className="page subpage-page"><SubpageHeader title="Tesla 官方授权" subtitle="正在完成授权" /><View className="card"><Text className="section-title">正在完成授权</Text><LoadingIndicator label="正在完成当前特斯拉账号登录…" /></View></View>
+    return <View className={`page subpage-page ${appearance.className}`}><SubpageHeader title="Tesla 官方授权" subtitle="正在完成授权" /><View className="card"><Text className="section-title">正在完成授权</Text><LoadingIndicator label="正在完成当前特斯拉账号登录…" /></View></View>
   }
 
   if (error || !url || desktopSimulator) {
     return (
-      <View className="page subpage-page">
+      <View className={`page subpage-page ${appearance.className}`}>
         <SubpageHeader title="Tesla 官方授权" subtitle="官方账号登录与授权" />
         <View className="card">
           {error ? <Text className="error">{error}</Text> : !url ? <LoadingIndicator label="正在准备官方授权入口…" compact /> : null}

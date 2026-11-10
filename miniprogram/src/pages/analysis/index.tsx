@@ -1,3 +1,4 @@
+import { useAppearance } from '../../services/appearance'
 import { Button, Canvas, Picker, Slider, Text, View } from '@tarojs/components'
 import Taro, { useDidHide, useDidShow, useRouter, useUnload } from '@tarojs/taro'
 import { useEffect, useRef, useState } from 'react'
@@ -48,6 +49,7 @@ function GroupBars({ title, groups, metric = 'distance' }: { title: string; grou
 }
 
 export default function AnalysisPage() {
+  const appearance = useAppearance()
   const params = useRouter().params, kind = analysisKind(params.kind)
   const needsDrives = kind !== 'chargeCurves'
   const needsCharges = !['efficiency', 'curves'].includes(kind)
@@ -313,7 +315,7 @@ export default function AnalysisPage() {
     <Text className="muted">{shown(row.distanceKm, 'km')} · {shown(row.energy?.energyKwh, 'kWh')} · {sourceLabel(row.source)}{row.energy?.quality === 'estimated' ? ' · 估算' : ''}</Text>
     <Button className="button-secondary" onClick={() => navigateDrive(row)}>查看行程 {row.id}</Button>
   </View>)
-  return <View className="page analysis-page subpage-page">
+  return <View className={`page analysis-page subpage-page ${appearance.className}`}>
     <SubpageHeader title={analysisTitles[kind]} subtitle={car?.displayName || car?.name || '所选车辆'} />
     {cars.length > 1 ? <Picker mode="selector" range={cars.map(row => row.displayName || row.name || '车辆')} onChange={event => { selectedStable.current = cars[Number(event.detail.value)]?.stableId ?? null; void load() }}><View className="analysis-car">{car?.displayName || car?.name || '选择车辆'}</View></Picker> : null}
     {car ? <View className="analysis-controls"><HistoryDateChips kind="drives" query={query} onChange={updateQuery} /><View className="analysis-date-range">

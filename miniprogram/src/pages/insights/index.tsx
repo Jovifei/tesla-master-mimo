@@ -1,3 +1,4 @@
+import { useAppearance } from '../../services/appearance'
 import { Button, Input, Picker, Text, View } from '@tarojs/components'
 import Taro, { useDidHide, useDidShow, useRouter, useUnload } from '@tarojs/taro'
 import { useRef, useState } from 'react'
@@ -35,6 +36,7 @@ const dataLabel = (leg: TripLeg) => leg.kind === 'drive' ? '行驶' : '充电'
 const legRow = (leg: TripLeg) => leg.kind === 'drive' ? leg.drive : leg.charge
 
 export default function InsightsPage() {
+  const appearance = useAppearance()
   const params = useRouter().params
   const kind: Kind = params.kind && Object.prototype.hasOwnProperty.call(titles, params.kind) ? params.kind as Kind : 'battery'
   const [cars, setCars] = useState<Car[]>([]), [car, setCar] = useState<Car | null>(null)
@@ -203,7 +205,7 @@ export default function InsightsPage() {
   }
   const coverage = (value: Coverage, noun: string, rows: number) => <Text className="insight-coverage">{offline ? '本机缓存' : value.complete ? '数据读取完成' : '部分覆盖'} · {noun} {rows} 条</Text>
 
-  return <View className="page insights-page subpage-page">
+  return <View className={`page insights-page subpage-page ${appearance.className}`}>
     <SubpageHeader title={titles[kind]} subtitle={carName(car)} />
     {cars.length > 1 ? <Picker mode="selector" range={cars.map(value => carName(value))} value={Math.max(0, cars.findIndex(row => row.stableId === car?.stableId))} onChange={event => { const next = cars[Number(event.detail.value)]; if (next) void load(next) }}><View className="status">切换车辆：{carName(car)}</View></Picker> : null}
     <Button className="button-secondary" loading={loading} onClick={() => { void load(currentCar.current ?? undefined) }}>刷新数据</Button>
