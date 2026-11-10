@@ -1,0 +1,89 @@
+name: Mini UI type repair and full verification
+on:
+  push:
+    branches: [codex/ui-product-mini-20261109]
+    paths: ['.github/workflows/ui-mini-type-repair-20261110.yml']
+permissions:
+  contents: read
+jobs:
+  repair:
+    if: github.repository == 'Jovifei/tesla-master-mimo' && github.ref == 'refs/heads/codex/ui-product-mini-20261109'
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    outputs:
+      source: ${{ steps.source.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Repair only the demonstrated compile errors
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = 8d8c64774f81e7fc03b00056ed9105f4bc166ce6
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          p=Path('miniprogram/src/components/PresentationControls.tsx')
+          assert hashlib.sha256(p.read_bytes()).hexdigest()=='e855cda73cd57950c214e2d212961c032ce22bb5309db7487f857a9c6065bd3d'
+          s=p.read_text().replace('const start = (event: TouchEvent) => {','const start = (input: unknown) => {\n    const event = input as TouchEvent').replace('const end = (event: TouchEvent) => {','const end = (input: unknown) => {\n    const event = input as TouchEvent')
+          p.write_text(s)
+          p=Path('miniprogram/src/pages/vehicle/index.tsx')
+          assert hashlib.sha256(p.read_bytes()).hexdigest()=='965b60678846de71b5a71353df1b10f7b2e4b013e71913a1879147447a0f4f38'
+          s=p.read_text().replace('const appearance = useAppearance()', 'const uiAppearance = useAppearance()').replace('${appearance.className}', '${uiAppearance.className}')
+          p.write_text(s)
+          PY
+      - id: source
+        run: |
+          set -euo pipefail
+          git config user.name Jovifei
+          git config user.email 110970864+Jovifei@users.noreply.github.com
+          git add miniprogram/src/components/PresentationControls.tsx miniprogram/src/pages/vehicle/index.tsx
+          git diff --cached --check
+          git commit -m 'fix(mini): retain vehicle appearance selector and accept native touch event envelopes'
+          git push origin HEAD:refs/heads/codex/ui-product-mini-20261109
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+  verify:
+    needs: repair
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.repair.outputs.source }}
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - working-directory: miniprogram
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm ci --prefix test-tooling --ignore-scripts --no-audit --no-fund
+          mkdir -p evidence/ui-product
+          git rev-parse HEAD HEAD^{tree} HEAD^ > evidence/ui-product/SOURCE_HEAD.txt
+      - name: Typecheck
+        working-directory: miniprogram
+        shell: bash --noprofile --norc -eo pipefail {0}
+        run: npm run typecheck 2>&1 | tee evidence/ui-product/typecheck.log
+      - name: Existing and new tests
+        working-directory: miniprogram
+        env:
+          TZ: Asia/Tokyo
+        shell: bash --noprofile --norc -eo pipefail {0}
+        run: npm test -- --reporter=default --reporter=junit --outputFile.junit=evidence/ui-product/tests.xml 2>&1 | tee evidence/ui-product/tests.log
+      - name: Real WeChat build and original asset budgets
+        working-directory: miniprogram
+        shell: bash --noprofile --norc -eo pipefail {0}
+        run: |
+          npm run build:weapp 2>&1 | tee evidence/ui-product/build.log
+          node ../tools/miniprogram/build-vehicle-assets.mjs --check-dist > evidence/ui-product/package-integrity.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mini-ui-product-${{ needs.repair.outputs.source }}
+          path: |
+            miniprogram/evidence/ui-product/
+            miniprogram/dist/
+          retention-days: 7
+          if-no-files-found: error
