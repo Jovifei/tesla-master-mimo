@@ -1281,9 +1281,12 @@ private fun ChargesChartPage(
                 (if (approximate) "≈" else "") +
                     com.matelink.ui.components.formatTelemetryNumber(it, if (chartType == ChargesChartType.COST) 2 else 1) + " $axisUnit"
             } ?: unavailable
-            ChargeActivityCell(data.label, value, display)
+            ChargeActivityCell(data.label, value, display,
+                key = "${granularity.name}:${data.sortKey}",
+                precision = when (chartType) { ChargesChartType.COUNT -> 0; ChargesChartType.COST -> 2; else -> 1 },
+                approximate = approximate)
         }
-        ChargeActivityGrid(cells = cells)
+        ChargeActivityGrid(cells = cells, scopeKey = "${granularity.name}:${chartType.name}:$axisUnit")
     }
 }
 

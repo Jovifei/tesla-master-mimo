@@ -99,6 +99,7 @@ class UiProductContractAndroidTest {
                     ChargeActivityCell("11/09", 24.2, "24.2 kWh")))
             }
         } }
+        compose.waitForIdle()
         val neutral = renderedColor
         compose.onNodeWithTag("appearance_cream").performClick().assertIsSelected()
         compose.runOnIdle { assertEquals(AppearancePalette.CREAM, AppearancePreferences(context).palette()); assertNotEquals(neutral, renderedColor) }
@@ -111,4 +112,36 @@ class UiProductContractAndroidTest {
         capture("charge-grid-cream")
         prefs.setPalette(AppearancePalette.NEUTRAL); prefs.setReducedMotion(false)
     }
+    @Test fun refreshKeepsTheSelectedDateButUsesFreshRecords() {
+        val source = mutableStateOf(groups)
+        compose.setContent { MateLinkTheme(darkTheme = false) {
+            VerticalDayStack(source.value, "refresh-scope") { group -> group.items.forEach { Text(it) } }
+        } }
+        compose.onNodeWithTag("day_stack_older").performClick()
+        compose.runOnIdle { source.value = groups.map { if (it.dateKey == groups[1].dateKey) it.copy(items = listOf("corrected-day-1")) else it } }
+        compose.onNodeWithText("corrected-day-1").assertIsDisplayed()
+        compose.onNodeWithText("drive-1").assertDoesNotExist()
+        compose.onNodeWithTag("day_stack_gesture").performTouchInput {
+            down(center); moveBy(androidx.compose.ui.geometry.Offset(0f, -30f)); cancel()
+        }
+        compose.onNodeWithText("corrected-day-1").assertIsDisplayed()
+        compose.runOnIdle { source.value = groups.take(1) }
+        compose.onNodeWithText("drive-0").assertIsDisplayed()
+        compose.runOnIdle { source.value = groups }
+        compose.onNodeWithText("drive-0").assertIsDisplayed()
+    }
+    @Test fun chargeCellsKeepPrecisionQualityAndDistinctStableKeys() {
+        compose.setContent { MateLinkTheme(darkTheme = false) {
+            ChargeActivityGrid(listOf(
+                ChargeActivityCell("11/09", 0.0, "0 sessions", key = "2025-11-09", precision = 0),
+                ChargeActivityCell("11/09", 1.25, "estimated 1.25", key = "2026-11-09", precision = 2, approximate = true)))
+        } }
+        compose.onNodeWithText("0").assertIsDisplayed()
+        compose.onNodeWithText("≈1.25").assertIsDisplayed()
+        compose.onNodeWithTag("charge_cell_2025-11-09").performClick().assertIsSelected()
+        compose.onNodeWithTag("charge_cell_selection").assertTextEquals("11/09 · 0 sessions")
+        compose.onNodeWithTag("charge_cell_2026-11-09").performClick().assertIsSelected()
+        compose.onNodeWithTag("charge_cell_selection").assertTextEquals("11/09 · estimated 1.25")
+    }
+
 }

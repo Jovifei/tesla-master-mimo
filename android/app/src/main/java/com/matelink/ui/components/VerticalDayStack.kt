@@ -39,6 +39,9 @@ fun <T> VerticalDayStack(
     var selectedKey by rememberSaveable(scopeKey) { mutableStateOf<String?>(null) }
     val index = groups.indexOfFirst { it.dateKey == selectedKey }.takeIf { it >= 0 } ?: 0
     val current = groups[index]
+    LaunchedEffect(scopeKey, groups.map { it.dateKey }) {
+        if (selectedKey != null && groups.none { it.dateKey == selectedKey }) selectedKey = null
+    }
     val reduce = LocalAppearance.current.reducedMotion || !ValueAnimator.areAnimatorsEnabled()
     val reveal = remember { Animatable(0f) }
     val threshold = with(LocalDensity.current) { 48.dp.toPx() }
@@ -80,7 +83,7 @@ fun <T> VerticalDayStack(
                 color = MaterialTheme.colorScheme.surface, shape = shape,
                 border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant)) {
                 Column {
-                    Column(Modifier.fillMaxWidth().testTag("day_stack_gesture")
+                    Column(Modifier.fillMaxWidth().heightIn(min = 96.dp).testTag("day_stack_gesture")
                         .semantics {
                             contentDescription = hint
                             customActions = listOf(
@@ -93,7 +96,7 @@ fun <T> VerticalDayStack(
                                 onDragEnd = { select(dayStackTarget(index, groups.size, drag, threshold)); drag = 0f })
                         }.padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 8.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(dayStackDateLabel(current.date), Modifier.weight(1f).testTag("day_stack_active_date"),
+                            Text(dayStackDateLabel(current.date), Modifier.weight(1f).testTag("day_stack_active_date").semantics { liveRegion = LiveRegionMode.Polite },
                                 style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                             IconButton(onClick = { select(index - 1) }, enabled = index > 0, modifier = Modifier.testTag("day_stack_newer")) {
                                 Icon(Icons.Default.KeyboardArrowUp, newer)

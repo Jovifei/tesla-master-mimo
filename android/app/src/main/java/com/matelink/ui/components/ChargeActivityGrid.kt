@@ -9,6 +9,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
@@ -16,7 +19,14 @@ import androidx.compose.ui.unit.dp
 import com.matelink.R
 
 /** null = unknown; a real zero remains zero. No inferred empty calendar days. */
-data class ChargeActivityCell(val label: String, val value: Double?, val display: String)
+data class ChargeActivityCell(
+    val label: String, val value: Double?, val display: String,
+    val key: String = label, val precision: Int = 1, val approximate: Boolean = false
+)
+internal fun chargeCellNumber(cell: ChargeActivityCell): String {
+    val value = cell.value?.takeIf { it.isFinite() && it >= 0 } ?: return "—"
+    return (if (cell.approximate) "≈" else "") + formatTelemetryNumber(value, cell.precision.coerceIn(0, 2))
+}
 internal fun chargeActivityIntensity(value: Double?, maximum: Double): Float {
     if (value == null || !value.isFinite() || value < 0 || !maximum.isFinite() || maximum <= 0) return 0f
     if (value == 0.0) return 0f
@@ -24,15 +34,15 @@ internal fun chargeActivityIntensity(value: Double?, maximum: Double): Float {
 }
 
 @Composable
-fun ChargeActivityGrid(cells: List<ChargeActivityCell>, modifier: Modifier = Modifier) {
+fun ChargeActivityGrid(cells: List<ChargeActivityCell>, modifier: Modifier = Modifier, scopeKey: String = "") {
     if (cells.isEmpty()) return
     val size = 28
-    var page by remember(cells.map { it.label }) { mutableIntStateOf((cells.size - 1) / size) }
-    var selected by remember(cells.map { it.label }) { mutableStateOf<String?>(null) }
+    var page by remember(scopeKey, cells.map { it.key }) { mutableIntStateOf((cells.size - 1) / size) }
+    var selected by remember(scopeKey, cells.map { it.key }) { mutableStateOf<String?>(null) }
     val maxPage = (cells.size - 1) / size
     val shown = cells.drop(page.coerceIn(0, maxPage) * size).take(size)
     val maximum = cells.mapNotNull { it.value?.takeIf { n -> n.isFinite() && n >= 0 } }.maxOrNull() ?: 0.0
-    val selection = cells.firstOrNull { it.label == selected }
+    val selection = cells.firstOrNull { it.key == selected }
     Column(modifier.fillMaxWidth().testTag("charge_activity_grid"), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(stringResource(R.string.ui_charge_cells_hint), style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -44,17 +54,19 @@ fun ChargeActivityGrid(cells: List<ChargeActivityCell>, modifier: Modifier = Mod
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         row.forEach { cell ->
                             val intensity = chargeActivityIntensity(cell.value, maximum)
-                            val foreground = if (intensity > .5f) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
-                            Surface(onClick = { selected = cell.label }, modifier = Modifier.weight(1f).heightIn(min = 64.dp)
-                                .testTag("charge_cell_${cell.label}").semantics { contentDescription = "${cell.label}, ${cell.display}" },
+                            val background = androidx.compose.ui.graphics.lerp(MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.colorScheme.primary, intensity)
+                            // Pick the stronger actual contrast, not a threshold on chart intensity.
+                            val foreground = if (background.luminance() > 0.179f) Color.Black else Color.White
+                            Surface(onClick = { selected = cell.key }, modifier = Modifier.weight(1f).heightIn(min = 64.dp)
+                                .testTag("charge_cell_${cell.key}").semantics { contentDescription = "${cell.label}, ${cell.display}"; this.selected = selected == cell.key },
                                 shape = MaterialTheme.shapes.small,
-                                color = androidx.compose.ui.graphics.lerp(MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.colorScheme.primary, intensity),
-                                border = BorderStroke(if (selected == cell.label) 1.5.dp else .5.dp,
-                                    if (selected == cell.label) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant)) {
+                                color = background,
+                                border = BorderStroke(if (selected == cell.key) 1.5.dp else .5.dp,
+                                    if (selected == cell.key) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant)) {
                                 Column(Modifier.padding(horizontal = 2.dp, vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally,
                                     verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                     Text(cell.label, style = MaterialTheme.typography.labelSmall, color = foreground, textAlign = TextAlign.Center)
-                                    Text(if (cell.value == null) "—" else formatTelemetryNumber(cell.value, 1),
+                                    Text(chargeCellNumber(cell),
                                         style = MaterialTheme.typography.labelMedium, color = foreground, textAlign = TextAlign.Center)
                                 }
                             }
