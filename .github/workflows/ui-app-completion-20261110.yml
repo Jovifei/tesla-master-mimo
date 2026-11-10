@@ -1,0 +1,138 @@
+name: App product UI completion 20261110
+on:
+  push:
+    branches: [codex/ui-product-app-20261109]
+    paths: ['.github/workflows/ui-app-completion-20261110.yml']
+permissions:
+  contents: read
+jobs:
+  repair:
+    if: github.repository == 'Jovifei/tesla-master-mimo' && github.ref == 'refs/heads/codex/ui-product-app-20261109'
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      source: ${{ steps.commit.outputs.source }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Apply bounded reviewed repairs without weakening safety tests
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          root=Path('android/app/src')
+          def read(path, expected):
+              p=root/path
+              assert hashlib.sha256(p.read_bytes()).hexdigest()==expected, path
+              return p,p.read_text()
+          p,s=read('main/java/com/matelink/data/local/VehicleStatusStore.kt','826c000b2a1286b1ab7617c70b742a320eb820f7e5247f4dc546c1f3f72bca78')
+          start=s.index('    internal fun reconcileVehicleStatus(')
+          s=s[:start]+'''    /** Persist one receipt unchanged. Old values remain old; they are never re-dated. */
+              internal fun reconcileAndSave(scope: HistoryReadScope, vehicle: VehicleContext,
+                                            live: CarStatus, observedAt: String?, units: Units? = null,
+                                            source: String? = null, fieldSources: Map<String, String> = emptyMap()): CarStatus {
+                  // saveStatus maintains the separate scoped historical position with its original time.
+                  // Missing units, timestamps, status flags and valid zero values must not borrow a prior receipt.
+                  saveStatus(scope, vehicle, live, observedAt, units, source, fieldSources)
+                  return live
+              }
+          }
+          '''
+          p.write_text(s)
+          p,s=read('main/java/com/matelink/ui/screens/charges/ChargesViewModel.kt','c9560776e147f658978d87e149969abaa3ad0d4ecfd2e3d857b07788bf11ccb0')
+          old='''        val currentAddr = charge.address?.takeIf { !it.contains("未知") && it.isNotBlank() }
+                  if (currentAddr != null) return currentAddr
+                  chargeAddressKey(charge, allReferenceRows, allDrives)?.let(resolvedAddresses::get)?.let { return it }'''
+          new='''        // Presentation labels must not change the original filter/session identity.
+                  chargeAddressKey(charge, allReferenceRows, allDrives)?.let(resolvedAddresses::get)?.let { return it }
+                  val currentAddr = charge.address?.toChineseDisplayAddress()?.usableChineseChargeAddress()
+                  if (currentAddr != null) return currentAddr'''
+          assert s.count(old)==1;s=s.replace(old,new)
+          old='''                    try {
+                                  chargeSummaryDao.updateAddressIfMissing(proof.context.localHistoryCarId, key.chargeId, chinese)
+                              } catch (_: Exception) {}'''
+          assert s.count(old)==1;s=s.replace(old,'                    // Keep original archive bytes and stable keys unchanged; this is a scoped display label.')
+          old='''                val flow = driveSummaryDao?.observeAllAnyCar()
+                              ?: driveSummaryDao?.observeAll(localHistoryCarId)'''
+          assert s.count(old)==1;s=s.replace(old,'                val flow = driveSummaryDao?.observeAll(localHistoryCarId)')
+          p.write_text(s)
+          p,s=read('main/java/com/matelink/ui/components/TelemetryPanel.kt','b02b3cab724eec2fe169f34381d03343dee96d557fe2bec9517d437dd413bbec')
+          assert s.count('shadowElevation = 0.dp')==1
+          p.write_text(s.replace('shadowElevation = 0.dp','shadowElevation = 1.dp'))
+          p,s=read('test/java/com/matelink/ui/screens/settings/SettingsExperienceContractTest.kt','5c511e42dc0d90ec103e87a5fcd0588289e52227f1da738e6dc8852730a19dc3')
+          assert s.count('assertEquals(103, code)')==1 and s.count('assertEquals("2.1.83", version)')==1
+          p.write_text(s.replace('assertEquals(103, code)','assertEquals(107, code)').replace('assertEquals("2.1.83", version)','assertEquals("2.1.87", version)'))
+          p=root/'test/java/com/matelink/data/local/VehicleStatusStoreScopeTest.kt';s=p.read_text();marker='    @Test fun positionWithoutObservationTimeIsNotHistoricalProof()'
+          assert s.count(marker)==1
+          s=s.replace(marker,'''    @Test fun sparseReceiptCannotBorrowUnitsTimeFlagsOrReplaceValidZero() {
+                  val scope = cloudScope("alice", "https://one.example")
+                  val car = vehicle(-1)
+                  store.saveStatus(scope, car, CarStatus(odometer = 50.0,
+                      carStatus = com.matelink.data.api.models.CarStatusDetails(locked = true),
+                      batteryDetails = com.matelink.data.api.models.BatteryDetails(batteryLevel = 80)),
+                      "2026-10-23T01:00:00Z", units = com.matelink.data.api.models.Units(unitOfLength = "km"), source = "fleet")
+                  val current = store.reconcileAndSave(scope, car, CarStatus(odometer = 0.0,
+                      carStatus = com.matelink.data.api.models.CarStatusDetails(locked = false),
+                      batteryDetails = com.matelink.data.api.models.BatteryDetails(batteryLevel = 0)), null)
+                  assertEquals(0.0, current.odometer!!, 0.0)
+                  assertEquals(false, current.carStatus!!.locked)
+                  assertEquals(0, current.batteryDetails!!.batteryLevel)
+                  val receipt = store.getCachedReceipt(scope, car)!!
+                  assertNull(receipt.units)
+                  assertNull(receipt.observedAt)
+                  assertNull(receipt.source)
+              }
+
+          '''+marker)
+          p.write_text(s)
+          d=Path('docs/ui-product-20261110');d.mkdir(parents=True,exist_ok=True)
+          (d/'APP.md').write_text('''# Android product UI stage\n\nSource baseline: dbeffe128cd6f37429c0b293255a25618f1a61c6, built on App evidence 929a63eeb46f36feb9295400da96d5382127068d. This is ordinary Android product source, not a preview.\n\nNeutral white C is the default; cream A and reduced motion persist in a separate presentation-only preference store. Original Dashboard and first three top-level page structures remain. Drives use the original summary/bar chart plus a vertical date stack: two rear cards expose dates only; foreground shows that day's original drive and parking rows. Up/down header drags, rear-date taps and arrow buttons switch dates without wrapping; body scrolling is untouched. Charge charts use bounded selectable cells with unit/coverage/unknown-vs-zero semantics. Minimal login retains the real authorization flow and cancel/error handling. Settings expose theme selection.\n\nPrior full build produced Debug/Release APKs but failed 8 tests per variant. Two product defects were found: sparse status was merged and re-dated; Chinese reverse-geocoding labels were hidden behind English source addresses. Receipt persistence now saves the actual receipt unchanged (with separate original-time historical position); reverse-geocoding remains presentation-only, preserves original session/filter keys, and observes same-vehicle drives only. A stale 103/2.1.83 release assertion is updated to the unchanged product identity 107/2.1.87. The existing 1dp panel shadow contract is retained. No tests are deleted or disabled.\n\n## Independent receive and gates\nReceive only the final source SHA in the job's SOURCE_HEAD.txt into a separate clean worktree. Verify SHA/tree/parent, review changes and run tests/builds independently. Do not reset Owner work, clear app data, change networks, import history, wake/control vehicles, deploy or merge main. Original local Codex validates and signs; it does not implement business fixes. Installing over an existing signed app requires matching signing identity and an approved upgrade path without uninstall/data clearing. A green synthetic/emulator run is not physical-device, provider or natural-data acceptance. Roll back this candidate by retaining/reverting code in the isolated branch, not by deleting user data or force-downgrading an installed app.\n''')
+          PY
+      - id: commit
+        name: Commit ordinary source and record exact tested SHA
+        run: |
+          set -euo pipefail
+          git config user.name Jovifei
+          git config user.email 110970864+Jovifei@users.noreply.github.com
+          git add android/app/src/main/java/com/matelink/data/local/VehicleStatusStore.kt android/app/src/main/java/com/matelink/ui/screens/charges/ChargesViewModel.kt android/app/src/main/java/com/matelink/ui/components/TelemetryPanel.kt android/app/src/test/java/com/matelink/ui/screens/settings/SettingsExperienceContractTest.kt android/app/src/test/java/com/matelink/data/local/VehicleStatusStoreScopeTest.kt docs/ui-product-20261110/APP.md
+          git diff --cached --check
+          git commit -m 'fix(android): preserve receipt provenance and scoped display labels; close UI regressions'
+          git push origin HEAD:refs/heads/codex/ui-product-app-20261109
+          echo "source=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+  build:
+    needs: repair
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.repair.outputs.source }}
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+          log-accepted-android-sdk-licenses: false
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+      - run: bash tools/energy-stage/android-ci.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: app-ui-product-${{ needs.repair.outputs.source }}
+          path: |
+            android-evidence/
+            android/app/build/test-results/
+            android/app/build/reports/
+            android/app/build/outputs/apk/
+          retention-days: 7
+          if-no-files-found: error
