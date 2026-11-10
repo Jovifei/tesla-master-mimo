@@ -101,7 +101,7 @@ class TpmsPersistentRecoveryTest {
         val candidate = TpmsPressureSample(carId, receiptAt, pressureFl = 2.4, provenance = TPMS_VERIFIED_COLLECTOR)
         var stores = Stores(temp.root)
         val interruptedDao = InterruptAfterAdmissionDao(dao)
-        try { admitTpmsObservation(carId, candidate, TpmsChangeRule(), TpmsHistoryRepository(interruptedDao), stores.rules); fail("death expected") }
+        try { admitTpmsObservation(carId, candidate, TpmsChangeRule(), TpmsHistoryRepository(interruptedDao), stores.rules, executionNow = receiptAt); fail("death expected") }
         catch (_: ProcessDeath) { }
         assertEquals(candidate, dao.getAt(carId, receiptAt))
         stores.close()
@@ -110,12 +110,12 @@ class TpmsPersistentRecoveryTest {
         dao = database.tpmsPressureSampleDao()
         stores = Stores(temp.root)
         try {
-            admitTpmsObservation(carId, candidate, TpmsChangeRule(), TpmsHistoryRepository(dao), stores.rules)
+            admitTpmsObservation(carId, candidate, TpmsChangeRule(), TpmsHistoryRepository(dao), stores.rules, executionNow = receiptAt)
             val queued = stores.rules.pending(carId)
             assertEquals("admitted but unqueued receipt survives restart", 1, queued.size)
             assertEquals(receiptAt, queued.single().observedAt)
             stores.rules.acknowledge(carId, queued.single())
-            admitTpmsObservation(carId, candidate, TpmsChangeRule(), TpmsHistoryRepository(dao), stores.rules)
+            admitTpmsObservation(carId, candidate, TpmsChangeRule(), TpmsHistoryRepository(dao), stores.rules, executionNow = receiptAt)
             assertTrue("acknowledged event must not rearm on repeated poll", stores.rules.pending(carId).isEmpty())
         } finally { stores.close(); database.close() }
     }

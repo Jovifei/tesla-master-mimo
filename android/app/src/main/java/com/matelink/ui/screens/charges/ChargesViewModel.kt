@@ -1091,11 +1091,14 @@ class ChargesViewModel @Inject constructor(
             ChargeTypeFilter.AC -> filteredCharges.filter { chargeEligibleForSummary(it) && typeOf(it) == ChargeType.AC }
         }
 
+        // Capture labels once. A concurrent lookup must not publish a new card
+        // address with a previous-generation filter label in the same UI state.
+        val presentationAddresses = visibleCharges.associate { it.chargeId to displayAddress(it) }
         // Keep selection tied to the original address or same-record coordinates.
         val labels = mutableMapOf<String, String>()
         visibleCharges.forEach { charge ->
             val key = chargeLocationKey(charge) ?: return@forEach
-            val label = displayAddress(charge)?.takeIf(String::isNotBlank) ?: return@forEach
+            val label = presentationAddresses[charge.chargeId]?.takeIf(String::isNotBlank) ?: return@forEach
             if (labels[key] == null || (labels[key].needsChineseChargeAddress() && !label.needsChineseChargeAddress())) {
                 labels[key] = label
             }
@@ -1106,7 +1109,7 @@ class ChargesViewModel @Inject constructor(
         if (legacyLocationSelection && locationFilter.isNotEmpty()) {
             var allMatched = true
             val labelsResolved = visibleCharges.all { charge ->
-                chargeLocationKey(charge) == null || !displayAddress(charge).needsChineseChargeAddress()
+                chargeLocationKey(charge) == null || !presentationAddresses[charge.chargeId].needsChineseChargeAddress()
             }
             val migrated = locationFilter.map { previous ->
                 if (previous in locations) previous else {
@@ -1194,7 +1197,7 @@ class ChargesViewModel @Inject constructor(
                     .map { charge ->
                         val point = effectiveChargeCoordinates(charge, allReferenceRows, allDrives)
                         charge.copy(
-                            address = displayAddress(charge),
+                            address = presentationAddresses[charge.chargeId],
                             latitude = charge.latitude ?: point?.first,
                             longitude = charge.longitude ?: point?.second
                         )

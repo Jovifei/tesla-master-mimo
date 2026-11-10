@@ -8,3 +8,6 @@ Prior full build produced Debug/Release APKs but failed 8 tests per variant. Two
 
 ## Independent receive and gates
 Receive only the final source SHA in the job's SOURCE_HEAD.txt into a separate clean worktree. Verify SHA/tree/parent, review changes and run tests/builds independently. Do not reset Owner work, clear app data, change networks, import history, wake/control vehicles, deploy or merge main. Original local Codex validates and signs; it does not implement business fixes. Installing over an existing signed app requires matching signing identity and an approved upgrade path without uninstall/data clearing. A green synthetic/emulator run is not physical-device, provider or natural-data acceptance. Roll back this candidate by retaining/reverting code in the isolated branch, not by deleting user data or force-downgrading an installed app.
+
+## Final regression review
+The fixed 2026-10-11 TPMS fixture crossed the production 30-day expiry window on 2026-11-10. The recovery scenario now supplies its already-declared receipt clock; production expiry gates and all assertions remain unchanged. Chinese display labels are captured once per UI projection so delayed lookups cannot mix a new card label with a previous filter label. Actual emulator tests use only the isolated test application and synthetic component data, not MainActivity or a provider.
