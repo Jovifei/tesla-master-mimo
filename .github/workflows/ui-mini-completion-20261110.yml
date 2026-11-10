@@ -1,0 +1,82 @@
+name: Mini product UI completion 20261110
+on:
+  push:
+    branches: [codex/ui-product-mini-20261109]
+    paths: ['.github/workflows/ui-mini-completion-20261110.yml', 'tools/ui-product-20261110/mini-integrate.py']
+permissions:
+  contents: read
+jobs:
+  integrate:
+    if: github.repository == 'Jovifei/tesla-master-mimo' && github.ref == 'refs/heads/codex/ui-product-mini-20261109'
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      source: ${{ steps.source.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - run: python3 tools/ui-product-20261110/mini-integrate.py
+      - id: source
+        name: Commit wired source and retire one-shot source editing script
+        run: |
+          set -euo pipefail
+          git config user.name Jovifei
+          git config user.email 110970864+Jovifei@users.noreply.github.com
+          git add miniprogram/src/
+          git rm tools/ui-product-20261110/mini-integrate.py
+          git diff --cached --check
+          git commit -m 'feat(mini): wire shared white themes, vertical day stack and charge cells; keep parked data truthful'
+          git push origin HEAD:refs/heads/codex/ui-product-mini-20261109
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+  verify:
+    needs: integrate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.integrate.outputs.source }}
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: |
+            miniprogram/package-lock.json
+            miniprogram/test-tooling/package-lock.json
+      - name: Install locked existing dependencies
+        working-directory: miniprogram
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm ci --prefix test-tooling --ignore-scripts --no-audit --no-fund
+          mkdir -p evidence/ui-product
+          git rev-parse HEAD HEAD^{tree} HEAD^ > evidence/ui-product/SOURCE_HEAD.txt
+      - name: Typecheck actual mini product
+        working-directory: miniprogram
+        run: npm run typecheck 2>&1 | tee evidence/ui-product/typecheck.log
+        shell: bash --noprofile --norc -eo pipefail {0}
+      - name: All existing and new consumer tests
+        working-directory: miniprogram
+        env:
+          TZ: Asia/Tokyo
+        run: npm test -- --reporter=default --reporter=junit --outputFile.junit=evidence/ui-product/tests.xml 2>&1 | tee evidence/ui-product/tests.log
+        shell: bash --noprofile --norc -eo pipefail {0}
+      - name: Real WeChat compilation and original asset budget gates
+        working-directory: miniprogram
+        run: |
+          set -euo pipefail
+          npm run build:weapp 2>&1 | tee evidence/ui-product/build.log
+          node ../tools/miniprogram/build-vehicle-assets.mjs --check-dist > evidence/ui-product/package-integrity.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mini-ui-product-${{ needs.integrate.outputs.source }}
+          path: |
+            miniprogram/evidence/ui-product/
+            miniprogram/dist/
+          retention-days: 7
+          if-no-files-found: error

@@ -1,0 +1,94 @@
+import React from 'react'
+import TestRenderer, { act } from 'react-test-renderer'
+import { afterEach, expect, it, vi } from 'vitest'
+import { activityLevel, civilDay, historyDayGroups, normalizeAppearance, verticalDayTarget } from '../domain/ui_presentation'
+
+const storage = vi.hoisted(() => ({ values: new Map<string, unknown>(), writes: [] as string[], fail: false }))
+vi.mock('@tarojs/components', () => ({ View: 'view', Text: 'text', Button: 'button', Switch: 'switch' }))
+vi.mock('@tarojs/taro', () => ({ default: {
+  getStorageSync: (key: string) => storage.values.get(key),
+  setStorageSync: (key: string, value: unknown) => { if (storage.fail) throw new Error('quota'); storage.writes.push(key); storage.values.set(key, value) },
+} }))
+import { ChargeActivityGrid, PresentationPreferences, VerticalDayStack } from './PresentationControls'
+import { APPEARANCE_KEY, readAppearance, writeAppearance } from '../services/appearance'
+let tree: TestRenderer.ReactTestRenderer | null = null
+const groups = historyDayGroups([
+  { key: 'd0', date: '2026-11-10T12:00:00+09:00' }, { key: 'p0', date: '2026-11-10T11:00:00+09:00' },
+  { key: 'd1', date: '2026-11-09T12:00:00+09:00' }, { key: 'p1', date: '2026-11-09T11:00:00+09:00' },
+  { key: 'd2', date: '2026-11-08T12:00:00+09:00' }, { key: 'd3', date: '2026-11-07T12:00:00+09:00' },
+], row => row.date)
+function render(scope = 'A') { return <VerticalDayStack groups={groups} scopeKey={scope}>{group => <span>{group.items.map(item => item.key).join(',')}</span>}</VerticalDayStack> }
+afterEach(async () => { if (tree) await act(async () => tree!.unmount()); tree = null; storage.fail = false; writeAppearance({ palette: 'neutral', reducedMotion: false }); storage.values.clear(); storage.writes = [] })
+it('defaults to C, accepts only A/C and preserves valid zero/unknown levels', () => {
+  expect(normalizeAppearance(null)).toEqual({ palette: 'neutral', reducedMotion: false })
+  expect(normalizeAppearance({ palette: 'blue', reducedMotion: 'true' })).toEqual(normalizeAppearance(null))
+  expect(normalizeAppearance({ palette: 'cream', reducedMotion: true })).toEqual({ palette: 'cream', reducedMotion: true })
+  expect(activityLevel(0, 50)).toBe(0); expect(activityLevel(null, 50)).toBe(0); expect(activityLevel(50, 50)).toBe(4)
+  expect(activityLevel(NaN, 5)).toBe(0); expect(activityLevel(-1, 5)).toBe(0)
+  expect(civilDay('not-a-date')).toBeNull()
+  expect(historyDayGroups([{ date: null }], row => row.date)[0].key).toBe('unknown')
+})
+it('vertical policy is bounded, axis-aware and rejects nonfinite input', () => {
+  expect(verticalDayTarget(0, 4, 0, -70)).toBe(1)
+  expect(verticalDayTarget(1, 4, 0, 70)).toBe(0)
+  expect(verticalDayTarget(0, 4, 0, 80)).toBe(0)
+  expect(verticalDayTarget(3, 4, 0, -80)).toBe(3)
+  expect(verticalDayTarget(1, 4, 80, -60)).toBe(1)
+  expect(verticalDayTarget(1, 4, 0, -20)).toBe(1)
+  expect(verticalDayTarget(1, 4, NaN, 80)).toBe(1)
+})
+it('renders only current-day content, exposes two rear dates, switches vertically and resets per scope', async () => {
+  await act(async () => { tree = TestRenderer.create(render()) })
+  const body = () => tree!.root.findByType('span').children.join('')
+  expect(body()).toBe('d0,p0')
+  const rear = () => tree!.root.findAllByProps({ className: 'day-stack-date' })
+  expect(rear()).toHaveLength(2)
+  expect(rear().map(node => node.children.join('')).join('')).not.toContain('d1')
+  const gesture = () => tree!.root.findByProps({ className: 'day-stack-header' })
+  await act(async () => {
+    gesture().props.onTouchStart({ touches: [{ pageX: 30, pageY: 100 }] })
+    gesture().props.onTouchEnd({ changedTouches: [{ pageX: 32, pageY: 20 }] })
+  })
+  expect(body()).toBe('d1,p1')
+  await act(async () => {
+    gesture().props.onTouchStart({ touches: [{ pageX: 30, pageY: 20 }] })
+    gesture().props.onTouchEnd({ changedTouches: [{ pageX: 32, pageY: 100 }] })
+  })
+  expect(body()).toBe('d0,p0')
+  await act(async () => rear()[0].props.onClick())
+  expect(body()).toBe('d2')
+  await act(async () => tree!.update(render('B')))
+  expect(body()).toBe('d0,p0')
+  expect(tree!.root.findByProps({ className: 'day-stack-body' }).props.onTouchEnd).toBeUndefined()
+  await act(async () => {
+    gesture().props.onTouchStart({ touches: [{ pageX: 30, pageY: 100 }] })
+    gesture().props.onTouchCancel()
+    gesture().props.onTouchEnd({ changedTouches: [{ pageX: 30, pageY: 0 }] })
+  })
+  expect(body()).toBe('d0,p0')
+})
+it('stores only presentation preferences and reports write failure without clearing user data', async () => {
+  storage.values.set('account', 'keep')
+  await act(async () => { tree = TestRenderer.create(<PresentationPreferences />) })
+  const cream = () => tree!.root.findAllByType('button').find(node => node.props.ariaLabel.startsWith('A ·'))!
+  await act(async () => cream().props.onClick())
+  expect(readAppearance().palette).toBe('cream')
+  expect(storage.writes).toEqual([APPEARANCE_KEY])
+  expect(storage.values.get('account')).toBe('keep')
+  expect(cream().props.ariaLabel).toContain('已选择')
+  storage.fail = true
+  await act(async () => tree!.root.findByType('switch' as React.ElementType).props.onChange({ detail: { value: true } }))
+  expect(JSON.stringify(tree!.toJSON())).toContain('未保存到本机')
+  expect(readAppearance().reducedMotion).toBe(true)
+})
+it('charge cells retain zero, unknown and full-date identity with bounded paging', async () => {
+  const cells = Array.from({ length: 32 }, (_, i) => ({ key: `2026-10-${String(i + 1).padStart(2, '0')}`, label: String(i), value: i === 30 ? null : i === 29 ? 0 : i, display: i === 30 ? '未知' : `${i === 29 ? 0 : i} kWh` }))
+  await act(async () => { tree = TestRenderer.create(<ChargeActivityGrid cells={cells} unit="kWh" />) })
+  const buttons = () => tree!.root.findAllByType('button').filter(node => node.props.className?.includes('charge-activity-cell'))
+  expect(buttons()).toHaveLength(4)
+  const zero = buttons().find(node => node.props.ariaLabel.endsWith('，0 kWh'))!
+  await act(async () => zero.props.onClick())
+  expect(tree!.root.findByProps({ className: 'charge-activity-selection' }).children.join('')).toBe('2026-10-30 · 0 kWh')
+  await act(async () => buttons().find(node => node.props.ariaLabel.endsWith('，未知'))!.props.onClick())
+  expect(tree!.root.findByProps({ className: 'charge-activity-selection' }).children.join('')).toContain('未知')
+})
