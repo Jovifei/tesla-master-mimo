@@ -11,7 +11,7 @@ internal fun <T> calendarHistoryGroups(
         return groups
     val byDate = groups.filter { it.date != null }.groupBy { it.date!! }
     val result = mutableListOf<HistoryDateGroup<T>>()
-    var date = end
+    var date: LocalDate = end
     while (!date.isBefore(start)) {
         result += HistoryDateGroup(date, date.toString(), byDate[date].orEmpty().flatMap { it.items })
         date = date.minusDays(1)
