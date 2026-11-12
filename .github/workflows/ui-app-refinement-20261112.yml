@@ -1,0 +1,146 @@
+name: Android UI and history refinement 20261112
+on:
+  push:
+    branches: [codex/ui-product-app-20261109]
+    paths: ['.github/workflows/ui-app-refinement-20261112.yml', 'android/app/src/**']
+permissions:
+  contents: read
+jobs:
+  source:
+    if: github.repository == 'Jovifei/tesla-master-mimo' && github.ref == 'refs/heads/codex/ui-product-app-20261109'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    outputs:
+      sha: ${{ steps.source.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - id: source
+        name: Verify exact reviewed patch then commit ordinary source
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f tools/ui-refinement-20261112/app.0.b64 ]; then
+            test "$(git rev-parse HEAD^)" = e27f17b6c6ff4f4e3e593207fbc3e8d015f600c1
+            python3 - <<'PY'
+          from pathlib import Path
+          import base64,gzip,hashlib,subprocess
+          raw=''.join(Path('tools/ui-refinement-20261112/app.'+i+'.b64').read_text().strip() for i in ['0','1','2','30','31'])
+          assert len(raw)==21724, len(raw)
+          data=gzip.decompress(base64.b64decode(raw,validate=True))
+          assert hashlib.sha256(data).hexdigest()=='0f41d16fb2fec8d80e182aaeaaea38f571cf15ed1d8d2a295a6b08a03ca2d6a7'
+          paths=[l[6:] for l in data.decode().splitlines() if l.startswith('+++ b/')]
+          assert len(paths)==20 and all(p.startswith('android/app/src/') and '..' not in p for p in paths)
+          subprocess.run(['git','apply','--check','--whitespace=error','-'],input=data,check=True)
+          subprocess.run(['git','apply','--whitespace=error','-'],input=data,check=True)
+          PY
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add android/app/src/
+            git rm tools/ui-refinement-20261112/app.*.b64
+            git diff --cached --check
+            git commit -m 'feat(android): seven-day cards, daily charge calendar, compact readiness and grouped settings'
+            git push origin HEAD:refs/heads/codex/ui-product-app-20261109
+          fi
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+  build:
+    needs: source
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.source.outputs.sha }}
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+          log-accepted-android-sdk-licenses: false
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+      - run: bash tools/energy-stage/android-ci.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-refinement-build-${{ needs.source.outputs.sha }}
+          path: |
+            android-evidence/
+            android/app/build/test-results/
+            android/app/build/reports/
+            android/app/build/outputs/apk/
+          retention-days: 7
+          if-no-files-found: error
+  native-ui:
+    needs: source
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.source.outputs.sha }}
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+          log-accepted-android-sdk-licenses: false
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Prepare disposable runner only
+        run: |
+          test "$GITHUB_ACTIONS" = true
+          test -c /dev/kvm
+          sudo chmod 0666 /dev/kvm
+          mkdir -p emulator-evidence
+          git rev-parse HEAD HEAD^{tree} HEAD^ > emulator-evidence/SOURCE_HEAD.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('android/gradle.properties')
+          keys={'systemProp.http.proxyHost','systemProp.http.proxyPort','systemProp.https.proxyHost','systemProp.https.proxyPort','systemProp.http.nonProxyHosts'}
+          p.write_text('\n'.join(x for x in p.read_text().splitlines() if x.split('=',1)[0] not in keys)+'\n')
+          PY
+          cat > emulator-evidence/run.sh <<'SH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          test "$(adb devices | awk 'NR>1 && $2=="device" {print $1}')" = emulator-5554
+          test "$(adb -s emulator-5554 shell getprop ro.kernel.qemu | tr -d '\r')" = 1
+          adb -s emulator-5554 shell settings put global airplane_mode_on 1
+          adb -s emulator-5554 shell svc wifi disable
+          trap 'adb -s emulator-5554 pull /sdcard/Android/data/com.matelink.test.mock/files/ui-product-evidence emulator-evidence/screenshots || true' EXIT
+          bash android/gradlew -p android :app:connectedDebugAndroidTest --no-daemon --max-workers=1 -Dorg.gradle.jvmargs='-Xmx4g -XX:MaxMetaspaceSize=1g -XX:+UseSerialGC' -Pkotlin.compiler.execution.strategy=in-process -PallowConnectedDeviceTests=isolated-device -PMATELINK_INSTRUMENTATION_CLASSES=com.matelink.ui.components.UiProductContractAndroidTest -PJOURVOLT_API_BASE_URL=http://127.0.0.1:18090/ -PJOURVOLT_AUTH_HOST=auth.teslalink.joviluma.com 2>&1 | tee emulator-evidence/tests.log
+          SH
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: aosp_atd
+          arch: x86_64
+          profile: pixel_4
+          cores: 2
+          ram-size: 3072M
+          heap-size: 384M
+          disk-size: 8G
+          emulator-boot-timeout: 700
+          disable-animations: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot-load -no-snapshot-save -no-metrics -accel on
+          script: bash emulator-evidence/run.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-refinement-native-${{ needs.source.outputs.sha }}
+          path: |
+            emulator-evidence/
+            android/app/build/outputs/androidTest-results/
+            android/app/build/reports/androidTests/
+          retention-days: 7
+          if-no-files-found: error
