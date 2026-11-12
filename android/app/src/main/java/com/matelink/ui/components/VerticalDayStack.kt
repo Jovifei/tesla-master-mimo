@@ -1,7 +1,9 @@
 package com.matelink.ui.components
 
 import android.animation.ValueAnimator
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -27,12 +29,10 @@ import androidx.compose.ui.zIndex
 import com.matelink.R
 import com.matelink.ui.theme.LocalAppearance
 
-/** Only the header captures vertical gestures. The body remains an ordinary parent-scrolled list. */
+/** Seven exposed date cards, with reversible selection. Only the header consumes vertical drags. */
 @Composable
 fun <T> VerticalDayStack(
-    groups: List<HistoryDateGroup<T>>,
-    scopeKey: String,
-    modifier: Modifier = Modifier,
+    groups: List<HistoryDateGroup<T>>, scopeKey: String, modifier: Modifier = Modifier,
     content: @Composable (HistoryDateGroup<T>) -> Unit
 ) {
     if (groups.isEmpty()) return
@@ -45,43 +45,46 @@ fun <T> VerticalDayStack(
     val reduce = LocalAppearance.current.reducedMotion || !ValueAnimator.areAnimatorsEnabled()
     val reveal = remember { Animatable(0f) }
     val threshold = with(LocalDensity.current) { 48.dp.toPx() }
+    val travel = with(LocalDensity.current) { 28.dp.toPx() }
     var drag by remember { mutableFloatStateOf(0f) }
     var direction by remember { mutableIntStateOf(1) }
     fun select(target: Int) {
         val bounded = target.coerceIn(0, groups.lastIndex)
         if (bounded != index) { direction = if (bounded > index) -1 else 1; selectedKey = groups[bounded].dateKey }
     }
+    fun toggle(target: Int) { select(if (target == index) 0 else target) }
     LaunchedEffect(current.dateKey, reduce) {
-        reveal.snapTo(if (reduce) 0f else direction * 10f)
-        if (!reduce) reveal.animateTo(0f, tween(220))
+        reveal.snapTo(if (reduce) 0f else direction * travel)
+        if (!reduce) reveal.animateTo(0f, tween(260))
     }
     val newer = stringResource(R.string.ui_day_newer)
     val older = stringResource(R.string.ui_day_older)
     val hint = stringResource(R.string.ui_day_swipe_hint)
-    val rearCount = minOf(2, groups.lastIndex - index)
-    val layerHeight = (48f * LocalDensity.current.fontScale.coerceAtLeast(1f)).dp
+    val pageStart = (index / 7) * 7
+    val pageEnd = minOf(pageStart + 7, groups.size)
+    val rear = (pageStart until pageEnd).filter { it != 0 }
+    val layerHeight = (44f * LocalDensity.current.fontScale.coerceAtLeast(1f)).dp
     val shape = RoundedCornerShape(16.dp)
     Column(modifier.fillMaxWidth().testTag("vertical_day_stack")) {
-        Box(Modifier.fillMaxWidth()) {
-            // Back first, then middle, then the foreground. Only old date strips remain exposed.
-            for (depth in rearCount downTo 1) {
-                val offset = layerHeight * (rearCount - depth)
-                val rear = groups[index + depth]
-                Surface(onClick = { select(index + depth) },
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = (depth * 6).dp).padding(top = offset)
-                        .height(layerHeight + 36.dp).zIndex((3 - depth).toFloat()).testTag("day_stack_rear_$depth"),
-                    color = if (depth == 1) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.surfaceContainerHighest,
-                    shape = shape, border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant)) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopStart) {
-                        Text(dayStackDateLabel(rear.date), Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                            style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
+        Box(Modifier.fillMaxWidth().animateContentSize(if (reduce) snap() else tween(260))) {
+            // Farther dates are drawn first. Every date in the selected week remains reachable.
+            rear.reversed().forEachIndexed { position, target ->
+                val group = groups[target]
+                Surface(onClick = { toggle(target) },
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = ((rear.size - position).coerceAtMost(6) * 3).dp)
+                        .padding(top = layerHeight * position).height(layerHeight + 24.dp)
+                        .zIndex(position.toFloat()).testTag("day_stack_rear_$target")
+                        .semantics { selected = target == index },
+                    color = if (target == index) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.surfaceContainer,
+                    shape = shape, border = BorderStroke(.5.dp, MaterialTheme.colorScheme.outlineVariant)) {
+                    Text(dayStackDateLabel(group.date), Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                        style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            Surface(Modifier.fillMaxWidth().padding(top = layerHeight * rearCount).zIndex(3f)
-                .graphicsLayer { translationY = reveal.value + if (reduce) 0f else (drag * 0.12f).coerceIn(-12f, 12f) },
+            Surface(Modifier.fillMaxWidth().padding(top = layerHeight * rear.size).zIndex(8f)
+                .graphicsLayer { translationY = reveal.value + if (reduce) 0f else (drag * .12f).coerceIn(-12f, 12f) },
                 color = MaterialTheme.colorScheme.surface, shape = shape,
-                border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant)) {
+                border = BorderStroke(.5.dp, MaterialTheme.colorScheme.outlineVariant), shadowElevation = if (index == 0) 0.dp else 4.dp) {
                 Column {
                     Column(Modifier.fillMaxWidth().heightIn(min = 96.dp).testTag("day_stack_gesture")
                         .semantics {
@@ -96,20 +99,24 @@ fun <T> VerticalDayStack(
                                 onDragEnd = { select(dayStackTarget(index, groups.size, drag, threshold)); drag = 0f })
                         }.padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 8.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(dayStackDateLabel(current.date), Modifier.weight(1f).testTag("day_stack_active_date").semantics { liveRegion = LiveRegionMode.Polite },
+                            Text(dayStackDateLabel(current.date), Modifier.weight(1f).testTag("day_stack_active_date")
+                                .semantics { liveRegion = LiveRegionMode.Polite },
                                 style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                            IconButton(onClick = { select(index - 1) }, enabled = index > 0, modifier = Modifier.testTag("day_stack_newer")) {
-                                Icon(Icons.Default.KeyboardArrowUp, newer)
-                            }
-                            IconButton(onClick = { select(index + 1) }, enabled = index < groups.lastIndex, modifier = Modifier.testTag("day_stack_older")) {
-                                Icon(Icons.Default.KeyboardArrowDown, older)
-                            }
+                            IconButton(onClick = { select(index - 1) }, enabled = index > 0, modifier = Modifier.testTag("day_stack_newer")) { Icon(Icons.Default.KeyboardArrowUp, newer) }
+                            IconButton(onClick = { select(index + 1) }, enabled = index < groups.lastIndex, modifier = Modifier.testTag("day_stack_older")) { Icon(Icons.Default.KeyboardArrowDown, older) }
                         }
                         Text(hint, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    // Callback is from the current record set; no cached record is used to switch dates.
-                    key(scopeKey, current.dateKey) { content(current) }
+                    key(scopeKey, current.dateKey) {
+                        if (current.items.isEmpty()) Text(stringResource(R.string.ui_day_no_returned_records),
+                            Modifier.padding(20.dp), style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        else content(current)
+                    }
+                    if (index != 0) TextButton(onClick = { select(0) }, modifier = Modifier.fillMaxWidth().testTag("day_stack_close")) {
+                        Text(stringResource(R.string.ui_day_collapse, dayStackDateLabel(groups[0].date)))
+                    }
                 }
             }
         }

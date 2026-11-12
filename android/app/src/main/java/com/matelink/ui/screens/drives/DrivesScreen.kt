@@ -84,6 +84,7 @@ import androidx.compose.material3.HorizontalDivider
 import com.matelink.ui.components.VerticalDayStack
 import com.matelink.ui.components.AppleDateGroupHeader
 import com.matelink.ui.components.HistoryDateGroup
+import com.matelink.ui.components.calendarHistoryGroups
 import com.matelink.ui.theme.AppleTokens
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -397,7 +398,11 @@ private fun DrivesContent(
             }
         } else {
             item(key = "history_day_stack") {
-                VerticalDayStack(groups = groupedDriveHistory, scopeKey = historyScopeKey) { group ->
+                VerticalDayStack(groups = calendarHistoryGroups(groupedDriveHistory,
+                        if (selectedDateFilter == DriveDateFilter.CUSTOM) customStartDate
+                        else selectedDateFilter.days?.let { java.time.LocalDate.now().minusDays((it - 1).coerceAtLeast(0)) },
+                        if (selectedDateFilter == DriveDateFilter.CUSTOM) customEndDate
+                        else selectedDateFilter.days?.let { java.time.LocalDate.now() }), scopeKey = historyScopeKey) { group ->
                     Column(Modifier.fillMaxWidth()) {
                         group.items.forEachIndexed { index, item ->
                             if (index > 0) HorizontalDivider(Modifier.padding(horizontal = AppleTokens.rowHorizontal),
@@ -484,7 +489,7 @@ internal sealed interface DriveHistoryItem {
         val location: String?
     ) : DriveHistoryItem {
         override val key: String = "parked-${olderDrive.id}-${newerDrive.id}"
-        override val dateForIndicator: String = startDate
+        override val dateForIndicator: String = endDate
     }
 }
 

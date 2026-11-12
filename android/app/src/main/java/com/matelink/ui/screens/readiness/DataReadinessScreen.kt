@@ -398,6 +398,8 @@ fun DataReadinessScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     var showMigrationDialog by remember { mutableStateOf(false) }
     var showBindingDialog by remember { mutableStateOf(false) }
+    var showCapabilities by remember(carId) { mutableStateOf(false) }
+    var showSetup by remember(carId) { mutableStateOf(false) }
     LaunchedEffect(carId) { viewModel.setCarId(carId) }
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -437,12 +439,21 @@ fun DataReadinessScreen(
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 ReadinessDiagnosticCards(uiState.diagnosticFacts)
+                TextButton(onClick = { showCapabilities = !showCapabilities }, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.diagnostic_server_capabilities) + if (showCapabilities) " −" else " +")
+                }
+                if (showCapabilities) {
                 Text(stringResource(R.string.diagnostic_server_capabilities), style = MaterialTheme.typography.titleMedium)
                 ReadinessOverview(uiState.data)
                 uiState.data?.let { DataReadinessRows(it) } ?: Text(
                     text = stringResource(R.string.data_readiness_load_error),
                     color = MaterialTheme.colorScheme.error
                 )
+                }
+                TextButton(onClick = { showSetup = !showSetup }, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.ui_authorization_details) + if (showSetup) " −" else " +")
+                }
+                if (showSetup || uiState.telemetryErrorCode != null) {
                 FleetTelemetryCard(
                     state = uiState,
                     onOpenVirtualKey = {
@@ -460,6 +471,7 @@ fun DataReadinessScreen(
                     onConfigure = viewModel::configureTelemetry,
                     onReauthorize = onReauthorize
                 )
+                }
                 if (uiState.migrationBindingRequired) {
                     OutlinedButton(
                         onClick = { showBindingDialog = true },

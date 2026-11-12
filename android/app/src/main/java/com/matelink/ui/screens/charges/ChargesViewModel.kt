@@ -582,19 +582,15 @@ class ChargesViewModel @Inject constructor(
         val endDate = state.endDate ?: LocalDate.now(clock)
         val stepDays = 30L
         val newStart = currentStart.minusDays(stepDays)
-        _uiState.update {
-            it.copy(
-                selectedFilter = DateFilter.CUSTOM,
-                startDate = newStart,
-                endDate = endDate,
-                customStartDate = newStart,
-                customEndDate = endDate,
-                isLoadingMore = true
-            )
+        val explicitCustom = state.selectedFilter == DateFilter.CUSTOM
+        _uiState.update { it.copy(startDate = newStart, endDate = endDate,
+            customStartDate = if (explicitCustom) newStart else it.customStartDate,
+            customEndDate = if (explicitCustom) endDate else it.customEndDate,
+            isLoadingMore = true) }
+        if (explicitCustom) {
+            savedStateHandle[KEY_CUSTOM_START] = newStart.toString()
+            savedStateHandle[KEY_CUSTOM_END] = endDate.toString()
         }
-        savedStateHandle[KEY_DATE_FILTER] = DateFilter.CUSTOM.name
-        savedStateHandle[KEY_CUSTOM_START] = newStart.toString()
-        savedStateHandle[KEY_CUSTOM_END] = endDate.toString()
         loadCharges(newStart, endDate, isLoadMore = true)
     }
 
@@ -1218,15 +1214,7 @@ class ChargesViewModel @Inject constructor(
         }
     }
 
-    private fun determineGranularity(startDate: LocalDate?, endDate: LocalDate?): ChartGranularity {
-        if (startDate == null || endDate == null) return ChartGranularity.MONTHLY
-        val days = ChronoUnit.DAYS.between(startDate, endDate)
-        return when {
-            days <= 30 -> ChartGranularity.DAILY
-            days <= 90 -> ChartGranularity.WEEKLY
-            else -> ChartGranularity.MONTHLY
-        }
-    }
+    private fun determineGranularity(startDate: LocalDate?, endDate: LocalDate?): ChartGranularity = ChartGranularity.DAILY
 
     private fun calculateChartData(charges: List<ChargeData>, granularity: ChartGranularity,
         startDate: LocalDate?, endDate: LocalDate?): List<ChargeChartData> {
@@ -1243,8 +1231,9 @@ class ChargesViewModel @Inject constructor(
             ChartGranularity.DAILY -> {
                 // DAILY ranges (today, last 7 and last 30 days)
                 // If not startDate (All Time), get the first trip, or today
-                val start = startDate ?: (chargesByDay.keys.minOrNull()?.let { LocalDate.ofEpochDay(it) } ?: LocalDate.now(clock))
+                val requestedStart = startDate ?: (chargesByDay.keys.minOrNull()?.let { LocalDate.ofEpochDay(it) } ?: LocalDate.now(clock))
                 val end = endDate ?: LocalDate.now(clock)
+                val start = maxOf(requestedStart, end.minusDays(365))
                 val result = mutableListOf<ChargeChartData>()
                 var current = start
                 while (!current.isAfter(end)) {

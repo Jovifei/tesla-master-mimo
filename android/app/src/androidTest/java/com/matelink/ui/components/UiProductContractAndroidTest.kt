@@ -69,6 +69,28 @@ class UiProductContractAndroidTest {
         compose.onNodeWithTag("day_stack_gesture").performTouchInput { swipeUp() }
         compose.onNodeWithText("drive-3").assertIsDisplayed()
     }
+    @Test fun sevenDatesCanBeRaisedAndCollapsedWithoutDroppingParking() {
+        val end = LocalDate.of(2026, 11, 12)
+        val week = (0..6).map { n -> val date = end.minusDays(n.toLong())
+            HistoryDateGroup(date, date.toString(), listOf("trip-$n", "parking-$n")) }
+        compose.setContent { MateLinkTheme(darkTheme = false) {
+            Column(Modifier.width(393.dp).verticalScroll(rememberScrollState())) {
+                VerticalDayStack(week, "synthetic-week") { day ->
+                    Column(Modifier.padding(16.dp)) { day.items.forEach { Text(it) } }
+                }
+            }
+        } }
+        compose.onNodeWithTag("day_stack_rear_6").assertExists()
+        compose.onNodeWithTag("day_stack_rear_1").performClick()
+        compose.onNodeWithText("parking-1").assertIsDisplayed()
+        capture("week-raised-yesterday")
+        compose.onNodeWithTag("day_stack_rear_1").performClick()
+        compose.onNodeWithText("parking-0").assertIsDisplayed()
+        compose.onNodeWithTag("day_stack_rear_6").performClick()
+        compose.onNodeWithText("trip-6").assertIsDisplayed()
+        compose.onNodeWithTag("day_stack_close").performClick()
+        compose.onNodeWithText("trip-0").assertIsDisplayed()
+    }
     @Test fun bodyScrollDoesNotSwitchDayAndFontScalingKeepsDatesReachable() {
         compose.setContent { MateLinkTheme(darkTheme = false) {
             val density = LocalDensity.current.density

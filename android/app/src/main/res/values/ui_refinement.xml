@@ -1,0 +1,17 @@
+<resources>
+    <string name="ui_day_no_returned_records">No records returned for this date. This does not prove there was no activity.</string>
+    <string name="ui_day_collapse">Collapse to %1$s</string>
+    <string name="ui_curve_gaps_note">Dots are individual observed samples. Gaps are not interpolated; see detailed curves for all series.</string>
+    <string name="ui_charge_calendar_limit">Each cell is one day. The calendar shows up to the latest 366 selected days; history and totals are unchanged.</string>
+    <string name="ui_diagnostic_overview">This page reports separate evidence, not an overall health score. Not checked means a verifiable response is missing, not that authorization failed. Tap a row for its source, time and next step.</string>
+    <string name="ui_not_checked">Not confirmed</string>
+    <string name="ui_authorization_details">Authorization and collection configuration</string>
+    <string name="ui_language_currency">Language and display currency</string>
+    <string name="ui_settings_advanced">Network, history display and diagnostics</string>
+    <string name="ui_charge_legend">Daily kWh · 0 / 20 / 40 / 60+ · — means not reported</string>
+    <string name="ui_account_management">Account management</string>
+    <string name="ui_logout_preserves_history">Sign out of this session? Saved history and preferences are retained and remain account-isolated. Tesla authorization is managed separately.</string>
+    <string name="ui_charge_returned_count">Showing %1$d returned records after filters. Missing records do not prove no charging.</string>
+    <string name="ui_charge_fixed_end">This custom range ends on %1$s and excludes newer records.</string>
+    <string name="ui_charge_view_recent">View latest 30 days · all types and locations</string>
+</resources>

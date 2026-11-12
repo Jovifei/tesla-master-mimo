@@ -325,7 +325,7 @@ private fun ChargesContent(
     val headerCount = 3 +
         (if (historySyncWarning != null || localArchiveLinkPending) 1 else 0) +
         (if (showFreeHint) 1 else 0) +
-        (if (chartData.isNotEmpty()) 1 else 0)
+        (if (chartData.isNotEmpty()) 1 else 0) + 1
 
     val groupedCharges = remember(charges) {
         val groups = mutableListOf<HistoryDateGroup<ChargeData>>()
@@ -421,7 +421,23 @@ private fun ChargesContent(
             }
         }
 
-        // Charges charts (daily/weekly/monthly based on date range) - swipeable
+        item(key = "charge_history_window") {
+            Column(Modifier.padding(horizontal = 4.dp, vertical = 4.dp)) {
+                Text(stringResource(R.string.ui_charge_returned_count, charges.size),
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (selectedDateFilter == DateFilter.CUSTOM && customEndDate?.isBefore(LocalDate.now()) == true) {
+                    Text(stringResource(R.string.ui_charge_fixed_end, customEndDate.toString()),
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                TextButton(onClick = {
+                    onChargeTypeFilterSelected(ChargeTypeFilter.ALL)
+                    onCostFilterSelected(CostFilter.ALL)
+                    onLocationFilterCleared()
+                    onDateFilterSelected(DateFilter.LAST_30_DAYS)
+                }) { Text(stringResource(R.string.ui_charge_view_recent)) }
+            }
+        }
+        // One daily energy calendar; summaries keep their existing calculations.
         if (chartData.isNotEmpty()) {
             item {
                 ChargesChartsPager(
@@ -1134,54 +1150,11 @@ private fun ChargesChartsPager(
     currencySymbol: String,
     palette: CarColorPalette
 ) {
-    val pagerState = rememberPagerState(pageCount = { ChargesChartType.entries.size })
-
-    Column {
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(
-                containerColor = palette.surface
-            )
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp)
-            ) {
-                HorizontalPager(
-                    state = pagerState,
-                    modifier = Modifier.fillMaxWidth()
-                ) { page ->
-                    val chartType = ChargesChartType.entries[page]
-                    ChargesChartPage(
-                        chartData = chartData,
-                        granularity = granularity,
-                        chartType = chartType,
-                        currencySymbol = currencySymbol,
-                        palette = palette
-                    )
-                }
-                //ChartLegend(palette = palette)
-            }
-        }
-
-        // Page indicator dots
-        Spacer(modifier = Modifier.height(8.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.Center
-        ) {
-            repeat(ChargesChartType.entries.size) { index ->
-                val isSelected = pagerState.currentPage == index
-                Box(
-                    modifier = Modifier
-                        .padding(horizontal = 4.dp)
-                        .size(8.dp)
-                        .clip(CircleShape)
-                        .background(
-                            if (isSelected) palette.accent
-                            else palette.onSurfaceVariant.copy(alpha = 0.3f)
-                        )
-                )
-            }
+    Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = palette.surface)) {
+        Column(Modifier.padding(16.dp)) {
+            ChargesChartPage(chartData, granularity, ChargesChartType.ENERGY, currencySymbol, palette)
+            Text(stringResource(R.string.ui_charge_calendar_limit), style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -1284,7 +1257,8 @@ private fun ChargesChartPage(
             ChargeActivityCell(data.label, value, display,
                 key = "${granularity.name}:${data.sortKey}",
                 precision = when (chartType) { ChargesChartType.COUNT -> 0; ChargesChartType.COST -> 2; else -> 1 },
-                approximate = approximate)
+                approximate = approximate,
+                          date = if (granularity == ChartGranularity.DAILY) java.time.LocalDate.ofEpochDay(data.sortKey) else null)
         }
         ChargeActivityGrid(cells = cells, scopeKey = "${granularity.name}:${chartType.name}:$axisUnit")
     }

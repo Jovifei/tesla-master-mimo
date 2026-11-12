@@ -566,11 +566,6 @@ fun RouteIndicator(
                 overflow = TextOverflow.Ellipsis
             )
         }
-        Icon(
-            imageVector = Icons.Default.DirectionsCar,
-            contentDescription = null,
-            tint = accent.copy(alpha = 0.55f),
-            modifier = Modifier.size(18.dp)
-        )
+
     }
 }

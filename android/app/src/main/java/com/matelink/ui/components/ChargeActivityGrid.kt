@@ -21,7 +21,8 @@ import com.matelink.R
 /** null = unknown; a real zero remains zero. No inferred empty calendar days. */
 data class ChargeActivityCell(
     val label: String, val value: Double?, val display: String,
-    val key: String = label, val precision: Int = 1, val approximate: Boolean = false
+    val key: String = label, val precision: Int = 1, val approximate: Boolean = false,
+    val date: java.time.LocalDate? = null
 )
 internal fun chargeCellNumber(cell: ChargeActivityCell): String {
     val value = cell.value?.takeIf { it.isFinite() && it >= 0 } ?: return "—"
@@ -41,33 +42,42 @@ fun ChargeActivityGrid(cells: List<ChargeActivityCell>, modifier: Modifier = Mod
     var selected by remember(scopeKey, cells.map { it.key }) { mutableStateOf<String?>(null) }
     val maxPage = (cells.size - 1) / size
     val shown = cells.drop(page.coerceIn(0, maxPage) * size).take(size)
-    val maximum = cells.mapNotNull { it.value?.takeIf { n -> n.isFinite() && n >= 0 } }.maxOrNull() ?: 0.0
+    val leading = shown.firstOrNull()?.date?.dayOfWeek?.value?.minus(1) ?: 0
+    val aligned: List<ChargeActivityCell?> = List(leading) { null } + shown
+    val maximum = 60.0
     val selection = cells.firstOrNull { it.key == selected }
     Column(modifier.fillMaxWidth().testTag("charge_activity_grid"), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(stringResource(R.string.ui_charge_cells_hint), style = MaterialTheme.typography.bodySmall,
+        Text(stringResource(R.string.ui_charge_legend), style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
         BoxWithConstraints {
             val scale = LocalDensity.current.fontScale
-            val columns = (maxWidth.value / (if (scale > 1.3f) 76 else 52)).toInt().coerceIn(2, 7)
+            val columns = 7
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                shown.chunked(columns).forEach { row ->
+                if (shown.any { it.date != null }) Row(Modifier.fillMaxWidth()) {
+                    listOf("一", "二", "三", "四", "五", "六", "日").forEach {
+                        Text(it, Modifier.weight(1f), textAlign = TextAlign.Center,
+                            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                aligned.chunked(columns).forEach { row ->
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         row.forEach { cell ->
-                            val intensity = chargeActivityIntensity(cell.value, maximum)
+                            if (cell == null) { Spacer(Modifier.weight(1f)); return@forEach }
+                            val intensity = if (cell.date != null) chargeEnergyShade(cell.value) * .80f else chargeActivityIntensity(cell.value, maximum)
                             val background = androidx.compose.ui.graphics.lerp(MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.colorScheme.primary, intensity)
                             // Pick the stronger actual contrast, not a threshold on chart intensity.
                             val foreground = if (background.luminance() > 0.179f) Color.Black else Color.White
-                            Surface(onClick = { selected = cell.key }, modifier = Modifier.weight(1f).heightIn(min = 64.dp)
+                            Surface(onClick = { selected = cell.key }, modifier = Modifier.weight(1f).aspectRatio(1f)
                                 .testTag("charge_cell_${cell.key}").semantics { contentDescription = "${cell.label}, ${cell.display}"; this.selected = selected == cell.key },
                                 shape = MaterialTheme.shapes.small,
                                 color = background,
                                 border = BorderStroke(if (selected == cell.key) 1.5.dp else .5.dp,
                                     if (selected == cell.key) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant)) {
-                                Column(Modifier.padding(horizontal = 2.dp, vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    Text(cell.label, style = MaterialTheme.typography.labelSmall, color = foreground, textAlign = TextAlign.Center)
-                                    Text(chargeCellNumber(cell),
-                                        style = MaterialTheme.typography.labelMedium, color = foreground, textAlign = TextAlign.Center)
+                                Column(Modifier.padding(horizontal = 2.dp, vertical = 3.dp), horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                                    Text(cell.date?.dayOfMonth?.toString() ?: cell.label, style = MaterialTheme.typography.labelSmall, color = foreground, textAlign = TextAlign.Center)
+                                    if (scale <= 1.3f) Text(chargeCellNumber(cell),
+                                        style = MaterialTheme.typography.labelSmall, color = foreground, textAlign = TextAlign.Center)
                                 }
                             }
                         }
@@ -76,7 +86,7 @@ fun ChargeActivityGrid(cells: List<ChargeActivityCell>, modifier: Modifier = Mod
                 }
             }
         }
-        Text(selection?.let { "${it.label} · ${it.display}" } ?: stringResource(R.string.ui_charge_select_cell),
+        Text(selection?.let { "${it.date?.toString() ?: it.label} · ${it.display}" } ?: stringResource(R.string.ui_charge_select_cell),
             style = MaterialTheme.typography.bodyMedium, modifier = Modifier.testTag("charge_cell_selection"))
         if (maxPage > 0) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             TextButton(onClick = { page--; selected = null }, enabled = page > 0) { Text(stringResource(R.string.ui_day_older)) }

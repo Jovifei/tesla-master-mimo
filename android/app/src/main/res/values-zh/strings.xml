@@ -1045,7 +1045,7 @@
     <string name="current_charge_unsupported">不支持</string>
     <string name="current_max">当前最大</string>
     <string name="current_min">当前最小</string>
-    <string name="current_profile">当前配置</string>
+    <string name="current_profile">电流曲线</string>
     <string name="current_charge_parameters">充电状态</string>
     <string name="current_charge_port">充电口</string>
     <string name="current_charge_port_open">打开</string>

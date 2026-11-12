@@ -307,9 +307,14 @@ class ChargesRoomCostConsumerTest {
             assertEquals(setOf(71, 72), vm.uiState.value.charges.map { it.chargeId }.toSet())
             assertEquals(2, vm.uiState.value.summary.totalCharges)
             assertEquals(5.70, vm.uiState.value.summary.totalCost ?: Double.NaN, 0.0001)
-            assertEquals(DateFilter.CUSTOM, vm.uiState.value.selectedFilter)
-            assertEquals(recentStart?.minusDays(30), vm.uiState.value.customStartDate)
-            assertEquals(vm.uiState.value.endDate, vm.uiState.value.customEndDate)
+            assertEquals(DateFilter.LAST_7_DAYS, vm.uiState.value.selectedFilter)
+            assertEquals(recentStart?.minusDays(30), vm.uiState.value.startDate)
+            assertNull(vm.uiState.value.customStartDate)
+            assertNull(vm.uiState.value.customEndDate)
+            // Reopening/refreshing a rolling preset must include new dates, not freeze an old end.
+            vm.refresh()
+            awaitCharges(vm, listOf(71))
+            assertEquals(DateFilter.LAST_7_DAYS, vm.uiState.value.selectedFilter)
         } finally {
             vm.viewModelScope.cancel()
             advanceUntilIdle()

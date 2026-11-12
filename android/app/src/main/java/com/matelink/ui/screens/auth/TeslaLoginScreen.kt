@@ -272,34 +272,18 @@ private fun LoginEntryPanels(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                ConsentRow(
-                    checked = termsAccepted,
-                    label = stringResource(R.string.tesla_login_terms_consent),
-                    onCheckedChange = onTermsChanged
-                )
-                DocumentButton(
-                    label = stringResource(R.string.tesla_login_view_terms),
-                    enabled = termsUrl != null,
-                    onClick = {
-                        termsUrl?.let { url ->
-                            context.launchExternalIntentSafely(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                        }
-                    }
-                )
-                ConsentRow(
-                    checked = privacyAccepted,
-                    label = stringResource(R.string.tesla_login_privacy_consent),
-                    onCheckedChange = onPrivacyChanged
-                )
-                DocumentButton(
-                    label = stringResource(R.string.tesla_login_view_privacy),
-                    enabled = privacyUrl != null,
-                    onClick = {
-                        privacyUrl?.let { url ->
-                            context.launchExternalIntentSafely(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                        }
-                    }
-                )
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.weight(1f)) { ConsentRow(checked = termsAccepted,
+                        label = stringResource(R.string.tesla_login_terms_consent), onCheckedChange = onTermsChanged) }
+                    DocumentButton(label = stringResource(R.string.tesla_login_view_terms), enabled = termsUrl != null,
+                        onClick = { termsUrl?.let { url -> context.launchExternalIntentSafely(Intent(Intent.ACTION_VIEW, Uri.parse(url))) } })
+                }
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.weight(1f)) { ConsentRow(checked = privacyAccepted,
+                        label = stringResource(R.string.tesla_login_privacy_consent), onCheckedChange = onPrivacyChanged) }
+                    DocumentButton(label = stringResource(R.string.tesla_login_view_privacy), enabled = privacyUrl != null,
+                        onClick = { privacyUrl?.let { url -> context.launchExternalIntentSafely(Intent(Intent.ACTION_VIEW, Uri.parse(url))) } })
+                }
             }
 
             if (!legalDocumentsConfigured) {
@@ -443,14 +427,14 @@ private fun TeslaBlockedOnboardingPanel(reason: String?, onRetry: () -> Unit, on
 
 @Composable
 private fun LoginHeaderPanel(phase: ConnectionVisualPhase, pairing: Boolean) {
-    Column(Modifier.fillMaxWidth().padding(vertical = 8.dp),
+    Column(Modifier.fillMaxWidth().padding(top = 20.dp, bottom = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.primary) {
             Box(Modifier.size(52.dp), contentAlignment = Alignment.Center) {
                 Icon(Icons.Filled.Lock, null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(24.dp))
             }
         }
-        Text("MateLink", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Text("MateLink", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
         Text(stringResource(R.string.ui_login_tagline), style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
         Text(stringResource(if (pairing) R.string.ui_login_confirm_vehicle else R.string.ui_login_steps),

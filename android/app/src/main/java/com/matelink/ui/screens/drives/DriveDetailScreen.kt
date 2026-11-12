@@ -151,11 +151,8 @@ fun DriveDetailScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = onNavigateToDriveCurves) {
-                        Icon(
-                            Icons.Default.ShowChart,
-                            contentDescription = stringResource(R.string.drive_curves_title)
-                        )
+                    TextButton(onClick = onNavigateToDriveCurves) {
+                        Text(stringResource(R.string.drive_curves_title))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -214,7 +211,7 @@ private fun DriveDetailContent(
 
     val positions = detail.positions.orEmpty()
     val projection = remember(detail) { projectDriveCurves(detail) }
-    val hasChartData = projection.speed.validCount >= 2
+    val hasChartData = projection.speed.validCount > 0
     val timeLabels = remember(projection, is24Hour) { timedDriveAxisLabels(projection.speed, is24Hour) }
     val fractionToTimeLabel: (Float) -> String = remember(projection, is24Hour) {
         { fraction -> timedDriveCurveLabel(projection.speed, fraction, is24Hour) }
@@ -222,10 +219,9 @@ private fun DriveDetailContent(
     var speedChartFraction by remember { mutableStateOf<Float?>(null) }
     var showEnergyDialog by remember { mutableStateOf(false) }
 
-    val hasPowerData = (stats?.powerMax != null && stats.powerMax != 0) ||
-        (stats?.powerMin != null && stats.powerMin != 0) ||
-        (stats?.powerAvg != null && stats.powerAvg != 0.0) ||
-        (projection.power.validCount >= 2 && projection.power.values.any { it.isFinite() && it != 0f })
+    val hasPowerData = stats?.powerMax != null || stats?.powerMin != null ||
+        stats?.powerAvg != null || projection.power.validCount > 0
+
 
     Column(
         modifier = modifier
@@ -248,45 +244,7 @@ private fun DriveDetailContent(
             onShowEnergyDialog = { showEnergyDialog = true }
         )
 
-        // Directly embedded real telemetry curves (Speed, Power, Battery)
         val receiptUnits = drivePresentationUnits(detail.lengthUnit, units)
-        if (hasChartData) {
-            // 1. Speed curve is strictly first
-            if (detail.hasKnownLengthUnit) {
-                SpeedCurveCard(
-                    positions = positions,
-                    projected = projection.speed,
-                    units = receiptUnits,
-                    timeLabels = timeLabels,
-                    externalSelectedFraction = speedChartFraction,
-                    onXSelected = { speedChartFraction = it },
-                    fractionToTimeLabel = fractionToTimeLabel
-                )
-            }
-            // 2. Power curve only shown when power data actually exists
-            if (hasPowerData && projection.power.validCount >= 2) {
-                PowerCurveCard(
-                    positions = positions,
-                    projected = projection.power,
-                    timeLabels = timeLabels,
-                    externalSelectedFraction = speedChartFraction,
-                    onXSelected = { speedChartFraction = it },
-                    fractionToTimeLabel = fractionToTimeLabel
-                )
-            }
-            // 3. Battery SOC curve
-            if (projection.battery.validCount >= 2) {
-                BatteryCurveCard(
-                    positions = positions,
-                    projected = projection.battery,
-                    timeLabels = timeLabels,
-                    externalSelectedFraction = speedChartFraction,
-                    onXSelected = { speedChartFraction = it },
-                    fractionToTimeLabel = fractionToTimeLabel
-                )
-            }
-        }
-
         // Part-of-trip banner: link to the containing saved trip + detach action
         if (containingTrip != null) {
             val (_, trip) = containingTrip
@@ -319,7 +277,13 @@ private fun DriveDetailContent(
                 )
             )
 
-            // Power section - only show if there are actual power samples
+            if (detail.hasKnownLengthUnit && hasChartData) {
+                SpeedCurveCard(positions = positions, projected = projection.speed, units = receiptUnits,
+                    timeLabels = timeLabels, externalSelectedFraction = speedChartFraction,
+                    onXSelected = { speedChartFraction = it }, fractionToTimeLabel = fractionToTimeLabel)
+            }
+
+            // Power section - real zero samples are valid too
             if (hasPowerData) {
                 StatsSectionCard(
                     title = stringResource(R.string.power),
@@ -332,31 +296,31 @@ private fun DriveDetailContent(
                 )
             }
 
-            // Elevation section
-            if (s.elevationMax != null || s.elevationMin != null || s.elevationGain != null || s.elevationLoss != null) {
-                StatsSectionCard(
-                    title = stringResource(R.string.elevation),
-                    icon = Icons.Default.Landscape,
-                    stats = listOf(
-                        StatItem(stringResource(R.string.drive_detail_sample_maximum), UnitFormatter.formatElevation(s.elevationMax, units).removeSuffix(" ${UnitFormatter.getElevationUnit(units)}"), UnitFormatter.getElevationUnit(units)),
-                        StatItem(stringResource(R.string.drive_detail_sample_minimum), UnitFormatter.formatElevation(s.elevationMin, units).removeSuffix(" ${UnitFormatter.getElevationUnit(units)}"), UnitFormatter.getElevationUnit(units)),
-                        StatItem(stringResource(R.string.gain), s.elevationGain?.let { "+${UnitFormatter.formatElevation(it, units).removeSuffix(" ${UnitFormatter.getElevationUnit(units)}")}" } ?: notAvailableLabel, UnitFormatter.getElevationUnit(units)),
-                        StatItem(stringResource(R.string.loss), s.elevationLoss?.let { "-${UnitFormatter.formatElevation(it, units).removeSuffix(" ${UnitFormatter.getElevationUnit(units)}")}" } ?: notAvailableLabel, UnitFormatter.getElevationUnit(units))
-                    )
-                )
+            if (projection.power.validCount > 0) {
+                PowerCurveCard(positions = positions, projected = projection.power,
+                    timeLabels = timedDriveAxisLabels(projection.power, is24Hour), externalSelectedFraction = speedChartFraction,
+                    onXSelected = { speedChartFraction = it },
+                    fractionToTimeLabel = { timedDriveCurveLabel(projection.power, it, is24Hour) })
             }
+            Text(stringResource(R.string.ui_curve_gaps_note), style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
 
-            // Temperature section
-            if (s.outsideTempAvg != null || s.insideTempAvg != null) {
-                StatsSectionCard(
-                    title = stringResource(R.string.temperature),
-                    icon = Icons.Default.DeviceThermostat,
-                    stats = listOfNotNull(
-                        s.outsideTempAvg?.let { StatItem(stringResource(R.string.outside), formatDriveTemperatureC(it, units).removeSuffix(UnitFormatter.getTemperatureUnit(units)), UnitFormatter.getTemperatureUnit(units)) },
-                        s.insideTempAvg?.let { StatItem(stringResource(R.string.inside), formatDriveTemperatureC(it, units).removeSuffix(UnitFormatter.getTemperatureUnit(units)), UnitFormatter.getTemperatureUnit(units)) }
-                    )
-                )
+        }
+
+        if (stats == null) {
+            if (detail.hasKnownLengthUnit && hasChartData) {
+                SpeedCurveCard(positions = positions, projected = projection.speed, units = receiptUnits,
+                    timeLabels = timeLabels, externalSelectedFraction = speedChartFraction,
+                    onXSelected = { speedChartFraction = it }, fractionToTimeLabel = fractionToTimeLabel)
             }
+            if (projection.power.validCount > 0) {
+                PowerCurveCard(positions = positions, projected = projection.power,
+                    timeLabels = timedDriveAxisLabels(projection.power, is24Hour), externalSelectedFraction = speedChartFraction,
+                    onXSelected = { speedChartFraction = it },
+                    fractionToTimeLabel = { timedDriveCurveLabel(projection.power, it, is24Hour) })
+            }
+            Text(stringResource(R.string.ui_curve_gaps_note), style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
 
         if (showEnergyDialog) {
@@ -413,15 +377,6 @@ private fun DriveDetailContent(
         }
 
 
-
-        // Weather along the way - shown when loading or has data
-        if (isLoadingWeather || weatherPoints.isNotEmpty()) {
-            WeatherAlongTheWayCard(
-                weatherPoints = weatherPoints,
-                units = units,
-                isLoading = isLoadingWeather
-            )
-        }
 
         Spacer(modifier = Modifier.height(16.dp))
     }

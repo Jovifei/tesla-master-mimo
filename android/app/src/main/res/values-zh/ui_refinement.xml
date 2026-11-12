@@ -1,0 +1,17 @@
+<resources>
+    <string name="ui_day_no_returned_records">本日暂无已返回记录，不代表当天没有行驶或驻车。</string>
+    <string name="ui_day_collapse">收回至 %1$s</string>
+    <string name="ui_curve_gaps_note">圆点代表已有采样；缺测处不补线。全部曲线请点右上角“详细曲线”。</string>
+    <string name="ui_charge_calendar_limit">每格一天；日格最多展示所选范围最近366天，汇总与历史不变。</string>
+    <string name="ui_diagnostic_overview">这里区分已保存历史与实时采集。“尚未确认”表示缺少可验证响应，不等于授权失效或历史丢失。点击项目再看来源、时间和下一步。</string>
+    <string name="ui_not_checked">尚未确认</string>
+    <string name="ui_authorization_details">授权与采集配置</string>
+    <string name="ui_language_currency">语言与显示货币</string>
+    <string name="ui_settings_advanced">网络、历史显示与诊断</string>
+    <string name="ui_charge_legend">每日充入 kWh · 0 / 20 / 40 / 60+ · — 为未报告</string>
+    <string name="ui_account_management">账号管理</string>
+    <string name="ui_logout_preserves_history">退出本次登录？已保存历史与偏好保留，仍按账号隔离；Tesla 官方授权需单独管理。</string>
+    <string name="ui_charge_returned_count">筛选后展示 %1$d 条已返回记录；缺少记录不代表没有充电。</string>
+    <string name="ui_charge_fixed_end">当前固定范围截止 %1$s，之后的记录不会显示。</string>
+    <string name="ui_charge_view_recent">查看最近30天 · 全部类型与地点</string>
+</resources>

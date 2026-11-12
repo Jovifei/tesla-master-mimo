@@ -366,17 +366,7 @@ internal fun ChargeDetailContent(
                     SingleChargeObservation(stringResource(R.string.voltage_profile), sample.first,
                         "${sample.second} V", MaterialTheme.colorScheme.tertiary, is24Hour)
                 }
-                if (series.current.size >= 2) {
-                    CurrentChartCard(
-                        samples = series.current,
-                        is24Hour = is24Hour,
-                        title = stringResource(R.string.current_profile)
-                    )
-                } else if (series.current.size == 1) {
-                    val sample = series.current.single()
-                    SingleChargeObservation(stringResource(R.string.current_profile), sample.first,
-                        "${sample.second} A", MaterialTheme.colorScheme.secondary, is24Hour)
-                }
+
             }
 
             if (temperatureStats.isNotEmpty()) {
@@ -436,19 +426,8 @@ internal fun ChargeDetailContent(
                 )
             }
 
-            val rate = chargeUnitCost(costPresentation, detail.batteryInputKwh, detail.partialBatteryInputKwh)
-            val costPerKwh = rate?.let {
-                (if (it.estimated) "≈" else "") + "$currencySymbol%.3f / 度".format(it.amount)
-            } ?: unavailableLabel
-            StatsSectionCard(
-                title = costLabel,
-                icon = Icons.Default.Paid,
-                stats = listOf(
-                    StatItem(stringResource(R.string.charging_efficiency), s.efficiency?.let { "%.1f%%".format(it) } ?: unavailableLabel),
-                    StatItem(costLabel, secondaryCostText ?: costSourceText),
-                    StatItem(perKwhLabel, costPerKwh)
-                )
-            )
+            // Cost remains in history/accounting; no duplicate bottom fee panel.
+
         }
 
         Spacer(modifier = Modifier.height(16.dp))

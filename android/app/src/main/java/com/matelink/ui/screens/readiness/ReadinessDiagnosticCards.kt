@@ -1,6 +1,8 @@
 package com.matelink.ui.screens.readiness
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.clickable
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -16,14 +18,15 @@ import com.matelink.R
 fun ReadinessDiagnosticCards(facts: List<DiagnosticFact>, modifier: Modifier = Modifier) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(stringResource(R.string.diagnostic_title), style = MaterialTheme.typography.titleLarge)
-        Text(stringResource(R.string.diagnostic_scope_note), style = MaterialTheme.typography.bodySmall)
+        Text(stringResource(R.string.ui_diagnostic_overview), style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
         facts.forEach { fact -> DiagnosticCard(fact) }
     }
 }
 
 @Composable
 private fun DiagnosticCard(fact: DiagnosticFact) {
-    var expanded by remember(fact) { mutableStateOf(false) }
+    var expanded by remember(fact.step) { mutableStateOf(false) }
     val title = when (fact.step) {
         DiagnosticStep.AUTHORIZATION -> R.string.diagnostic_authorization
         DiagnosticStep.VEHICLE -> R.string.diagnostic_vehicle
@@ -42,13 +45,12 @@ private fun DiagnosticCard(fact: DiagnosticFact) {
     }
     Card(modifier = Modifier.fillMaxWidth().testTag("diagnostic_${fact.step}"),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(Modifier.fillMaxWidth().clickable { expanded = !expanded }.heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                Text(stringResource(title), style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-            }
-            Text(stringResource(when (fact.result) {
-                DiagnosticResult.UNKNOWN -> R.string.diagnostic_unknown
+                Text(stringResource(title), style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                Text(stringResource(when (fact.result) {
+                DiagnosticResult.UNKNOWN -> R.string.ui_not_checked
                 DiagnosticResult.PASS -> when {
                     fact.step == DiagnosticStep.DISPLAY -> R.string.diagnostic_handled
                     fact.step == DiagnosticStep.RECEIVE && fact.olderReceipt -> R.string.diagnostic_older_receipt
@@ -63,6 +65,11 @@ private fun DiagnosticCard(fact: DiagnosticFact) {
                 }
             }), style = MaterialTheme.typography.labelLarge, color = if (fact.olderReceipt)
                 MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary)
+                Icon(if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                    contentDescription = stringResource(if (expanded) R.string.diagnostic_hide else R.string.diagnostic_details))
+            }
+            AnimatedVisibility(expanded) { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(diagnosticDetail(fact), style = MaterialTheme.typography.bodyMedium)
             Text(stringResource(R.string.data_readiness_source, stringResource(when (fact.source) {
                 "scoped_response" -> R.string.diagnostic_source_response
                 "verified_identity" -> R.string.diagnostic_source_identity
@@ -74,10 +81,7 @@ private fun DiagnosticCard(fact: DiagnosticFact) {
             })), style = MaterialTheme.typography.bodySmall)
             Text(stringResource(R.string.data_readiness_last_observed,
                 fact.observedAt ?: stringResource(R.string.visual_status_unknown)), style = MaterialTheme.typography.bodySmall)
-            OutlinedButton(onClick = { expanded = !expanded }, modifier = Modifier.fillMaxWidth()) {
-                Text(stringResource(if (expanded) R.string.diagnostic_hide else R.string.diagnostic_details))
-            }
-            if (expanded) Text(diagnosticDetail(fact), style = MaterialTheme.typography.bodyMedium)
+            } }
         }
     }
 }
