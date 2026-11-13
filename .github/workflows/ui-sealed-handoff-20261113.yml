@@ -1,0 +1,79 @@
+name: UI fixed-source sealed handoff
+on:
+  push:
+    branches: [codex/ui-product-app-20261109]
+    paths: ['.github/workflows/ui-sealed-handoff-20261113.yml']
+permissions:
+  contents: read
+  actions: read
+defaults:
+  run:
+    shell: bash
+jobs:
+  seal:
+    if: github.repository == 'Jovifei/tesla-master-mimo'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Verify delivery documents do not alter tested product trees
+        run: |
+          set -euo pipefail
+          mkdir -p handoff/docs handoff/reports handoff/tools handoff/web-rendered
+          for sha in 95bda618c7d9d09ff50985c9befe8558fb24a0e7 6debf2527d6ca7c39d7257909eed4f06d8e481ba 4b622f98eb5a5c7a6d715155146add9ea6fb296c 8f0da41c6f7b3f99316e7ac1a58ecf6084145667 0375a44de5ca4bfa6469a2552e360564ca920853; do git fetch --depth=2 origin "$sha"; done
+          git diff --exit-code 95bda618c7d9d09ff50985c9befe8558fb24a0e7 HEAD -- android
+          git diff --exit-code 6debf2527d6ca7c39d7257909eed4f06d8e481ba 8f0da41c6f7b3f99316e7ac1a58ecf6084145667 -- miniprogram
+          git diff --exit-code 4b622f98eb5a5c7a6d715155146add9ea6fb296c 0375a44de5ca4bfa6469a2552e360564ca920853 -- web_matelink
+          cp docs/ui-alignment-20261113/HANDOFF.md handoff/docs/
+          cp tools/ui-alignment-20261113/{charge-window-audit.py,test_charge_window_audit.py} handoff/tools/
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess,json,os
+          def git(*args):return subprocess.check_output(['git',*args]).decode().strip()
+          products=[('Android','codex/ui-product-app-20261109','95bda618c7d9d09ff50985c9befe8558fb24a0e7','android'),('Mini','codex/ui-product-mini-20261109','6debf2527d6ca7c39d7257909eed4f06d8e481ba','miniprogram'),('Web','codex/ui-product-web-20261109','4b622f98eb5a5c7a6d715155146add9ea6fb296c','web_matelink')]
+          entries=[]
+          for name,branch,sha,path in products:
+            raw=git('cat-file','-p',sha).split('\n\n',1)[0].splitlines()
+            entries.append(dict(platform=name,branch=branch,source_sha=sha,tree=git('rev-parse',sha+'^{tree}'),parents=[l[7:] for l in raw if l.startswith('parent ')],product_path=path,product_tree=git('rev-parse',sha+':'+path)))
+          Path('handoff/SOURCE_RECEIPT.json').write_text(json.dumps({'repository':'Jovifei/tesla-master-mimo','seal_source':git('rev-parse','HEAD'),'run_id':os.environ['GITHUB_RUN_ID'],'evidence_class':'source/isolated-CI/synthetic-browser','products':entries,'documents_change_product':False,'device_visual_accepted':False,'provider_charge_recovery_accepted':False,'production_deployed':False},indent=2)+'\n')
+          content=Path('handoff/docs/HANDOFF.md').read_text()
+          prompt=content.split('## 6. 发给原本地 Codex 的一次性交接 Prompt',1)[1].split('## 7.',1)[0].strip()
+          Path('handoff/LOCAL-CODEX-PROMPT.md').write_text('# 原本地会话一次性交接\n\n完整证据与矩阵见 docs/HANDOFF.md。\n\n'+prompt+'\n')
+          PY
+          python3 handoff/tools/test_charge_window_audit.py -v 2>&1 | tee handoff/reports/diagnostic-tests.log
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-release-candidate-4b622f98eb5a5c7a6d715155146add9ea6fb296c
+          run-id: 43375124759
+          github-token: ${{ github.token }}
+          path: downloaded-web
+      - name: Include only actual synthetic Web screenshots and reports; never fonts or private data
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import shutil,json,hashlib,html,base64
+          source=Path('downloaded-web/evidence/ui-alignment')
+          d=json.loads((source/'browser/report.json').read_text())
+          assert len(d['checks'])==25 and all(c['pass'] for c in d['checks']) and not d['external'] and not d['errors']
+          assert (source/'SOURCE_HEAD.txt').read_text().splitlines()[0]=='4b622f98eb5a5c7a6d715155146add9ea6fb296c'
+          for name in ['build.log','lint.log','unit-tests.log','browser.log','SOURCE_HEAD.txt']:shutil.copy2(source/name,Path('handoff/reports')/name)
+          shutil.copy2(source/'browser/report.json','handoff/reports/web-browser-report.json')
+          shots=['trips-neutral-393.png','trips-cream-393.png','charges-neutral-393.png','login-393.png','me-393.png','data-info-393.png','charges-1440.png','dashboard-1440.png']
+          gallery=['<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MateLink 已构建网页取证</title><style>body{font-family:system-ui,sans-serif;background:#f5f5f7;color:#1d1d1f;margin:0;padding:24px}main{max-width:1200px;margin:auto}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:24px}figure{margin:0;background:white;border-radius:16px;padding:16px}img{max-width:100%;height:auto}figcaption{padding:12px 0;overflow-wrap:anywhere}.wide{grid-column:1/-1}p{line-height:1.7}</style><main><h1>MateLink · 实际 Web 构建截图</h1><p>源码 4b622f98eb5a5c7a6d715155146add9ea6fb296c。截图来自隔离 Chromium 和合成 API，不是真实车辆、Android 或微信真机；此文件仅是取证画廊，不替代产品交互。代码、Prompt、原始报告见同包文件。</p><div class="grid">']
+          for name in shots:
+            p=source/'browser'/name;shutil.copy2(p,Path('handoff/web-rendered')/name)
+            gallery.append('<figure'+(' class="wide"' if '1440' in name else '')+'><figcaption>'+html.escape(name)+'</figcaption><img loading="lazy" src="data:image/png;base64,'+base64.b64encode(p.read_bytes()).decode()+'"></figure>')
+          gallery.append('</div></main>')
+          Path('handoff/WEB-SCREENSHOTS.html').write_text(''.join(gallery))
+          files=sorted(p for p in Path('handoff').rglob('*') if p.is_file())
+          assert not any(p.suffix in ('.woff','.woff2','.ttf','.otf') for p in files)
+          Path('handoff/SHA256SUMS.txt').write_text(''.join(hashlib.sha256(p.read_bytes()).hexdigest()+'  '+str(p.relative_to('handoff'))+'\n' for p in files))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: matelink-three-client-handoff-20261113
+          path: handoff/
+          retention-days: 14
+          if-no-files-found: error
