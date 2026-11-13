@@ -295,11 +295,8 @@ private fun CurvesKpiOverviewCard(
         )
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            val unknownLocation = stringResource(R.string.unknown_location)
-            val defaultStart = detail.startAddress?.takeIf { it.isNotBlank() && !it.contains("°N") && it != "30.27°N, 120.15°E" }?.toChineseDisplayAddress()
-            val defaultEnd = detail.endAddress?.takeIf { it.isNotBlank() && !it.contains("°N") && it != "30.27°N, 120.15°E" }?.toChineseDisplayAddress()
-            val startName = defaultStart ?: unknownLocation
-            val endName = defaultEnd ?: unknownLocation
+            val startName = com.matelink.ui.components.recordedTripEndpoint(detail.startAddress)
+            val endName = com.matelink.ui.components.recordedTripEndpoint(detail.endAddress)
 
             Text(
                 text = "$startName → $endName",
@@ -376,10 +373,11 @@ internal fun SpeedCurveCard(
     externalSelectedFraction: Float?,
     onXSelected: (Float?) -> Unit,
     fractionToTimeLabel: (Float) -> String,
-    projected: com.matelink.ui.components.TimedChartSeries? = null
+    projected: com.matelink.ui.components.TimedChartSeries? = null,
+    header: (@Composable () -> Unit)? = null
 ) {
     val series = projected ?: projectDriveCurves(DriveDetail(0, positions = positions, lengthUnit = units?.unitOfLength)).speed
-    if (series.validCount < 2) return
+    if (series.validCount < 2 && header == null) return
 
     val validSpeeds = series.values.filter { it.isFinite() && it >= 0f }
     val maxSpeed = validSpeeds.maxOrNull()?.coerceAtLeast(10f) ?: 50f
@@ -396,6 +394,7 @@ internal fun SpeedCurveCard(
         externalSelectedFraction = externalSelectedFraction,
         onXSelected = onXSelected,
         fractionToTimeLabel = fractionToTimeLabel,
+        header = header
     )
 }
 
@@ -433,10 +432,11 @@ internal fun PowerCurveCard(
     externalSelectedFraction: Float?,
     onXSelected: (Float?) -> Unit,
     fractionToTimeLabel: (Float) -> String,
-    projected: com.matelink.ui.components.TimedChartSeries? = null
+    projected: com.matelink.ui.components.TimedChartSeries? = null,
+    footer: (@Composable () -> Unit)? = null
 ) {
     val series = projected ?: projectDriveCurves(DriveDetail(0, positions = positions)).power
-    if (series.validCount < 2) return
+    if (series.validCount < 2 && footer == null) return
 
     CurveContainerCard(
         title = stringResource(R.string.power_profile),
@@ -448,7 +448,8 @@ internal fun PowerCurveCard(
         timeLabels = timeLabels,
         externalSelectedFraction = externalSelectedFraction,
         onXSelected = onXSelected,
-        fractionToTimeLabel = fractionToTimeLabel
+        fractionToTimeLabel = fractionToTimeLabel,
+        footer = footer
     )
 }
 
@@ -527,7 +528,9 @@ private fun CurveContainerCard(
     externalSelectedFraction: Float? = null,
     onXSelected: ((Float?) -> Unit)? = null,
     fractionToTimeLabel: ((Float) -> String)? = null,
-    series: com.matelink.ui.components.TimedChartSeries? = null
+    series: com.matelink.ui.components.TimedChartSeries? = null,
+    header: (@Composable () -> Unit)? = null,
+    footer: (@Composable () -> Unit)? = null
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -555,7 +558,8 @@ private fun CurveContainerCard(
                 )
             }
 
-            FullscreenLineChart(
+            header?.invoke()
+            if (series == null || series.validCount >= 2) FullscreenLineChart(
                 data = data,
                 xFractions = series?.xFractions.orEmpty(),
                 sourceIndices = series?.sourceIndices.orEmpty(),
@@ -570,7 +574,18 @@ private fun CurveContainerCard(
                 onXSelected = onXSelected,
                 fractionToTimeLabel = fractionToTimeLabel,
                 modifier = Modifier.fillMaxWidth()
+            ) else Text(
+                stringResource(R.string.curve_not_enough_observations),
+                modifier = Modifier.padding(vertical = 8.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            if (series?.hasInternalBreak == true) Text(
+                stringResource(R.string.curve_gap_explanation),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            footer?.invoke()
         }
     }
 }

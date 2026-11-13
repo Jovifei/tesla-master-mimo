@@ -210,14 +210,6 @@ class DashboardViewModel @Inject constructor(
     private var requestGeneration = 0L
     private var activePhotoProof: Pair<com.matelink.data.local.HistoryReadScope, com.matelink.data.local.VehicleContext>? = null
 
-    private suspend fun resolveLocalHistoryCarId(remoteId: Int): Int {
-        return runCatching {
-            val scope = vehicleContextRepository.captureReadScope()
-            vehicleContextRepository.cachedContextForRemote(remoteId, scope)?.localHistoryCarId
-                ?: vehicleContextRepository.resolveRemote(remoteId).localHistoryCarId
-        }.getOrNull() ?: remoteId
-    }
-
     init {
         val hasAmap = amapSettingsStore.currentKey().isNotBlank()
         _uiState.update { it.copy(isAmapConfigured = hasAmap) }
@@ -240,16 +232,20 @@ class DashboardViewModel @Inject constructor(
             }
         }
         viewModelScope.launch {
-            settingsRepository.currentCarId.flatMapLatest { id ->
-                val historyId = resolveLocalHistoryCarId(id)
-                driveSummaryDao.observeAll(historyId).map { drives ->
-                    drives.firstOrNull() ?: driveSummaryDao.getLatestAnyCar()
+            combine(settingsRepository.currentCarId, vehicleContextRepository.historyScopeChanges, ::Pair)
+                .flatMapLatest { (id, scope) ->
+                    val vehicle = scope?.let { vehicleContextRepository.cachedContextForRemote(id, it) }
+                    if (scope == null || vehicle == null) flowOf(id to null)
+                    else driveSummaryDao.observeAll(vehicle.localHistoryCarId).map { drives ->
+                        id to drives.firstOrNull()?.takeIf {
+                            vehicleContextRepository.isHistoryContextCurrentNow(scope, vehicle)
+                        }
+                    }
+                }.collect { (id, latestDrive) ->
+                    _uiState.update { state ->
+                        if (state.requestedCarId == id) state.copy(recentDrive = latestDrive) else state
+                    }
                 }
-            }.collect { latestDrive ->
-                if (latestDrive != null) {
-                    _uiState.update { it.copy(recentDrive = latestDrive) }
-                }
-            }
         }
         viewModelScope.launch {
             var first = true
@@ -431,21 +427,10 @@ class DashboardViewModel @Inject constructor(
                         evidence.observedAt, units, evidence.source, evidence.fieldSources)
                 else liveStatus ?: cachedStatus
 
-                val historyCarId = cacheContext?.localHistoryCarId
-                    ?: resolveLocalHistoryCarId(effectiveCarId)
-
-                val latestDrive = runCatching {
-                    driveSummaryDao.getLatestWithEndAddress(historyCarId)
-                        ?: driveSummaryDao.observeAll(historyCarId).first().firstOrNull()
-                }.getOrNull() ?: runCatching {
-                    driveSummaryDao.getLatestWithEndAddressAnyCar()
-                        ?: driveSummaryDao.getLatestAnyCar()
-                }.getOrNull()
-
-                val maxOdometer = runCatching {
-                    chargeSummaryDao.getMaxNonNegativeOdometer(historyCarId)
-                        ?: chargeSummaryDao.getMaxNonNegativeOdometerAnyCar()
-                }.getOrNull()
+                val historyCarId = cacheContext?.takeIf { cacheVerified }?.localHistoryCarId
+                    ?: offlineCache?.first?.localHistoryCarId
+                val latestDrive = historyCarId?.let { id -> driveSummaryDao.observeAll(id).first().firstOrNull() }
+                val maxOdometer = historyCarId?.let { chargeSummaryDao.getMaxNonNegativeOdometer(it) }
 
                 if (status == null && latestDrive != null) {
                     val fallbackSoc = latestDrive.endBatteryLevel.takeIf { it > 0 } ?: 88
@@ -518,9 +503,7 @@ class DashboardViewModel @Inject constructor(
                 val hasAmap = amapSettingsStore.currentKey().isNotBlank() || _uiState.value.isAmapConfigured
                 // Only fresh, UID-qualified positions can be sent for geocoding.
                 val resolvedAddress: String? = if (cacheVerified && liveStatus != null) {
-                    loadCachedAddress(liveStatus, effectiveCarId)
-                } else if (!latestDrive?.endAddress.isNullOrBlank()) {
-                    com.matelink.util.formatRouteAddresses("", latestDrive!!.endAddress, "").second.ifBlank { latestDrive.endAddress }
+                    loadCachedAddress(liveStatus)
                 } else null
                 if (!liveScopeCurrent(tpmsScope, effectiveCarId, generation) ||
                     (cacheContext != null &&
@@ -553,7 +536,7 @@ class DashboardViewModel @Inject constructor(
                     },
                     isAmapConfigured = hasAmap,
                     isHudDismissed = _uiState.value.isHudDismissed,
-                    recentDrive = latestDrive ?: _uiState.value.recentDrive
+                    recentDrive = latestDrive
                 )
 
                 launch {
@@ -746,12 +729,12 @@ class DashboardViewModel @Inject constructor(
         )
     }
 
-    private suspend fun loadCachedAddress(status: CarStatus?, carId: Int): String? {
+    private suspend fun loadCachedAddress(status: CarStatus?): String? {
         val coordinates = usableVehicleCoordinates(status?.latitude, status?.longitude)
         if (coordinates != null) {
             val location = amapReverseGeocoder.reverse(coordinates.first, coordinates.second)
             if (location != null) {
-                val addr = location.address?.trim()?.takeIf { it.isNotEmpty() }
+                val addr = (location.placeName ?: location.address).trim().takeIf { it.isNotEmpty() }
                 if (addr != null) return addr
                 val fallback = listOfNotNull(location.city, location.regionName, location.countryName)
                     .map(String::trim)

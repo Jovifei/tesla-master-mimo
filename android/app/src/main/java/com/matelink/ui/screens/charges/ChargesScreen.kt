@@ -29,8 +29,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -48,6 +46,7 @@ import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.Card
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -208,7 +207,6 @@ fun ChargesScreen(
                 acChargeIds = uiState.acChargeIds,
                 processedChargeIds = uiState.processedChargeIds,
                 chartData = uiState.chartData,
-                chartGranularity = uiState.chartGranularity,
                 summary = uiState.summary,
                 currencySymbol = uiState.currencySymbol,
                 selectedDateFilter = uiState.selectedFilter,
@@ -283,7 +281,6 @@ private fun ChargesContent(
     acChargeIds: Set<Int> = emptySet(),
     processedChargeIds: Set<Int>,
     chartData: List<ChargeChartData>,
-    chartGranularity: ChartGranularity,
     summary: ChargesSummary,
     currencySymbol: String,
     selectedDateFilter: DateFilter,
@@ -421,16 +418,9 @@ private fun ChargesContent(
             }
         }
 
-        // Charges charts (daily/weekly/monthly based on date range) - swipeable
-        if (chartData.isNotEmpty()) {
-            item {
-                ChargesChartsPager(
-                    chartData = chartData,
-                    granularity = chartGranularity,
-                    currencySymbol = currencySymbol,
-                    palette = palette
-                )
-            }
+        // Daily charging energy within the selected history window
+        item {
+            DailyChargeEnergyCard(chartData = chartData, palette = palette, customEndDate = customEndDate)
         }
 
         item {
@@ -898,11 +888,8 @@ internal fun ChargeItem(
     val isFree = pending == null && effectiveCost.source == ChargeCostSource.FREE
     val isReferenceCost = pending == null && effectiveCost.cost == null && referenceEstimate != null
     val displayCost = pending?.amount ?: effectiveCost.cost ?: referenceEstimate
-    val costUnit = when {
-        pending != null -> pending.currencySymbol ?: stringResource(R.string.charge_cost_currency_pending_short)
-        displayCost != null && !isFree -> currencySymbol
-        else -> null
-    }
+    val isEstimated = pending == null && (isReferenceCost || effectiveCost.source == ChargeCostSource.ESTIMATE)
+    var showCostNotice by remember(charge.chargeId) { mutableStateOf(false) }
     val secondaryCostText = if (pending != null && effectiveCost.cost != null) {
         when (effectiveCost.source) {
             ChargeCostSource.ESTIMATE -> "${stringResource(R.string.charge_cost_estimate)} ≈$currencySymbol%.2f".format(effectiveCost.cost)
@@ -911,9 +898,19 @@ internal fun ChargeItem(
             else -> null
         }
     } else null
+    val costNotice = when {
+        pending != null -> listOfNotNull(
+            stringResource(R.string.charge_cost_pending_short),
+            stringResource(R.string.charge_cost_currency_pending_short).takeIf { pending.currencySymbol == null },
+            secondaryCostText
+        ).joinToString("\n")
+        isReferenceCost -> stringResource(R.string.charge_estimate_reference_basis)
+        isEstimated -> stringResource(chargeEstimateBasisResource(effectiveCost.qualificationReason))
+        else -> null
+    }
     val is24Hour = true
 
-    val resolvedUnitPrice = if (displayCost != null && displayedEnergy != null && displayedEnergy > 0.05) {
+    val resolvedUnitPrice = if (pending == null && displayCost != null && displayedEnergy != null && displayedEnergy > 0.05) {
         displayCost / displayedEnergy
     } else null
     val rangeAddedKm = if (charge.endRatedRangeKm != null && charge.startRatedRangeKm != null && charge.endRatedRangeKm!! > charge.startRatedRangeKm!!) {
@@ -1054,11 +1051,12 @@ internal fun ChargeItem(
             // 费用组: 总金额
             val costText = when {
                 displayCost != null && !isFree ->
-                    (if (isReferenceCost || (pending == null && effectiveCost.source == ChargeCostSource.ESTIMATE)) "≈" else "") + "$currencySymbol%.2f".format(displayCost)
+                    "${if (pending != null) pending.currencySymbol.orEmpty() else currencySymbol}%.2f".format(displayCost)
                 isFree -> freeLabel
                 else -> null
             }
             if (costText != null) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(
                     color = (if (isFree) palette.acColor else if (pending != null) Color(0xFFF59E0B) else Color(0xFF22C55E)).copy(alpha = 0.12f),
                     shape = RoundedCornerShape(4.dp),
@@ -1072,6 +1070,8 @@ internal fun ChargeItem(
                         color = if (isFree) palette.acColor else if (pending != null) Color(0xFFF59E0B) else Color(0xFF22C55E)
                     )
                 }
+                if (costNotice != null) ChargeCostNoticeMark { showCostNotice = true }
+                }
             }
         }
 
@@ -1082,6 +1082,16 @@ internal fun ChargeItem(
             contentDescription = null,
             tint = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
             modifier = Modifier.size(16.dp)
+        )
+    }
+    if (showCostNotice && costNotice != null) {
+        AlertDialog(
+            onDismissRequest = { showCostNotice = false },
+            title = { Text(stringResource(R.string.charge_cost_basis)) },
+            text = { Text(costNotice) },
+            confirmButton = {
+                TextButton(onClick = { showCostNotice = false }) { Text(stringResource(R.string.close)) }
+            }
         )
     }
 }
@@ -1117,173 +1127,44 @@ private fun ChargeTypeBadge(isDcCharge: Boolean?, palette: CarColorPalette) {
     }
 }
 
-/**
- * Chart type enum for the swipeable pager
- */
-private enum class ChargesChartType {
-    ENERGY, COST, COUNT
-}
-
-/**
- * Swipeable pager containing Energy, Cost, and Count charts with page indicator dots
- */
 @Composable
-private fun ChargesChartsPager(
+private fun DailyChargeEnergyCard(
     chartData: List<ChargeChartData>,
-    granularity: ChartGranularity,
-    currencySymbol: String,
-    palette: CarColorPalette
+    palette: CarColorPalette,
+    customEndDate: LocalDate?
 ) {
-    val pagerState = rememberPagerState(pageCount = { ChargesChartType.entries.size })
-
-    Column {
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(
-                containerColor = palette.surface
-            )
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp)
-            ) {
-                HorizontalPager(
-                    state = pagerState,
-                    modifier = Modifier.fillMaxWidth()
-                ) { page ->
-                    val chartType = ChargesChartType.entries[page]
-                    ChargesChartPage(
-                        chartData = chartData,
-                        granularity = granularity,
-                        chartType = chartType,
-                        currencySymbol = currencySymbol,
-                        palette = palette
-                    )
+    val noRecords = stringResource(R.string.ui_charge_no_visible_records)
+    val unavailable = stringResource(R.string.not_available)
+    val cells = remember(chartData, noRecords, unavailable) {
+        chartData.map { data ->
+            val hasRecord = data.count > 0
+            val isPartial = data.partialEnergyCount > 0 || data.energyCoverage < data.count
+            val energy = data.totalEnergy.takeIf { data.energyCoverage > 0 && it.isFinite() && it >= 0 }
+            val display = when {
+                !hasRecord -> noRecords
+                energy == null -> unavailable
+                else -> {
+                    val value = com.matelink.ui.components.formatTelemetryNumber(energy, 1)
+                    if (isPartial) "≈" + value + " kWh" else value + " kWh"
                 }
-                //ChartLegend(palette = palette)
             }
-        }
-
-        // Page indicator dots
-        Spacer(modifier = Modifier.height(8.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.Center
-        ) {
-            repeat(ChargesChartType.entries.size) { index ->
-                val isSelected = pagerState.currentPage == index
-                Box(
-                    modifier = Modifier
-                        .padding(horizontal = 4.dp)
-                        .size(8.dp)
-                        .clip(CircleShape)
-                        .background(
-                            if (isSelected) palette.accent
-                            else palette.onSurfaceVariant.copy(alpha = 0.3f)
-                        )
-                )
-            }
+            ChargeActivityCell(LocalDate.ofEpochDay(data.sortKey), energy, display, hasRecord, isPartial)
         }
     }
-}
-
-/**
- * Individual chart page showing Energy, Cost, or Count data
- */
-@Composable
-private fun ChargesChartPage(
-    chartData: List<ChargeChartData>,
-    granularity: ChartGranularity,
-    chartType: ChargesChartType,
-    currencySymbol: String,
-    palette: CarColorPalette
-) {
-    val title = when (chartType) {
-        ChargesChartType.ENERGY -> when (granularity) {
-            ChartGranularity.DAILY -> stringResource(R.string.chart_energy_per_day)
-            ChartGranularity.WEEKLY -> stringResource(R.string.chart_energy_per_week)
-            ChartGranularity.MONTHLY -> stringResource(R.string.chart_energy_per_month)
-        }
-        ChargesChartType.COST -> when (granularity) {
-            ChartGranularity.DAILY -> stringResource(R.string.chart_cost_per_day)
-            ChartGranularity.WEEKLY -> stringResource(R.string.chart_cost_per_week)
-            ChartGranularity.MONTHLY -> stringResource(R.string.chart_cost_per_month)
-        }
-        ChargesChartType.COUNT -> when (granularity) {
-            ChartGranularity.DAILY -> stringResource(R.string.chart_charges_per_day)
-            ChartGranularity.WEEKLY -> stringResource(R.string.chart_charges_per_week)
-            ChartGranularity.MONTHLY -> stringResource(R.string.chart_charges_per_month)
-        }
-    }
-    val icon = when (chartType) {
-        ChargesChartType.ENERGY -> Icons.Default.BatteryChargingFull
-        ChargesChartType.COST -> Icons.Default.Paid
-        ChargesChartType.COUNT -> Icons.Default.EvStation
-    }
-    Column {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                modifier = Modifier.size(20.dp),
-                tint = palette.accent
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold,
-                color = palette.onSurface
-            )
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        val axisUnit = when (chartType) {
-            ChargesChartType.ENERGY -> "度"
-            ChargesChartType.COST -> currencySymbol
-            ChargesChartType.COUNT -> stringResource(R.string.charge_sessions_unit)
-        }
-        val missingData = when (chartType) {
-            ChargesChartType.ENERGY -> chartData.any { it.energyCoverage < it.count }
-            ChargesChartType.COST -> chartData.any { it.costCoverage < it.count }
-            ChargesChartType.COUNT -> false
-        }
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(24.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = stringResource(R.string.visual_trip_chart_unit, axisUnit) +
-                    if (missingData) " · ${stringResource(R.string.history_chart_partial_data)}" else "",
-                style = MaterialTheme.typography.labelMedium,
-                color = palette.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-
-        val unavailable = stringResource(R.string.not_available)
-        val cells = chartData.map { data ->
-            val value = when (chartType) {
-                ChargesChartType.ENERGY -> data.totalEnergy.takeIf { data.energyCoverage > 0 }
-                ChargesChartType.COST -> data.totalCost.takeIf { data.costCoverage > 0 }
-                ChargesChartType.COUNT -> data.count.toDouble()
-            }?.takeIf { it.isFinite() && it >= 0 }
-            val approximate = when (chartType) {
-                ChargesChartType.ENERGY -> data.partialEnergyCount > 0 || data.energyCoverage < data.count
-                ChargesChartType.COST -> data.estimatedCostCount > 0 || data.costCoverage < data.count
-                ChargesChartType.COUNT -> false
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = palette.surface)
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.BatteryChargingFull, contentDescription = null,
+                    modifier = Modifier.size(20.dp), tint = palette.accent)
+                Spacer(Modifier.width(8.dp))
+                Text(stringResource(R.string.chart_energy_per_day), style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold, color = palette.onSurface)
             }
-            val display = value?.let {
-                (if (approximate) "≈" else "") +
-                    com.matelink.ui.components.formatTelemetryNumber(it, if (chartType == ChargesChartType.COST) 2 else 1) + " $axisUnit"
-            } ?: unavailable
-            ChargeActivityCell(data.label, value, display)
+            ChargeActivityGrid(cells, endDate = cells.lastOrNull()?.date ?: customEndDate ?: LocalDate.now())
         }
-        ChargeActivityGrid(cells = cells)
     }
 }
 

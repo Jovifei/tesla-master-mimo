@@ -70,11 +70,12 @@ class VehicleStatusPresentationTest {
     }
 
     @Test
-    fun locationDisplayUsesGeofenceThenCachedAddressThenCoordinates() {
-        assertEquals("Home", locationDisplay("Home", "Shanghai", 31.2, 121.5))
-        assertEquals("Shanghai", locationDisplay(null, "Shanghai", 31.2, 121.5))
-        assertEquals("31.2000, 121.5000", locationDisplay(null, null, 31.2, 121.5))
-        assertNull(locationDisplay(null, null, null, null))
+    fun locationDisplayUsesOnlyASpecificPlaceOrSavedLabel() {
+        assertEquals("Home", locationDisplay("Home", "Shanghai"))
+        assertEquals("春晓小区", locationDisplay("梅园路", "浙江省杭州市余杭区春晓小区"))
+        assertNull(locationDisplay(null, "浙江省杭州市余杭区五常街道"))
+        assertNull(locationDisplay(null, "梅园路"))
+        assertNull(locationDisplay(null, null))
     }
 
     @Test

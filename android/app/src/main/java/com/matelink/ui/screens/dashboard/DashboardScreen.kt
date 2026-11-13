@@ -103,7 +103,7 @@ fun DashboardScreen(
     onNavigateToBattery: (carId: Int, efficiency: Double?, exteriorColor: String?) -> Unit = { _, _, _ -> },
     onNavigateToMileage: (carId: Int, exteriorColor: String?) -> Unit = { _, _ -> },
     onNavigateToUpdates: (carId: Int, exteriorColor: String?) -> Unit = { _, _ -> },
-    onNavigateToStats: (carId: Int, exteriorColor: String?) -> Unit = { _, _ -> },
+    onNavigateToBatterySocTrend: (carId: Int) -> Unit = {},
     onNavigateToCurrentCharge: (carId: Int, exteriorColor: String?) -> Unit = { _, _ -> },
     onNavigateToAmapPreview: () -> Unit = {},
     onNavigateToAmapSetup: () -> Unit = {},
@@ -855,17 +855,11 @@ fun DashboardScreen(
                 onClick = { onNavigateToMileage(carId, exteriorColor) }
             )
             val isAmapConfigured = uiState.isAmapConfigured
-            val hasGps = status.latitude != null && status.longitude != null
+            val hasGps = com.matelink.domain.map.AmapConfiguration.isUsableCoordinate(status.latitude, status.longitude)
             val locationText = locationDisplay(
                 geofence = status.geofence,
-                cachedAddress = uiState.cachedAddress,
-                latitude = status.latitude,
-                longitude = status.longitude
-            ) ?: when {
-                !isAmapConfigured -> stringResource(R.string.amap_unconfigured_prompt)
-                !hasGps -> stringResource(R.string.gps_waiting_prompt)
-                else -> stringResource(R.string.unknown)
-            }
+                cachedAddress = uiState.cachedAddress
+            ) ?: stringResource(if (hasGps) R.string.view_vehicle_location else R.string.gps_waiting_prompt)
             val onLocationClick: () -> Unit = when {
                 !isAmapConfigured -> onNavigateToAmapSetup
                 !hasGps -> { { onNavigateToReadiness(carId) } }
@@ -981,7 +975,7 @@ fun DashboardScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable {
-                    onNavigateToStats(carId, exteriorColor)
+                    onNavigateToBatterySocTrend(carId)
                 },
             accent = MaterialTheme.colorScheme.primary
         ) {
@@ -1851,10 +1845,8 @@ private fun DashboardRecentDriveCard(
     units: Units,
     onClick: () -> Unit
 ) {
-    val unknown = stringResource(R.string.unknown)
-    val endpoints = com.matelink.util.formatRouteAddresses(drive.startAddress, drive.endAddress, unknown)
-    val startText = endpoints.first.ifBlank { unknown }
-    val endText = endpoints.second.ifBlank { unknown }
+    val startText = com.matelink.ui.components.recordedTripEndpoint(drive.startAddress)
+    val endText = com.matelink.ui.components.recordedTripEndpoint(drive.endAddress)
 
     val distText = if (drive.distance >= 0.0) UnitFormatter.formatDistance(drive.distance, units, 1) else "--"
     val durText = if (drive.durationMin >= 0) "${drive.durationMin} min" else "--"
@@ -1869,10 +1861,7 @@ private fun DashboardRecentDriveCard(
             ""
         )
     } else ""
-    val routeText = if (startText == unknown && endText != unknown) endText
-        else if (startText != unknown && endText == unknown) startText
-        else if (startText == endText) startText
-        else "$startText → $endText"
+    val routeText = "$startText → $endText"
 
     Surface(
         modifier = Modifier

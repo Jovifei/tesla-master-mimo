@@ -18,19 +18,25 @@ internal data class DriveCurveProjection(
     val hasChartData get() = listOf(speed, distance, power, battery, elevation).any { it.validCount >= 2 }
 }
 
-/** All five consumers share the same bounded clock and retain each signal's missing samples. */
+/** A row carrying only another field is not a missing sample of speed or power. */
 internal fun projectDriveCurves(detail: DriveDetail): DriveCurveProjection {
     val positions = detail.positions.orEmpty()
     val start = parseIsoInstant(detail.startDate)?.toEpochMilli()
     val end = parseIsoInstant(detail.endDate)?.toEpochMilli()
-    fun series(value: (DrivePosition) -> Double?) = projectTimedChartSeries(positions.mapIndexed { index, point ->
-        TimedChartSample(parseIsoInstant(point.date)?.toEpochMilli(), value(point), index)
+    fun series(
+        value: (DrivePosition) -> Double?,
+        carriesSignal: (DrivePosition) -> Boolean = { true }
+    ) = projectTimedChartSeries(positions.mapIndexedNotNull { index, point ->
+        if (!carriesSignal(point)) null else TimedChartSample(parseIsoInstant(point.date)?.toEpochMilli(), value(point), index)
     }, start, end)
-    val speed = series { point -> point.speed?.takeIf { detail.hasKnownLengthUnit && it.isFinite() && it >= 0.0 } }
-    return DriveCurveProjection(speed, integratedDistanceCurve(speed),
-        series { it.power?.takeIf(Double::isFinite) },
-        series { it.batteryLevel?.takeIf { soc -> soc in 0..100 }?.toDouble() },
-        series { it.elevation?.toDouble() })
+    val speedValue: (DrivePosition) -> Double? = { point ->
+        point.speed?.takeIf { detail.hasKnownLengthUnit && it.isFinite() && it >= 0.0 }
+    }
+    val speed = series(speedValue, carriesSignal = { it.speed != null })
+    return DriveCurveProjection(speed, integratedDistanceCurve(series(speedValue)),
+        series({ it.power?.takeIf(Double::isFinite) }, carriesSignal = { it.power != null }),
+        series({ it.batteryLevel?.takeIf { soc -> soc in 0..100 }?.toDouble() }),
+        series({ it.elevation?.toDouble() }))
 }
 
 internal fun timedDriveCurveLabel(series: TimedChartSeries, fraction: Float, is24Hour: Boolean): String =

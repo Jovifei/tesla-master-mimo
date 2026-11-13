@@ -7,7 +7,7 @@ import org.junit.Test
 
 class DrivesHistoryContractTest {
     @Test
-    fun historyUsesAllTimeAndMoreRoutesToDrives() {
+    fun historyKeepsDateFiltersAndMoreRoutesToASeparateList() {
         val viewModel = File("src/main/java/com/matelink/ui/screens/drives/DrivesViewModel.kt").readText()
         val more = File("src/main/java/com/matelink/ui/screens/more/MoreScreen.kt").readText()
         val nav = File("src/main/java/com/matelink/ui/navigation/NavGraph.kt").readText()
@@ -15,7 +15,7 @@ class DrivesHistoryContractTest {
         assertTrue(viewModel.contains("dateFilter: DriveDateFilter = DriveDateFilter.LAST_7_DAYS"))
         assertTrue(viewModel.contains("?: DriveDateFilter.LAST_7_DAYS"))
         assertTrue(more.contains("onNavigateToDrives(carId)"))
-        assertTrue(nav.contains("onNavigateToDrives = { navController.navigate(Screen.Drives"))
+        assertTrue(nav.contains("onNavigateToDrives = { navController.navigate(Screen.DriveHistory"))
         assertFalse(more.contains("more_item_vehicle_3d_preview"))
         assertFalse(more.contains("R.string.current_charge"))
     }

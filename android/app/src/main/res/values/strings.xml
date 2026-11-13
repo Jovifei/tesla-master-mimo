@@ -49,6 +49,11 @@
     <string name="charge_reference_cost">Reference cost</string>
     <string name="charge_estimate_once_notice">Without an entered amount, cost is estimated from energy and your rate. Partial energy covers recorded intervals only. Tap the amount to edit it.</string>
     <string name="charge_cost_estimate">Estimated cost</string>
+    <string name="charge_cost_basis">Cost information</string>
+    <string name="charge_estimate_tiered_basis">Estimated from the charging time and configured time-of-use rates.</string>
+    <string name="charge_estimate_partial_basis">Estimated from the recorded partial energy and applicable rate.</string>
+    <string name="charge_estimate_default_basis">Estimated from the energy added and default rate.</string>
+    <string name="charge_estimate_reference_basis">Estimated from reference energy and the applicable rate.</string>
     <string name="amap_settings_section">Map services</string>
     <string name="amap_settings_title">AMap</string>
     <string name="amap_preview_title">AMap preview</string>
@@ -243,7 +248,9 @@
     <string name="snapshot_source_unavailable">Unavailable</string>
     <string name="snapshot_source_asleep">Vehicle Asleep</string>
     <string name="status_unknown">Unknown</string>
-    <string name="battery_history_navigation_note">View recorded battery history and capacity details</string>
+    <string name="battery_history_navigation_note">View the last seven days of recorded battery levels</string>
+    <string name="battery_soc_week_empty">No recorded battery levels in the past seven days</string>
+    <string name="battery_soc_week_single">Only one recorded battery level in the past seven days: %1$d%%</string>
     <string name="vehicle_model_3">Model 3</string>
     <string name="vehicle_model_y">Model Y</string>
     <string name="vehicle_model_s">Model S</string>
@@ -336,6 +343,12 @@
     <string name="more_item_battery_health">Battery Health</string>
     <string name="more_item_mileage">Mileage</string>
     <string name="more_item_trips">Trip history</string>
+    <string name="trip_specific_location_missing">Specific place not recorded</string>
+    <string name="trip_location_road_only">%1$s (road only)</string>
+    <string name="view_vehicle_location">View location</string>
+    <string name="charge_heatmap_outside_range">Outside the selected date range</string>
+    <string name="curve_not_enough_observations">Too few valid observations to draw a curve</string>
+    <string name="curve_gap_explanation">Only nearby observations are connected. Gaps show missing data.</string>
     <string name="more_item_long_trips">Long-distance trips</string>
     <string name="more_item_software_updates">Software Updates</string>
     <string name="more_item_sentry_history">Sentry History</string>
@@ -1849,4 +1862,9 @@
     <string name="charge_avg_energy">Avg per Session</string>
     <string name="charge_unit_cost_label">Unit Price</string>
     <string name="charge_avg_power_label">Avg Power</string>
+    <string name="drive_day_records_unconfirmed">Records for this day are unconfirmed</string>
+    <string name="drive_day_filter_empty">No records shown with the current filters</string>
+    <string name="ui_charge_no_visible_records">No visible charging records</string>
+    <string name="ui_charge_heatmap_less">Less</string>
+    <string name="ui_charge_heatmap_more">More</string>
 </resources>

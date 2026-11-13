@@ -288,8 +288,8 @@ class DriveDetailViewModel @Inject constructor(
         // The complete point header is one received record, including alias spellings and
         // its own units. A sparse list projection must not erase its richer parameters.
         val detail = header?.copy(
-            startAddress = summary.startAddress?.takeIf(String::isNotBlank) ?: header.startAddress,
-            endAddress = summary.endAddress?.takeIf(String::isNotBlank) ?: header.endAddress,
+            startAddress = com.matelink.util.preferSpecificEndpointAddress(summary.startAddress, header.startAddress),
+            endAddress = com.matelink.util.preferSpecificEndpointAddress(summary.endAddress, header.endAddress),
             durationMin = summary.durationMin ?: header.durationMin,
             durationStr = summary.durationStr ?: header.durationStr,
             odometerDetails = if (sameLength) summary.odometerDetails ?: header.odometerDetails else header.odometerDetails,
@@ -382,9 +382,10 @@ class DriveDetailViewModel @Inject constructor(
 
     private suspend fun enrichAddresses(detail: DriveDetail): DriveDetail {
         suspend fun address(latitude: Double?, longitude: Double?, existing: String?): String? {
-            if (!existing.isNullOrBlank()) return existing
-            if (latitude == null || longitude == null) return null
-            return geocodingRepository.reverseGeocode(latitude, longitude)
+            if (com.matelink.util.specificPlaceLabel(existing) != null || latitude == null || longitude == null)
+                return existing
+            return com.matelink.util.preferSpecificEndpointAddress(existing,
+                geocodingRepository.reverseDisplayAddress(latitude, longitude))
         }
         val first = com.matelink.domain.map.driveBoundaryCoordinates(detail, true)
         val last = com.matelink.domain.map.driveBoundaryCoordinates(detail, false)

@@ -29,6 +29,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
+import com.matelink.R
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -495,11 +498,21 @@ private fun heroPaintColor(code: String, accent: Color): Color = when (code) {
 }
 
 @Composable
+internal fun recordedTripEndpoint(address: String?): String {
+    val missing = stringResource(R.string.trip_specific_location_missing)
+    val resources = androidx.compose.ui.platform.LocalContext.current.resources
+    return com.matelink.util.tripEndpointLabel(address, missing) {
+        resources.getString(R.string.trip_location_road_only, it)
+    }
+}
+
+@Composable
 fun RouteIndicator(
     start: String,
     end: String,
     modifier: Modifier = Modifier,
-    accent: Color = MaterialTheme.colorScheme.primary
+    accent: Color = MaterialTheme.colorScheme.primary,
+    showCar: Boolean = true
 ) {
     Row(modifier = modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Column(
@@ -566,11 +579,13 @@ fun RouteIndicator(
                 overflow = TextOverflow.Ellipsis
             )
         }
-        Icon(
-            imageVector = Icons.Default.DirectionsCar,
-            contentDescription = null,
-            tint = accent.copy(alpha = 0.55f),
-            modifier = Modifier.size(18.dp)
-        )
+        if (showCar) {
+            Icon(
+                imageVector = Icons.Default.DirectionsCar,
+                contentDescription = null,
+                tint = accent.copy(alpha = 0.55f),
+                modifier = Modifier.size(18.dp).testTag("route_indicator_car")
+            )
+        }
     }
 }

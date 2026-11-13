@@ -224,6 +224,15 @@ fun OptimizedLineChart(
             smoothPath?.let {
                 drawAnimatedLine(it, color, width, progress)
             }
+            chartData.displayPoints.forEachIndexed { index, value ->
+                val isolated = (index == 0 || index in chartData.gaps) &&
+                    (index == chartData.displayPoints.lastIndex || index + 1 in chartData.gaps)
+                val x = chartData.xFractions[index]
+                if (isolated && x <= progress) {
+                    drawCircle(color, radius = 3.dp.toPx(), center = Offset(x * width,
+                        chartHeightPx * (1 - (value - chartData.minValue) / chartData.range)))
+                }
+            }
 
             // Y-axis labels
             drawYAxisLabels(surfaceColor, chartData, unit, chartHeightPx)

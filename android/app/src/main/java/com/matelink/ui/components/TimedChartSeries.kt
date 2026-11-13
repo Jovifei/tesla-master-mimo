@@ -17,6 +17,12 @@ data class TimedChartSeries(
     val domainEndMs: Long?
 ) {
     val validCount: Int get() = values.count(Float::isFinite)
+    val hasInternalBreak: Boolean get() {
+        val first = values.indexOfFirst(Float::isFinite)
+        val last = values.indexOfLast(Float::isFinite)
+        return first >= 0 && last > first &&
+            (gaps.any { it > first && it <= last } || (first + 1 until last).any { !values[it].isFinite() })
+    }
     fun nearestTimestampAtFraction(fraction: Float): Long? = values.indices
         .filter { values[it].isFinite() }
         .minByOrNull { abs(xFractions[it] - fraction.coerceIn(0f, 1f)) }

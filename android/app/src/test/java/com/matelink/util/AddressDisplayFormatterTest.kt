@@ -5,6 +5,30 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class AddressDisplayFormatterTest {
+    @Test
+    fun routeUsesNamedPointsEvenWhenTheRoadsDiffer() {
+        assertEquals("春晓小区", specificPlaceLabel("浙江省杭州市余杭区五常街道梅园路12号春晓小区"))
+        assertEquals("青禾广场", specificPlaceLabel("青禾广场, 银杏街, 余杭区, 杭州市"))
+        assertEquals("幸福小区", specificPlaceLabel("幸福小区"))
+        assertEquals("华联超市", specificPlaceLabel("华联超市"))
+        assertEquals("梅园路12号", specificPlaceLabel("浙江省杭州市余杭区梅园路12号"))
+    }
+
+    @Test
+    fun roadsAndAdministrativeAreasDoNotBecomePreciseLocations() {
+        val onlyRoad: (String) -> String = { "$it（仅道路）" }
+        assertEquals("梅园路（仅道路）", tripEndpointLabel("浙江省杭州市余杭区梅园路", "未记录", onlyRoad))
+        assertEquals("未记录", tripEndpointLabel("浙江省杭州市余杭区五常街道", "未记录", onlyRoad))
+        assertEquals("未记录", tripEndpointLabel("青禾广场附近", "未记录", onlyRoad))
+        assertEquals("未记录", tripEndpointLabel("30.12°N, 120.45°E", "未记录", onlyRoad))
+    }
+
+    @Test
+    fun aNamedPointCanUpgradeARoadButCannotOverwriteAnotherNamedReceipt() {
+        assertEquals("青禾广场", preferSpecificEndpointAddress("梅园路", "青禾广场"))
+        assertEquals("春晓小区", preferSpecificEndpointAddress("春晓小区", "青禾广场"))
+        assertEquals("梅园路", preferSpecificEndpointAddress("梅园路", "银杏街"))
+    }
 
     @Test
     fun removesEnglishAdministrativeSuffixWhenChineseAddressIsAvailable() {

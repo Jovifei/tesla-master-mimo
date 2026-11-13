@@ -25,6 +25,9 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
 import java.time.LocalDate
+import java.time.Month
+import java.time.format.TextStyle
+import java.util.Locale
 
 /** Only synthetic records, no MainActivity, authorization or provider calls. */
 @RunWith(AndroidJUnit4::class)
@@ -95,8 +98,8 @@ class UiProductContractAndroidTest {
             renderedColor = MaterialTheme.colorScheme.background.value.toLong()
             Column(Modifier.width(320.dp).background(MaterialTheme.colorScheme.background).padding(16.dp)) {
                 if (scene.value == 0) AppearancePreferencePanel() else ChargeActivityGrid(listOf(
-                    ChargeActivityCell("11/07", null, "Unknown"), ChargeActivityCell("11/08", 0.0, "0.00 kWh"),
-                    ChargeActivityCell("11/09", 24.2, "24.2 kWh")))
+                    ChargeActivityCell(java.time.LocalDate.parse("2026-11-07"), null, "Unknown"), ChargeActivityCell(java.time.LocalDate.parse("2026-11-08"), 0.0, "0.00 kWh"),
+                    ChargeActivityCell(java.time.LocalDate.parse("2026-11-09"), 24.2, "24.2 kWh")))
             }
         } }
         val neutral = renderedColor
@@ -104,10 +107,23 @@ class UiProductContractAndroidTest {
         compose.runOnIdle { assertEquals(AppearancePalette.CREAM, AppearancePreferences(context).palette()); assertNotEquals(neutral, renderedColor) }
         compose.onNodeWithTag("appearance_reduced_motion").performClick()
         compose.runOnIdle { assertTrue(AppearancePreferences(context).reducedMotion()); scene.value = 1 }
-        compose.onNodeWithTag("charge_cell_11/08").performClick()
-        compose.onNodeWithTag("charge_cell_selection").assertTextEquals("11/08 · 0.00 kWh")
-        compose.onNodeWithTag("charge_cell_11/07").performClick()
-        compose.onNodeWithTag("charge_cell_selection").assertTextEquals("11/07 · Unknown")
+        compose.onNodeWithTag("charge_cell_2026-11-08").performClick()
+        compose.onNodeWithTag("charge_cell_selection").assertTextContains("0.00 kWh", substring = true)
+        compose.onNodeWithTag("charge_cell_2026-11-07").performClick()
+        compose.onNodeWithTag("charge_cell_selection").assertTextContains("Unknown", substring = true)
+        val months = (7..11).map { Month.of(it).getDisplayName(TextStyle.SHORT_STANDALONE, Locale.getDefault()) }
+        months.forEach { compose.onNodeWithText(it).assertIsDisplayed() }
+        compose.onNodeWithText(Month.DECEMBER.getDisplayName(TextStyle.SHORT_STANDALONE, Locale.getDefault())).assertDoesNotExist()
+        val grid = compose.onNodeWithTag("charge_activity_grid").getUnclippedBoundsInRoot()
+        val latestMonth = compose.onNodeWithText(months.last()).getUnclippedBoundsInRoot()
+        val firstWeek = compose.onNodeWithTag("charge_cell_2026-07-01")
+        val firstWeekUnclipped = firstWeek.getUnclippedBoundsInRoot()
+        assertTrue(firstWeek.fetchSemanticsNode().boundsInRoot.width >=
+            (firstWeekUnclipped.right - firstWeekUnclipped.left).value * context.resources.displayMetrics.density - 1f)
+        assertTrue(latestMonth.left > grid.left + (grid.right - grid.left) * 0.70f)
+        compose.onNodeWithTag("charge_cell_2026-07-15").performTouchInput { click() }
+        val outside = context.getString(com.matelink.R.string.charge_heatmap_outside_range)
+        compose.onNodeWithTag("charge_cell_selection").assertTextContains(outside, substring = true)
         capture("charge-grid-cream")
         prefs.setPalette(AppearancePalette.NEUTRAL); prefs.setReducedMotion(false)
     }

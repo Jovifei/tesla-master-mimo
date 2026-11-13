@@ -853,9 +853,32 @@ class DrivesViewModel @Inject constructor(
                 return row != null && row.verifiedDetailIdentity(proof.context)?.identityKey == target.key.identity &&
                     driveSourceReceiptDigest(row) == target.key.receiptDigest
             }
+            val cachedDetailStore = historyDetailStore
+            val rowsById = rows.associateBy { it.driveId }
+            val detailByDrive = mutableMapOf<Int, com.matelink.data.api.models.DriveDetail?>()
             val cached = mutableMapOf<String, MutableList<DriveAddressTarget>>()
             for (target in targets) {
-                val address = synchronized(drivePublicationLock) { resolvedAddresses[target.key] } ?: continue
+                val existing = synchronized(drivePublicationLock) { resolvedAddresses[target.key] }
+                val mayReadDetail = cachedDetailStore != null &&
+                    (target.drive.driveId in detailByDrive || detailByDrive.size < 12)
+                if (existing == null && !mayReadDetail) continue
+                if (!current(target)) continue
+                val detail = if (cachedDetailStore != null &&
+                    mayReadDetail) {
+                    val id = target.drive.driveId
+                    if (id !in detailByDrive) {
+                        detailByDrive[id] = rowsById[id]?.verifiedDetailIdentity(proof.context)?.let { identity ->
+                            try { cachedDetailStore.readDrive(identity).detail }
+                            catch (cancelled: CancellationException) { throw cancelled }
+                            catch (_: Exception) { null }
+                        }
+                    }
+                    detailByDrive[id]
+                } else null
+                val detailAddress = detail?.let {
+                    if (target.key.start) it.startAddress else it.endAddress
+                }?.takeIf { com.matelink.util.specificPlaceLabel(it) != null }
+                val address = com.matelink.util.preferSpecificEndpointAddress(existing, detailAddress) ?: continue
                 if (!current(target)) continue
                 cached.getOrPut(address) { mutableListOf() }.add(target)
             }
@@ -866,6 +889,7 @@ class DrivesViewModel @Inject constructor(
                     for ((address, matching) in cached) {
                         val valid = matching.filter { displayedAddressReceipts[it.drive.driveId] == it.key.receiptDigest }
                         if (valid.isNotEmpty()) {
+                            valid.forEach { resolvedAddresses[it.key] = address }
                             allDrives = applyDriveAddressResult(allDrives, valid, address)
                             restored = true
                         }
@@ -876,7 +900,7 @@ class DrivesViewModel @Inject constructor(
             val pending = synchronized(drivePublicationLock) { targets.filter { it.key !in resolvedAddresses } }
             enrichDriveAddressesIncrementally(pending, attemptedAddresses,
                 ensureCurrent = ::checkScope, reverseGeocode = { latitude, longitude ->
-                geocodingRepository.reverseGeocode(latitude, longitude)
+                geocodingRepository.reverseDisplayAddress(latitude, longitude)
             }) { matching, address ->
                 val verified = mutableListOf<DriveAddressTarget>()
                 for (target in matching) {
@@ -973,12 +997,12 @@ class DrivesViewModel @Inject constructor(
                                 val sameReceipt = displayedAddressReceipts[drive.driveId] != null &&
                                     displayedAddressReceipts[drive.driveId] == nextAddressReceipts[drive.driveId]
                                 next.copy(
-                                    startAddress = next.startAddress?.takeIf(String::isNotBlank) ?: drive.startAddress?.takeIf {
+                                    startAddress = com.matelink.util.preferSpecificEndpointAddress(next.startAddress, drive.startAddress?.takeIf {
                                         sameReceipt && drive.startLatitude == next.startLatitude && drive.startLongitude == next.startLongitude
-                                    },
-                                    endAddress = next.endAddress?.takeIf(String::isNotBlank) ?: drive.endAddress?.takeIf {
+                                    }),
+                                    endAddress = com.matelink.util.preferSpecificEndpointAddress(next.endAddress, drive.endAddress?.takeIf {
                                         sameReceipt && drive.endLatitude == next.endLatitude && drive.endLongitude == next.endLongitude
-                                    })
+                                    }))
                             }
                         } + compatible.filter { it.driveId !in existingIds }.map { it.toAnalysisDriveData() }
                         displayedAddressReceipts.clear()

@@ -74,11 +74,14 @@ internal fun currentTopLevelDestination(route: String?): TopLevelDestination? {
     }
 }
 
-private fun navigateToTopLevel(
+internal fun navigateToTopLevel(
     navController: NavController,
     dest: TopLevelDestination,
     currentCarId: Int
 ) {
+    if (dest == TopLevelDestination.More &&
+        currentTopLevelDestination(navController.previousBackStackEntry?.destination?.route) == dest &&
+        navController.popBackStack()) return
     val screen: Screen = when (dest) {
         TopLevelDestination.Dashboard -> Screen.Dashboard
         TopLevelDestination.Drives -> Screen.Drives(currentCarId, null)
@@ -90,7 +93,8 @@ private fun navigateToTopLevel(
             saveState = true
         }
         launchSingleTop = true
-        restoreState = true
+        // More always opens the hub, including after restoring an older More -> Drives stack.
+        restoreState = dest != TopLevelDestination.More
     }
 }
 

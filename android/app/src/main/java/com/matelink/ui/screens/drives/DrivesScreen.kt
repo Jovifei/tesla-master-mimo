@@ -80,8 +80,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.IconButton
 import com.matelink.ui.components.VerticalDayStack
+import com.matelink.ui.components.WeeklyDayStack
 import com.matelink.ui.components.AppleDateGroupHeader
 import com.matelink.ui.components.HistoryDateGroup
 import com.matelink.ui.theme.AppleTokens
@@ -96,6 +99,7 @@ import com.matelink.data.api.models.DriveData
 import com.matelink.data.api.models.Units
 import com.matelink.data.repository.HISTORY_IDENTITY_UNAVAILABLE
 import com.matelink.domain.model.UnitFormatter
+import com.matelink.domain.history.isAnalysisEligible
 import com.matelink.data.api.models.drivePresentationUnits
 import com.matelink.ui.components.BarChartData
 import com.matelink.ui.components.DateRangePickerDialog
@@ -108,6 +112,7 @@ import com.matelink.ui.components.MetricPanelKind
 import com.matelink.ui.components.MetricStatusPanel
 import com.matelink.ui.components.MonthScrollIndicator
 import com.matelink.ui.components.RouteIndicator
+import com.matelink.ui.components.recordedTripEndpoint
 import com.matelink.ui.components.TelemetryMetricSpec
 import com.matelink.ui.components.TelemetryMetricStrip
 import com.matelink.ui.components.TelemetryPanel
@@ -117,7 +122,6 @@ import com.matelink.ui.components.formatShortDate
 import com.matelink.ui.components.parseListItemDate
 import com.matelink.util.formatDuration
 import com.matelink.util.formatParkedAddress
-import com.matelink.util.formatRouteAddresses
 import com.matelink.util.parseIsoInstant
 import com.matelink.util.toChineseDisplayAddress
 import com.matelink.ui.theme.CarColorPalette
@@ -125,6 +129,7 @@ import com.matelink.ui.theme.telemetryPalette
 import java.time.Duration
 import java.time.LocalDate
 import java.time.OffsetDateTime
+import java.time.ZoneId
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -134,7 +139,8 @@ fun DrivesScreen(
     exteriorColor: String? = null,
     onNavigateToDriveDetail: (driveId: Int) -> Unit,
     onNavigateToParkedDetail: (olderDriveId: Int, newerDriveId: Int, location: String?) -> Unit = { _, _, _ -> },
-    viewModel: DrivesViewModel = hiltViewModel()
+    viewModel: DrivesViewModel = hiltViewModel(),
+    onNavigateBack: (() -> Unit)? = null
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -200,9 +206,16 @@ fun DrivesScreen(
             TopAppBar(
                 title = {
                     Text(
-                        text = stringResource(R.string.drives_title),
+                        text = stringResource(if (onNavigateBack == null) R.string.drives_title else R.string.more_item_trips),
                         fontWeight = FontWeight.SemiBold
                     )
+                },
+                navigationIcon = {
+                    if (onNavigateBack != null) {
+                        IconButton(onClick = onNavigateBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back))
+                        }
+                    }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface
@@ -219,7 +232,8 @@ fun DrivesScreen(
                 .padding(padding)
         ) {
             DrivesContent(
-                historyScopeKey = "${carId}:${uiState.historyNoticeLocalCarId}:${uiState.dateFilter}:${uiState.distanceFilter}:${uiState.customStartDate}:${uiState.customEndDate}",
+                historyScopeKey = "${carId}:${uiState.historyNoticeLocalCarId}:${uiState.dateFilter}:${uiState.distanceFilter}:${uiState.startDate}:${uiState.endDate}",
+                useDayStack = onNavigateBack == null,
                 isLoading = uiState.isLoading,
                 isRefreshing = uiState.isRefreshing,
                 isLoadingMore = uiState.isLoadingMore,
@@ -234,6 +248,8 @@ fun DrivesScreen(
                 summary = uiState.summary,
                 selectedDateFilter = uiState.dateFilter,
                 selectedDistanceFilter = uiState.distanceFilter,
+                windowEndDate = uiState.endDate,
+                historyScopeVerified = uiState.historyNoticeLocalCarId != null && uiState.historySyncWarning == null,
                 customStartDate = uiState.customStartDate,
                 customEndDate = uiState.customEndDate,
                 units = uiState.units,
@@ -265,6 +281,7 @@ fun DrivesScreen(
 @Composable
 private fun DrivesContent(
     historyScopeKey: String,
+    useDayStack: Boolean,
     isLoading: Boolean = false,
     isRefreshing: Boolean = false,
     isLoadingMore: Boolean = false,
@@ -279,6 +296,8 @@ private fun DrivesContent(
     summary: DrivesSummary,
     selectedDateFilter: DriveDateFilter,
     selectedDistanceFilter: DriveDistanceFilter,
+    windowEndDate: LocalDate?,
+    historyScopeVerified: Boolean,
     customStartDate: LocalDate?,
     customEndDate: LocalDate?,
     units: Units?,
@@ -295,6 +314,10 @@ private fun DrivesContent(
 ) {
     val historyItems = remember(historySequence, drives, parkedPairs) {
         selectVisibleDriveHistoryItems(historySequence, drives, parkedPairs)
+    }
+    val weeklyHistoryItems = remember(historySequence, drives, parkedPairs, selectedDateFilter, useDayStack) {
+        if (useDayStack && selectedDateFilter == DriveDateFilter.LAST_7_DAYS)
+            selectWeeklyDriveHistoryItems(historySequence, drives, parkedPairs) else emptyList()
     }
     val groupedDriveHistory = remember(historyItems) {
         val groups = mutableListOf<HistoryDateGroup<DriveHistoryItem>>()
@@ -320,6 +343,10 @@ private fun DrivesContent(
             groups.add(HistoryDateGroup(currentDate, key, currentGroupItems))
         }
         groups
+    }
+    val weeklyEnd = windowEndDate ?: LocalDate.now()
+    val weeklyGroups = remember(weeklyHistoryItems, weeklyEnd) {
+        weeklyDriveHistoryGroups(weeklyHistoryItems, weeklyEnd)
     }
     Box(modifier = Modifier.fillMaxSize()) {
     LazyColumn(
@@ -363,7 +390,18 @@ private fun DrivesContent(
             )
         }
 
-        if (drives.isEmpty()) {
+        if (useDayStack && selectedDateFilter == DriveDateFilter.LAST_7_DAYS) {
+            item(key = "history_weekly_day_stack") {
+                WeeklyDayStack(groups = weeklyGroups, scopeKey = historyScopeKey) { group ->
+                    val status = if (group.items.none { it is DriveHistoryItem.Drive }) {
+                        if (historyScopeVerified && readError == null && !isLoading && !isFilterLoading && !isRefreshing &&
+                            weeklyDayIsFiltered(group.date!!, historySequence, drives, ZoneId.systemDefault()))
+                            R.string.drive_day_filter_empty else R.string.drive_day_records_unconfirmed
+                    } else null
+                    DriveHistoryGroupContent(group, driveMetrics, units, palette, onDriveClick, onParkedClick, status)
+                }
+            }
+        } else if (drives.isEmpty()) {
             item {
                 val hasFilters = selectedDateFilter != DriveDateFilter.ALL_TIME ||
                     selectedDistanceFilter != DriveDistanceFilter.ALL
@@ -395,30 +433,27 @@ private fun DrivesContent(
                     }
                 }
             }
-        } else {
+        } else if (useDayStack) {
             item(key = "history_day_stack") {
                 VerticalDayStack(groups = groupedDriveHistory, scopeKey = historyScopeKey) { group ->
-                    Column(Modifier.fillMaxWidth()) {
-                        group.items.forEachIndexed { index, item ->
-                            if (index > 0) HorizontalDivider(Modifier.padding(horizontal = AppleTokens.rowHorizontal),
-                                thickness = AppleTokens.hairline, color = MaterialTheme.colorScheme.outlineVariant)
-                            when (item) {
-                                is DriveHistoryItem.Drive -> DriveRowItem(item.drive, driveMetrics[item.drive.id], units, palette) {
-                                    onDriveClick(item.drive.id)
-                                }
-                                is DriveHistoryItem.Parked -> ParkedRowItem(item, palette) {
-                                    onParkedClick(item.olderDrive.id, item.newerDrive.id, item.location)
-                                }
-                            }
-                        }
+                    DriveHistoryGroupContent(group, driveMetrics, units, palette, onDriveClick, onParkedClick)
+                }
+            }
+        } else {
+            items(groupedDriveHistory, key = { "drive_history_${it.dateKey}" }) { group ->
+                Column {
+                    AppleDateGroupHeader(date = group.date)
+                    Card(colors = CardDefaults.cardColors(containerColor = palette.surface)) {
+                        DriveHistoryGroupContent(group, driveMetrics, units, palette, onDriveClick, onParkedClick)
                     }
                 }
             }
-            if (canLoadMore && !isLoadingMore) {
-                item(key = "day_stack_load_older") {
-                    TextButton(onClick = onLoadMore, modifier = Modifier.fillMaxWidth()) {
-                        Text(stringResource(R.string.ui_load_older_days))
-                    }
+        }
+
+        if ((useDayStack || drives.isNotEmpty()) && canLoadMore && !isLoadingMore) {
+            item(key = "day_stack_load_older") {
+                TextButton(onClick = onLoadMore, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.ui_load_older_days))
                 }
             }
         }
@@ -464,6 +499,75 @@ private fun DrivesContent(
         }
     }
     }
+}
+
+@Composable
+private fun DriveHistoryGroupContent(
+    group: HistoryDateGroup<DriveHistoryItem>,
+    driveMetrics: Map<Int, DriveHistoryMetrics>,
+    units: Units?,
+    palette: CarColorPalette,
+    onDriveClick: (Int) -> Unit,
+    onParkedClick: (Int, Int, String?) -> Unit,
+    emptyStatus: Int? = null
+) {
+    Column(Modifier.fillMaxWidth()) {
+        if (emptyStatus != null) {
+            Text(stringResource(emptyStatus), Modifier.fillMaxWidth().padding(16.dp).testTag("weekly_day_status"),
+                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        group.items.forEachIndexed { index, item ->
+            if (index > 0) HorizontalDivider(Modifier.padding(horizontal = AppleTokens.rowHorizontal),
+                thickness = AppleTokens.hairline, color = MaterialTheme.colorScheme.outlineVariant)
+            when (item) {
+                is DriveHistoryItem.Drive -> DriveRowItem(item.drive, driveMetrics[item.drive.id], units, palette) {
+                    onDriveClick(item.drive.id)
+                }
+                is DriveHistoryItem.Parked -> ParkedRowItem(item, palette) {
+                    onParkedClick(item.olderDrive.id, item.newerDrive.id, item.location)
+                }
+            }
+        }
+    }
+}
+
+internal fun weeklyDriveHistoryGroups(
+    historyItems: List<DriveHistoryItem>, end: LocalDate
+): List<HistoryDateGroup<DriveHistoryItem>> {
+    val itemsByDay = historyItems.groupBy { it.dateForIndicator.parseListItemDate() }
+    return (0L..6L).map { offset ->
+        val date = end.minusDays(offset)
+        HistoryDateGroup(date, date.toString(), itemsByDay[date].orEmpty())
+    }
+}
+
+/** Preserve proven parked intervals when the route filter hides either endpoint. */
+internal fun selectWeeklyDriveHistoryItems(
+    history: List<DriveData>, visible: List<DriveData>, parkedPairs: Set<Pair<Int, Int>>
+): List<DriveHistoryItem> {
+    val visibleDrives = visible.toSet()
+    return buildDriveHistoryItems(history, parkedPairs).filter { item ->
+        when (item) {
+            is DriveHistoryItem.Drive -> item.drive in visibleDrives
+            is DriveHistoryItem.Parked -> true
+        }
+    }
+}
+
+/** Only known, currently hidden activity can justify a filter-empty message. */
+internal fun weeklyDayIsFiltered(
+    day: LocalDate, history: List<DriveData>, visible: List<DriveData>, zone: ZoneId
+): Boolean {
+    val start = day.atStartOfDay(zone).toInstant()
+    val end = day.plusDays(1).atStartOfDay(zone).toInstant()
+    val activity = history.filter { drive ->
+        if (!isAnalysisEligible(drive.qualityState, drive.qualityReason)) return@filter false
+        val began = parseIsoInstant(drive.startDate) ?: return@filter false
+        val finished = parseIsoInstant(drive.endDate)
+        began.isBefore(end) && (!began.isBefore(start) ||
+            (finished != null && finished.isAfter(began) && finished.isAfter(start)))
+    }
+    return activity.isNotEmpty() && activity.none { it in visible }
 }
 
 internal sealed interface DriveHistoryItem {
@@ -730,8 +834,6 @@ private fun DriveRowItem(
     onClick: () -> Unit
 ) {
     val receiptUnits = drivePresentationUnits(drive.lengthUnit, units)
-    val unknown = stringResource(R.string.unknown)
-    val (startCity, endCity) = formatRouteAddresses(drive.startAddress, drive.endAddress, unknown)
 
     val energyPres = drive.historyEnergy(metrics)
     val unavailable = stringResource(R.string.not_available)
@@ -817,9 +919,10 @@ private fun DriveRowItem(
                 verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
                 RouteIndicator(
-                    start = startCity,
-                    end = endCity,
-                    accent = palette.accent
+                    start = recordedTripEndpoint(drive.startAddress),
+                    end = recordedTripEndpoint(drive.endAddress),
+                    accent = palette.accent,
+                    showCar = false
                 )
                 Text(
                     text = formatEditorialDate(drive.startDate, true),
@@ -892,47 +995,37 @@ private fun ParkedRowItem(
     val batteryStart = item.olderDrive.endBatteryLevel
     val batteryEnd = item.newerDrive.startBatteryLevel
 
-    Surface(
+    TelemetryPanel(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 4.dp),
-        shape = RoundedCornerShape(12.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+            .clickable(onClick = onClick),
+        accent = MaterialTheme.colorScheme.outline
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable(onClick = onClick)
-                .padding(horizontal = 12.dp, vertical = 11.dp),
-            verticalAlignment = Alignment.CenterVertically
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             Surface(
-                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-                shape = CircleShape,
-                modifier = Modifier.size(32.dp)
+                color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                shape = CircleShape
             ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = Icons.Default.LocalParking,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
+                Icon(
+                    imageVector = Icons.Default.LocalParking,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(10.dp).size(22.dp)
+                )
             }
-
-            Spacer(modifier = Modifier.width(12.dp))
 
             Column(
                 modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(2.dp)
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Text(
                     text = stringResource(R.string.drive_history_parked_at, formatParkedAddress(item.location, unknown)),
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Medium
                 )
                 Text(
                     text = formatEditorialDate(item.startDate, true),
@@ -941,15 +1034,12 @@ private fun ParkedRowItem(
                 )
             }
 
-            Spacer(modifier = Modifier.width(10.dp))
-
             Column(
-                horizontalAlignment = Alignment.End,
-                verticalArrangement = Arrangement.spacedBy(2.dp)
+                horizontalAlignment = Alignment.End
             ) {
                 Text(
                     text = durationText,
-                    style = MaterialTheme.typography.titleSmall,
+                    style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold
                 )
                 if (batteryStart != null && batteryEnd != null) {
@@ -961,14 +1051,6 @@ private fun ParkedRowItem(
                 }
             }
 
-            Spacer(modifier = Modifier.width(4.dp))
-
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-                modifier = Modifier.size(16.dp)
-            )
         }
     }
 }

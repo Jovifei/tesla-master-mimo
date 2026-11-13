@@ -8,6 +8,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
@@ -15,6 +16,11 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.click
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -34,6 +40,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.util.Locale
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Rule
 import org.junit.Test
@@ -71,7 +78,6 @@ class ChargeSingleObservationTest {
                     detail = detail,
                     stats = ChargeStatsCalculator.calculateStats(detail),
                     costPresentation = ChargeDetailCostPresentation(null, ChargeDetailCostState.UNAVAILABLE),
-                    units = null,
                     currencySymbol = "¥",
                     isDcCharge = null,
                     manualTotalAmount = null,
@@ -84,7 +90,7 @@ class ChargeSingleObservationTest {
         }
     }
 
-    @Test fun unknownModeStillShowsRealVoltageAndCurrentSamples() {
+    @Test fun chargeDetailOmitsElectricalSectionsEvenWhenSamplesArePresent() {
         val start = "2026-10-20T10:00:00Z"
         val end = "2026-10-20T10:30:00Z"
         renderUnknownMode(ChargeDetail(1, startDate = start, endDate = end,
@@ -96,9 +102,9 @@ class ChargeSingleObservationTest {
             )))
         val label = InstrumentationRegistry.getInstrumentation().targetContext
             .getString(R.string.charge_electrical_samples)
-        compose.onNodeWithText(label).performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("400 V").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("16 A").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText(label).assertDoesNotExist()
+        compose.onNodeWithText("400 V").assertDoesNotExist()
+        compose.onNodeWithText("16 A").assertDoesNotExist()
     }
 
     @Test fun unknownModeWithoutElectricalSamplesDoesNotCreateElectricalCard() {
@@ -112,6 +118,79 @@ class ChargeSingleObservationTest {
         compose.onNodeWithText(label).assertDoesNotExist()
     }
 
+    @Test fun chargeDetailUsesAlignedThreeColumnRowsAndKeepsCostEditable() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        compose.setContent {
+            MateLinkTheme {
+                Box(Modifier.width(320.dp)) {
+                    ChargeDetailContent(
+                        localArchiveLinkPending = false, historySyncWarning = null,
+                        detail = ChargeDetail(7, startDate = "2026-10-20T10:00:00Z",
+                            endDate = "2026-10-20T11:00:00Z", durationMin = 60,
+                            chargeEnergyAdded = 12.0, batteryDetails = com.matelink.data.api.models.ChargeBatteryDetails(
+                                startBatteryLevel = 93, endBatteryLevel = 96)),
+                        stats = null, costPresentation = ChargeDetailCostPresentation(15.0, ChargeDetailCostState.ESTIMATE),
+                        currencySymbol = "¥", isDcCharge = null, manualTotalAmount = null,
+                        containingTrip = null, onNavigateToTripDetail = {}, onRemoveFromTrip = {}, onSaveManualTotal = {}
+                    )
+                }
+            }
+        }
+        val first = listOf("start", "end", "duration").map {
+            compose.onNodeWithTag("charge-detail-$it").getUnclippedBoundsInRoot()
+        }
+        val second = listOf("energy", "soc", "cost").map {
+            compose.onNodeWithTag("charge-detail-$it").getUnclippedBoundsInRoot()
+        }
+        first.zip(second).forEach { (top, bottom) ->
+            assertTrue(kotlin.math.abs((top.left - bottom.left).value) < 1f)
+            assertTrue(kotlin.math.abs(((top.right - top.left) - (bottom.right - bottom.left)).value) < 1f)
+            assertTrue(bottom.top >= top.bottom)
+        }
+        first.zipWithNext().forEach { (left, right) -> assertTrue(left.right <= right.left) }
+        second.zipWithNext().forEach { (left, right) -> assertTrue(left.right <= right.left) }
+        compose.onNodeWithText("12.00 kWh", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithText("93% → 96%", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithText("¥15.00", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithTag("charge_cost_basis", useUnmergedTree = true).performClick()
+        compose.onNodeWithText(context.getString(R.string.charge_estimate_default_basis)).assertIsDisplayed()
+        compose.onNodeWithText(context.getString(R.string.close)).performClick()
+        compose.onNodeWithTag("charge-detail-edit-total").performClick()
+        compose.onNode(hasSetTextAction(), useUnmergedTree = true).assertIsDisplayed()
+    }
+
+    @Test fun currentOnlySamplesDoNotCreateAnEmptyCurveSection() {
+        val start = "2026-10-20T10:00:00Z"
+        val end = "2026-10-20T10:30:00Z"
+        renderUnknownMode(ChargeDetail(1, startDate = start, endDate = end,
+            chargePoints = listOf(ChargePoint(date = start,
+                chargerDetails = ChargerDetails(chargerActualCurrent = 16.0)))))
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        compose.onNodeWithText(context.getString(R.string.current_profile)).assertDoesNotExist()
+        compose.onNodeWithText("充电详细曲线").assertDoesNotExist()
+        compose.onNodeWithText(context.getString(R.string.charge_electrical_samples))
+            .assertDoesNotExist()
+    }
+
+    @Test fun onlyPowerCurveRemainsWhenOtherTelemetryIsAvailable() {
+        val start = "2026-10-20T10:00:00Z"
+        val end = "2026-10-20T10:30:00Z"
+        renderUnknownMode(ChargeDetail(1, startDate = start, endDate = end,
+            chargePoints = listOf(
+                ChargePoint(date = start, batteryLevel = 93, outsideTemp = 14.0, chargerDetails = ChargerDetails(
+                    chargerPower = 5.0, chargerVoltage = 380.0, chargerActualCurrent = 10.0)),
+                ChargePoint(date = end, batteryLevel = 96, outsideTemp = 15.0, chargerDetails = ChargerDetails(
+                    chargerPower = 6.0, chargerVoltage = 400.0, chargerActualCurrent = 16.0))
+            )))
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        compose.onNodeWithText(context.getString(R.string.power_profile)).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText(context.getString(R.string.voltage_profile)).assertDoesNotExist()
+        compose.onNodeWithText(context.getString(R.string.current_profile)).assertDoesNotExist()
+        compose.onNodeWithText(context.getString(R.string.temperature)).assertDoesNotExist()
+        compose.onNodeWithText(context.getString(R.string.charging_efficiency), substring = true).assertDoesNotExist()
+        compose.onNodeWithText("93% → 96%", useUnmergedTree = true).assertIsDisplayed()
+    }
+
     @Test fun savedLegacyAndUnpricedSourceAmountsRemainVisibleWithoutCurrencySymbol() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         compose.setContent {
@@ -122,7 +201,7 @@ class ChargeSingleObservationTest {
                         endDate = "2026-10-20T11:00:00Z", cost = 8.0),
                     stats = null,
                     costPresentation = ChargeDetailCostPresentation(null, ChargeDetailCostState.UNAVAILABLE),
-                    units = null, currencySymbol = "¥", isDcCharge = null,
+                    currencySymbol = "¥", isDcCharge = null,
                     manualTotalAmount = null, pendingLegacyAmount = 12.34,
                     sourceUnconfirmedAmount = 8.0,
                     containingTrip = null, onNavigateToTripDetail = {},
@@ -131,15 +210,16 @@ class ChargeSingleObservationTest {
             }
         }
         compose.onNodeWithText(context.getString(R.string.charge_cost_currency_pending_short), useUnmergedTree = true)
-            .assertIsDisplayed()
+            .assertDoesNotExist()
         compose.onNodeWithText("12.34", useUnmergedTree = true).assertIsDisplayed()
         compose.onNodeWithText("¥12.34", useUnmergedTree = true).assertDoesNotExist()
-        compose.onNodeWithText(context.getString(R.string.charge_cost_source_unconfirmed, 8.0))
-            .performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("charge_cost_basis", useUnmergedTree = true).performClick()
+        compose.onNodeWithText(context.getString(R.string.charge_cost_source_unconfirmed, 8.0)).assertIsDisplayed()
     }
 
     @Test fun pendingAmountAndEstimateRemainVisibleAndEditableInDetail() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
+        var savedAmount: Double? = null
         compose.setContent {
             MateLinkTheme {
                 ChargeDetailContent(
@@ -147,19 +227,26 @@ class ChargeSingleObservationTest {
                     detail = ChargeDetail(7, startDate = "2026-10-20T10:00:00Z",
                         endDate = "2026-10-20T11:00:00Z"),
                     stats = null, costPresentation = ChargeDetailCostPresentation(15.0, ChargeDetailCostState.ESTIMATE),
-                    units = null, currencySymbol = "¥", isDcCharge = null, manualTotalAmount = null,
+                    currencySymbol = "¥", isDcCharge = null, manualTotalAmount = null,
                     pendingBoundAmount = "CNY" to 23.0,
-                    containingTrip = null, onNavigateToTripDetail = {}, onRemoveFromTrip = {}, onSaveManualTotal = {}
+                    containingTrip = null, onNavigateToTripDetail = {}, onRemoveFromTrip = {},
+                    onSaveManualTotal = { savedAmount = it }
                 )
             }
         }
-        compose.onNodeWithText(context.getString(R.string.charge_cost_pending_short), useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithText(context.getString(R.string.charge_cost_pending_short), useUnmergedTree = true).assertDoesNotExist()
         compose.onNodeWithText("¥23.00", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithTag("charge_cost_basis", useUnmergedTree = true).performClick()
+        compose.onNodeWithText(context.getString(R.string.charge_cost_pending_short)).assertIsDisplayed()
         compose.onNodeWithText(context.getString(R.string.charge_cost_estimate) + " ≈¥15.00", useUnmergedTree = true)
             .assertIsDisplayed()
-        compose.onNodeWithText("¥23.00").performClick()
-        compose.onNodeWithText(context.getString(R.string.charge_cost_saved_unbound, "CNY", 23.0))
-            .assertIsDisplayed()
+        compose.onNodeWithText(context.getString(R.string.close)).performClick()
+        compose.onNodeWithTag("charge-detail-edit-total").performTouchInput { click() }
+        compose.onNode(hasSetTextAction(), useUnmergedTree = true).assertIsDisplayed().performSemanticsAction(SemanticsActions.SetText) {
+            assertTrue(it(AnnotatedString("23.50")))
+        }
+        compose.onNodeWithText(context.getString(R.string.save)).performSemanticsAction(SemanticsActions.OnClick) { it() }
+        compose.runOnIdle { assertEquals(23.50, savedAmount ?: Double.NaN, 0.0001) }
     }
 
     @Test fun narrowChargeCardShowsPendingAndEstimateWithoutMetricOverlap() {
@@ -177,21 +264,20 @@ class ChargeSingleObservationTest {
                 }
             }
         }
-        compose.onNodeWithText(label, useUnmergedTree = true).performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("23.00", useUnmergedTree = true).performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText(context.getString(R.string.charge_cost_estimate) + " ≈¥15.00", useUnmergedTree = true)
+        compose.onNodeWithText(label, useUnmergedTree = true).assertDoesNotExist()
+        val amount = compose.onNodeWithText("¥23.00", useUnmergedTree = true).assertIsDisplayed()
+        val mark = compose.onNodeWithTag("charge_cost_basis", useUnmergedTree = true).assertIsDisplayed()
+        assertTrue(amount.getUnclippedBoundsInRoot().right <= mark.getUnclippedBoundsInRoot().left)
+        mark.performClick()
+        compose.onNodeWithText(context.getString(R.string.charge_cost_estimate) + " ≈¥15.00", substring = true)
             .assertIsDisplayed()
-        val bounds = (0..3).map { compose.onNodeWithTag("history-metric-value-$it", useUnmergedTree = true)
-            .getUnclippedBoundsInRoot() }
-        bounds.zipWithNext().forEach { (left, right) -> assertTrue(left.right <= right.left) }
-        compose.onNodeWithContentDescription("$label: 23.00 ¥").performClick()
+        compose.onNodeWithText(context.getString(R.string.close)).performClick()
+        compose.onNodeWithText("¥23.00").performClick()
         compose.runOnIdle { assertTrue(edited) }
     }
 
     @Test fun referenceEnergyAndEstimateStayVisibleEditableAndDoNotOverlap() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val energyLabel = context.getString(R.string.charge_reference_energy)
-        val costLabel = context.getString(R.string.charge_reference_cost)
         var edited = false
         compose.setContent {
             MateLinkTheme {
@@ -205,18 +291,16 @@ class ChargeSingleObservationTest {
                 }
             }
         }
-        compose.onNodeWithText(energyLabel, useUnmergedTree = true).assertIsDisplayed()
-        compose.onNodeWithText(costLabel, useUnmergedTree = true).assertIsDisplayed()
-        compose.onNodeWithText("≈11.1 kWh", useUnmergedTree = true).assertIsDisplayed()
-        compose.onNodeWithText("≈7.77", useUnmergedTree = true).assertIsDisplayed()
-        val bounds = (0..3).map { compose.onNodeWithTag("history-metric-value-$it", useUnmergedTree = true)
-            .getUnclippedBoundsInRoot() }
-        bounds.zipWithNext().forEach { (left, right) -> assertTrue(left.right <= right.left) }
-        compose.onNodeWithContentDescription("$costLabel: ≈7.77 ¥").performClick()
+        compose.onNodeWithText("≈11.1 度", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithText("¥7.77", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithTag("charge_cost_basis", useUnmergedTree = true).performClick()
+        compose.onNodeWithText(context.getString(R.string.charge_estimate_reference_basis)).assertIsDisplayed()
+        compose.onNodeWithText(context.getString(R.string.close)).performClick()
+        compose.onNodeWithText("¥7.77").performClick()
         compose.runOnIdle { assertTrue(edited) }
     }
 
-    @Test fun partialEstimatedUnitCostUsesOnlyTheObservedEnergy() {
+    @Test fun partialEstimateExplainsItsBasisWithoutRepeatingAUnitCost() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val start = "2026-10-20T10:00:00Z"
         val end = "2026-10-20T11:00:00Z"
@@ -234,15 +318,17 @@ class ChargeSingleObservationTest {
                 ChargeDetailContent(localArchiveLinkPending = false, historySyncWarning = null,
                     detail = detail, stats = ChargeStatsCalculator.calculateStats(detail),
                     costPresentation = ChargeDetailCostPresentation(15.0, ChargeDetailCostState.ESTIMATE,
-                        "estimate_partial_counter"), units = null, currencySymbol = "¥", isDcCharge = null,
+                        "estimate_partial_counter"), currencySymbol = "¥", isDcCharge = null,
                     manualTotalAmount = null, containingTrip = null, onNavigateToTripDetail = {},
                     onRemoveFromTrip = {}, onSaveManualTotal = {})
             }
         }
         compose.onAllNodesWithText(context.getString(R.string.charge_partial_energy), useUnmergedTree = true)
-            .assertCountEquals(2)
-        compose.onAllNodesWithText("≈10.00 kWh", useUnmergedTree = true).assertCountEquals(2)
-        compose.onNodeWithText("≈¥1.500").performScrollTo().assertIsDisplayed()
+            .assertCountEquals(1)
+        compose.onAllNodesWithText("≈10.00 kWh", useUnmergedTree = true).assertCountEquals(1)
+        compose.onNodeWithText("≈¥1.500 / 度").assertDoesNotExist()
+        compose.onNodeWithTag("charge_cost_basis", useUnmergedTree = true).performClick()
+        compose.onNodeWithText(context.getString(R.string.charge_estimate_partial_basis)).assertIsDisplayed()
     }
 
     @Test fun completeAndMissingEnergyDoNotBecomePartialEstimates() {
@@ -254,11 +340,11 @@ class ChargeSingleObservationTest {
                 ChargeDetailContent(localArchiveLinkPending = false, historySyncWarning = null,
                     detail = detail.value, stats = ChargeStatsCalculator.calculateStats(detail.value),
                     costPresentation = ChargeDetailCostPresentation(null, ChargeDetailCostState.UNAVAILABLE),
-                    units = null, currencySymbol = "¥", isDcCharge = null, manualTotalAmount = null,
+                    currencySymbol = "¥", isDcCharge = null, manualTotalAmount = null,
                     containingTrip = null, onNavigateToTripDetail = {}, onRemoveFromTrip = {}, onSaveManualTotal = {})
             }
         }
-        compose.onAllNodesWithText("12.00 kWh", useUnmergedTree = true).assertCountEquals(2)
+        compose.onAllNodesWithText("12.00 kWh", useUnmergedTree = true).assertCountEquals(1)
         compose.onAllNodesWithText(context.getString(R.string.charge_partial_energy), useUnmergedTree = true)
             .assertCountEquals(0)
 
@@ -284,7 +370,8 @@ class ChargeSingleObservationTest {
                 }
             }
         }
-        compose.onNodeWithText("23.00", useUnmergedTree = true).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("¥23.00", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithTag("charge_cost_basis", useUnmergedTree = true).assertDoesNotExist()
         compose.onNodeWithText(pendingLabel, useUnmergedTree = true).assertDoesNotExist()
         compose.onNodeWithText("31.00", useUnmergedTree = true).assertDoesNotExist()
     }

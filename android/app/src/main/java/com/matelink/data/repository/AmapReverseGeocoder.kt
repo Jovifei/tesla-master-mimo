@@ -10,6 +10,7 @@ import com.amap.api.services.geocoder.GeocodeSearch
 import com.amap.api.services.geocoder.RegeocodeQuery
 import com.matelink.data.local.AmapSettings
 import com.matelink.data.local.AmapSettingsStore
+import com.matelink.util.specificPlaceLabel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
@@ -43,7 +44,8 @@ data class ChineseLocation(
     val countryCode: String?,
     val countryName: String?,
     val regionName: String?,
-    val city: String?
+    val city: String?,
+    val placeName: String? = null
 )
 
 @Singleton
@@ -53,20 +55,18 @@ class AmapReverseGeocoder @Inject constructor(
 ) {
     companion object {
         private const val TAG = "AmapReverseGeocoder"
-        private val memoryCache = ConcurrentHashMap<String, ChineseLocation>()
+        private val memoryCache = ConcurrentHashMap<Pair<Double, Double>, ChineseLocation>()
         private val queryMutex = Mutex()
         @Volatile private var lastQueryTime = 0L
 
         fun getCached(latitude: Double?, longitude: Double?): ChineseLocation? {
             if (latitude == null || longitude == null || !latitude.isFinite() || !longitude.isFinite() ||
                 (latitude == 0.0 && longitude == 0.0)) return null
-            val cacheKey = "%.4f,%.4f".format(latitude, longitude)
-            return memoryCache[cacheKey]
+            return memoryCache[latitude to longitude]
         }
 
         fun putCache(latitude: Double, longitude: Double, location: ChineseLocation) {
-            val cacheKey = "%.4f,%.4f".format(latitude, longitude)
-            memoryCache[cacheKey] = location
+            memoryCache[latitude to longitude] = location
         }
     }
 
@@ -86,8 +86,8 @@ class AmapReverseGeocoder @Inject constructor(
             return null
         }
 
-        // Cache precision: ~11m (4 decimals)
-        val cacheKey = "%.4f,%.4f".format(latitude, longitude)
+        // Two nearby endpoints can belong to different named places.
+        val cacheKey = latitude to longitude
         memoryCache[cacheKey]?.let { return it }
 
         val key = settingsStore.currentKey().trim().takeIf { it.isNotBlank() } ?: return null
@@ -127,7 +127,9 @@ class AmapReverseGeocoder @Inject constructor(
                         countryCode = result.countryCode?.trim()?.takeIf { it.isNotEmpty() } ?: "CN",
                         countryName = result.country?.trim()?.takeIf { it.isNotEmpty() } ?: "中国",
                         regionName = region,
-                        city = result.city?.trim()?.takeIf { it.isNotEmpty() }
+                        city = result.city?.trim()?.takeIf { it.isNotEmpty() },
+                        placeName = sequenceOf(result.building, result.neighborhood)
+                            .mapNotNull(::specificPlaceLabel).firstOrNull()
                     )
                 }
 
@@ -145,7 +147,7 @@ class AmapReverseGeocoder @Inject constructor(
                 }
 
                 location?.also {
-                    Log.i(TAG, "Amap reverse geocoded ($latitude, $longitude) -> ${it.address}")
+                    Log.i(TAG, "Amap reverse geocoding completed")
                     memoryCache[cacheKey] = it
                 }
             }

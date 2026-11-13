@@ -117,6 +117,69 @@ private val CITY_REGEX = Regex("^([^省市区县旗街道镇乡\\s]+?(?:市|自�
 private val DISTRICT_REGEX = Regex("^([^省市区县旗街道镇乡\\s]+?(?:区|县|县级市|旗))\\s*")
 private val STREET_REGEX = Regex("^([^省市区县旗街道镇乡\\s]+?(?:街道办事处|街道|镇|乡))\\s*")
 
+private val PLACE_NAME = Regex("""(?:小区|社区|公寓|花园|家园|山庄|广场|大厦|大楼|中心|园区|科技园|软件园|产业园|商业城|商场|天街|酒店|超市|咖啡|店|停车场|充电站|医院|学校|大学|幼儿园|公园|景区|火车站|地铁站|车站|机场|乐园|车库|公馆|苑|府|园)(?=(?:\s*(?:[0-9一二三四五六七八九十]+(?:期|幢|栋|座|号楼|号门|单元)|[东西南北]门))*$)""")
+private val STREET_NAME = Regex("""^.+?(?:大道|公路|大街|街|路|巷|弄)(?=\s|[0-9]|$)""")
+private val STREET_BEFORE_PLACE = Regex("""^.+?(?:大道|公路|大街|街|路|巷|弄)(?:\s*[0-9]+\s*号)?\s*""")
+private val HOUSE_NUMBER = Regex("""^.+?(?:大道|公路|大街|街|路|巷|弄)\s*[0-9]+\s*(?:号|弄)(?:院)?""")
+private val APPROXIMATE_PLACE = Regex("""(?:附近|旁边|对面|周边|路口|交叉口)$""")
+private val PLACE_PLACEHOLDER = Regex("""^(?:未知|未知位置|无|未记录|不详|中国|unknown|n/?a|[-—]+)$""", RegexOption.IGNORE_CASE)
+private val PLACE_COORDINATE = Regex("""^[-+]?[0-9.]+\s*°?[NSEW]?$""", RegexOption.IGNORE_CASE)
+
+private fun specificAddressParts(address: String?): List<Pair<String, Boolean>> =
+    address.orEmpty().split(',', '，', '、').mapNotNull { raw ->
+        var rest = raw.trim()
+        val original = rest
+        PROVINCE_REGEX.find(rest)?.takeIf { match ->
+            match.groupValues[1].last() in "省市区" || match.value.trim() == rest
+        }?.let { rest = rest.drop(it.value.length).trimStart() }
+        CITY_REGEX.find(rest)?.takeUnless { it.value.trimEnd().endsWith("超市") }?.let {
+            rest = rest.drop(it.value.length).trimStart()
+        }
+        DISTRICT_REGEX.find(rest)?.takeUnless { match ->
+            listOf("小区", "园区", "景区", "校区", "社区", "街区").any(match.value.trimEnd()::endsWith)
+        }?.let { rest = rest.drop(it.value.length).trimStart() }
+        STREET_REGEX.find(rest)?.let { rest = rest.drop(it.value.length).trimStart() }
+        rest.takeUnless {
+            it.isBlank() || PLACE_PLACEHOLDER.matches(it) || PLACE_COORDINATE.matches(it) ||
+                APPROXIMATE_PLACE.containsMatchIn(it)
+        }?.let { it to (it != original) }
+    }
+
+private fun namedPlace(part: String): Boolean {
+    val base = part.substringBefore('(').substringBefore('（').trimEnd()
+    val suffix = PLACE_NAME.find(base)
+    return suffix != null && suffix.range.first > 0 && HAN_CHARACTER.containsMatchIn(base.take(suffix.range.first))
+}
+
+/** Use a named point or numbered address; an administrative area or bare road is not a point. */
+internal fun specificPlaceLabel(address: String?): String? {
+    val parts = specificAddressParts(address)
+    for ((part, hadAdmin) in parts) {
+        val translated = part.toChineseDisplayAddress() ?: continue
+        val name = if (hadAdmin || HOUSE_NUMBER.containsMatchIn(translated)) {
+            val afterRoad = STREET_BEFORE_PLACE.replaceFirst(translated, "")
+            afterRoad.takeIf(::namedPlace) ?: translated
+        } else translated
+        if (namedPlace(name)) return name
+    }
+    return parts.firstNotNullOfOrNull { (part, _) -> HOUSE_NUMBER.find(part)?.value }
+}
+
+internal fun recordedRoadLabel(address: String?): String? =
+    specificAddressParts(address).firstNotNullOfOrNull { (part, _) ->
+        STREET_NAME.find(part)?.value?.takeIf { it == part }
+    }
+
+internal fun tripEndpointLabel(address: String?, missing: String, approximateRoad: (String) -> String): String =
+    specificPlaceLabel(address) ?: recordedRoadLabel(address)?.let(approximateRoad) ?: missing
+
+internal fun preferSpecificEndpointAddress(existing: String?, candidate: String?): String? =
+    if (specificPlaceLabel(candidate)?.let { candidateLabel ->
+            val existingLabel = specificPlaceLabel(existing)
+            existingLabel == null || (!namedPlace(existingLabel) && namedPlace(candidateLabel))
+        } == true) candidate
+    else existing?.takeIf(String::isNotBlank) ?: candidate?.takeIf(String::isNotBlank)
+
 data class ParsedChineseAddress(
     val original: String,
     val province: String? = null,

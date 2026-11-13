@@ -49,6 +49,11 @@
     <string name="charge_reference_cost">参考费用</string>
     <string name="charge_estimate_once_notice">未录入金额时，费用按电量和电价估算；部分电量只包含已记录的时段。点击金额可修改总价。</string>
     <string name="charge_cost_estimate">估算费用</string>
+    <string name="charge_cost_basis">费用说明</string>
+    <string name="charge_estimate_tiered_basis">按充电时段和已设置的峰谷电价估算。</string>
+    <string name="charge_estimate_partial_basis">按已记录的部分充入电量和适用电价估算。</string>
+    <string name="charge_estimate_default_basis">按充入电量和默认电价估算。</string>
+    <string name="charge_estimate_reference_basis">按参考充入电量和适用电价估算。</string>
     <string name="amap_settings_section">地图服务</string>
     <string name="amap_settings_title">高德地图</string>
     <string name="amap_preview_title">高德地图预览</string>
@@ -243,7 +248,9 @@
     <string name="snapshot_source_unavailable">数据不可用</string>
     <string name="snapshot_source_asleep">车辆休眠</string>
     <string name="status_unknown">未知</string>
-    <string name="battery_history_navigation_note">查看已记录的电池历史与容量详情</string>
+    <string name="battery_history_navigation_note">查看最近七天记录的电量曲线</string>
+    <string name="battery_soc_week_empty">最近七天暂无可用电量记录</string>
+    <string name="battery_soc_week_single">最近七天只有一个电量观测：%1$d%%</string>
     <string name="vehicle_model_3">Model 3</string>
     <string name="vehicle_model_y">Model Y</string>
     <string name="vehicle_model_s">Model S</string>
@@ -336,6 +343,12 @@
     <string name="more_item_battery_health">电池健康</string>
     <string name="more_item_mileage">里程统计</string>
     <string name="more_item_trips">行程历史</string>
+    <string name="trip_specific_location_missing">具体地点未记录</string>
+    <string name="trip_location_road_only">%1$s（仅道路）</string>
+    <string name="view_vehicle_location">查看位置</string>
+    <string name="charge_heatmap_outside_range">不在所选日期范围</string>
+    <string name="curve_not_enough_observations">有效观测不足，暂无法绘制曲线</string>
+    <string name="curve_gap_explanation">只连接时间相近的有效观测，缺测处留空。</string>
     <string name="more_item_long_trips">长途旅程</string>
     <string name="more_item_software_updates">软件更新</string>
     <string name="more_item_sentry_history">哨兵历史</string>
@@ -1840,4 +1853,9 @@
     <string name="charge_avg_energy">单次平均</string>
     <string name="charge_unit_cost_label">单价</string>
     <string name="charge_avg_power_label">均功</string>
+    <string name="drive_day_records_unconfirmed">当天记录未确认</string>
+    <string name="drive_day_filter_empty">当前筛选下无显示记录</string>
+    <string name="ui_charge_no_visible_records">无可见充电记录</string>
+    <string name="ui_charge_heatmap_less">少</string>
+    <string name="ui_charge_heatmap_more">多</string>
 </resources>

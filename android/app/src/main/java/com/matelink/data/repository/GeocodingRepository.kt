@@ -265,6 +265,11 @@ class GeocodingRepository @Inject constructor(
 
     // === Legacy methods for backward compatibility ===
 
+    internal suspend fun reverseDisplayAddress(latitude: Double, longitude: Double): String? {
+        if (!isExternalAllowed()) return null
+        return amapReverseGeocoder.reverse(latitude, longitude)?.let { it.placeName ?: it.address }
+    }
+
     suspend fun reverseGeocode(latitude: Double, longitude: Double): String? {
         // Round coordinates to 4 decimal places for caching (~11m accuracy)
         val cacheKey = "%.4f,%.4f".format(latitude, longitude)

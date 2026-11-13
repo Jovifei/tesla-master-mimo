@@ -153,6 +153,9 @@ sealed interface Screen {
     data class Drives(val carId: Int, val exteriorColor: String? = null) : Screen
 
     @Serializable
+    data class DriveHistory(val carId: Int, val exteriorColor: String? = null) : Screen
+
+    @Serializable
     data class DriveDetail(val carId: Int, val driveId: Int, val exteriorColor: String? = null) : Screen
 
     @Serializable
@@ -169,6 +172,9 @@ sealed interface Screen {
 
     @Serializable
     data class Battery(val carId: Int, val efficiency: Float = 0f, val exteriorColor: String? = null) : Screen
+
+    @Serializable
+    data class BatterySocTrend(val carId: Int) : Screen
 
     @Serializable
     data class DataReadiness(val carId: Int) : Screen
@@ -702,8 +708,8 @@ fun NavGraph(
                 onNavigateToUpdates = { carId, exteriorColor ->
                     navController.navigate(Screen.Updates(carId, exteriorColor))
                 },
-                onNavigateToStats = { carId, exteriorColor ->
-                    navController.navigate(Screen.Stats(carId, exteriorColor))
+                onNavigateToBatterySocTrend = { carId ->
+                    navController.navigate(Screen.BatterySocTrend(carId))
                 },
                 onNavigateToCurrentCharge = { carId, exteriorColor ->
                     navController.navigate(Screen.CurrentCharge(carId, exteriorColor))
@@ -789,18 +795,20 @@ fun NavGraph(
 
         composable<Screen.Drives> { backStackEntry ->
             val route = backStackEntry.toRoute<Screen.Drives>()
-            DrivesScreen(
-                carId = route.carId,
-                exteriorColor = route.exteriorColor,
-                onNavigateToDriveDetail = { driveId ->
-                    navController.navigate(Screen.DriveDetail(route.carId, driveId, route.exteriorColor))
-                },
-                onNavigateToParkedDetail = { olderDriveId, newerDriveId, location ->
-                    navController.navigate(
-                        Screen.ParkedDetail(route.carId, olderDriveId, newerDriveId, route.exteriorColor, location)
-                    )
-                }
+            DriveHistoryDestination(navController, route.carId, route.exteriorColor)
+        }
+
+        composable<Screen.BatterySocTrend> { backStackEntry ->
+            com.matelink.ui.screens.dashboard.BatterySocTrendScreen(
+                carId = backStackEntry.toRoute<Screen.BatterySocTrend>().carId,
+                onNavigateBack = { navController.popBackStack() }
             )
+        }
+
+        composable<Screen.DriveHistory> { backStackEntry ->
+            val route = backStackEntry.toRoute<Screen.DriveHistory>()
+            DriveHistoryDestination(navController, route.carId, route.exteriorColor,
+                onNavigateBack = { navController.popBackStack() })
         }
 
         composable<Screen.ParkedDetail> { backStackEntry ->
@@ -1117,7 +1125,7 @@ fun NavGraph(
                 onNavigateToStats = { navController.navigate(Screen.Stats(it, route.exteriorColor)) },
                 onNavigateToBattery = { navController.navigate(Screen.Battery(it, 0f, route.exteriorColor)) },
                 onNavigateToMileage = { navController.navigate(Screen.Mileage(it, route.exteriorColor)) },
-                onNavigateToDrives = { navController.navigate(Screen.Drives(it, route.exteriorColor)) },
+                onNavigateToDrives = { navController.navigate(Screen.DriveHistory(it, route.exteriorColor)) },
                 onNavigateToLongTrips = { navController.navigate(Screen.Trips(it, route.exteriorColor)) },
                 onNavigateToUpdates = { navController.navigate(Screen.Updates(it, route.exteriorColor)) },
                 onNavigateToSentryHistory = { navController.navigate(Screen.SentryHistory(it, route.exteriorColor)) },
@@ -1139,4 +1147,24 @@ fun NavGraph(
         }
         }
     }
+}
+
+@Composable
+private fun DriveHistoryDestination(
+    navController: NavHostController,
+    carId: Int,
+    exteriorColor: String?,
+    onNavigateBack: (() -> Unit)? = null
+) {
+    DrivesScreen(
+        carId = carId,
+        exteriorColor = exteriorColor,
+        onNavigateToDriveDetail = { driveId ->
+            navController.navigate(Screen.DriveDetail(carId, driveId, exteriorColor))
+        },
+        onNavigateToParkedDetail = { older, newer, location ->
+            navController.navigate(Screen.ParkedDetail(carId, older, newer, exteriorColor, location))
+        },
+        onNavigateBack = onNavigateBack
+    )
 }

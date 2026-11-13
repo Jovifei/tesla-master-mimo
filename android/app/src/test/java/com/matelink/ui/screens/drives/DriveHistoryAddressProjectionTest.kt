@@ -64,4 +64,11 @@ class DriveHistoryAddressProjectionTest {
             else it.copy(endAddress = "共同地点")
         }, result)
     }
+
+    @Test fun preciseLocationCanRefineRoadForOnlyTheMatchingEndpoint() {
+        val original = drive(7).copy(startAddress = "梅园路", endAddress = "银杏街")
+        val result = applyDriveAddressResult(listOf(original), listOf(target(original, false)), "青禾广场").single()
+        assertEquals("梅园路", result.startAddress)
+        assertEquals("青禾广场", result.endAddress)
+    }
 }

@@ -28,6 +28,23 @@ class DriveCurvePhysicalEvidenceTest {
         assertEquals(0, curve.validCount)
     }
 
+    @Test fun unrelatedRowsDoNotFragmentSpeedOrPowerButLongMissingIntervalsStillDo() {
+        val projection = projectDriveCurves(detail(positions = listOf(
+            DrivePosition(date = "2026-10-27T00:00:00Z", speed = 20.0, power = 4.0),
+            DrivePosition(date = "2026-10-27T00:00:05Z", batteryLevel = 55),
+            DrivePosition(date = "2026-10-27T00:00:10Z", speed = 40.0, power = -2.0),
+            DrivePosition(date = "2026-10-27T00:01:00Z", batteryLevel = 54),
+            DrivePosition(date = "2026-10-27T00:01:20Z", speed = 60.0, power = 8.0)
+        )))
+        for (series in listOf(projection.speed, projection.power)) {
+            assertEquals(listOf(0, 2, 4), series.sourceIndices)
+            assertEquals(setOf(2), series.gaps)
+        }
+        assertEquals(listOf(20f, 40f, 60f), projection.speed.values)
+        assertEquals(listOf(4f, -2f, 8f), projection.power.values)
+        assertEquals(0f, projection.distance.values.last(), 0f)
+    }
+
     @Test fun speedIsRawPreferredMphOnceAndEachSignalHasItsOwnQualification() {
         val positions = listOf(DrivePosition(date="2026-10-27T00:00:00Z", speed=60.0, power=-4.0, batteryLevel=0),
             DrivePosition(date="2026-10-27T00:00:10Z", speed=60.0, power=Double.MAX_VALUE, batteryLevel=101))

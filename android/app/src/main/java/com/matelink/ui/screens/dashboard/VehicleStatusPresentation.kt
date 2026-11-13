@@ -101,14 +101,12 @@ internal fun formatPressure(value: Double, units: Units): String =
 
 internal fun locationDisplay(
     geofence: String?,
-    cachedAddress: String?,
-    latitude: Double?,
-    longitude: Double?
-): String? = geofence.cleanLocation() ?: cachedAddress.cleanLocation() ?:
-    if (latitude != null && longitude != null) {
-        "%.4f, %.4f".format(Locale.ROOT, latitude, longitude)
-    } else {
-        null
+    cachedAddress: String?
+): String? = com.matelink.util.specificPlaceLabel(geofence)
+    ?: com.matelink.util.specificPlaceLabel(cachedAddress)
+    ?: geofence.cleanLocation()?.takeIf {
+        !it.any { ch -> ch in "省市区县乡镇" } &&
+            com.matelink.util.recordedRoadLabel(it) == null && ',' !in it && '，' !in it
     }
 
 internal fun formatSnapshotTime(value: String?): String? {

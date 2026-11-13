@@ -103,8 +103,10 @@ internal fun driveAddressTargets(drives: List<DriveData>, rows: List<DriveSummar
             if (validDriveCoordinates(latitude, longitude))
                 targets += DriveAddressTarget(drive, DriveAddressKey(identity, digest, start, latitude!!, longitude!!))
         }
-        if (drive.startAddress.isNullOrBlank()) add(true, drive.startLatitude, drive.startLongitude)
-        if (drive.endAddress.isNullOrBlank()) add(false, drive.endLatitude, drive.endLongitude)
+        if (com.matelink.util.specificPlaceLabel(drive.startAddress) == null)
+            add(true, drive.startLatitude, drive.startLongitude)
+        if (com.matelink.util.specificPlaceLabel(drive.endAddress) == null)
+            add(false, drive.endLatitude, drive.endLongitude)
     }
     return targets
 }
