@@ -39,7 +39,7 @@ class UiProductContractAndroidTest {
             compose.onRoot().captureToImage().asAndroidBitmap().compress(Bitmap.CompressFormat.PNG, 100, it)
         }
     }
-    @Test fun stackExposesOnlyOlderDatesAndNavigatesWithVerticalHeaderGestures() {
+    @Test fun stackExposesDatesAndNavigatesWithHorizontalHeaderGestures() {
         val scope = mutableStateOf("synthetic-A")
         compose.setContent { MateLinkTheme(darkTheme = false) {
             Column(Modifier.width(320.dp).verticalScroll(rememberScrollState())) {
@@ -55,9 +55,11 @@ class UiProductContractAndroidTest {
         compose.onNodeWithTag("day_stack_rear_2").assertIsDisplayed()
         capture("stack-neutral")
         compose.onNodeWithTag("day_stack_gesture").performTouchInput { swipeUp() }
+        compose.onNodeWithText("drive-0").assertIsDisplayed()
+        compose.onNodeWithTag("day_stack_gesture").performTouchInput { swipeLeft() }
         compose.onNodeWithText("drive-1").assertIsDisplayed()
         compose.onNodeWithText("parked-1").assertIsDisplayed()
-        compose.onNodeWithTag("day_stack_gesture").performTouchInput { swipeDown() }
+        compose.onNodeWithTag("day_stack_gesture").performTouchInput { swipeRight() }
         compose.onNodeWithText("drive-0").assertIsDisplayed()
         compose.onNodeWithTag("day_stack_rear_2").performClick()
         compose.onNodeWithText("drive-2").assertIsDisplayed()
@@ -66,7 +68,7 @@ class UiProductContractAndroidTest {
         compose.onNodeWithTag("day_stack_newer").assertIsNotEnabled()
         repeat(3) { compose.onNodeWithTag("day_stack_older").performClick() }
         compose.onNodeWithTag("day_stack_older").assertIsNotEnabled()
-        compose.onNodeWithTag("day_stack_gesture").performTouchInput { swipeUp() }
+        compose.onNodeWithTag("day_stack_gesture").performTouchInput { swipeLeft() }
         compose.onNodeWithText("drive-3").assertIsDisplayed()
     }
     @Test fun sevenDatesCanBeRaisedAndCollapsedWithoutDroppingParking() {
@@ -110,12 +112,12 @@ class UiProductContractAndroidTest {
     @Test fun preferencesPersistWithoutChangingOtherSettingsAndGridRetainsZero() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val prefs = AppearancePreferences(context)
-        prefs.setPalette(AppearancePalette.NEUTRAL); prefs.setReducedMotion(false)
+        prefs.setPalette(AppearancePalette.NEUTRAL); prefs.setReducedMotion(false); prefs.setDayStackAxis(DayStackAxis.HORIZONTAL)
         var renderedColor = 0L
         val scene = mutableStateOf(0)
         compose.setContent { MateLinkTheme(darkTheme = false) {
             renderedColor = MaterialTheme.colorScheme.background.value.toLong()
-            Column(Modifier.width(320.dp).background(MaterialTheme.colorScheme.background).padding(16.dp)) {
+            Column(Modifier.width(320.dp).verticalScroll(rememberScrollState()).background(MaterialTheme.colorScheme.background).padding(16.dp)) {
                 if (scene.value == 0) AppearancePreferencePanel() else ChargeActivityGrid(listOf(
                     ChargeActivityCell("11/07", null, "Unknown"), ChargeActivityCell("11/08", 0.0, "0.00 kWh"),
                     ChargeActivityCell("11/09", 24.2, "24.2 kWh")))
@@ -125,14 +127,17 @@ class UiProductContractAndroidTest {
         val neutral = renderedColor
         compose.onNodeWithTag("appearance_cream").performClick().assertIsSelected()
         compose.runOnIdle { assertEquals(AppearancePalette.CREAM, AppearancePreferences(context).palette()); assertNotEquals(neutral, renderedColor) }
-        compose.onNodeWithTag("appearance_reduced_motion").performClick()
+        compose.onNodeWithTag("day_axis_vertical").performClick().assertIsSelected()
+        compose.runOnIdle { assertEquals(DayStackAxis.VERTICAL, AppearancePreferences(context).dayStackAxis()) }
+        compose.onNodeWithTag("day_axis_horizontal").performClick().assertIsSelected()
+        compose.onNodeWithTag("appearance_reduced_motion").performScrollTo().performClick()
         compose.runOnIdle { assertTrue(AppearancePreferences(context).reducedMotion()); scene.value = 1 }
         compose.onNodeWithTag("charge_cell_11/08").performClick()
         compose.onNodeWithTag("charge_cell_selection").assertTextEquals("11/08 · 0.00 kWh")
         compose.onNodeWithTag("charge_cell_11/07").performClick()
         compose.onNodeWithTag("charge_cell_selection").assertTextEquals("11/07 · Unknown")
         capture("charge-grid-cream")
-        prefs.setPalette(AppearancePalette.NEUTRAL); prefs.setReducedMotion(false)
+        prefs.setPalette(AppearancePalette.NEUTRAL); prefs.setReducedMotion(false); prefs.setDayStackAxis(DayStackAxis.HORIZONTAL)
     }
     @Test fun refreshKeepsTheSelectedDateButUsesFreshRecords() {
         val source = mutableStateOf(groups)

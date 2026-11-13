@@ -7,11 +7,15 @@ import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import com.matelink.ui.theme.DayStackAxis
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -29,7 +33,7 @@ import androidx.compose.ui.zIndex
 import com.matelink.R
 import com.matelink.ui.theme.LocalAppearance
 
-/** Seven exposed date cards, with reversible selection. Only the header consumes vertical drags. */
+/** Seven exposed date cards, with reversible selection. Only the header handles direction-selectable drags; body scrolling is untouched. */
 @Composable
 fun <T> VerticalDayStack(
     groups: List<HistoryDateGroup<T>>, scopeKey: String, modifier: Modifier = Modifier,
@@ -42,27 +46,30 @@ fun <T> VerticalDayStack(
     LaunchedEffect(scopeKey, groups.map { it.dateKey }) {
         if (selectedKey != null && groups.none { it.dateKey == selectedKey }) selectedKey = null
     }
+    val axis = LocalAppearance.current.dayStackAxis
+    val horizontal = axis == DayStackAxis.HORIZONTAL
     val reduce = LocalAppearance.current.reducedMotion || !ValueAnimator.areAnimatorsEnabled()
     val reveal = remember { Animatable(0f) }
     val threshold = with(LocalDensity.current) { 48.dp.toPx() }
     val travel = with(LocalDensity.current) { 28.dp.toPx() }
     var drag by remember { mutableFloatStateOf(0f) }
     var direction by remember { mutableIntStateOf(1) }
+    LaunchedEffect(axis, scopeKey) { drag = 0f }
     fun select(target: Int) {
         val bounded = target.coerceIn(0, groups.lastIndex)
         if (bounded != index) { direction = if (bounded > index) -1 else 1; selectedKey = groups[bounded].dateKey }
     }
     fun toggle(target: Int) { select(if (target == index) 0 else target) }
-    LaunchedEffect(current.dateKey, reduce) {
+    LaunchedEffect(current.dateKey, reduce, axis) {
         reveal.snapTo(if (reduce) 0f else direction * travel)
         if (!reduce) reveal.animateTo(0f, tween(260))
     }
     val newer = stringResource(R.string.ui_day_newer)
     val older = stringResource(R.string.ui_day_older)
-    val hint = stringResource(R.string.ui_day_swipe_hint)
+    val hint = stringResource(if (horizontal) R.string.ui_day_swipe_horizontal else R.string.ui_day_swipe_hint)
     val pageStart = (index / 7) * 7
     val pageEnd = minOf(pageStart + 7, groups.size)
-    val rear = (pageStart until pageEnd).filter { it != 0 }
+    val rear = (pageStart until pageEnd).filter { it != pageStart }
     val layerHeight = (44f * LocalDensity.current.fontScale.coerceAtLeast(1f)).dp
     val shape = RoundedCornerShape(16.dp)
     Column(modifier.fillMaxWidth().testTag("vertical_day_stack")) {
@@ -82,7 +89,11 @@ fun <T> VerticalDayStack(
                 }
             }
             Surface(Modifier.fillMaxWidth().padding(top = layerHeight * rear.size).zIndex(8f)
-                .graphicsLayer { translationY = reveal.value + if (reduce) 0f else (drag * .12f).coerceIn(-12f, 12f) },
+                .graphicsLayer {
+                    val displacement = reveal.value + if (reduce) 0f else (drag * .12f).coerceIn(-12f, 12f)
+                    translationX = if (horizontal) displacement else 0f
+                    translationY = if (horizontal) 0f else displacement
+                },
                 color = MaterialTheme.colorScheme.surface, shape = shape,
                 border = BorderStroke(.5.dp, MaterialTheme.colorScheme.outlineVariant), shadowElevation = if (index == 0) 0.dp else 4.dp) {
                 Column {
@@ -93,8 +104,12 @@ fun <T> VerticalDayStack(
                                 CustomAccessibilityAction(newer) { if (index > 0) { select(index - 1); true } else false },
                                 CustomAccessibilityAction(older) { if (index < groups.lastIndex) { select(index + 1); true } else false })
                         }
-                        .pointerInput(scopeKey, current.dateKey, groups.map { it.dateKey }) {
-                            detectVerticalDragGestures(onDragStart = { drag = 0f }, onDragCancel = { drag = 0f },
+                        .pointerInput(scopeKey, current.dateKey, groups.map { it.dateKey }, axis) {
+                            if (horizontal) detectHorizontalDragGestures(
+                                onDragStart = { drag = 0f }, onDragCancel = { drag = 0f },
+                                onHorizontalDrag = { change, amount -> change.consume(); drag += amount },
+                                onDragEnd = { select(dayStackTarget(index, groups.size, drag, threshold)); drag = 0f })
+                            else detectVerticalDragGestures(onDragStart = { drag = 0f }, onDragCancel = { drag = 0f },
                                 onVerticalDrag = { change, amount -> change.consume(); drag += amount },
                                 onDragEnd = { select(dayStackTarget(index, groups.size, drag, threshold)); drag = 0f })
                         }.padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 8.dp)) {
@@ -102,8 +117,8 @@ fun <T> VerticalDayStack(
                             Text(dayStackDateLabel(current.date), Modifier.weight(1f).testTag("day_stack_active_date")
                                 .semantics { liveRegion = LiveRegionMode.Polite },
                                 style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                            IconButton(onClick = { select(index - 1) }, enabled = index > 0, modifier = Modifier.testTag("day_stack_newer")) { Icon(Icons.Default.KeyboardArrowUp, newer) }
-                            IconButton(onClick = { select(index + 1) }, enabled = index < groups.lastIndex, modifier = Modifier.testTag("day_stack_older")) { Icon(Icons.Default.KeyboardArrowDown, older) }
+                            IconButton(onClick = { select(index - 1) }, enabled = index > 0, modifier = Modifier.testTag("day_stack_newer")) { Icon(if (horizontal) Icons.AutoMirrored.Filled.KeyboardArrowLeft else Icons.Default.KeyboardArrowUp, newer) }
+                            IconButton(onClick = { select(index + 1) }, enabled = index < groups.lastIndex, modifier = Modifier.testTag("day_stack_older")) { Icon(if (horizontal) Icons.AutoMirrored.Filled.KeyboardArrowRight else Icons.Default.KeyboardArrowDown, older) }
                         }
                         Text(hint, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
