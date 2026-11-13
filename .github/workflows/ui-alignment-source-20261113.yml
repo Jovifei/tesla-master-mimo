@@ -1,0 +1,47 @@
+name: UI alignment immutable source 20261113
+on:
+  push:
+    branches: [codex/ui-product-app-20261109]
+    paths: ['.github/workflows/ui-alignment-source-20261113.yml']
+permissions:
+  contents: read
+jobs:
+  source:
+    if: github.repository == 'Jovifei/tesla-master-mimo'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Archive immutable platform source without user data or credentials
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p source-evidence
+          for pair in app:a75ae213a9cbd91d153e45c6236536e6c0b1327f mini:1a8cdbede3799a9d4f2bab39620e4c9b7e023fa6 web:9cece6f0ff5d9b24f6c026a7f6d5331becac41c3; do
+            name=${pair%%:*}; sha=${pair#*:}
+            git -c http.extraheader="AUTHORIZATION: bearer $GH_TOKEN" fetch --depth=1 origin "$sha"
+            git show -s --format='%H%n%T%n%P' "$sha" > "source-evidence/$name-identity.txt"
+            git ls-tree -r "$sha" > "source-evidence/$name-tree.txt"
+            SHA="$sha" OUT="source-evidence/$name-source.zip" python3 - <<'PY'
+          import os,subprocess,zipfile
+          sha=os.environ['SHA']
+          names=subprocess.check_output(['git','ls-tree','-r','--name-only',sha]).decode().splitlines()
+          suffixes=('.kt','.kts','.swift','.pbxproj','.xcworkspacedata','.xcscheme','.tsx','.ts','.js','.jsx','.mjs','.cjs','.json','.scss','.css','.yml','.yaml','.xml','.properties','.go','.mod','.sum','.py','.sh','.ps1','.md','.sql','.html','.txt','.toml','.gradle')
+          with zipfile.ZipFile(os.environ['OUT'],'w',zipfile.ZIP_DEFLATED) as z:
+            for p in names:
+              if not (p.endswith(suffixes) or p.endswith(('gradlew','Dockerfile','.gitignore'))): continue
+              b=subprocess.check_output(['git','show',sha+':'+p])
+              if len(b)>3_000_000 or b'\0' in b: continue
+              z.writestr(p,b)
+          PY
+          done
+          sha256sum source-evidence/* > source-evidence/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ui-alignment-source-20261113
+          path: source-evidence/
+          retention-days: 7
+          if-no-files-found: error
