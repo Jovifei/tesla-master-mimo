@@ -1,3 +1,4 @@
+import { historyCacheKey } from '../../services/history_cache'
 import React from 'react'
 import renderer, { act, type ReactTestRenderer } from 'react-test-renderer'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
@@ -26,6 +27,8 @@ let offline = false
 beforeEach(() => {
   vi.resetModules(); platform.values.clear(); platform.request.mockReset(); platform.login.mockReset(); platform.navigateTo.mockReset(); offline = false
   vi.stubEnv('TARO_APP_API_BASE_URL', origin); platform.values.set('matelink.wechat.session.v1', session('owner'))
+  // Fixed October fixtures explicitly request all-time history; they must not age out of a rolling 30-day product default.
+  platform.values.set(`${historyCacheKey('charges', 'owner', 'uid7', origin)}.query`, { startDate: '', endDate: '', minDistanceKm: 0 })
   platform.request.mockImplementation(async ({ url }: { url: string }) => {
     if (offline) throw new Error('synthetic offline')
     if (url.endsWith('/cars')) return response({ cars: [{ car_id: 7, vehicle_uid: 'uid7', name: '合成车辆' }] })

@@ -43,7 +43,7 @@ beforeEach(() => {
   platform.values.set('matelink.wechat.session.v1', { apiOrigin: 'https://api.example.test', accessToken: 'synthetic-access', refreshToken: null, expiresAt: null, userId: 'user-a', linkRequired: false })
   // These fixtures describe fixed October 14 history; keep the historical tests
   // on an explicit all-time selection instead of depending on the wall clock.
-  for (const uid of ['uid7', 'uid8', 'fixture-vehicle']) platform.values.set(`${historyCacheKey('drives', 'user-a', uid, 'https://api.example.test')}.query`, { startDate: '', endDate: '', minDistanceKm: 0 })
+  for (const kind of ['drives', 'charges'] as const) for (const uid of ['uid7', 'uid8', 'fixture-vehicle']) platform.values.set(`${historyCacheKey(kind, 'user-a', uid, 'https://api.example.test')}.query`, { startDate: '', endDate: '', minDistanceKm: 0 })
 })
 afterEach(async () => {
   if (renderer) { await act(async () => { platform.unload(); renderer!.unmount() }); renderer = null }
@@ -128,7 +128,7 @@ describe('history pages consume canonical data across layers', () => {
     await act(async () => { platform.show() }); await flush()
     expect(page.root.findByProps({ className: 'history-detail-overlay' }).findByProps({ ariaLabel: `${kind === 'drives' ? '总电耗' : '电池充入'} 2 kWh` })).toBeDefined()
     if (kind === 'drives') {
-      await click(page, '行程曲线')
+      await click(page, '详细曲线')
       expect(platform.navigateTo).toHaveBeenLastCalledWith({ url: '/pages/analysis/index?kind=curves&id=2' })
     } else {
       // Charge curves render inline in the detail now (App parity); the
@@ -190,7 +190,7 @@ describe('history pages consume canonical data across layers', () => {
       expect(panel.props.scrollTop).toBe(180)
       if (change === 'aliasUnknown') {
         if (kind === 'drives') {
-          await click(page, '行程曲线')
+          await click(page, '详细曲线')
           expect(platform.navigateTo).toHaveBeenLastCalledWith({ url: '/pages/analysis/index?kind=curves&id=11' })
         } else {
           expect(page.root.findAllByType('button' as React.ElementType).some(node => node.children.join('') === '查看SOC、功率、电压、电流、温度曲线')).toBe(false)
@@ -511,7 +511,7 @@ describe('history pages consume canonical data across layers', () => {
     await act(async () => { page.root.findByProps({ className: 'history-record' }).props.onClick() }); await flush()
     expect(page.root.findAllByProps({ ariaLabel: '时长 130 分钟' })).toHaveLength(2)
     expect(JSON.stringify(page.toJSON())).toContain('总电耗 -0.25 kWh')
-    await click(page, '行程曲线')
+    await click(page, '详细曲线')
     expect(platform.navigateTo).toHaveBeenCalledWith({ url: '/pages/analysis/index?kind=curves&id=1' })
   })
   it('renders the four qualified trip metrics and actual partial chart, retains proof on weak refresh and rejects incompatible peak units', async () => {

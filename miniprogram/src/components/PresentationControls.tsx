@@ -107,7 +107,7 @@ function ChargeGridState({ cells, unit }: { cells: ActivityCell[]; unit: string 
     <Text className="muted">{daily ? '一格一天 · 60 kWh 及以上为最深色' : '按已记录日期展示'} · {unit} · — 为尚未读到，不代表未充电。</Text>
     {daily ? <View className="charge-activity-weekdays">{['一','二','三','四','五','六','日'].map(day => <Text key={day}>{day}</Text>)}</View> : null}
     <View className="charge-activity-grid">
-      {Array.from({ length: leading }, (_, i) => <View key={`pad-${i}`} ariaHidden />)}
+      {Array.from({ length: leading }, (_, i) => <View key={`pad-${i}`} />)}
       {visible.map(cell => <Button key={cell.key}
         className={`charge-activity-cell level-${activityLevel(cell.value, max)}${selected === cell.key ? ' is-selected' : ''}`}
         ariaLabel={`${cell.key}，${cell.display}`} onClick={() => setSelected(cell.key)}>
