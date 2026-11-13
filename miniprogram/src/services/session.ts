@@ -30,7 +30,9 @@ export function readAppSession(storage: Pick<WechatStorage, 'getStorageSync'>): 
   // Review fixture: a stable local session so pages render synthetic data
   // without a Tesla login. Only active when the build enables the fixture.
   if (MOCK_FIXTURE_ENABLED) {
-    return { apiOrigin: 'https://api.teslalink.joviluma.com', accessToken: 'mock-fixture-token',
+    const apiOrigin = currentOrigin()
+    if (!apiOrigin) return null
+    return { apiOrigin, accessToken: 'mock-fixture-token',
       refreshToken: null, expiresAt: null, userId: MOCK_USER_ID, linkRequired: false }
   }
   const value = storage.getStorageSync(SESSION_KEY) as Partial<AppSession> | undefined

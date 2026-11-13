@@ -26,6 +26,18 @@ it('inserts a parked window after the newer drive between eligible neighbours', 
   expect(parked.minutes).toBe(139)
 })
 
+it.each([
+  { startDate: '2026-10-23' },
+  { endDate: '2026-10-23' },
+  { startDate: '2026-02-30T21:00:00Z' },
+  { startDate: '2026-10-23T21:00:00' },
+])('does not infer adjacency with an imprecise or invalid middle drive: %o', change => {
+  const newer = drive('n', 4, '2026-10-23T23:18:00Z', '2026-10-23T23:26:00Z')
+  const middle = drive('m', 2, '2026-10-23T21:00:00Z', '2026-10-23T21:10:00Z', change)
+  const older = drive('o', 3, '2026-10-23T18:42:00Z', '2026-10-23T20:59:00Z')
+  expect(verifiedParkedPairs([newer, older, middle]).size).toBe(0)
+})
+
 it('an intervening short drive breaks adjacency and does not fabricate a bridge parked window', () => {
   const fullSequence = [
     drive('n', 4, '2026-10-23T23:18:00Z', '2026-10-23T23:26:00Z'),

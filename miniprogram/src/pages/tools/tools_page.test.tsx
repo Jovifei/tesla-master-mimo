@@ -33,6 +33,14 @@ async function mount(kind: string, extra: Record<string, string> = {}) {
   await act(async () => { platform.show(); await new Promise(resolve => setTimeout(resolve, 0)) })
 }
 const text = () => JSON.stringify(renderer?.toJSON())
+it.each([true, false])('settings fixture=%s distinguishes synthetic and real sessions', async fixture => {
+  vi.stubEnv('TARO_APP_MOCK_FIXTURE', fixture ? 'true' : 'false')
+  if (fixture) vi.stubEnv('TARO_APP_API_BASE_URL', 'https://fixture.invalid/')
+  await mount('settings')
+  expect(renderer!.root.findAllByProps({ className: 'card fixture-data-notice' })).toHaveLength(fixture ? 1 : 0)
+  expect(text()).toContain(fixture ? '合成会话' : '当前微信会话可用')
+  if (fixture) { expect(text()).not.toContain('当前微信会话可用'); expect(platform.request).not.toHaveBeenCalled() }
+})
 async function click(label: string) { const button = renderer!.root.findAllByType('button').find(node => node.children.join('') === label)!; expect(button).toBeDefined(); await act(async () => { await button.props.onClick(); await new Promise(resolve => setTimeout(resolve, 0)) }) }
 it('uses update pagination metadata even if a raw page includes an invalid item', async () => {
   platform.request.mockImplementation(async ({ url }: { url: string }) => {

@@ -50,7 +50,7 @@ describe('advanced App analysis consumers', () => {
   })
 
   it('builds a real civil calendar and keeps unrecorded dates unknown rather than fabricating zero mileage', () => {
-    const cells = calendarCells('2026-02', [drive('feb', 0, 0, '2026-02-14T12:00:00+08:00')])
+    const cells = calendarCells('2026-02', [drive('feb', 0, 0, new Date(2026, 1, 14, 12).toISOString())])
     const days = cells.filter(cell => cell.day != null)
     expect(days).toHaveLength(28)
     expect(days.find(day => day.day?.endsWith('-14'))).toMatchObject({ count: 1, distance: { value: 0 } })
@@ -65,6 +65,7 @@ describe('advanced App analysis consumers', () => {
     const charge = { id: 'charge', startDate: '2026-10-14T09:00:00+08:00', endDate: '2026-10-14T09:30:00+08:00' } as Charge
     expect(buildParkedWindows([newer, older], [charge], true)[0].chargeOverlap).toBe(true)
     expect(buildParkedWindows([newer, older], [], false)[0].chargeCoverageComplete).toBe(false)
+    expect(buildParkedWindows([newer, older], [], false)[0].chargeTimesValid).toBe(true)
     expect(buildParkedWindows([{ ...newer, source: 'teslamate_archive' }, older], [], true)).toEqual([])
     expect(buildParkedWindows([newer, older], [{ ...charge, startDate: null }], true)[0].chargeCoverageComplete).toBe(false)
   })
@@ -102,5 +103,34 @@ describe('advanced App analysis consumers', () => {
     const newer = { ...drive('new', 1, 0, '2026-10-14T10:00:00+08:00'), sourceInstanceId: 'archive-A' }
     const unknown = { ...drive('middle', 1, 0), startDate: null, endDate: null, sourceInstanceId: 'archive-A' }
     expect(buildParkedWindows([newer, unknown, older], [], true)).toEqual([])
+  })
+
+  it('does not infer adjacency when a drive has only a date or an invalid calendar instant', () => {
+    const older = { ...drive('old', 1, 0, '2026-10-14T08:00:00+08:00'), sourceInstanceId: 'archive-A', sourceVehicleId: 'car-A' }
+    const newer = { ...drive('new', 1, 0, '2026-10-14T10:00:00+08:00'), sourceInstanceId: 'archive-A', sourceVehicleId: 'car-A' }
+    const middle = { ...drive('middle', 1, 0, '2026-10-14T09:00:00+08:00'), sourceInstanceId: 'archive-A', sourceVehicleId: 'car-A' }
+    for (const change of [
+      { startDate: '2026-10-14' }, { endDate: '2026-10-14' }, { startDate: '2026-10-14T09:00:00' },
+      { startDate: '2026-02-30T09:00:00Z' }, { endDate: '2026-02-30T09:00:00Z' },
+    ]) {
+      expect(buildParkedWindows([newer, { ...middle, ...change }, older], [], true), JSON.stringify(change)).toEqual([])
+    }
+  })
+
+  it('marks imprecise charge coverage incomplete without inventing an overlap', () => {
+    const older = { ...drive('old', 1, 0, '2026-10-14T08:00:00+08:00'), sourceInstanceId: 'archive-A', sourceVehicleId: 'car-A' }
+    const newer = { ...drive('new', 1, 0, '2026-10-14T10:00:00+08:00'), sourceInstanceId: 'archive-A', sourceVehicleId: 'car-A' }
+    const exact = { id: 'charge', startDate: '2026-10-14T09:00:00+08:00', endDate: '2026-10-14T09:30:00+08:00' } as Charge
+    for (const change of [
+      { startDate: '2026-10-14', endDate: null }, { endDate: null }, { endDate: '2026-10-14' }, { startDate: '2026-10-14T09:00:00' },
+      { startDate: '2026-02-30T09:00:00Z' }, { endDate: '2026-02-30T09:00:00Z' },
+      { endDate: '2026-10-14T08:30:00+08:00' },
+    ]) {
+      const uncertain = { ...exact, ...change }
+      expect(buildParkedWindows([newer, older], [uncertain], true)[0], JSON.stringify(change))
+        .toMatchObject({ chargeOverlap: false, chargeCoverageComplete: false, chargeTimesValid: false })
+      expect(buildParkedWindows([newer, older], [uncertain, exact], true)[0])
+        .toMatchObject({ chargeOverlap: true, chargeCoverageComplete: false, chargeTimesValid: false })
+    }
   })
 })

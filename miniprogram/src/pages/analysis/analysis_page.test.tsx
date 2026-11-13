@@ -52,6 +52,21 @@ beforeEach(() => {
 })
 afterEach(async () => { if (renderer) await act(async () => { platform.unload(); renderer!.unmount() }); renderer = null; vi.unstubAllEnvs() })
 
+it.each([true, false])('analysis fixture=%s labels synthetic content without changing real wording', async fixture => {
+  vi.stubEnv('TARO_APP_MOCK_FIXTURE', fixture ? 'true' : 'false')
+  if (fixture) vi.stubEnv('TARO_APP_API_BASE_URL', 'https://fixture.invalid/')
+  const page = await mount('stats')
+  const text = JSON.stringify(page.toJSON())
+  expect(page.root.findAllByProps({ className: 'card fixture-data-notice' })).toHaveLength(fixture ? 1 : 0)
+  expect(text).toContain(fixture ? '当前范围的合成记录，可进入对应行程。' : '当前范围的真实记录，可进入对应行程。')
+  if (fixture) {
+    expect(text).not.toContain('当前范围的真实记录')
+    const records = page.root.findAllByProps({ className: 'analysis-record' })
+    expect(records.some(record => record.findAllByType('text' as React.ElementType).some(node => node.children.join('').includes('合成测试数据')))).toBe(true)
+    expect(platform.request).not.toHaveBeenCalled()
+  }
+})
+
 describe('advanced App entry pages through actual authenticated consumers', () => {
   it('explains when ambiguous cached history is preserved but excluded from analysis', async () => {
     const { normalizeDrive } = await import('../../services/api')
@@ -100,6 +115,55 @@ describe('advanced App entry pages through actual authenticated consumers', () =
     const page = await mount('timeline'); await flush()
     expect(platform.request.mock.calls.some(([request]) => request.url.includes('/parked/1/2'))).toBe(true)
     expect(page.root.findAllByProps({ className: 'timeline-event' }).some(node => node.findAllByType('text').some(text => text.children.join('') === '驻车窗口'))).toBe(false)
+  })
+  it.each([
+    { invalidCharge: false, shouldShowWindow: true },
+    { invalidCharge: true, shouldShowWindow: false },
+  ])('uses window proof with known charge time validity (invalid=$invalidCharge)', async ({ invalidCharge, shouldShowWindow }) => {
+    const source = { source: 'teslamate_archive', source_instance_id: 'archive-a', source_vehicle_id: 'vehicle-a' }
+    const older = { ...raw(1), ...source, start_date: '2026-10-14T00:00:00Z', end_date: '2026-10-14T00:10:00Z' }
+    const newer = { ...raw(2), ...source, start_date: '2026-10-14T02:00:00Z', end_date: '2026-10-14T02:10:00Z' }
+    const charge = { charge_id: 3, ...source, quality_state: 'observed',
+      start_date: invalidCharge ? '2026-10-14' : '2026-10-13T01:00:00Z', end_date: invalidCharge ? null : '2026-10-13T02:00:00Z' }
+    if (!invalidCharge) {
+      const { normalizeCharge } = await import('../../services/api')
+      const { historyCacheKey, writeHistoryCache } = await import('../../services/history_cache')
+      const storage = { getStorageSync: (key: string) => platform.values.get(key), setStorageSync: (key: string, value: unknown) => { platform.values.set(key, value) }, getStorageInfoSync: () => ({ keys: [...platform.values.keys()] }) }
+      expect(writeHistoryCache(storage, historyCacheKey('charges', 'analysis-user', 'analysis-car', 'https://api.example.test'), [normalizeCharge(charge)!])).toBe(true)
+    }
+    platform.request.mockImplementation(async ({ url }: { url: string }) => {
+      if (url.endsWith('/cars')) return respond({ cars: [car] })
+      if (url.includes('/parked/1/2')) return respond({ older_drive_id: 1, newer_drive_id: 2, source: 'teslamate_archive',
+        start_date: older.end_date, end_date: newer.start_date, charge_sessions_complete: true })
+      if (url.includes('/standby')) return respond({ windows: [], availability: 'collecting', source: 'local_history' })
+      if (url.includes('/charges')) return respond({ charges: invalidCharge ? [charge] : [], meta: { page: 1, show: 20, total_pages: 1 } })
+      return respond({ drives: [newer, older], meta: { page: 1, show: 20, total_pages: 1 } })
+    })
+    const page = await mount('vampire'); await flush()
+    expect(platform.request.mock.calls.some(([request]) => request.url.includes('/parked/1/2'))).toBe(true)
+    const links = page.root.findAllByType('button').filter(node => node.children.join('') === '查看驻车详情')
+    expect(links.length > 0).toBe(shouldShowWindow)
+    if (invalidCharge) expect(JSON.stringify(page.toJSON())).toContain('充电历史覆盖未完整')
+  })
+
+  it('orders timeline events by the displayed civil day, with unknown dates last', async () => {
+    const at = (day: number, hour: number, minute: number) => new Date(2026, 10, day, hour, minute).toISOString()
+    const earlier = { ...raw(1), start_date: at(8, 23, 30) }
+    const later = { ...raw(2), start_date: at(9, 0, 10) }
+    const charges = [
+      { charge_id: 3, source: 'telemetry_mqtt', quality_state: 'observed', start_date: '2026-11-09' },
+      { charge_id: 4, source: 'telemetry_mqtt', quality_state: 'observed', start_date: '2026-02-30T12:00:00Z' },
+    ]
+    platform.request.mockImplementation(async ({ url }: { url: string }) => {
+      if (url.endsWith('/cars')) return respond({ cars: [car] })
+      if (url.includes('/charges')) return respond({ charges, meta: { page: 1, show: 20, total_pages: 1 } })
+      return respond({ drives: [earlier, later], meta: { page: 1, show: 20, total_pages: 1 } })
+    })
+    const page = await mount('timeline')
+    const events = page.root.findAllByProps({ className: 'card timeline-event' })
+    expect(events).toHaveLength(4)
+    expect(events.map(node => node.findAllByType('button')[0]?.children.join('')))
+      .toEqual(['查看行程 2', '查看充电 3', '查看行程 1', '查看充电 4'])
   })
   it('does not display direct parked details that contradict the complete drive boundaries', async () => {
     const source = { source: 'teslamate_archive', source_instance_id: 'archive-a', source_vehicle_id: 'vehicle-a' }
@@ -420,10 +484,12 @@ describe('advanced App entry pages through actual authenticated consumers', () =
     const page = await mount('mileage')
     await click(page, '2026 年')
     await click(page, '2026-10')
-    const day = page.root.findAllByProps({ className: 'calendar-day' }).find(node => node.props.ariaLabel?.startsWith('2026-10-14'))!
+    const recorded = new Date(start)
+    const dayKey = `${recorded.getFullYear()}-${String(recorded.getMonth() + 1).padStart(2, '0')}-${String(recorded.getDate()).padStart(2, '0')}`
+    const day = page.root.findAllByProps({ className: 'calendar-day' }).find(node => node.props.ariaLabel?.startsWith(dayKey))!
     expect(day).toBeDefined()
     await act(async () => { day.props.onClick() }); await flush()
-    expect(page.root.findAllByType('text').some(node => node.children.join('') === '2026-10-14 行程')).toBe(true)
+    expect(page.root.findAllByType('text').some(node => node.children.join('') === `${dayKey} 行程`)).toBe(true)
     await click(page, '查看行程 1')
     expect(platform.navigateTo).toHaveBeenCalledWith({ url: '/pages/analysis/index?kind=curves&id=1' })
   })

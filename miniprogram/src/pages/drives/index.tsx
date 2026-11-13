@@ -1,6 +1,7 @@
 import { VerticalDayStack } from '../../components/PresentationControls'
 import { historyDayGroups } from '../../domain/ui_presentation'
 import { useAppearance } from '../../services/appearance'
+import { MOCK_FIXTURE_ENABLED } from '../../services/mock_fixture'
 import { Button, Map as TaroMap, Picker, ScrollView, Text, View } from '@tarojs/components'
 import Taro, { useDidHide, useDidShow, usePageScroll, useUnload } from '@tarojs/taro'
 import { useEffect, useRef, useState } from 'react'
@@ -558,7 +559,9 @@ export default function DrivesPage() {
         {cacheWarning ? <Text className="error">在线数据已读到，但未保存到本机。</Text> : null}
       </View>
 
-      {car ? <View className="history-controls">
+      {MOCK_FIXTURE_ENABLED ? <View className="card fixture-data-notice" style={{ backgroundColor: '#fff7ed', borderColor: '#c2410c' }}><Text className="section-title" style={{ color: '#9a3412', marginBottom: 0 }}>合成测试数据，未连接真实车辆</Text></View> : null}
+      {car ? <View className="history-controls">
+
         <ScrollView scrollX className="history-filter-scroll"><HistoryDateChips kind="drives" query={query} onChange={updateQuery} /></ScrollView>
         <ScrollView scrollX className="history-filter-scroll"><View className="history-distance-chips">
           {[{ label: '全部', min: 0, max: undefined }, { label: '通勤 (< 50km)', min: 0, max: 50 },
@@ -660,6 +663,7 @@ export default function DrivesPage() {
             <Text className="section-title">行程详情</Text>
             <Button className="detail-curves-btn" onClick={() => { void Taro.navigateTo({ url: `/pages/analysis/index?kind=curves&id=${encodeURIComponent(selected.id)}` }) }}>行程曲线</Button>
           </View>
+          {MOCK_FIXTURE_ENABLED ? <View className="card fixture-data-notice" style={{ backgroundColor: '#fff7ed', borderColor: '#c2410c' }}><Text className="section-title" style={{ color: '#9a3412', marginBottom: 0 }}>合成测试数据，未连接真实车辆</Text></View> : null}
 
           {/* 1. 路线地图 */}
           {(() => {
@@ -847,6 +851,7 @@ export default function DrivesPage() {
         <ScrollView className="history-detail-overlay" scrollY style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%' }} ariaLabel="驻车详情">
         <View className="history-detail-surface">
           <View className="history-detail-heading" style={{ paddingTop: `${navGeo.navBarTop}px`, paddingRight: `${navGeo.capsuleRightPadding}px`, minHeight: `${navGeo.headerTotalHeight}px` }}><Button className="detail-back" onClick={closeParked}>‹ 返回</Button><Text className="section-title">驻车详情</Text></View>
+          {MOCK_FIXTURE_ENABLED ? <View className="card fixture-data-notice" style={{ backgroundColor: '#fff7ed', borderColor: '#c2410c' }}><Text className="section-title" style={{ color: '#9a3412', marginBottom: 0 }}>合成测试数据，未连接真实车辆</Text></View> : null}
           {(() => {
             // App build70 layered design: hero (address/time/duration/badge) →
             // battery boundaries → cloud detail that shows one honest pending

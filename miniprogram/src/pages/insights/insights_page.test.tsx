@@ -48,6 +48,21 @@ async function mount(kind: string) {
   return tree!
 }
 const shown = () => tree!.root.findAllByType('text').map(node => node.children.join('')).join('\n')
+it.each([true, false])('battery insight fixture=%s labels its source without changing real reports', async fixture => {
+  vi.stubEnv('TARO_APP_MOCK_FIXTURE', fixture ? 'true' : 'false')
+  if (fixture) vi.stubEnv('TARO_APP_API_BASE_URL', 'https://fixture.invalid/')
+  else {
+    health = { current_capacity: 50, max_capacity: 60, battery_health_percentage: 85, rated_efficiency: 140 }
+    healthMeta = { availability: 'available', source: 'fleet_telemetry_native' }
+  }
+  const page = await mount('battery')
+  expect(page.root.findAllByProps({ className: 'card fixture-data-notice' })).toHaveLength(fixture ? 1 : 0)
+  expect(shown()).toContain(fixture ? '容量与健康为合成测试数据，不使用当前SOC猜测。' : '容量与健康来自服务端实际报告，不使用当前SOC猜测。')
+  expect(shown()).toContain(fixture ? '合成容量报告' : '服务端容量报告')
+  expect(shown()).toContain(fixture ? '合成测试数据' : 'Fleet')
+  expect(page.root.findAllByProps({ className: 'metric' }).some(node => String(node.props.ariaLabel).startsWith(fixture ? '合成健康比例' : '服务端健康比例'))).toBe(true)
+  if (fixture) { expect(shown()).not.toContain('来源未标明'); expect(platform.request).not.toHaveBeenCalled() }
+})
 it('normalizes the independently selected date interval before filtering costs', async () => {
   await mount('cost')
   const dates = tree!.root.findByProps({ className: 'history-filter-row' }).findAllByType('picker' as React.ElementType)

@@ -2,13 +2,13 @@ import React from 'react'
 import TestRenderer, { act, type ReactTestRenderer } from 'react-test-renderer'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
-const platform = vi.hoisted(() => ({ request: vi.fn(), values: new Map<string, unknown>(), toast: vi.fn(), back: vi.fn(), clipboard: vi.fn(),
+const platform = vi.hoisted(() => ({ request: vi.fn(), read: vi.fn(), values: new Map<string, unknown>(), toast: vi.fn(), back: vi.fn(), clipboard: vi.fn(),
   systemPlatform: 'ios',
   load: ((_options: Record<string, string>) => {}) as (options: Record<string, string>) => void,
   hide: (() => {}) as () => void, show: (() => {}) as () => void, unload: (() => {}) as () => void }))
 vi.mock('@tarojs/components', () => ({ View: 'view', Text: 'text', Button: 'button', WebView: 'webview', Image: 'image' }))
 vi.mock('@tarojs/taro', () => ({ default: {
-  request: platform.request, getStorageSync: (key: string) => platform.values.get(key),
+  request: platform.request, getStorageSync: (key: string) => { platform.read(key); return platform.values.get(key) },
   setStorageSync: (key: string, value: unknown) => platform.values.set(key, value),
   removeStorageSync: (key: string) => platform.values.delete(key),
   getSystemInfoSync: () => ({ platform: platform.systemPlatform }),
@@ -21,8 +21,8 @@ const pending = (transactionId: string) => ({ transactionId, clientProof: `fixtu
 const respond = (data: unknown) => ({ statusCode: 200, data, header: {} })
 let renderer: ReactTestRenderer | null = null
 beforeEach(() => {
-  vi.resetModules(); vi.stubEnv('TARO_APP_API_BASE_URL', 'https://api.example.test')
-  platform.values.clear(); platform.systemPlatform = 'ios'; platform.request.mockReset(); platform.toast.mockReset(); platform.back.mockReset(); platform.clipboard.mockReset().mockResolvedValue({})
+  vi.resetModules(); vi.stubEnv('TARO_APP_API_BASE_URL', 'https://api.example.test'); vi.stubEnv('TARO_APP_MOCK_FIXTURE', 'false')
+  platform.values.clear(); platform.systemPlatform = 'ios'; platform.request.mockReset(); platform.read.mockReset(); platform.toast.mockReset(); platform.back.mockReset(); platform.clipboard.mockReset().mockResolvedValue({})
   platform.hide = () => {}; platform.show = () => {}
   platform.values.set(pendingKey, pending('a'))
 })
@@ -42,6 +42,27 @@ async function checkStatus() {
   const button = renderer!.root.findAllByType('button').find(node => node.children.join('') === '检查授权状态')!
   await act(async () => { button.props.onClick() }); await flush()
 }
+
+it.each([
+  ['ios', 'url'], ['devtools', 'url'], ['ios', 'callback_ref'], ['devtools', 'callback_ref'],
+] as const)('fixture authorization blocks %s %s without reading or modifying the existing session', async (system, entry) => {
+  vi.stubEnv('TARO_APP_MOCK_FIXTURE', 'true')
+  platform.systemPlatform = system
+  platform.values.set('matelink.wechat.session.v1', { private: 'existing-session' })
+  const before = [...platform.values.entries()]
+  const options: Record<string, string> = entry === 'url'
+    ? { url: encodeURIComponent('https://auth.tesla.com/oauth2/v3/authorize?state=fixture') }
+    : { callback_ref: 'fixture-callback' }
+  await mount(options)
+  expect(visible()).toContain('合成数据模式下授权不可用')
+  expect(renderer!.root.findAllByType('webview' as React.ElementType)).toHaveLength(0)
+  expect(renderer!.root.findAllByType('button').map(node => node.children.join('')).filter(label => label !== '‹')).toEqual(['返回'])
+  expect(platform.read).not.toHaveBeenCalledWith(pendingKey)
+  expect(platform.read).not.toHaveBeenCalledWith('matelink.wechat.session.v1')
+  expect([...platform.values.entries()]).toEqual(before)
+  expect(platform.request).not.toHaveBeenCalled()
+  expect(platform.clipboard).not.toHaveBeenCalled()
+})
 
 /** Real AuthPage and session/API layers; replace only platform transport, lifecycle and WebView. */
 it('WebView error payload never appears in rendered authorization error', async () => {

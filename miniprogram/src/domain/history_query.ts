@@ -1,5 +1,6 @@
 import type { WechatStorage } from '../services/session'
 import { isHistoryQuarantined } from './history'
+import { civilDay } from './ui_presentation'
 
 export type HistoryQuery = { startDate: string; endDate: string; minDistanceKm: number; maxDistanceKm?: number }
 export const emptyHistoryQuery = (): HistoryQuery => ({ startDate: '', endDate: '', minDistanceKm: 0 })
@@ -54,27 +55,34 @@ export function readHistoryQuery(storage: Pick<WechatStorage, 'getStorageSync'>,
 export function writeHistoryQuery(storage: Pick<WechatStorage, 'setStorageSync'>, scope: string, query: HistoryQuery): boolean {
   try { storage.setStorageSync(`${scope}.query`, normalizeHistoryQuery(query)); return true } catch { return false }
 }
+function historyDateOnly(value: string): boolean { return !/(?:T|\s)\d{1,2}:\d{2}/i.test(value) }
 export function historyDateTime(value: string | null | undefined): string {
-  const date = typeof value === 'string' && value ? new Date(value) : null
-  if (!date || !Number.isFinite(date.getTime())) return '暂无日期'
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+  const day = typeof value === 'string' ? civilDay(value) : null
+  if (!day || typeof value !== 'string') return '暂无日期'
+  if (historyDateOnly(value)) return day
+  const date = new Date(value)
+  return `${day} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
 }
 /** Compact timestamp used inside App detail cards and chart cursors. */
 export function historyDetailDateTime(value: string | null | undefined): string {
-  const date = typeof value === 'string' && value ? new Date(value) : null
-  if (!date || !Number.isFinite(date.getTime())) return '暂无日期'
+  const day = typeof value === 'string' ? civilDay(value) : null
+  if (!day || typeof value !== 'string') return '暂无日期'
+  if (historyDateOnly(value)) return day.slice(5)
+  const date = new Date(value)
   const pad = (number: number) => String(number).padStart(2, '0')
-  return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+  return `${day.slice(5)} ${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 /** Android formatEditorialDate: the card date follows the device's local calendar. */
 export function historyEditorialDate(value: string | null | undefined, is24Hour = true): string {
-  const date = typeof value === 'string' && value ? new Date(value) : null
-  if (!date || !Number.isFinite(date.getTime())) return '暂无日期'
+  const day = typeof value === 'string' ? civilDay(value) : null
+  if (!day || typeof value !== 'string') return '暂无日期'
+  if (historyDateOnly(value)) return day
+  const date = new Date(value)
   const pad = (number: number) => String(number).padStart(2, '0')
-  const day = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][date.getDay()]
+  const weekday = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][date.getDay()]
   const time = is24Hour ? `${pad(date.getHours())}:${pad(date.getMinutes())}`
     : `${pad(date.getHours() % 12 || 12)}:${pad(date.getMinutes())} ${date.getHours() < 12 ? '上午' : '下午'}`
-  return `${day} · ${date.getMonth() + 1}月${date.getDate()}日 · ${time}`
+  return `${weekday} · ${date.getMonth() + 1}月${date.getDate()}日 · ${time}`
 }
 export function filterHistory<T extends { startDate?: string | null; distanceKm?: number | null }>(rows: readonly T[], query: HistoryQuery): T[] {
   return rows.filter(row => {
@@ -82,9 +90,8 @@ export function filterHistory<T extends { startDate?: string | null; distanceKm?
     if (query.minDistanceKm > 0 && (row.distanceKm == null || !Number.isFinite(row.distanceKm) || row.distanceKm < query.minDistanceKm)) return false
     if (query.maxDistanceKm != null && (row.distanceKm == null || !Number.isFinite(row.distanceKm) || row.distanceKm < 0 || row.distanceKm >= query.maxDistanceKm)) return false
     if (!query.startDate && !query.endDate) return true
-    const date = typeof row.startDate === 'string' && row.startDate ? new Date(row.startDate) : null
-    if (!date || !Number.isFinite(date.getTime())) return false
-    const day = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+    const day = typeof row.startDate === 'string' ? civilDay(row.startDate) : null
+    if (!day) return false
     return (!query.startDate || day >= query.startDate) && (!query.endDate || day <= query.endDate)
   })
 }

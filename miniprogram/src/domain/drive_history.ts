@@ -1,5 +1,6 @@
 import type { Drive } from '../services/types'
-import { historyRowKey } from './history'
+import { historyRowKey, historyTimestamp } from './history'
+import { sameEnergyInstant } from './drive_energy'
 import { isAppDriveAnalysisEligible } from './app_history_projection'
 
 /** App DrivesScreen.buildDriveHistoryItems: list rows alternate drives with the
@@ -37,9 +38,13 @@ function parkedPairKey(older: Drive, newer: Drive): string {
   return JSON.stringify([historyRowKey(older), older.startDate, older.endDate, historyRowKey(newer), newer.startDate, newer.endDate])
 }
 
+function exactInstant(value: string | null | undefined): number | null {
+  return value && /(?:Z|[+-]\d{2}:\d{2})$/i.test(value) && sameEnergyInstant(value, value) ? historyTimestamp(value) : null
+}
+
 export function verifiedParkedPairs(fullHistory: readonly Drive[]): Set<string> {
   if (fullHistory.length < 2) return new Set()
-  if (fullHistory.some(d => !Number.isFinite(Date.parse(d.startDate ?? '')) || !Number.isFinite(Date.parse(d.endDate ?? '')))) {
+  if (fullHistory.some(d => exactInstant(d.startDate) === null || exactInstant(d.endDate) === null)) {
     return new Set()
   }
   const sorted = [...fullHistory].sort((a, b) => {

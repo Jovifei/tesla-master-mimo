@@ -20,7 +20,9 @@ let page: ReactTestRenderer | null = null
 const origin = 'https://api.example.test'
 const response = (data: unknown) => ({ statusCode: 200, data: { data }, header: {} })
 const car = { car_id: 7, vehicle_uid: 'drive-audit' }
-const base = Date.now() - 4 * 60 * 60 * 1000
+const now = new Date()
+// Keep the synthetic adjacent drives on one local day and safely before now.
+const base = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 12).getTime()
 const at = (minutes: number) => new Date(base + minutes * 60_000).toISOString()
 const drive = (id: number, minutes: number, km: number, quality = 'observed') => ({ drive_id: id, session_id: `drive-${id}`,
   source: 'teslamate_archive', source_instance_id: 'archive-A', source_vehicle_id: 'car-A', source_record_id: `record-${id}`,
@@ -48,6 +50,15 @@ it.each(['short', 'quarantined'] as const)('does not bridge a hidden %s drive on
   expect(view.root.findAllByProps({ className: 'history-record history-parked' })).toHaveLength(0)
   expect(view.root.findAllByProps({ className: 'history-record' })).toHaveLength(2)
   expect(JSON.stringify(view.toJSON())).not.toContain('来源身份未确认的历史记录已保留')
+})
+
+it('does not request or display a parked proof across a date-only middle drive', async () => {
+  const records = [drive(3, 120, 2), { ...drive(2, 60, 2), start_date: at(60).slice(0, 10) }, drive(1, 0, 2)]
+  platform.request.mockImplementation(async ({ url }: { url: string }) => url.endsWith('/cars') ? response({ cars: [car] }) :
+    response({ drives: records, meta: { page: 1, show: 20, total_pages: 1 } }))
+  const view = await mount()
+  expect(platform.request.mock.calls.some(([request]) => request.url.endsWith('/parked/1/3'))).toBe(false)
+  expect(view.root.findAllByProps({ className: 'history-record history-parked' })).toHaveLength(0)
 })
 
 it('reports retained ambiguous legacy history without showing or counting it', async () => {

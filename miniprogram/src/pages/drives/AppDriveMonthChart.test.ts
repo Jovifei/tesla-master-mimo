@@ -7,7 +7,7 @@ describe('App monthly drive chart', () => {
     const rows = [
       { startDate: '2026-07-02T12:00:00+08:00' },
       { startDate: '2026-07-04T12:00:00+08:00' },
-      { startDate: '2026-09-01T12:00:00+08:00' },
+      { startDate: '2026-09-15T12:00:00+08:00' },
     ] as Drive[]
     const groups = appDriveMonthCounts(rows)
     expect(groups.slice(0, 3)).toEqual([

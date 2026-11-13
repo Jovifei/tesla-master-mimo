@@ -103,6 +103,32 @@ it('preserves cost cents and estimate labels while rejecting invalid numeric cel
   expect(civilDay('2026-02-30')).toBeNull()
   expect(civilDay('2026-02-30T01:00:00Z')).toBeNull()
 })
+it('validates recognizable calendar prefixes and preserves local parsing for valid dates', () => {
+  const localDay = (value: string) => {
+    const local = new Date(value)
+    return `${local.getFullYear()}-${String(local.getMonth() + 1).padStart(2, '0')}-${String(local.getDate()).padStart(2, '0')}`
+  }
+  expect(civilDay('2026-02-28')).toBe('2026-02-28')
+  for (const value of [
+    '2026-02-28 12:00:00', '2026-02-28T12:00:00Z', '2026-02-28t12:00:00Z',
+    '2024-02-29T12:00:00Z', '2026-2-3', '2026/02/28', '2024/2/29',
+    ' 2026/2/28 12:00:00 ', '2026-002-028', '002026/02/28', '0001/02/29',
+    '2/28/2026', '02-29-2024', '2/29/2000', '2/29/24', '32/2/29', '50/2/28',
+    '2026-03-01T00:30:00+08:00',
+  ]) expect(civilDay(value)).toBe(localDay(value))
+  for (const value of [
+    '2026-02-30 12:00:00', '2026-02-30T12:00:00Z', '2026-02-30t12:00:00Z',
+    '2026-02-29T12:00:00Z', '2026-2-30', '2026/02/30', '2025/2/29',
+    ' 2026/2/30 12:00:00 ', '2026-002-030', '002026/02/30',
+    '2/30/2026', ' 2/30/2026 12:00:00 ', '2/29/1900', '2/29/50', 'not-a-date',
+  ]) expect(civilDay(value)).toBeNull()
+})
+it('keeps year-first pure dates on their stated calendar day across time zones', () => {
+  for (const value of ['2026-02-03', ' 2026-02-03 ', '2026-2-3', ' 2026/02/03 ', '2026/2/3']) {
+    expect(civilDay(value)).toBe('2026-02-03')
+  }
+  expect(civilDay(' 2026-02-30 ')).toBeNull()
+})
 it('refreshes the selected day, forgets a removed selection and cancels multi-touch', async () => {
   const scene = (data = groups) => <VerticalDayStack groups={data} scopeKey="stable">{group => <span>{group.items.map(item => item.key).join(',')}</span>}</VerticalDayStack>
   await act(async () => { tree = TestRenderer.create(scene()) })

@@ -1,6 +1,7 @@
 import React from 'react'
 import renderer, { act, type ReactTestRenderer } from 'react-test-renderer'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { historyCacheKey } from '../../services/history_cache'
 const platform = vi.hoisted(() => ({ request: vi.fn(), login: vi.fn(), values: new Map<string, unknown>(), navigateTo: vi.fn(),
   show: (() => {}) as () => void, hide: (() => {}) as () => void, unload: (() => {}) as () => void }))
 vi.mock('@tarojs/components', () => ({ View: 'view', Text: 'text', Button: 'button', Picker: 'picker', Input: 'input', Image: 'image', Map: 'map', ScrollView: 'scroll-view', Canvas: 'canvas', Slider: 'slider' }))
@@ -26,6 +27,8 @@ let offline = false
 beforeEach(() => {
   vi.resetModules(); platform.values.clear(); platform.request.mockReset(); platform.login.mockReset(); platform.navigateTo.mockReset(); offline = false
   vi.stubEnv('TARO_APP_API_BASE_URL', origin); platform.values.set('matelink.wechat.session.v1', session('owner'))
+  // The fixed October fixture is not intended to test the default date range.
+  platform.values.set(`${historyCacheKey('charges', 'owner', 'uid7', origin)}.query`, { startDate: '', endDate: '', minDistanceKm: 0 })
   platform.request.mockImplementation(async ({ url }: { url: string }) => {
     if (offline) throw new Error('synthetic offline')
     if (url.endsWith('/cars')) return response({ cars: [{ car_id: 7, vehicle_uid: 'uid7', name: '合成车辆' }] })
@@ -52,6 +55,13 @@ async function edit(amount: string, currency: string) {
   await act(async () => { const fields = tree!.root.findAllByType('input'); fields[0].props.onInput({ detail: { value: amount } }); fields[1].props.onInput({ detail: { value: currency } }) })
 }
 const shown = () => tree!.root.findAllByType('text').map(node => node.children.join('')).join('\n')
+it('real charge detail keeps its original observed-quality wording', async () => {
+  vi.stubEnv('TARO_APP_MOCK_FIXTURE', 'false')
+  await mount(); await detail()
+  expect(shown()).toContain('记录质量：真实记录')
+  expect(shown()).not.toContain('合成观测')
+  expect(tree!.root.findByProps({ ariaLabel: '充电详情' }).findAllByProps({ className: 'card fixture-data-notice' })).toHaveLength(0)
+})
 it('warns only when an ambiguous cached charge is actually loaded and keeps it out of the list and totals', async () => {
   const warning = '来源身份未确认的历史记录已保留，但未计入当前展示或统计'
   await mount()

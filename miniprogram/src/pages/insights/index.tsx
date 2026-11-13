@@ -5,6 +5,7 @@ import { useRef, useState } from 'react'
 import { ApiError, ensureWechatSession, getApiOrigin, getApiSessionGeneration, matelinkApi } from '../../services/api'
 import { analysisApi } from '../../services/analysis_api'
 import { readAppSession } from '../../services/session'
+import { MOCK_FIXTURE_ENABLED } from '../../services/mock_fixture'
 import { useSessionRecoveryReload } from '../../services/use_session_recovery'
 import { readCarsCache } from '../../services/cars_cache'
 import { historyCacheKey, readHistoryCache, writeHistoryCache } from '../../services/history_cache'
@@ -207,6 +208,7 @@ export default function InsightsPage() {
 
   return <View className={`page insights-page subpage-page ${appearance.className}`}>
     <SubpageHeader title={titles[kind]} subtitle={carName(car)} />
+    {MOCK_FIXTURE_ENABLED ? <View className="card fixture-data-notice" style={{ backgroundColor: '#fff7ed', borderColor: '#c2410c' }}><Text className="section-title" style={{ color: '#9a3412', marginBottom: 0 }}>合成测试数据，未连接真实车辆</Text></View> : null}
     {cars.length > 1 ? <Picker mode="selector" range={cars.map(value => carName(value))} value={Math.max(0, cars.findIndex(row => row.stableId === car?.stableId))} onChange={event => { const next = cars[Number(event.detail.value)]; if (next) void load(next) }}><View className="status">切换车辆：{carName(car)}</View></Picker> : null}
     <Button className="button-secondary" loading={loading} onClick={() => { void load(currentCar.current ?? undefined) }}>刷新数据</Button>
     {loading ? <LoadingIndicator label="正在读取所选车辆数据…" compact /> : null}
@@ -221,12 +223,12 @@ export default function InsightsPage() {
     </View> : null}
 
     {car && kind === 'battery' ? <>
-      <View className="card"><SectionHeading icon="battery" title="电池容量" /><Text className="muted">容量与健康来自服务端实际报告，不使用当前SOC猜测。</Text>
+      <View className="card"><SectionHeading icon="battery" title="电池容量" /><Text className="muted">{MOCK_FIXTURE_ENABLED ? '容量与健康为合成测试数据，不使用当前SOC猜测。' : '容量与健康来自服务端实际报告，不使用当前SOC猜测。'}</Text>
         <View className="metric-grid"><MetricValue label="当前容量" value={health?.currentCapacityKwh ?? null} unit="kWh" /><MetricValue label="原始容量" value={health?.maxCapacityKwh ?? null} unit="kWh" /></View>
-        <Text className="muted">{healthEvidence?.availability === 'unsupported' ? '此数据源尚未提供电池健康合同' : health ? '服务端容量报告' : '暂无合格容量报告'}</Text>
+        <Text className="muted">{healthEvidence?.availability === 'unsupported' ? '此数据源尚未提供电池健康合同' : health ? MOCK_FIXTURE_ENABLED ? '合成容量报告' : '服务端容量报告' : '暂无合格容量报告'}</Text>
         <Text className="metric-source">{sourceLabel(healthEvidence?.source)} · {healthEvidence?.observedAt || '报告时间未提供'}</Text>
       </View>
-      <View className="card"><SectionHeading icon="shield" title="电池健康" /><View className="metric-grid"><MetricValue label="服务端健康比例" value={health?.healthPercentage ?? null} unit="%" /><MetricValue label="容量衰减" value={health?.healthPercentage != null ? 100 - health.healthPercentage : null} unit="%" /><MetricValue label="额定能耗" value={health?.ratedEfficiencyWhKm != null ? health.ratedEfficiencyWhKm / 10 : null} unit="kWh/100km" /></View></View>
+      <View className="card"><SectionHeading icon="shield" title="电池健康" /><View className="metric-grid"><MetricValue label={MOCK_FIXTURE_ENABLED ? '合成健康比例' : '服务端健康比例'} value={health?.healthPercentage ?? null} unit="%" /><MetricValue label="容量衰减" value={health?.healthPercentage != null ? 100 - health.healthPercentage : null} unit="%" /><MetricValue label="额定能耗" value={health?.ratedEfficiencyWhKm != null ? health.ratedEfficiencyWhKm / 10 : null} unit="kWh/100km" /></View></View>
       <View className="card"><SectionHeading icon="distance" title="续航信息" /><View className="metric-grid"><MetricValue label="最大报告续航" value={health?.maxRangeKm ?? null} unit="km" /><MetricValue label="当前报告续航" value={health?.currentRangeKm ?? status?.ratedRange ?? null} unit="km" /></View><Text className="muted">当前车辆续航读数与电池健康证据分别展示，缺失健康不会被SOC替代。</Text></View>
       <View className="card"><SectionHeading icon="chart" title="健康趋势与检测" /><Text className="muted">只在来源返回合格的连续容量历史时绘制趋势；当前接口未提供趋势样本，不生成示例曲线。车辆服务模式检测请在车辆内进行。</Text></View>
     </> : null}

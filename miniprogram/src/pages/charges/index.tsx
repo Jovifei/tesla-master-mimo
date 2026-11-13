@@ -1,6 +1,7 @@
 import { ChargeActivityGrid } from '../../components/PresentationControls'
 import { civilDay } from '../../domain/ui_presentation'
 import { useAppearance } from '../../services/appearance'
+import { MOCK_FIXTURE_ENABLED } from '../../services/mock_fixture'
 import { Button, Map as TaroMap, Picker, ScrollView, Text, View } from '@tarojs/components'
 import Taro, { useDidHide, useDidShow, usePageScroll, useUnload } from '@tarojs/taro'
 import { useEffect, useRef, useState } from 'react'
@@ -614,20 +615,24 @@ export default function ChargesPage() {
   const acEfficiency = selected ? qualifiedAcEnergyBalance(selected)?.efficiencyPercent ?? null : null
   const trustedItems = costRows(appChargeListRows(filterHistory(items, emptyHistoryQuery()), showShortCharges))
   const visibleItems = filterHistory(trustedItems.filter(matchesSecondaryFilters), query)
-  const chartItems = filterHistory((intervalView?.items ?? statisticsRows(items)).filter(matchesSecondaryFilters), query)
-  const chartCurrencies = [...new Set(chartItems.filter(row => row.cost != null && Number.isFinite(row.cost) && row.cost >= 0).map(row => row.currencyCode ?? row.currency).filter((code): code is string => Boolean(code)))]
+  const chartSource = (intervalView?.items ?? statisticsRows(items)).filter(matchesSecondaryFilters)
+  const chartItems = filterHistory(chartSource, query)
+  const unclassifiedCount = filterHistory(chartSource, { ...query, startDate: '', endDate: '' })
+    .filter(row => typeof row.startDate !== 'string' || civilDay(row.startDate) === null).length
+  const chartRows = chartItems.flatMap(row => {
+    const day = typeof row.startDate === 'string' ? civilDay(row.startDate) : null
+    return day ? [{ row, day }] : []
+  })
+  const chartCurrencies = [...new Set(chartRows.map(({ row }) => row).filter(row => row.cost != null && Number.isFinite(row.cost) && row.cost >= 0).map(row => row.currencyCode ?? row.currency).filter((code): code is string => Boolean(code)))]
   const chartCurrency = chartCurrencies.length === 1 ? chartCurrencies[0] : null
   const locationOptions = ['位置', ...new Set(items.map(item => displayAddress(item.address)).filter(value => value !== '位置未知'))]
   const months = new Map<string, { label: string; energy: number; energyKnown: number; cost: number; costKnown: number; costEstimated: boolean; count: number }>()
-  for (const row of chartItems) {
-    const date = row.startDate ? new Date(row.startDate) : null
-    if (!date || !Number.isFinite(date.getTime())) continue
-    const key = civilDay(row.startDate)!
-    const month = months.get(key) ?? { label: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`, energy: 0, energyKnown: 0, cost: 0, costKnown: 0, costEstimated: false, count: 0 }
+  for (const { row, day } of chartRows) {
+    const month = months.get(day) ?? { label: day, energy: 0, energyKnown: 0, cost: 0, costKnown: 0, costEstimated: false, count: 0 }
     month.count++
     if (row.energyAddedKwh != null && Number.isFinite(row.energyAddedKwh) && row.energyAddedKwh >= 0) { month.energy += row.energyAddedKwh; month.energyKnown++ }
     if (row.cost != null && Number.isFinite(row.cost) && row.cost >= 0 && chartCurrency != null && (row.currencyCode ?? row.currency) === chartCurrency) { month.cost += row.cost; month.costKnown++; month.costEstimated ||= row.costProvenance === 'estimate' }
-    months.set(key, month)
+    months.set(day, month)
   }
   const chartMonths = [...months.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([, month]) => month)
   const chartValue = (month: typeof chartMonths[number]) => chartKind === 'energy' ? month.energy : chartKind === 'cost' ? month.cost : month.count
@@ -653,7 +658,9 @@ export default function ChargesPage() {
         {cacheWarning ? <Text className="error">在线数据已读到，但未保存到本机。</Text> : null}
       </View>
 
-      {car ? <View className="history-controls">
+      {MOCK_FIXTURE_ENABLED ? <View className="card fixture-data-notice" style={{ backgroundColor: '#fff7ed', borderColor: '#c2410c' }}><Text className="section-title" style={{ color: '#9a3412', marginBottom: 0 }}>合成测试数据，未连接真实车辆</Text></View> : null}
+      {car ? <View className="history-controls">
+
         <ScrollView scrollX className="history-filter-scroll"><HistoryDateChips kind="charges" query={query} onChange={updateQuery} /></ScrollView>
         <View className="history-charge-filter-row">
           <Picker mode="selector" range={['全部', 'AC', 'DC']} value={chargeTypeFilter === 'all' ? 0 : chargeTypeFilter === 'ac' ? 1 : 2} onChange={event => setChargeTypeFilter((['all', 'ac', 'dc'] as const)[Number(event.detail.value)] || 'all')}>
@@ -687,19 +694,20 @@ export default function ChargesPage() {
         <Button className="button" onClick={() => setNotices([])}>关闭提示</Button>
       </View> : null}
       {car && !loading ? <HistoryIntervalSummary interval={intervalView} query={query} kind="charges" /> : null}
-      {car && chartMonths.length ? <View className="card charge-month-chart">
+      {car && (chartMonths.length > 0 || unclassifiedCount > 0) ? <View className="card charge-month-chart">
         <Text className="section-title">充电趋势</Text>
         <View className="charge-chart-tabs">
           {([['energy', '电量'], ['cost', '费用'], ['count', '次数']] as const).map(([kind, label]) =>
             <Button key={kind} className={`charge-chart-tab ${chartKind === kind ? 'charge-chart-tab-active' : ''}`} onClick={() => setChartKind(kind)}>{label}</Button>)}
         </View>
-        <ChargeActivityGrid unit={chartKind === 'energy' ? 'kWh' : chartKind === 'count' ? '次' : chartCurrency || '币种待确认'} cells={chartMonths.map(month => ({
+        {chartMonths.length ? <ChargeActivityGrid unit={chartKind === 'energy' ? 'kWh' : chartKind === 'count' ? '次' : chartCurrency || '币种待确认'} cells={chartMonths.map(month => ({
           key: month.label, label: month.label.slice(5), value: chartKnown(month) ? chartValue(month) : null,
           precision: chartKind === 'cost' ? 2 : chartKind === 'count' ? 0 : 1,
           approximate: (chartKind === 'cost' && month.costEstimated) || chartKnown(month) < month.count,
           display: `${chartKnown(month) ? `${chartKind === 'cost' && month.costEstimated ? '含估算 ' : ''}${chartValue(month).toFixed(chartKind === 'count' ? 0 : 2)} ${chartKind === 'energy' ? 'kWh' : chartKind === 'count' ? '次' : chartCurrency}` : '未知'} · 已知 ${chartKnown(month)} / ${month.count} 条`,
-        }))} />
-        <Text className="muted">统计已返回的 {chartItems.length} 条记录；费用仅在同币种时合计。</Text>
+        }))} /> : <Text className="muted">暂无可按日期归类的充电记录。</Text>}
+        <Text className="muted">统计已返回的 {chartRows.length} 条记录；费用仅在同币种时合计。</Text>
+        {unclassifiedCount > 0 ? <Text className="muted">另有 {unclassifiedCount} 条记录日期无法确认，{query.startDate || query.endDate ? '无法判断是否属于当前日期范围，未计入日格。' : '未计入日格。'}</Text> : null}
       </View> : null}
       {noticeLimited ? <Text className="muted history-notice-limit">本机前台提示记录不可写或已达上限，后续提示暂停；历史仍可查看</Text> : null}
 
@@ -784,6 +792,7 @@ export default function ChargesPage() {
         <ScrollView className="history-detail-overlay" scrollY scrollTop={detailScrollTop.current} onScroll={event => { detailScrollTop.current = event.detail.scrollTop }} style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%' }} ariaLabel="充电详情">
         <View className="history-detail-surface">
           <View className="history-detail-heading" style={{ paddingTop: `${navGeo.navBarTop}px`, paddingRight: `${navGeo.capsuleRightPadding}px`, minHeight: `${navGeo.headerTotalHeight}px` }}><Button className="detail-back" onClick={closeDetail}>‹ 返回</Button><Text className="section-title">充电详情</Text></View>
+          {MOCK_FIXTURE_ENABLED ? <View className="card fixture-data-notice" style={{ backgroundColor: '#fff7ed', borderColor: '#c2410c' }}><Text className="section-title" style={{ color: '#9a3412', marginBottom: 0 }}>合成测试数据，未连接真实车辆</Text></View> : null}
           <View className="card charge-detail-intro"><Text className="section-title">位置与费用</Text><Text className="charge-detail-address">{displayAddress(selected.address)}</Text>
             <Text className="muted">开始 {historyDetailDateTime(selected.startDate)} · 结束 {historyDetailDateTime(selected.endDate)} · {modeLabel(selected)}</Text>
             <MetricValue label="充电费用" {...costLabel(selectedView)} icon="account" />
@@ -823,7 +832,8 @@ export default function ChargesPage() {
             <EvidenceCurve id="charge-detail-current" title="充电电流" unit="A" points={selectedEvidence.points} valueOf={point => point.currentA} selected={curveSampleIndex} onSelect={setCurveSampleIndex} isCurrent={() => selectedIdRef.current === selected.id} />
             <EvidenceCurve id="charge-detail-temperature" title="充电温度" unit="°C" points={selectedEvidence.points} valueOf={point => point.temperatureC} selected={curveSampleIndex} onSelect={setCurveSampleIndex} isCurrent={() => selectedIdRef.current === selected.id} />
           </> : null}
-          {selected.qualityState ? <Text className="muted">记录质量：{qualityLabel(selected.qualityState)}</Text> : null}
+          {selected.qualityState ? <Text className="muted">记录质量：{MOCK_FIXTURE_ENABLED && selected.source === 'mock_fixture' && selected.qualityState.trim().toLowerCase() === 'observed' ? '合成观测' : qualityLabel(selected.qualityState)}</Text> : null}
+
           {cacheWarning ? <Text className="error">当前详情尚未保存到本机。</Text> : null}
           {error ? <Text className="error">{error}</Text> : null}
         </View>

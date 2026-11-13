@@ -123,6 +123,41 @@ it('hidden lifecycle invalidates a late logout completion and re-show reads the 
 const pendingKey = 'matelink.wechat.tesla-auth.v1'
 const pending = (transactionId: string) => ({ transactionId, clientProof: `fixture-proof-${transactionId}`, apiOrigin: 'https://api.example.test', expiresAt: null })
 const button = (label: string) => renderer!.root.findAllByType('button').find(node => node.children.join('') === label)!
+
+it('fixture mode never resumes stored authorization or exposes account and consent actions', async () => {
+  vi.stubEnv('TARO_APP_MOCK_FIXTURE', 'true')
+  platform.values.set(pendingKey, pending('existing'))
+  platform.values.set('matelink.consent.v1', { termsVersion: 'existing', privacyVersion: 'existing' })
+  const before = [...platform.values.entries()]
+  await mount()
+  expect(visible()).toContain('合成数据模式')
+  const account = renderer!.root.findByProps({ className: 'card account-hero' })
+  expect(account.findByProps({ className: 'state-pill state-pill-ready' }).children.join('')).toBe('合成会话')
+  expect(account.findAllByType('text' as React.ElementType).some(node => node.children.join('').includes('合成会话，未连接真实账号或车辆'))).toBe(true)
+  expect(visible()).not.toContain('会话已建立')
+  for (const label of ['特斯拉账号登录', '重新授权 Tesla', '切换 Tesla 账号', '检查授权状态', '取消本次授权', '退出登录', '注销账号']) {
+    expect(renderer!.root.findAllByType('button').some(node => node.children.join('') === label)).toBe(false)
+  }
+  expect(renderer!.root.findAllByType('checkboxgroup' as React.ElementType)).toHaveLength(0)
+  const dataStatus = renderer!.root.findAllByType('button').find(node => node.findAllByProps({ className: 'more-system-label' }).some(label => label.children.join('') === '数据状态'))!
+  await act(async () => { dataStatus.props.onClick() })
+  expect(platform.switchTab).toHaveBeenCalledWith({ url: '/pages/vehicle/index' })
+  expect([...platform.values.entries()]).toEqual(before)
+  expect(platform.request).not.toHaveBeenCalled()
+  expect(platform.bindingRequest).not.toHaveBeenCalled()
+  expect(platform.login).not.toHaveBeenCalled()
+  expect(platform.navigate).not.toHaveBeenCalled()
+})
+
+it('real account retains the established-session badge and authorization explanation', async () => {
+  vi.stubEnv('TARO_APP_MOCK_FIXTURE', 'false')
+  await mount()
+  const account = renderer!.root.findByProps({ className: 'card account-hero' })
+  expect(account.findByProps({ className: 'state-pill state-pill-ready' }).children.join('')).toBe('会话已建立')
+  expect(account.findAllByType('text' as React.ElementType).some(node => node.children.join('').includes('使用特斯拉账号登录，授权在 Tesla 官方页面完成'))).toBe(true)
+  expect(visible()).not.toContain('合成会话')
+})
+
 async function consent() {
   await act(async () => { renderer!.root.findByType('checkboxgroup' as React.ElementType).props.onChange({ detail: { value: ['terms', 'privacy'] } }) })
 }

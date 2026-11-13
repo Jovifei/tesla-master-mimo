@@ -43,7 +43,9 @@ beforeEach(() => {
   platform.values.set('matelink.wechat.session.v1', { apiOrigin: 'https://api.example.test', accessToken: 'synthetic-access', refreshToken: null, expiresAt: null, userId: 'user-a', linkRequired: false })
   // These fixtures describe fixed October 14 history; keep the historical tests
   // on an explicit all-time selection instead of depending on the wall clock.
-  for (const uid of ['uid7', 'uid8', 'fixture-vehicle']) platform.values.set(`${historyCacheKey('drives', 'user-a', uid, 'https://api.example.test')}.query`, { startDate: '', endDate: '', minDistanceKm: 0 })
+  for (const kind of ['drives', 'charges'] as const) {
+    for (const uid of ['uid7', 'uid8', 'fixture-vehicle']) platform.values.set(`${historyCacheKey(kind, 'user-a', uid, 'https://api.example.test')}.query`, { startDate: '', endDate: '', minDistanceKm: 0 })
+  }
 })
 afterEach(async () => {
   if (renderer) { await act(async () => { platform.unload(); renderer!.unmount() }); renderer = null }
@@ -65,6 +67,19 @@ async function mount(kind: 'drives' | 'charges') {
   await act(async () => { platform.show() }); await flush()
   return renderer!
 }
+
+it.each(['drives', 'charges'] as const)('real %s page does not show a fixture banner', async kind => {
+  vi.stubEnv('TARO_APP_MOCK_FIXTURE', 'false')
+  platform.request.mockImplementation(async ({ url }: { url: string }) => {
+    if (url.endsWith('/cars')) return respond({ cars })
+    if (url.endsWith('/current')) return respond({ charge: null })
+    return respond({ [kind]: kind === 'drives' ? [summary] : [{ charge_id: 1, source: 'telemetry_mqtt', quality_state: 'observed', start_date: start, end_date: end, charge_energy_added: 2 }], meta: { page: 1, show: 20, total_pages: 1 } })
+  })
+  const page = await mount(kind)
+  expect(page.root.findAllByProps({ className: 'card fixture-data-notice' })).toHaveLength(0)
+  expect(page.root.findAllByProps({ className: 'history-record' }).length).toBeGreaterThan(0)
+})
+
 async function click(record: ReactTestRenderer, text: string) {
   const button = record.root.findAllByType('button').find(node => node.children.join('') === text)
   expect(button, text).toBeDefined()

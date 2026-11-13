@@ -4,6 +4,7 @@ import Taro, { useDidHide, useDidShow, useLoad, useUnload } from '@tarojs/taro'
 import { useRef, useState } from 'react'
 import { ApiError, getApiSessionGeneration, isTrustedAuthorizationURL, matelinkApi } from '../../services/api'
 import { readAppSession, readPendingTeslaAuthorization } from '../../services/session'
+import { MOCK_FIXTURE_ENABLED } from '../../services/mock_fixture'
 import LoadingIndicator from '../../components/LoadingIndicator'
 import SubpageHeader from '../../components/SubpageHeader'
 
@@ -58,7 +59,7 @@ export default function AuthPage() {
   }
 
   const claimAuthorization = () => {
-    if (claimInFlight.current || !pageAlive.current || !pageScope.current || !sameScope(pageScope.current)) return
+    if (MOCK_FIXTURE_ENABLED || claimInFlight.current || !pageAlive.current || !pageScope.current || !sameScope(pageScope.current)) return
     const run = ++claimRun.current
     const scope = captureScope()
     claimInFlight.current = true
@@ -80,7 +81,7 @@ export default function AuthPage() {
   }
 
   const resumeAuthorization = async () => {
-    if (!pageAlive.current) return
+    if (MOCK_FIXTURE_ENABLED || !pageAlive.current) return
     const operation = ++lifecycleEpoch.current
     const sessionGeneration = getApiSessionGeneration()
     const scope = captureScope()
@@ -107,6 +108,7 @@ export default function AuthPage() {
   }
 
   useLoad(options => {
+    if (MOCK_FIXTURE_ENABLED) return
     pageScope.current = captureScope()
     if (options?.callback_ref || options?.ticket) {
       void resumeAuthorization()
@@ -133,7 +135,7 @@ export default function AuthPage() {
   useUnload(invalidatePage)
 
   const copyOfficialEntry = async () => {
-    if (!url || !isTrustedAuthorizationURL(url) || !pageAlive.current || !pageScope.current || !sameScope(pageScope.current)) return
+    if (MOCK_FIXTURE_ENABLED || !url || !isTrustedAuthorizationURL(url) || !pageAlive.current || !pageScope.current || !sameScope(pageScope.current)) return
     const scope = captureScope(), operation = lifecycleEpoch.current
     try {
       await Taro.setClipboardData({ data: url })
@@ -142,6 +144,10 @@ export default function AuthPage() {
     } catch {
       if (pageAlive.current && operation === lifecycleEpoch.current && sameScope(scope)) setError('复制失败，请重试')
     }
+  }
+
+  if (MOCK_FIXTURE_ENABLED) {
+    return <View className={`page subpage-page ${appearance.className}`}><SubpageHeader title="Tesla 官方授权" subtitle="合成数据模式" /><View className="card"><Text className="muted">合成数据模式下授权不可用</Text><Button className="button" onClick={() => Taro.navigateBack()}>返回</Button></View></View>
   }
 
   if (exchanging) {

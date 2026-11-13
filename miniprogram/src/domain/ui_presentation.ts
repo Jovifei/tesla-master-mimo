@@ -13,14 +13,39 @@ export function verticalDayTarget(index: number, count: number, dx: number, dy: 
   return Math.max(0, Math.min(count - 1, current + (dy < 0 ? 1 : -1)))
 }
 export function civilDay(value: string | null | undefined): string | null {
-  if (!value) return null
+  if (typeof value !== 'string' || !value) return null
   // A civil date is not UTC midnight: keep it on the same day in every timezone.
-  const date = /^(\d{4})-(\d{2})-(\d{2})(?:$|T)/.exec(value)
-  if (date) {
-    const check = new Date(`${date[1]}-${date[2]}-${date[3]}T12:00:00Z`)
-    if (!Number.isFinite(check.getTime()) || check.getUTCFullYear() !== Number(date[1]) ||
-        check.getUTCMonth() + 1 !== Number(date[2]) || check.getUTCDate() !== Number(date[3])) return null
-    if (value.length === 10) return value
+  const trimmed = value.trim()
+  const datePart = trimmed.replace(/(?:T|\s)\d{1,2}:\d{2}.*$/i, '').trim()
+  if (/^\d{4}(?:[-/]\d{1,2})?$/.test(datePart) || /^\d{1,2}[-/]\d{4}$/.test(datePart) ||
+      /^(?:[a-z]+\s+\d{4}|\d{4}\s+[a-z]+)$/i.test(datePart)) return null
+  const pureIsoDate = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed)
+  const isoDate = pureIsoDate ?? /^([+-]\d{6}|\d{4})-(\d{2})-(\d{2})(?:$|[Tt])/.exec(value)
+  const yearFirst = /^(\d{4,})[-/](\d+)[-/](\d+)(?=$|[TtZz\s])/.exec(trimmed)
+  // Small leading numbers in legacy strings may mean a month rather than a year.
+  const date = isoDate ?? (yearFirst && Number(yearFirst[1]) > 31 ? yearFirst : null)
+  const monthFirst = /^(\d+)[-/](\d+)[-/](\d+)(?=$|[TtZz\s])/.exec(trimmed)
+  const monthDayYear = monthFirst && Number(monthFirst[1]) >= 1 && Number(monthFirst[1]) <= 12 ? monthFirst : null
+  const monthNames = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december']
+  const wordFirst = /^(?:(?:mon(?:day)?|tue(?:sday)?|wed(?:nesday)?|thu(?:rsday)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?),?\s+)?([a-z]+)\s+(\d{1,2}),?\s+(\d{4})(?=$|[\s,])/i.exec(trimmed)
+  const dayFirst = /^(?:(?:mon(?:day)?|tue(?:sday)?|wed(?:nesday)?|thu(?:rsday)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?),?\s+)?(\d{1,2})\s+([a-z]+),?\s+(\d{4})(?=$|[\s,])/i.exec(trimmed)
+  const monthWord = (wordFirst?.[1] ?? dayFirst?.[2])?.toLowerCase()
+  const wordMonth = monthWord ? monthNames.findIndex(name => name === monthWord || name.slice(0, 3) === monthWord) + 1 : 0
+  const wordCalendar = wordMonth ? [Number((wordFirst ?? dayFirst)![3]), wordMonth, Number(wordFirst?.[2] ?? dayFirst?.[1])] : null
+  const calendar = date ? [Number(date[1]), Number(date[2]), Number(date[3])] :
+    monthDayYear ? [Number(monthDayYear[3]), Number(monthDayYear[1]), Number(monthDayYear[2])] : wordCalendar
+  if (calendar) {
+    const [year, month, day] = calendar
+    const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0)
+    const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    if (!Number.isSafeInteger(year) || month < 1 || month > 12 || day < 1 || day > days[month - 1]) return null
+    if (pureIsoDate) return trimmed
+    if (calendar === wordCalendar && !/(?:T|\s)\d{1,2}:\d{2}/i.test(trimmed)) {
+      return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+    }
+    if (date === yearFirst && year >= 100 && /^\d{4,}[-/]\d+[-/]\d+$/.test(trimmed)) {
+      return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+    }
   }
   const d = new Date(value)
   if (!Number.isFinite(d.getTime())) return null

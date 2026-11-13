@@ -32,6 +32,7 @@ import { inspectHistoryCache, type HistoryCacheEvidence } from '../../services/h
 import { readTpmsProfile } from '../../services/tpms_profile'
 import { evaluateTpmsAlerts } from '../../domain/tpms_alerts'
 import { vehicleSnapshotDelay } from '../../domain/vehicle_polling'
+import { MOCK_FIXTURE_ENABLED } from '../../services/mock_fixture'
 
 function messageFor(error: unknown): string {
   if (error instanceof ApiError) return error.message
@@ -232,7 +233,7 @@ export default function VehiclePage() {
     setLoading(true)
     await ensureWechatSession()
     if (!foreground.current || version !== requestVersion.current) return
-    if (consumeIntent) {
+    if (consumeIntent && !MOCK_FIXTURE_ENABLED) {
       try {
         const owner = readAppSession(Taro)?.userId
         if (owner && consumeDataStatus(Taro, owner, getApiOrigin())) {
@@ -567,6 +568,7 @@ export default function VehiclePage() {
         <View className="dashboard-title"><Text>{car?.displayName || car?.name || '车辆'}</Text><Text>{dashboardVehicleSubtitle(car?.model, car?.trim) || '车型待识别'}</Text></View>
         <View className="dashboard-toolbar-right" style={{ paddingTop: `${headerGeometry.toolbarOffset}px` }}><View className="dashboard-toolbar-actions"><Text className={`dashboard-snapshot-badge dashboard-snapshot-${snapshot.kind}`} data-kind={snapshot.kind}>{snapshot.label}</Text><Button className="dashboard-icon-button" ariaLabel="刷新车辆" loading={loading} onClick={() => { void load() }}><DashboardIcon name="refresh" tone="muted" /></Button><Button className="dashboard-icon-button" ariaLabel="设置" onClick={settings}><DashboardIcon name="settings" tone="muted" /></Button></View><Text className="dashboard-report-time">{dashboardReportTime(status?.observedAt)}</Text></View>
       </View>
+      {MOCK_FIXTURE_ENABLED ? <View className="card vehicle-fixture-notice" style={{ backgroundColor: '#fff7ed', borderColor: '#c2410c' }}><Text className="section-title" style={{ color: '#9a3412', marginBottom: 0 }}>合成测试数据，未连接真实车辆</Text></View> : null}
       {cars.length > 1 ? <Picker mode="selector" range={cars.map(item => item.displayName || item.name || '车辆')} value={Math.max(0, cars.findIndex(item => item.stableId === car?.stableId))} onChange={selectCar}><View className="vehicle-selector"><Text>当前车辆 · {car?.displayName || car?.name || '请选择车辆'}</Text><Text>切换⌄</Text></View></Picker> : null}
       {car && status ? <>
         <DashboardHud status={status} dismissed={hudDismissed} onDismiss={() => setHudDismissed(true)} onExpand={() => setHudDismissed(false)} onOpen={() => { void Taro.switchTab({ url: activeDriving ? '/pages/drives/index' : '/pages/charges/index' }) }} />

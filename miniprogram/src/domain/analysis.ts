@@ -1,5 +1,6 @@
 import type { Charge, Drive } from '../services/types'
-import { aggregateDriveHistory, isHistoryQuarantined, sortHistoryByStartDate } from './history'
+import { aggregateDriveHistory, historyTimestamp, isHistoryQuarantined, sortHistoryByStartDate } from './history'
+import { sameEnergyInstant } from './drive_energy'
 import { historyDateTime } from './history_query'
 import { sameParkedSource } from './drive_history'
 import { isAppDriveAnalysisEligible } from './app_history_projection'
@@ -32,26 +33,33 @@ export function calendarCells(month: string, rows: readonly Drive[]) {
   })
 }
 export type ParkedWindow = { olderId: string; newerId: string; startDate: string; endDate: string; minutes: number; source: string;
-  startSoc: number | null; endSoc: number | null; socDelta: number | null; energyKwh: null; chargeOverlap: boolean; chargeCoverageComplete: boolean; address: string | null }
+  startSoc: number | null; endSoc: number | null; socDelta: number | null; energyKwh: null; chargeOverlap: boolean; chargeCoverageComplete: boolean; chargeTimesValid: boolean; address: string | null }
 function validSoc(value: number | null) { return value != null && Number.isFinite(value) && value >= 0 && value <= 100 ? value : null }
+function exactInstant(value: string | null | undefined): number | null {
+  return value && /(?:Z|[+-]\d{2}:\d{2})$/i.test(value) && sameEnergyInstant(value, value) ? historyTimestamp(value) : null
+}
 export function buildParkedWindows(drives: readonly Drive[], charges: readonly Charge[], chargeCoverageComplete: boolean): ParkedWindow[] {
   // A row with an unknown position in the timeline may lie between any two drives.
-  if (drives.some(row => !Number.isFinite(Date.parse(row.startDate ?? '')) || !Number.isFinite(Date.parse(row.endDate ?? '')))) return []
+  if (drives.some(row => exactInstant(row.startDate) === null || exactInstant(row.endDate) === null)) return []
   const ordered = sortHistoryByStartDate(drives).reverse()
   const windows: ParkedWindow[] = []
-  const chargeTimesComplete = chargeCoverageComplete && charges.every(charge => !isHistoryQuarantined(charge) &&
-    Number.isFinite(Date.parse(charge.startDate ?? '')) && (charge.endDate == null || Number.isFinite(Date.parse(charge.endDate))))
+  const chargeTimes = charges.map(charge => {
+    const start = exactInstant(charge.startDate), end = charge.endDate == null ? null : exactInstant(charge.endDate)
+    return { start, end, valid: !isHistoryQuarantined(charge) && start !== null && end !== null && end > start }
+  })
+  const chargeTimesValid = chargeTimes.every(charge => charge.valid)
+  const chargeTimesComplete = chargeCoverageComplete && chargeTimesValid
   for (let index = 1; index < ordered.length; index++) {
     const older = ordered[index - 1], newer = ordered[index]
     if (!isAppDriveAnalysisEligible(older) || !isAppDriveAnalysisEligible(newer)) continue
     const start = Date.parse(older.endDate ?? ''), end = Date.parse(newer.startDate ?? '')
     if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start || !sameParkedSource(older, newer)) continue
-    const chargeOverlap = charges.some(charge => !isHistoryQuarantined(charge) && Date.parse(charge.startDate ?? '') < end &&
-      (charge.endDate == null || Date.parse(charge.endDate) > start))
+    const chargeOverlap = chargeTimes.some(charge => charge.valid && charge.start !== null && charge.end !== null &&
+      charge.start < end && charge.end > start)
     const startSoc = validSoc(older.endBatteryLevel), endSoc = validSoc(newer.startBatteryLevel)
     windows.push({ olderId: older.id, newerId: newer.id, startDate: older.endDate!, endDate: newer.startDate!, minutes: (end - start) / 60000,
       source: older.source!, startSoc, endSoc, socDelta: startSoc != null && endSoc != null ? endSoc - startSoc : null,
-      energyKwh: null, chargeOverlap, chargeCoverageComplete: chargeTimesComplete, address: older.endAddress ?? newer.startAddress })
+      energyKwh: null, chargeOverlap, chargeCoverageComplete: chargeTimesComplete, chargeTimesValid, address: older.endAddress ?? newer.startAddress })
   }
   return windows.reverse()
 }

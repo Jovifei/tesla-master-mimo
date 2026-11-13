@@ -170,6 +170,38 @@ describe('history merge', () => {
     expect(sorted.map(item => item.id)).toEqual(['new', 'old', 'unknown'])
   })
 
+  it('sorts by local civil day, then precise instants, without changing the input', () => {
+    const localTime = (day: number, hour: number, minute: number) => new Date(2026, 10, day, hour, minute).toISOString()
+    const rows = Object.freeze([
+      { id: 'date-a', startDate: '2026-11-09' },
+      { id: 'invalid', startDate: '2026-02-30T12:00:00Z' },
+      { id: 'previous-evening', startDate: localTime(8, 23, 30) },
+      { id: 'early', startDate: localTime(9, 0, 10) },
+      { id: 'date-b', startDate: '2026-11-09' },
+      { id: 'late', startDate: localTime(9, 23, 30) },
+      { id: 'late-space', startDate: localTime(9, 20, 0).replace('T', ' ') },
+      { id: 'unknown', startDate: null },
+      { id: 'early-same', startDate: localTime(9, 0, 10).replace('Z', '+00:00') },
+      { id: 'invalid-text', startDate: 'not-a-date' },
+    ])
+    const before = [...rows]
+    const sorted = sortHistoryByStartDate(rows)
+    expect(sorted).not.toBe(rows)
+    expect(rows).toEqual(before)
+    expect(sorted.map(item => item.id)).toEqual([
+      'late', 'late-space', 'early', 'early-same', 'date-a', 'date-b', 'previous-evening', 'invalid', 'unknown', 'invalid-text',
+    ])
+  })
+
+  it('orders zoned timestamps by their actual instant, including sub-millisecond precision', () => {
+    const rows = [
+      { id: 'earlier-offset', startDate: '2026-11-09T18:00:00+09:00' },
+      { id: 'earlier-nanos', startDate: '2026-11-09T09:15:00.000000001Z' },
+      { id: 'later-nanos', startDate: '2026-11-09T18:15:00.000000009+09:00' },
+    ]
+    expect(sortHistoryByStartDate(rows).map(row => row.id)).toEqual(['later-nanos', 'earlier-nanos', 'earlier-offset'])
+  })
+
   it('differentiates records from different source instances even if they share the same session ID', () => {
     const itemA = { id: 'row-1', sessionId: 'same-session', source: 'collector_a', sourceInstanceId: 'inst-A', sourceRecordId: 'rec-1' }
     const itemB = { id: 'row-1', sessionId: 'same-session', source: 'collector_b', sourceInstanceId: 'inst-B', sourceRecordId: 'rec-2' }

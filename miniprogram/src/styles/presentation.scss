@@ -57,8 +57,17 @@
 .minimal-login .consent-card .button { min-height: 96rpx; }
 .appearance-neutral .history-detail-surface, .appearance-cream .history-detail-surface { background: var(--apple-bg); color: var(--apple-label-primary); }
 .appearance-neutral .card, .appearance-cream .card, .appearance-neutral .section-card, .appearance-cream .section-card { background: var(--apple-surface); border-color: var(--apple-separator); }
-.reduce-motion *, .reduce-motion { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
-@media (prefers-reduced-motion: reduce) { .day-stack *, .charge-activity *, .page * { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
+@mixin reduce-animated-elements {
+  &, .card, .loading-beacon, .day-stack-body, .history-record,
+  .dashboard-hero, .dashboard-info-card, .dashboard-hud, .dashboard-history-entry,
+  .dashboard-current-charge, .dashboard-partial-hero {
+    animation: none !important; transition: none !important; scroll-behavior: auto !important;
+  }
+}
+.reduce-motion { @include reduce-animated-elements; }
+@media (prefers-reduced-motion: reduce) {
+  .day-stack, .charge-activity, .page { @include reduce-animated-elements; }
+}
 @media (prefers-color-scheme: dark) {
   :root, page, .appearance-neutral, .appearance-cream {
     --apple-bg: #111315; --apple-surface: #15181c; --apple-surface-secondary: #242a31; --apple-surface-tertiary: #323840;

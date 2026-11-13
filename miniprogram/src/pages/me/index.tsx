@@ -33,7 +33,7 @@ function errorMessagesForStatus(status: string): string {
 export default function MePage() {
   const appearance = useAppearance()
   const initialSession = readAppSession(Taro)
-  const initialConsent = readStoredConsent(Taro)
+  const initialConsent = MOCK_FIXTURE_ENABLED ? null : readStoredConsent(Taro)
   const hasConsent = initialConsent !== null
   const [session, setSession] = useState<AppSession | null>(initialSession)
   const [termsAccepted, setTermsAccepted] = useState(hasConsent)
@@ -84,6 +84,7 @@ export default function MePage() {
   }
 
   const resumePendingAuthorization = async () => {
+    if (MOCK_FIXTURE_ENABLED) return
     const operation = ++operationEpoch.current
     const scope = captureScope()
     if (!scope.pending) { setAuthorizationPending(false); return }
@@ -126,9 +127,9 @@ export default function MePage() {
       setSession(current)
       setRestoring(false)
       if (!current && getWechatRecoveryFailure()) setError(errorMessage(getWechatRecoveryFailure()))
-      const consent = !consentBlocked.current && readStoredConsent(Taro) !== null
+      const consent = !MOCK_FIXTURE_ENABLED && !consentBlocked.current && readStoredConsent(Taro) !== null
       setTermsAccepted(consent); setPrivacyAccepted(consent)
-      if (readPendingTeslaAuthorization(Taro)) void resumePendingAuthorization()
+      if (!MOCK_FIXTURE_ENABLED && readPendingTeslaAuthorization(Taro)) void resumePendingAuthorization()
       else { setAuthorizationPending(false); void loadWechatBinding() }
     })
   }
@@ -215,6 +216,7 @@ export default function MePage() {
   }
 
   const onConsentChange = (event: { detail: { value: string[] } }) => {
+    if (MOCK_FIXTURE_ENABLED) return
     const terms = event.detail.value.includes('terms')
     const privacy = event.detail.value.includes('privacy')
     setTermsAccepted(terms)
@@ -233,6 +235,7 @@ export default function MePage() {
   }
 
   const startTeslaAuthorization = async () => {
+    if (MOCK_FIXTURE_ENABLED) return
     if (!termsAccepted || !privacyAccepted) {
       setError('请先勾选服务条款和隐私指引')
       return
@@ -269,6 +272,7 @@ export default function MePage() {
   }
 
   const cancelTeslaAuthorization = async () => {
+    if (MOCK_FIXTURE_ENABLED) return
     setLoading(true)
     setError(null)
     const operation = ++operationEpoch.current
@@ -289,6 +293,7 @@ export default function MePage() {
   }
 
   const logout = async () => {
+    if (MOCK_FIXTURE_ENABLED) return
     setLoading(true)
     setError(null)
     const operation = ++operationEpoch.current
@@ -304,7 +309,7 @@ export default function MePage() {
     } finally {
       if (operation === operationEpoch.current) {
         const current = readAppSession(Taro)
-        const consent = !consentBlocked.current && readStoredConsent(Taro) !== null
+        const consent = !MOCK_FIXTURE_ENABLED && !consentBlocked.current && readStoredConsent(Taro) !== null
         setSession(current)
         setWechatBound(null)
         setTermsAccepted(consent)
@@ -316,6 +321,7 @@ export default function MePage() {
   }
 
   const deleteAccount = async () => {
+    if (MOCK_FIXTURE_ENABLED) return
     if (!pageVisible.current || loading || restoring) return
     const scope = captureScope(), beforeConfirmation = operationEpoch.current
     if (!scope.session?.userId) return
@@ -366,7 +372,7 @@ export default function MePage() {
 
   const navGeo = getAppNavGeometry()
   let recoveryEnabled = false
-  try { recoveryEnabled = Boolean(session?.userId && isWechatRecoveryEnabledForAccount(getApiOrigin(), session.userId)) } catch { /* no preference */ }
+  try { recoveryEnabled = Boolean(!MOCK_FIXTURE_ENABLED && session?.userId && isWechatRecoveryEnabledForAccount(getApiOrigin(), session.userId)) } catch { /* no preference */ }
   return (
     <View className={`page more-page ${appearance.className}${session ? '' : ' minimal-login'}`}>
       <View className="app-toolbar" style={{ paddingTop: `${navGeo.navBarTop}px`, paddingRight: `${navGeo.capsuleRightPadding}px` }}><Text className="title">更多</Text></View>
@@ -377,12 +383,12 @@ export default function MePage() {
           <View>
             <View className="visual-heading"><VisualIcon name="account" /><Text className="section-title">账号与授权</Text></View>
           </View>
-          <Text className={`state-pill ${session ? 'state-pill-ready' : ''}`}>{session ? '会话已建立' : '尚未登录'}</Text>
+          <Text className={`state-pill ${session ? 'state-pill-ready' : ''}`}>{session ? MOCK_FIXTURE_ENABLED ? '合成会话' : '会话已建立' : '尚未登录'}</Text>
         </View>
-        <Text className="muted">使用特斯拉账号登录，授权在 Tesla 官方页面完成。与 App 使用同一特斯拉账号，可查看该账号已有的车辆和历史数据。</Text>
+        <Text className="muted">{MOCK_FIXTURE_ENABLED ? '合成会话，未连接真实账号或车辆。' : '使用特斯拉账号登录，授权在 Tesla 官方页面完成。与 App 使用同一特斯拉账号，可查看该账号已有的车辆和历史数据。'}</Text>
       </View>
 
-      <View className="card consent-card">
+      {!MOCK_FIXTURE_ENABLED ? <View className="card consent-card">
         <View className="visual-heading"><VisualIcon name="shield" /><Text className="section-title">授权前确认</Text></View>
         <Text className="muted">请先阅读并确认以下文件。点击下方链接可查看完整内容。</Text>
         <View className="legal-links">
@@ -397,9 +403,9 @@ export default function MePage() {
         {!session ? <Button className="button" loading={loading} disabled={loading || restoring || !termsAccepted || !privacyAccepted} onClick={startTeslaAuthorization}>特斯拉账号登录</Button> : null}
         {!session && !MOCK_FIXTURE_ENABLED ? <Button className="button button-secondary" disabled={loading || restoring || authorizationPending || !termsAccepted || !privacyAccepted} onClick={() => { void enterWithWechat() }}>使用已绑定微信进入</Button> : null}
         {session ? <Text className="muted">MateLink 会话已建立{session.expiresAt ? `，有效期至 ${session.expiresAt}` : ''}。</Text> : null}
-      </View>
+      </View> : null}
 
-      {authorizationPending ? (
+      {!MOCK_FIXTURE_ENABLED && authorizationPending ? (
         <View className="card">
           <View className="visual-heading"><VisualIcon name="shield" /><Text className="section-title">等待特斯拉账号授权</Text></View>
           <Text className="muted">请在 Tesla 官方页面完成登录，然后返回本小程序检查授权状态。</Text>
@@ -442,14 +448,14 @@ export default function MePage() {
       ].map(item => <Button className="more-action more-system-action" key={item.kind} onClick={() => {
         if (item.kind === 'dataStatus') {
           const current = readAppSession(Taro)
-          if (current?.userId && current.apiOrigin) {
+          if (!MOCK_FIXTURE_ENABLED && current?.userId && current.apiOrigin) {
             try { requestDataStatus(Taro, current.userId, current.apiOrigin) } catch { /* navigation remains available */ }
           }
           void Taro.switchTab({ url: '/pages/vehicle/index' })
         } else void Taro.navigateTo({ url: `/pages/tools/index?kind=${item.kind}` })
       }}><VisualIcon name={item.icon} /><Text className="more-system-label">{item.label}</Text><Text className="more-system-chevron">›</Text></Button>)}</View>
 </> : null}
-      {session ? (
+      {session && !MOCK_FIXTURE_ENABLED ? (
         <View className="card">
           <View className="visual-heading"><VisualIcon name="account" /><Text className="section-title">账号管理</Text></View>
           <Text className="muted">退出只结束当前会话；注销会请求服务端删除账号关联数据。</Text>

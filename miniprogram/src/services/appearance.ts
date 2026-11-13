@@ -1,18 +1,20 @@
 import { useEffect, useState } from 'react'
 import Taro from '@tarojs/taro'
 import { normalizeAppearance, type Appearance } from '../domain/ui_presentation'
+import { MOCK_FIXTURE_ENABLED } from './mock_fixture'
 
 export const APPEARANCE_KEY = 'matelink.presentation.v1'
+const appearanceKey = MOCK_FIXTURE_ENABLED ? 'matelink.presentation.mock-fixture.v1' : APPEARANCE_KEY
 const listeners = new Set<(value: Appearance) => void>()
 let volatilePreference: Appearance | null = null
 export function readAppearance(): Appearance {
   if (volatilePreference) return volatilePreference
-  try { return normalizeAppearance(Taro.getStorageSync(APPEARANCE_KEY)) } catch { return normalizeAppearance(null) }
+  try { return normalizeAppearance(Taro.getStorageSync(appearanceKey)) } catch { return normalizeAppearance(null) }
 }
 export function writeAppearance(patch: Partial<Appearance>): boolean {
   const value = normalizeAppearance({ ...readAppearance(), ...patch })
   let saved = true
-  try { Taro.setStorageSync(APPEARANCE_KEY, value); volatilePreference = null } catch { volatilePreference = value; saved = false }
+  try { Taro.setStorageSync(appearanceKey, value); volatilePreference = null } catch { volatilePreference = value; saved = false }
   listeners.forEach(listener => listener(value))
   return saved
 }

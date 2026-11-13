@@ -10,7 +10,7 @@ import SectionHeading from '../../components/SectionHeading'
 import SubpageHeader from '../../components/SubpageHeader'
 import { analysisDay, analysisGroups, analysisKind, analysisTitles, buildParkedWindows, calendarCells, distanceCurveEstimates, efficiencyDistribution, efficiencySpeedGroups, selectCurveSamples } from '../../domain/analysis'
 import { isAppDriveAnalysisEligible } from '../../domain/app_history_projection'
-import { aggregateDriveHistory, coveredTotal, historyRowKey, isHistoryIdentityAmbiguous, isHistoryQuarantined, mergeHistoryByKey, sameHistoryIdentity } from '../../domain/history'
+import { aggregateDriveHistory, coveredTotal, historyRowKey, isHistoryIdentityAmbiguous, isHistoryQuarantined, mergeHistoryByKey, sameHistoryIdentity, sortHistoryByStartDate } from '../../domain/history'
 import { acceptHistoryDetail } from '../../domain/history_controller'
 import { emptyHistoryQuery, filterHistory, historyDateTime, historyDetailDateTime, normalizeHistoryQuery, selectHistoryDate, type HistoryQuery } from '../../domain/history_query'
 import { sourceLabel } from '../../domain/data_labels'
@@ -20,6 +20,7 @@ import { createParkedProofVerifier, parkedProofKey } from '../../services/parked
 import type { ChargeEvidence, DriveEvidence, ParkedDetail } from '../../services/analysis_types'
 import { ApiError, ensureWechatSession, getApiOrigin, getApiSessionGeneration, matelinkApi } from '../../services/api'
 import { readAppSession } from '../../services/session'
+import { MOCK_FIXTURE_ENABLED } from '../../services/mock_fixture'
 import { useSessionRecoveryReload } from '../../services/use_session_recovery'
 import { readCarsCache } from '../../services/cars_cache'
 import { historyCacheKey, readHistoryCache, writeHistoryCache } from '../../services/history_cache'
@@ -254,12 +255,12 @@ export default function AnalysisPage() {
   const windows = parkingCandidates.filter(window => parkingProofs.has(parkedProofKey(window))).map(window => {
     const detail = parkingVerifier.current?.get(window)
     return { ...window, startSoc: detail?.startBatteryLevel ?? null, endSoc: detail?.endBatteryLevel ?? null, socDelta: parkedDelta(detail),
-      chargeOverlap: window.chargeOverlap || Boolean(detail?.linkedChargeId), chargeCoverageComplete: detail?.chargeSessionsComplete === true }
+      chargeOverlap: window.chargeOverlap || Boolean(detail?.linkedChargeId), chargeCoverageComplete: window.chargeTimesValid && detail?.chargeSessionsComplete === true }
   })
   const eligibleWindows = windows.filter(window => !window.chargeOverlap && window.chargeCoverageComplete)
   const selectedWindow = windows.find(window => window.olderId === params.olderId && window.newerId === params.newerId)
-  const events = [...visibleDrives.map(row => ({ kind: 'drive' as const, date: row.startDate, row })), ...visibleCharges.map(row => ({ kind: 'charge' as const, date: row.startDate, row })),
-    ...windows.map(row => ({ kind: 'parked' as const, date: row.startDate, row }))].sort((a, b) => Date.parse(b.date ?? '') - Date.parse(a.date ?? ''))
+  const events = sortHistoryByStartDate([...visibleDrives.map(row => ({ kind: 'drive' as const, startDate: row.startDate, row })), ...visibleCharges.map(row => ({ kind: 'charge' as const, startDate: row.startDate, row })),
+    ...windows.map(row => ({ kind: 'parked' as const, startDate: row.startDate, row }))])
     .filter(event => eventKind === 'all' || event.kind === eventKind)
   const moneyCurrencies = [...new Set(visibleCharges.filter(row => known(row.cost) != null && row.currency).map(row => row.currency!))]
   const sources = [...new Set([...visibleDrives, ...visibleCharges].map(row => sourceLabel(row.source)))]
@@ -317,6 +318,7 @@ export default function AnalysisPage() {
   </View>)
   return <View className={`page analysis-page subpage-page ${appearance.className}`}>
     <SubpageHeader title={analysisTitles[kind]} subtitle={car?.displayName || car?.name || '所选车辆'} />
+    {MOCK_FIXTURE_ENABLED ? <View className="card fixture-data-notice" style={{ backgroundColor: '#fff7ed', borderColor: '#c2410c' }}><Text className="section-title" style={{ color: '#9a3412', marginBottom: 0 }}>合成测试数据，未连接真实车辆</Text></View> : null}
     {cars.length > 1 ? <Picker mode="selector" range={cars.map(row => row.displayName || row.name || '车辆')} onChange={event => { selectedStable.current = cars[Number(event.detail.value)]?.stableId ?? null; void load() }}><View className="analysis-car">{car?.displayName || car?.name || '选择车辆'}</View></Picker> : null}
     {car ? <View className="analysis-controls"><HistoryDateChips kind="drives" query={query} onChange={updateQuery} /><View className="analysis-date-range">
       <Picker mode="date" value={query.startDate} onChange={event => { const value = event.detail.value; setQuery(previous => selectHistoryDate(previous, 'startDate', value)) }}><View>开始：{query.startDate || '不限'}</View></Picker>
@@ -336,7 +338,7 @@ export default function AnalysisPage() {
         <MetricValue label="总距离" value={totals.distance.value} unit="km" icon="distance" /><MetricValue label="平均能耗" value={totals.efficiency.value} unit="kWh/100km" icon="energy" />
         <MetricValue label="合格净能量" value={totals.energy.value} unit="kWh" icon="battery" /><MetricValue label="电池充入" value={chargeEnergy.value} unit="kWh" icon="battery" />
       </View><Text className="muted">配对平均 {totals.efficiency.known}/{totals.efficiency.total} 条，含估算 {totals.efficiency.estimated} 条；距离 {totals.distance.known}/{totals.distance.total}，净能量 {totals.energy.known}/{totals.energy.total}。</Text></View>
-      <View className="card"><SectionHeading icon="clock" title="记录" /><Text className="muted">当前范围的真实记录，可进入对应行程。</Text>
+      <View className="card"><SectionHeading icon="clock" title="记录" /><Text className="muted">{MOCK_FIXTURE_ENABLED ? '当前范围的合成记录，可进入对应行程。' : '当前范围的真实记录，可进入对应行程。'}</Text>
         <View className="history-date-chips">{[{ key: 'distance', label: '最长距离' }, { key: 'duration', label: '最长时间' }, { key: 'energy', label: '最多净能量' }, { key: 'charge', label: '最多充电量' }].map(choice => <Button className="history-chip" key={choice.key} onClick={() => setRecordCategory(choice.key as typeof recordCategory)}>{choice.label}</Button>)}</View>
         {recordCategory === 'charge' ? recordCharge ? <View className="analysis-record"><Text>{historyDateTime(recordCharge.startDate)} · {shown(recordCharge.energyAddedKwh, 'kWh')}</Text><Button className="button-secondary" onClick={() => { void openCharge(recordCharge) }}>查看充电 {recordCharge.id}</Button></View> : <Text className="muted">暂无合格充电量记录。</Text>
           : recordDrive ? <><Text>{shown(recordValue(recordDrive), recordCategory === 'duration' ? '分钟' : recordCategory === 'energy' ? 'kWh' : 'km')}</Text>{driveRows([recordDrive])}</> : <Text className="muted">暂无该指标的合格记录。</Text>}
@@ -377,8 +379,8 @@ export default function AnalysisPage() {
     </> : null}
     {car && kind === 'timeline' ? <View className="analysis-timeline"><SectionHeading icon="timeline" title="行程与充电" /><View className="history-date-chips">{[{ key: 'all', label: '全部' }, { key: 'drive', label: '行程' }, { key: 'charge', label: '充电' }, { key: 'parked', label: '驻车窗口' }].map(choice => <Button key={choice.key} className="history-chip" onClick={() => setEventKind(choice.key as typeof eventKind)}>{choice.label}</Button>)}</View>
       {events.map((event, index) => <View key={`${event.kind}:${event.kind === 'parked' ? `${event.row.olderId}:${event.row.newerId}` : event.row.id}`} className="timeline-group">
-        {index === 0 || analysisDay(event.date) !== analysisDay(events[index - 1].date) ? <View className="timeline-day"><Text>{analysisDay(event.date) ?? '日期未知'}</Text>{analysisDay(event.date) ? <Button className="button-secondary" onClick={() => { void Taro.navigateTo({ url: `/pages/analysis/index?kind=mileage&day=${analysisDay(event.date)}` }) }}>查看当日里程</Button> : null}</View> : null}
-        <View className="card timeline-event"><Text className="timeline-date">{historyDateTime(event.date)}</Text>
+        {index === 0 || analysisDay(event.startDate) !== analysisDay(events[index - 1].startDate) ? <View className="timeline-day"><Text>{analysisDay(event.startDate) ?? '日期未知'}</Text>{analysisDay(event.startDate) ? <Button className="button-secondary" onClick={() => { void Taro.navigateTo({ url: `/pages/analysis/index?kind=mileage&day=${analysisDay(event.startDate)}` }) }}>查看当日里程</Button> : null}</View> : null}
+        <View className="card timeline-event"><Text className="timeline-date">{historyDateTime(event.startDate)}</Text>
         {event.kind === 'drive' ? <><Text className="section-title">行程</Text><Text>{event.row.startAddress || '起点未知'} → {event.row.endAddress || '终点未知'}</Text><Text>{shown(event.row.distanceKm, 'km')} · {sourceLabel(event.row.source)}</Text><Button className="button-secondary" onClick={() => navigateDrive(event.row)}>查看行程 {event.row.id}</Button></>
           : event.kind === 'charge' ? <><Text className="section-title">充电</Text><Text>{event.row.address || '地点未知'}</Text><Text>{shown(event.row.energyAddedKwh, 'kWh')} · {event.row.costProvenance === 'estimate' ? '≈' : ''}{shown(event.row.cost, event.row.currency || '币种未知')}</Text><Text className="muted">{costSource(event.row)}</Text><Button className="button-secondary" onClick={() => { void openCharge(event.row) }}>查看充电 {event.row.id}</Button></>
             : <><Text className="section-title">{event.row.chargeOverlap ? '含充电的驻车窗口' : '驻车窗口'}</Text><Text>{shown(event.row.minutes, '分钟')} · SOC变化 {shown(event.row.socDelta, '%')}</Text><Button className="button-secondary" onClick={() => navigateParked(event.row.olderId, event.row.newerId)}>查看驻车详情</Button></>}

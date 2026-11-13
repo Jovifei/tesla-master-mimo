@@ -11,16 +11,16 @@ const fixture = JSON.parse(readFileSync(resolve(process.cwd(), '../fixtures/safe
     readiness: { items: ReadinessItem[] }; pairing: TelemetryPairing | null; expected: { receive: string; qualification: string; history: string } }>
 }
 
-const platform = vi.hoisted(() => ({ request: vi.fn(), login: vi.fn(), values: new Map<string, unknown>(), quota: false,
+const platform = vi.hoisted(() => ({ request: vi.fn(), login: vi.fn(), storageRead: vi.fn(), storageRemove: vi.fn(), values: new Map<string, unknown>(), quota: false,
   menuTop: null as number | null, menuLeft: null as number | null, menuBottom: 80,
   navigateTo: vi.fn(), switchTab: vi.fn(), showModal: vi.fn(), pageScrollTo: vi.fn(() => Promise.resolve()),
   show: (() => {}) as () => void, hide: (() => {}) as () => void, unload: (() => {}) as () => void,
   scroll: ((_event: { scrollTop: number }) => {}) as (event: { scrollTop: number }) => void }))
 vi.mock('@tarojs/components', () => ({ View: 'view', Text: 'text', Button: 'button', Picker: 'picker', Image: 'image', Map: 'map', ScrollView: 'scroll-view' }))
 vi.mock('@tarojs/taro', () => ({ default: {
-  request: platform.request, login: platform.login, getStorageSync: (key: string) => platform.values.get(key),
+  request: platform.request, login: platform.login, getStorageSync: (key: string) => { platform.storageRead(key); return platform.values.get(key) },
   setStorageSync: (key: string, value: unknown) => { if (platform.quota) throw Error('fixture quota'); platform.values.set(key, value) },
-  removeStorageSync: (key: string) => platform.values.delete(key),
+  removeStorageSync: (key: string) => { platform.storageRemove(key); platform.values.delete(key) },
   getStorageInfoSync: () => ({ keys: [...platform.values.keys()] }),
   navigateTo: platform.navigateTo, switchTab: platform.switchTab, showModal: platform.showModal, pageScrollTo: platform.pageScrollTo,
   getMenuButtonBoundingClientRect: () => ({ top: platform.menuTop, left: platform.menuLeft, bottom: platform.menuBottom }),
@@ -35,9 +35,9 @@ const report = (power: number) => ({ status: { state: 'online', battery_details:
   odometer: 0, car_geodata: { latitude: 0, longitude: 0 }, car_status: { locked: false },
   climate_details: { is_climate_on: false }, driving_details: { speed: 0, power }, charging_details: { charger_power: 0 } } })
 beforeEach(() => {
-  vi.resetModules(); vi.stubEnv('TARO_APP_API_BASE_URL', 'https://api.example.test')
+  vi.resetModules(); vi.stubEnv('TARO_APP_API_BASE_URL', 'https://api.example.test'); vi.stubEnv('TARO_APP_MOCK_FIXTURE', 'false')
   platform.values.clear(); platform.quota = false; platform.menuTop = null; platform.menuLeft = null; platform.menuBottom = 80; platform.request.mockReset(); platform.login.mockReset()
-  platform.navigateTo.mockReset(); platform.switchTab.mockReset(); platform.showModal.mockReset()
+  platform.navigateTo.mockReset(); platform.switchTab.mockReset(); platform.showModal.mockReset(); platform.storageRead.mockReset(); platform.storageRemove.mockReset()
   platform.values.set('matelink.wechat.session.v1', session('a'))
 })
 afterEach(async () => {
@@ -57,10 +57,48 @@ async function mount(openDiagnostics = true) {
   return renderer!
 }
 const visible = () => JSON.stringify(renderer!.toJSON())
+it('fixture dashboard never reads or removes a shared data-status navigation hint', async () => {
+  vi.stubEnv('TARO_APP_MOCK_FIXTURE', 'true')
+  vi.stubEnv('TARO_APP_API_BASE_URL', 'https://fixture.invalid/')
+  const key = 'matelink.ui.data-status.v1'
+  const existing = { userId: 'other-owner', origin: 'https://other.invalid', at: Date.now() }
+  platform.values.set(key, existing)
+  await mount(false)
+  expect(visible()).toContain('合成测试数据，未连接真实车辆')
+  expect(platform.values.get(key)).toEqual(existing)
+  expect(platform.storageRead).not.toHaveBeenCalledWith(key)
+  expect(platform.storageRemove).not.toHaveBeenCalledWith(key)
+  expect(platform.storageRead).not.toHaveBeenCalledWith('matelink.wechat.session.v1')
+  expect(platform.storageRemove).not.toHaveBeenCalledWith('matelink.wechat.session.v1')
+  expect(platform.request).not.toHaveBeenCalled()
+  expect(platform.login).not.toHaveBeenCalled()
+})
+it('clearly marks the fixture dashboard as synthetic and disconnected from a real vehicle', async () => {
+  vi.stubEnv('TARO_APP_MOCK_FIXTURE', 'true')
+  const page = await mount(false)
+  expect(visible()).toContain('合成测试车')
+  const notice = page.root.findByProps({ className: 'card vehicle-fixture-notice' })
+  expect(notice.findByType('text' as React.ElementType).children.join('')).toBe('合成测试数据，未连接真实车辆')
+  expect(visible().indexOf('合成测试数据，未连接真实车辆')).toBeLessThan(visible().indexOf('dashboard-hero'))
+  expect(platform.request).not.toHaveBeenCalled()
+  expect(platform.login).not.toHaveBeenCalled()
+})
+it('keeps the normal dashboard free of the fixture notice', async () => {
+  vi.stubEnv('TARO_APP_MOCK_FIXTURE', 'false')
+  platform.request.mockImplementation(async ({ url }: { url: string }) => online(url))
+  const page = await mount(false)
+  expect(page.root.findAllByProps({ className: 'card vehicle-fixture-notice' })).toHaveLength(0)
+  expect(visible()).not.toContain('合成测试数据，未连接真实车辆')
+  expect(visible()).toContain('Car A')
+  expect(page.root.findByProps({ className: 'dashboard-soc-value' }).children.join('')).toBe('0%')
+  expect(platform.request).toHaveBeenCalled()
+})
 it('opens the real readiness panel from More for the same signed-in owner', async () => {
   platform.values.set('matelink.ui.data-status.v1', { userId: 'a', origin: 'https://api.example.test', at: Date.now() })
   platform.request.mockImplementation(async ({ url }: { url: string }) => online(url))
   await mount(false)
+  expect(platform.storageRead).toHaveBeenCalledWith('matelink.ui.data-status.v1')
+  expect(platform.storageRemove).toHaveBeenCalledWith('matelink.ui.data-status.v1')
   expect(visible()).toContain('收起数据状态')
   expect(renderer!.root.findByProps({ className: 'dashboard-readiness-panel' })).toBeDefined()
   expect(platform.pageScrollTo).toHaveBeenCalledWith({ selector: '.dashboard-readiness-panel', duration: 250 })

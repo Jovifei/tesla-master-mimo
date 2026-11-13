@@ -1,5 +1,6 @@
 import type { Charge, Drive, HistoryPage } from '../services/types'
 import { mergeChargeEnergyRecord, mergeDriveEnergyRecord, sameEnergyInstant } from './drive_energy'
+import { civilDay } from './ui_presentation'
 
 export type HistoryLoadState = 'loading' | 'partial' | 'ready' | 'cached' | 'failed'
 export type HistoryMergeResult<T> = { items: T[]; retainedLocalCount: number; addedRemoteCount: number }
@@ -49,16 +50,24 @@ export function sameHistoryIdentity(a: unknown, b: unknown): boolean {
   return Boolean(id && id === text(right.id))
 }
 
-function timestamp(value: string | null | undefined): number {
-  const parsed = value ? Date.parse(value) : Number.NaN
-  return Number.isFinite(parsed) ? parsed : Number.NEGATIVE_INFINITY
+export function historyTimestamp(value: string | null | undefined): number | null {
+  if (!value || !civilDay(value) || !/(?:T|\s)\d{1,2}:\d{2}/i.test(value)) return null
+  const parsed = Date.parse(value)
+  return Number.isFinite(parsed) ? parsed : null
 }
 
 export function sortHistoryByStartDate<T extends { startDate?: string | null }>(items: readonly T[]): T[] {
-  return [...items].sort((a, b) => {
-    const left = timestamp(a.startDate), right = timestamp(b.startDate)
-    return left === right ? 0 : left < right ? 1 : -1
-  })
+  return items.map((item, index) => {
+    const day = civilDay(item.startDate)
+    const time = day ? historyTimestamp(item.startDate) : null
+    const fraction = time === null ? '' : (/\.(\d{1,9})/.exec(item.startDate!)?.[1] ?? '').padEnd(9, '0')
+    return { item, index, day, time, fraction }
+  }).sort((a, b) => {
+    if (a.day !== b.day) return a.day === null ? 1 : b.day === null ? -1 : a.day < b.day ? 1 : -1
+    if (a.time !== b.time) return a.time === null ? 1 : b.time === null ? -1 : a.time < b.time ? 1 : -1
+    if (a.fraction !== b.fraction) return a.fraction < b.fraction ? 1 : -1
+    return a.index - b.index
+  }).map(row => row.item)
 }
 
 function asRow(value: unknown): Row | null {
