@@ -148,6 +148,9 @@ function GroupMenu({ group }: { group: NavGroup }) {
 
 function Shell({ children }: { children: ReactNode }) {
   const navigate = useNavigate()
+  const [navigationOpen,setNavigationOpen]=useState(false)
+  const location=useLocation()
+  useEffect(()=>setNavigationOpen(false),[location.pathname])
   const signOut = async () => {
     if (!window.confirm('退出当前账号？保留外观设置；车辆数据将停止显示。')) return
     await logout()
@@ -156,14 +159,15 @@ function Shell({ children }: { children: ReactNode }) {
   }
   return (
     <div className="ml-shell">
-      <header className="ml-header">
+      <header className={`ml-header${navigationOpen ? ' is-open' : ''}`} onKeyDown={e=>{if(e.key==='Escape')setNavigationOpen(false)}}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 16, fontWeight: 700, color: 'var(--apple-label-primary)' }}>
-          <span style={{ width: 26, height: 26, borderRadius: 10, background: 'var(--apple-action)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>
+          <span style={{ width: 26, height: 26, borderRadius: 10, background: 'var(--apple-action)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: 'var(--apple-on-action)' }}>
             <Icon name="bolt" size={15} />
           </span>
           MateLink
         </div>
-        <nav style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
+        <button className="ml-mobile-menu" aria-expanded={navigationOpen} aria-controls="site-navigation" onClick={()=>setNavigationOpen(v=>!v)}>{navigationOpen?'收起导航':'导航'}</button>
+        <nav id="site-navigation" aria-label="主导航" style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
           {NAV_GROUPS.map(group => (
             <GroupMenu key={group.label} group={group} />
           ))}
@@ -194,7 +198,7 @@ function Shell({ children }: { children: ReactNode }) {
             设置
           </NavLink>
         </nav>
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
+        <div className="ml-header-session" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
           <button
             onClick={() => void signOut()}
             style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--apple-label-secondary)', fontSize: 13.5, fontWeight: 500, padding: '7px 12px', borderRadius: 999, fontFamily: 'inherit' }}

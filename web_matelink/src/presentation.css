@@ -13,3 +13,25 @@ button {min-height:44px} button:disabled {opacity:.4;cursor:default} .apple-btn-
 @media(max-width:700px){.ml-header{position:relative;padding:12px 16px;gap:10px}.ml-header nav{width:100%;gap:0!important}.ml-main{padding:18px 12px 40px}.ml-detail-columns{grid-template-columns:minmax(0,1fr)!important}.ml-calendar-grid{gap:3px}.ml-charge-cell{border-radius:7px}.ml-charge-cell>strong{font-size:12px}.ml-charge-calendar{padding:12px}.ml-day-content{padding:8px}.ml-day-nav button{padding:8px;font-size:12px}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 :root[data-reduce-motion=true] *,:root[data-reduce-motion=true] *::before,:root[data-reduce-motion=true] *::after {animation:none!important;transition:none!important;scroll-behavior:auto!important}
+
+/* Small screens prioritize the vehicle content, not a four-line permanent menu. */
+.ml-mobile-menu { display:none; }
+.ml-charge-layout {display:grid;grid-template-columns:minmax(280px,440px) minmax(0,1fr);gap:24px;align-items:start;}
+.ml-charge-records {min-width:0;display:grid;gap:16px;}
+.ml-charge-list {display:grid;gap:10px;}
+.ml-charge-record {display:block;width:100%;padding:16px;text-align:left;background:var(--apple-surface-secondary);border:1px solid var(--apple-separator);border-radius:14px;color:var(--apple-label-primary);cursor:pointer;}
+.ml-charge-record:hover {border-color:var(--apple-tint);}
+.ml-charge-record-top,.ml-charge-record-sub,.ml-charge-record-bottom {display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+.ml-charge-record-top>strong {font-size:16px;}.ml-charge-record-top>strong:last-child {font-size:22px;}.ml-charge-record-top small {font-size:12px;font-weight:500;color:var(--apple-label-secondary);}
+.ml-charge-record-sub {font-size:12px;color:var(--apple-label-secondary);margin:8px 0 12px;}
+.ml-charge-record-bottom {font-size:13px;color:var(--apple-label-secondary);}
+.ml-record-parameters {margin-top:16px;border-top:1px solid var(--apple-separator);padding-top:12px;font-size:13px;min-width:0;}
+.ml-record-parameters>summary {cursor:pointer;min-height:44px;display:flex;align-items:center;}
+@media(max-width:1000px){.ml-charge-layout{grid-template-columns:minmax(0,1fr)}.ml-charge-calendar{max-width:560px;}}
+@media(max-width:900px){
+  .ml-header{min-height:64px;position:sticky;top:0;padding:8px 16px;gap:12px;justify-content:space-between;}
+  .ml-mobile-menu{display:block;border:1px solid var(--apple-separator);border-radius:10px;background:var(--apple-surface-secondary);padding:8px 14px;font-size:14px;color:var(--apple-label-primary);}
+  .ml-header nav,.ml-header .ml-header-session{display:none!important;}
+  .ml-header.is-open nav{display:flex!important;gap:4px!important;width:100%;padding:8px 0;}
+  .ml-header.is-open .ml-header-session{display:flex!important;}
+}

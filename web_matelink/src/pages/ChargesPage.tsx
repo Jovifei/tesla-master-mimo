@@ -53,26 +53,22 @@ function ChargeDetailView({ carId, charge, onBack }: { carId: number; charge: We
     return()=>{controller.abort();if(timer!=null)window.clearInterval(timer)}
   },[carId,charge.id,charge.isCharging])
 
-  // 实时区：状态快照的当前功率/电压/电流/电池加热（仅充电中存在当前值；
-  // 电池加热无历史序列，历史详情不设加热面板）。
+  // Current status never substitutes for historical curve samples; one cancellable request at a time.
   useEffect(() => {
+    setLiveStatus(null)
     if (!charge.isCharging) return
-    let cancelled = false
+    const controller=new AbortController();let pending=false
     const fetchStatus = async () => {
-      try {
-        const next = await getCarStatus(carId)
-        if (!cancelled) setLiveStatus(next)
-      } catch {
-        /* keep last good status */
-      }
+      if(pending || controller.signal.aborted)return
+      pending=true
+      try { const next=await getCarStatus(carId,controller.signal);if(!controller.signal.aborted)setLiveStatus(next) }
+      catch { /* retain only this scope's last returned status */ }
+      finally {pending=false}
     }
     void fetchStatus()
-    const timer = window.setInterval(() => void fetchStatus(), 20_000)
-    return () => {
-      cancelled = true
-      window.clearInterval(timer)
-    }
-  }, [carId, charge.isCharging])
+    const timer=window.setInterval(()=>void fetchStatus(),20_000)
+    return()=>{controller.abort();window.clearInterval(timer)}
+  },[carId,charge.id,charge.isCharging])
 
   const current = detail?.charge ?? charge
   const summary = detail?.summary
@@ -143,7 +139,7 @@ function ChargeDetailView({ carId, charge, onBack }: { carId: number; charge: We
       {error ? <Panel><p style={{ color: V3.errorText, fontSize: 14.5 }}>{error}</p></Panel> : null}
 
       {charge.isCharging && liveStatus ? (
-        <Panel title="实时充电" action={<span style={{ fontSize: 12, color: V3.label3 }}>状态快照当前值 · 每 20 秒刷新</span>}>
+        <Panel title="最近充电状态" action={<span style={{ fontSize: 12, color: V3.label3 }}>状态快照当前值 · 每 20 秒刷新</span>}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12 }}>
             <StatTile label="当前功率" value={liveStatus.chargerPowerKw != null ? fmtNum(liveStatus.chargerPowerKw, 1) : '--'} unit="kW" accent={TILE_COLORS.orange} />
             {liveStatus.liveVoltageV != null ? <StatTile label="当前电压" value={String(Math.round(liveStatus.liveVoltageV))} unit="V" accent={TILE_COLORS.purple} /> : null}
@@ -293,8 +289,8 @@ export default function ChargesPage() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
-        <button className="apple-btn-secondary" disabled={loading} onClick={() => {void reload();void history.reload()}}>刷新记录</button>
         <h1 style={{ fontSize: 28, fontWeight: 700 }}>充电记录</h1>
+        <button className="apple-btn-secondary" disabled={loading} onClick={() => {void reload();void history.reload()}}>刷新记录</button>
         {cars.length > 1 ? (
           <select className="apple-input" style={{ width: 'auto' }} value={carId ?? ''} onChange={event => setCarId(Number(event.target.value))}>
             {cars.map(item => (
@@ -307,7 +303,7 @@ export default function ChargesPage() {
       {error ? <Panel><p style={{ color: V3.errorText, fontSize: 14.5 }}>{error}</p></Panel> : null}
 
       {chargingNow && status ? (
-        <Panel title="正在充电" action={<span style={{ fontSize: 13, color: V3.label3 }}>{car?.name ?? ''} · 实时</span>}>
+        <Panel title="正在充电" action={<span style={{ fontSize: 13, color: V3.label3 }}>{car?.name ?? ''} · {snapshot ? '缓存快照' : '最近返回状态'}</span>}>
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 22, flexWrap: 'wrap' }}>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
               <span className="tabular" style={{ fontSize: 44, fontWeight: 600, lineHeight: 1, color: V3.label }}>
@@ -393,7 +389,7 @@ export default function ChargesPage() {
         </button>
       </div>
 
-      <ChargeCalendar rows={dailyRows} />
+      <div className="ml-charge-layout"><ChargeCalendar rows={dailyRows} /><div className="ml-charge-records">
       <p className="text-secondary" role="status" style={{fontSize:13,lineHeight:1.7}}>
         {rows[0]?.startDate ? `当前已返回的最新记录：${formatTime(rows[0].startDate)}。` : '尚未收到充电历史。'}
         {visible.length !== rows.length ? `筛选隐藏了 ${rows.length-visible.length} 条。` : ''}
@@ -408,7 +404,16 @@ export default function ChargesPage() {
           <Skeleton height={132} />
         </>
       ) : (
-        <Panel title="充电记录" action={<span style={{ fontSize: 12, color: V3.label3 }}>逐列参数 · 点击任意一行查看单次充电详情</span>}>
+        <Panel title="充电记录" action={<span style={{ fontSize: 12, color: V3.label3 }}>点选记录查看详情</span>}>
+          <div className="ml-charge-list">
+            {visible.map(charge => <button key={charge.id} className="ml-charge-record" onClick={()=>setSelected(charge)}>
+              <div className="ml-charge-record-top"><strong>{charge.address??'地点尚未返回'}</strong><strong className="tabular">{num(charge.energyAddedKwh,1)} <small>kWh</small></strong></div>
+              <div className="ml-charge-record-sub"><span>{formatTime(charge.startDate)}</span><span>{charge.chargeMode==='dc'?'直流':charge.chargeMode==='ac'?'交流':'类型待确认'}</span></div>
+              <div className="ml-charge-record-bottom"><span>{fmtDuration(charge.durationMinutes)}</span><BatteryPill from={charge.startBatteryLevel} to={charge.endBatteryLevel}/><span>{charge.cost==null?'费用未知':`${num(charge.cost,2)} ${charge.currency??'元'}`}</span></div>
+            </button>)}
+            {!visible.length ? <p className="ml-empty">没有符合当前条件的已返回记录。</p>:null}
+          </div>
+          <details className="ml-record-parameters"><summary>完整参数表</summary>
           <DataTable
             columns={[
               { label: '开始时间' },
@@ -450,8 +455,10 @@ export default function ChargesPage() {
               if (charge) setSelected(charge)
             }}
           />
+          </details>
         </Panel>
       )}
+      </div></div>
       {loading && visible.length ? <Skeleton height={72} radius={14} /> : null}
 
       {page < totalPages ? (
