@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { Panel } from '../components/v3'
 import { StatTile } from '../components/panels'
-import { CarPicker, ErrorNote, GapPanel, LoadingNote, PageTitle } from '../components/tm'
+import { CarPicker, ErrorNote, LoadingNote, PageTitle } from '../components/tm'
 import { useCar } from './useCar'
 import { useHistory } from './useHistory'
 
@@ -55,12 +55,15 @@ export default function DataInfoPage() {
             </div>
           )}
         </Panel>
-        <GapPanel
-          title="数据库内部指标"
-          meaning="数据库各表行数、库文件大小、位置点总数等运维口径的概况。"
-          need="后端提供数据库运维指标接口（当前无此接口，优先级低）"
-          height={180}
-        />
+        <details className="ml-disclosure"><summary>为什么还没有新充电记录？</summary><div>
+          <p>这里仅统计当前账号和车辆已返回的记录。接口可访问、Tesla 授权有效和完整历史已同步，是三个不同状态。</p>
+          <p>先核对充电页的筛选和最新记录日期，再加载更多或刷新。未返回记录不能解释为未充电；需要服务端同步证据才能判断数据链路。</p>
+          <button className="apple-btn-secondary" disabled={history.loading} onClick={() => void history.reload()}>重新读取历史</button>
+        </div></details>
+        <details className="ml-disclosure"><summary>高级诊断与数据库信息</summary><div>
+          <p>网页当前接口不提供数据库表行数、同步队列、证书或 Fleet 配置的完整报告。未检查不等于故障，也不会显示为已通过。</p>
+          <p>不会通过此页面唤醒车辆、补造充电或修改历史。</p>
+        </div></details>
       </div>
     </div>
   )

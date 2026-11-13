@@ -1,6 +1,6 @@
 import { BrowserRouter, Routes, Route, NavLink, Navigate, useNavigate, useLocation } from 'react-router-dom'
-import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { loadSession, logout } from './api/matelink'
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { loadSession, logout, sessionScope, subscribeSession } from './api/matelink'
 import Login from './pages/Login'
 import AuthComplete from './pages/AuthComplete'
 import WebDashboard from './pages/WebDashboard'
@@ -105,22 +105,23 @@ function GroupMenu({ group }: { group: NavGroup }) {
           display: 'inline-flex', alignItems: 'center', gap: 7,
           padding: '7px 14px', borderRadius: 999, border: 'none', cursor: 'pointer',
           fontSize: 14, fontWeight: active ? 600 : 400, fontFamily: 'inherit',
-          color: active ? '#0071e3' : '#1c1c1e',
-          background: active ? 'rgba(0,113,227,0.09)' : 'transparent',
+          color: active ? 'var(--apple-tint)' : 'var(--apple-label-primary)',
+          background: active ? 'var(--apple-surface-tertiary)' : 'transparent',
         }}
         aria-haspopup="menu"
         aria-expanded={open}
+        onKeyDown={e => { if(e.key === 'Escape') setOpen(false) }}
       >
         <Icon name={group.icon} size={18} />
         {group.label}
-        <span style={{ fontSize: 10, color: active ? '#0071e3' : '#6e6e73' }}>▾</span>
+        <span style={{ fontSize: 10, color: active ? 'var(--apple-tint)' : '#6e6e73' }}>▾</span>
       </button>
       {open ? (
         <div
           role="menu"
           style={{
             position: 'absolute', top: 'calc(100% + 8px)', left: 0, minWidth: 168, zIndex: 60,
-            background: '#fffdf8', borderRadius: 16, padding: 6,
+            background: 'var(--apple-surface)', borderRadius: 16, padding: 6,
             boxShadow: '0 12px 34px rgba(43,36,28,0.16)', border: '0.5px solid rgba(60,50,35,0.10)',
           }}
         >
@@ -132,8 +133,8 @@ function GroupMenu({ group }: { group: NavGroup }) {
               style={({ isActive }) => ({
                 display: 'block', padding: '8px 12px', borderRadius: 10, textDecoration: 'none',
                 fontSize: 14, fontWeight: isActive ? 600 : 400,
-                color: isActive ? '#0071e3' : '#1c1c1e',
-                background: isActive ? 'rgba(0,113,227,0.09)' : 'transparent',
+                color: isActive ? 'var(--apple-tint)' : 'var(--apple-label-primary)',
+                background: isActive ? 'var(--apple-surface-tertiary)' : 'transparent',
               })}
             >
               {item.label}
@@ -148,22 +149,16 @@ function GroupMenu({ group }: { group: NavGroup }) {
 function Shell({ children }: { children: ReactNode }) {
   const navigate = useNavigate()
   const signOut = async () => {
+    if (!window.confirm('退出当前账号？保留外观设置；车辆数据将停止显示。')) return
     await logout()
+    if (loadSession()) return
     navigate('/login', { replace: true })
   }
   return (
-    <div style={{ minHeight: '100vh', background: '#ede9e3', display: 'flex', flexDirection: 'column' }}>
-      <header
-        style={{
-          minHeight: 56, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap',
-          padding: '6px 32px', position: 'sticky', top: 0, zIndex: 40,
-          background: 'color-mix(in srgb, #fffdf8 72%, transparent)',
-          backdropFilter: 'blur(14px) saturate(180%)',
-          borderBottom: '0.5px solid rgba(60,50,35,0.10)',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 16, fontWeight: 700, color: '#1c1c1e' }}>
-          <span style={{ width: 26, height: 26, borderRadius: 10, background: '#157a86', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>
+    <div className="ml-shell">
+      <header className="ml-header">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 16, fontWeight: 700, color: 'var(--apple-label-primary)' }}>
+          <span style={{ width: 26, height: 26, borderRadius: 10, background: 'var(--apple-action)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>
             <Icon name="bolt" size={15} />
           </span>
           MateLink
@@ -178,8 +173,8 @@ function Shell({ children }: { children: ReactNode }) {
               display: 'inline-flex', alignItems: 'center', gap: 7,
               padding: '7px 14px', borderRadius: 999, textDecoration: 'none',
               fontSize: 14, fontWeight: isActive ? 600 : 400,
-              color: isActive ? '#0071e3' : '#1c1c1e',
-              background: isActive ? 'rgba(0,113,227,0.09)' : 'transparent',
+              color: isActive ? 'var(--apple-tint)' : 'var(--apple-label-primary)',
+              background: isActive ? 'var(--apple-surface-tertiary)' : 'transparent',
             })}
           >
             <Icon name="sliders" size={18} />
@@ -191,32 +186,33 @@ function Shell({ children }: { children: ReactNode }) {
               display: 'inline-flex', alignItems: 'center', gap: 7,
               padding: '7px 14px', borderRadius: 999, textDecoration: 'none',
               fontSize: 14, fontWeight: isActive ? 600 : 400,
-              color: isActive ? '#0071e3' : '#1c1c1e',
-              background: isActive ? 'rgba(0,113,227,0.09)' : 'transparent',
+              color: isActive ? 'var(--apple-tint)' : 'var(--apple-label-primary)',
+              background: isActive ? 'var(--apple-surface-tertiary)' : 'transparent',
             })}
           >
             <Icon name="person" size={18} />
-            我的
+            设置
           </NavLink>
         </nav>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
           <button
             onClick={() => void signOut()}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', cursor: 'pointer', color: '#3a3a3c', fontSize: 13.5, fontWeight: 500, padding: '7px 12px', borderRadius: 999, fontFamily: 'inherit' }}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--apple-label-secondary)', fontSize: 13.5, fontWeight: 500, padding: '7px 12px', borderRadius: 999, fontFamily: 'inherit' }}
           >
             <Icon name="logout" size={17} />
             退出登录
           </button>
         </div>
       </header>
-      <main style={{ flex: 1, padding: '20px 32px 44px', maxWidth: 1400, margin: '0 auto', width: '100%' }}>{children}</main>
+      <main className="ml-main">{children}</main>
     </div>
   )
 }
 
 function RequireSession({ children }: { children: ReactNode }) {
+  const scope = useSyncExternalStore(subscribeSession, sessionScope, () => '')
   if (!loadSession()) return <Navigate to="/login" replace />
-  return <Shell>{children}</Shell>
+  return <Shell key={scope}>{children}</Shell>
 }
 
 const ROUTES: { path: string; element: ReactNode }[] = [

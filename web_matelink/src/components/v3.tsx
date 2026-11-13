@@ -9,17 +9,17 @@ import { Icon } from './viz'
  */
 
 export const V3 = {
-  label: '#1c1c1e',
-  label2: '#3a3a3c',
-  label3: '#6e6e73',
+  label: 'var(--apple-label-primary)',
+  label2: 'var(--apple-label-secondary)',
+  label3: 'var(--apple-label-tertiary)',
   tint: '#0071e3',
   teal: '#157a86',
   tealDeep: '#0f5c66',
   graphite: '#48484a',
-  surface: '#ffffff',
+  surface: 'var(--apple-surface)',
   /* Warm surfaces (v4 unification with the 家庭健康台 baseline). */
-  pageBg: '#ede9e3',
-  surface2: '#f5f1ea',
+  pageBg: 'var(--apple-bg)',
+  surface2: 'var(--apple-surface-secondary)',
   separator: 'rgba(60, 50, 35, 0.10)',
   cardShadow: '0 1px 2px rgba(43,36,28,0.04), 0 10px 28px rgba(43,36,28,0.05)',
   success: '#1d7a35',
@@ -83,8 +83,8 @@ export function PremiseStrip({
       }}
     >
       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontWeight: 600 }}>
-        <span style={{ width: 8, height: 8, borderRadius: 4, background: snapshot ? '#b25e00' : '#34c759', flexShrink: 0 }} />
-        {snapshot ? '车辆休眠中 · 显示最近一次快照' : source ? '实时数据' : '数据来源未知'}
+        <span style={{ width: 8, height: 8, borderRadius: 4, background: snapshot ? '#b25e00' : 'var(--apple-label-secondary)', flexShrink: 0 }} />
+        {snapshot ? '缓存快照 · 非实时状态' : source ? '已返回车辆观测' : '尚未收到来源说明'}
       </span>
       {observedAt ? (
         <span style={{ color: snapshot ? V3.warningText : V3.label3 }}>

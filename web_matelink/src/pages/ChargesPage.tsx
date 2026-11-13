@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { ChargeCalendar } from '../components/ChargeCalendar'
+import { usePagedHistory } from './usePagedHistory'
+import { useEffect, useMemo, useState } from 'react'
 import { ApiError, getCarStatus, getChargeDetail, getChargesPage, type ChargeDetail } from '../api/matelink'
 import type { WebCarStatus, WebCharge } from '../api/matelink-types'
 import { EMPTY_CHARGE_FILTER, chargeAddresses, filterCharges, type ChargeFilter } from '../api/charge-filter'
 import { averagePowerKw, unitPricePerKwh } from '../api/panel-data'
 import { BatteryPill, Icon, SegControl, Skeleton } from '../components/viz'
 import { ChargeRuler, Panel, V3 } from '../components/v3'
-import { BarsPanel, DATA_COLORS, ScatterPanel, StackChart, StatTile, TILE_COLORS, fmtDuration, fmtNum, type ChartRow, type StackSeriesDef } from '../components/panels'
+import { DATA_COLORS, ScatterPanel, StackChart, StatTile, TILE_COLORS, fmtDuration, fmtNum, type ChartRow, type StackSeriesDef } from '../components/panels'
 import { DataTable, GapTile, MapPanel } from '../components/tm'
 import { useCar } from './useCar'
 import { useHistory } from './useHistory'
@@ -27,23 +29,6 @@ function formatTime(iso: string | null): string {
   return Number.isNaN(date.getTime()) ? '--' : date.toLocaleString('zh-CN', { hour12: false })
 }
 
-function monthlyEnergy(rows: WebCharge[]): { label: string; value: number }[] {
-  const byMonth = new Map<string, { order: number; label: string; value: number }>()
-  for (const row of rows) {
-    if (!row.startDate) continue
-    const date = new Date(row.startDate)
-    if (Number.isNaN(date.getTime())) continue
-    const key = `${date.getFullYear()}-${date.getMonth()}`
-    const entry = byMonth.get(key) ?? { order: date.getFullYear() * 12 + date.getMonth(), label: `${date.getMonth() + 1}月`, value: 0 }
-    entry.value += row.energyAddedKwh ?? 0
-    byMonth.set(key, entry)
-  }
-  return [...byMonth.values()]
-    .sort((a, b) => a.order - b.order)
-    .slice(-6)
-    .map(entry => ({ label: entry.label, value: Math.round(entry.value * 10) / 10 }))
-}
-
 function countOf(rows: ChartRow[], key: string): number {
   return rows.reduce((count, row) => (row[key] != null ? count + 1 : count), 0)
 }
@@ -53,26 +38,20 @@ function ChargeDetailView({ carId, charge, onBack }: { carId: number; charge: We
   const [error, setError] = useState<string | null>(null)
   const [liveStatus, setLiveStatus] = useState<WebCarStatus | null>(null)
 
-  const loadDetail = useCallback(async () => {
-    try {
-      const result = await getChargeDetail(carId, charge.id)
-      setDetail(result)
-      setError(null)
-    } catch (reason: unknown) {
-      setError(reason instanceof ApiError ? reason.message : '读取充电详情失败。')
+  useEffect(() => {
+    const controller=new AbortController();let pending=false
+    setDetail(null);setError(null)
+    const load=async()=>{
+      if(pending || controller.signal.aborted)return
+      pending=true
+      try{const result=await getChargeDetail(carId,charge.id,controller.signal);if(!controller.signal.aborted){setDetail(result);setError(null)}}
+      catch(reason){if(!controller.signal.aborted)setError(reason instanceof ApiError?reason.message:'读取充电详情失败。')}
+      finally{pending=false}
     }
-  }, [carId, charge.id])
-
-  useEffect(() => {
-    void loadDetail()
-  }, [loadDetail])
-
-  // 动态：充电中的会话每 20 秒刷新，曲线实时延伸。
-  useEffect(() => {
-    if (!charge.isCharging) return
-    const timer = window.setInterval(() => void loadDetail(), 20_000)
-    return () => window.clearInterval(timer)
-  }, [charge.isCharging, loadDetail])
+    void load()
+    const timer=charge.isCharging?window.setInterval(()=>void load(),20_000):null
+    return()=>{controller.abort();if(timer!=null)window.clearInterval(timer)}
+  },[carId,charge.id,charge.isCharging])
 
   // 实时区：状态快照的当前功率/电压/电流/电池加热（仅充电中存在当前值；
   // 电池加热无历史序列，历史详情不设加热面板）。
@@ -177,7 +156,7 @@ function ChargeDetailView({ carId, charge, onBack }: { carId: number; charge: We
         </Panel>
       ) : null}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 8fr) minmax(0, 4fr)', gap: 16, alignItems: 'start' }}>
+      <div className="ml-detail-columns" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 8fr) minmax(0, 4fr)', gap: 16, alignItems: 'start' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
           {!detail ? (
             <>
@@ -266,42 +245,21 @@ function ChargeDetailView({ carId, charge, onBack }: { carId: number; charge: We
 
 export default function ChargesPage() {
   const { cars, car, carId, setCarId, error: carError } = useCar()
-  const [rows, setRows] = useState<WebCharge[]>([])
-  const [page, setPage] = useState(1)
-  const [totalPages, setTotalPages] = useState(1)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const {rows, page, totalPages, loading, error, reload, loadMore} = usePagedHistory<WebCharge>(carId,getChargesPage)
   const [filter, setFilter] = useState<ChargeFilter>(EMPTY_CHARGE_FILTER)
   const [selected, setSelected] = useState<WebCharge | null>(null)
   const [status, setStatus] = useState<WebCarStatus | null>(null)
   const history = useHistory(carId)
 
-  const loadPage = useCallback(async (targetCar: number, targetPage: number, append: boolean) => {
-    setLoading(true)
-    setError(null)
-    try {
-      const result = await getChargesPage(targetCar, targetPage)
-      setRows(previous => (append ? [...previous, ...result.rows] : result.rows))
-      setPage(targetPage)
-      setTotalPages(result.totalPages)
-    } catch (reason) {
-      setError(reason instanceof ApiError ? reason.message : '读取充电记录失败。')
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
   useEffect(() => {
-    if (carId == null) return
-    setSelected(null)
-    setRows([])
-    void loadPage(carId, 1, false)
-    getCarStatus(carId).then(setStatus).catch(() => setStatus(null))
-  }, [carId, loadPage])
+    const controller=new AbortController(); setSelected(null);setStatus(null)
+    if(carId!=null)getCarStatus(carId,controller.signal).then(s=>{if(!controller.signal.aborted)setStatus(s)}).catch(()=>{})
+    return()=>controller.abort()
+  },[carId])
 
   const visible = useMemo(() => filterCharges(rows, filter), [rows, filter])
   const addresses = useMemo(() => chargeAddresses(rows), [rows])
-  const monthly = useMemo(() => monthlyEnergy(rows), [rows])
+  const dailyRows = useMemo(() => filterCharges(history.charges, filter), [history.charges, filter])
 
   const summary = useMemo(() => {
     const all = history.charges
@@ -330,12 +288,12 @@ export default function ChargesPage() {
   }
 
   const chargingNow = status?.chargingState?.toLowerCase() === 'charging'
-  const monthlyTotal = monthly.reduce((sum, entry) => sum + entry.value, 0)
   const snapshot = status?.source === 'telemetry_cache'
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+        <button className="apple-btn-secondary" disabled={loading} onClick={() => {void reload();void history.reload()}}>刷新记录</button>
         <h1 style={{ fontSize: 28, fontWeight: 700 }}>充电记录</h1>
         {cars.length > 1 ? (
           <select className="apple-input" style={{ width: 'auto' }} value={carId ?? ''} onChange={event => setCarId(Number(event.target.value))}>
@@ -435,17 +393,13 @@ export default function ChargesPage() {
         </button>
       </div>
 
-      {monthly.length ? (
-        <Panel title="近六个月充入电量">
-          <BarsPanel
-            data={monthly}
-            unit="kWh"
-            color={DATA_COLORS.teal}
-            height={170}
-            summary={<span>基于已加载记录 · 合计 <span className="tabular" style={{ fontWeight: 600, color: V3.label }}>{monthlyTotal.toFixed(1)} kWh</span></span>}
-          />
-        </Panel>
-      ) : null}
+      <ChargeCalendar rows={dailyRows} />
+      <p className="text-secondary" role="status" style={{fontSize:13,lineHeight:1.7}}>
+        {rows[0]?.startDate ? `当前已返回的最新记录：${formatTime(rows[0].startDate)}。` : '尚未收到充电历史。'}
+        {visible.length !== rows.length ? `筛选隐藏了 ${rows.length-visible.length} 条。` : ''}
+        {page < totalPages ? '还有后续分页，可加载更多。' : '当前接口分页已读完，但不证明车辆同步完整。'}
+        期间有充电却未显示时，请核对账号、车辆、筛选和服务端同步；不要清除历史。
+      </p>
 
       {loading && !visible.length ? (
         <>
@@ -501,7 +455,7 @@ export default function ChargesPage() {
       {loading && visible.length ? <Skeleton height={72} radius={14} /> : null}
 
       {page < totalPages ? (
-        <button className="apple-btn-secondary" disabled={loading} onClick={() => carId != null && void loadPage(carId, page + 1, true)}>
+        <button className="apple-btn-secondary" disabled={loading} onClick={() => void loadMore()}>
           加载更多
         </button>
       ) : null}

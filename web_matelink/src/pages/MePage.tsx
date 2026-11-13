@@ -1,9 +1,10 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import { ApiError, claimInvite, getCars, loadSession, logout } from '../api/matelink'
 import type { WebCar } from '../api/matelink-types'
 import { Icon, TONES, type IconName } from '../components/viz'
 import { Panel, V3 } from '../components/v3'
+import { AppearanceSettings } from '../components/Appearance'
 
 export const CONSENT_VERSION = '2026-08-21'
 
@@ -88,7 +89,9 @@ export default function MePage() {
   }
 
   const handleLogout = async () => {
+    if (!window.confirm('退出当前账号？不会清除本机外观设置。')) return
     await logout()
+    if (loadSession()) return
     navigate('/login', { replace: true })
   }
 
@@ -96,7 +99,7 @@ export default function MePage() {
 
   return (
     <div className="page-in" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <h1 className="hero-title">我的</h1>
+      <h1 className="hero-title">设置</h1>
 
       <Panel>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 6 }}>
@@ -130,6 +133,9 @@ export default function MePage() {
         <InfoRow icon="calendar" label="已同意条款版本" value={`${CONSENT_VERSION}（用户协议与隐私政策）`} />
       </Panel>
 
+      <AppearanceSettings />
+      <nav className="ml-settings-nav" aria-label="设置分组"><Link className="ml-settings-link" to="/data-info">数据状态 <span>›</span></Link><Link className="ml-settings-link" to="/updates">软件更新 <span>›</span></Link><Link className="ml-settings-link" to="/temperatures">温度与胎压 <span>›</span></Link><Link className="ml-settings-link" to="/locations">地点与地图 <span>›</span></Link></nav>
+      <details className="ml-disclosure"><summary>平台与设置说明</summary><div>网页目前显示简体中文。地图和胎压页面保留现有能力；本端未接入 App 的分时电价编辑，不会擅自改动实际账单。登录、退出与车辆授权分别确认。</div></details>
       <Panel>
         <CardTitle icon="car">我的车辆</CardTitle>
         {cars.length ? (

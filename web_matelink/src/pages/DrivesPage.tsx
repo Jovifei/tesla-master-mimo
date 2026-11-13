@@ -1,6 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ApiError, getCarStatus, getDriveDetail, getDrivesPage, getParkedBetween, type DriveDetail } from '../api/matelink'
-import type { WebCarStatus, WebCharge, WebDriveSummary, WebParked } from '../api/matelink-types'
+import { DayCards } from '../components/DayCards'
+import { ParkingBetween } from '../components/ParkingBetween'
+import { calendarDays, civilDay } from '../components/presentation-policy'
+import { usePagedHistory } from './usePagedHistory'
+import { useEffect, useMemo, useState } from 'react'
+import { ApiError, getDriveDetail, getDrivesPage, getParkedBetween, type DriveDetail } from '../api/matelink'
+import type { WebCharge, WebDriveSummary, WebParked } from '../api/matelink-types'
 import { recentDriveModel } from '../api/recent-drive'
 import { elevationStats } from '../api/drive-elevation'
 import { driveEnergyMethodLabel, resolveDriveEnergy, resolveSummaryEnergy } from '../api/drive-energy.ts'
@@ -110,21 +114,21 @@ function DriveDetailView({
 }) {
   const [detail, setDetail] = useState<DriveDetail | null>(null)
   const [parked, setParked] = useState<WebParked | null>(null)
-  const [status, setStatus] = useState<WebCarStatus | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [fullCurves,setFullCurves]=useState(false)
 
   useEffect(() => {
     let live = true
-    getDriveDetail(carId, drive.id)
+    const controller=new AbortController();setDetail(null);setParked(null);setError(null)
+    getDriveDetail(carId, drive.id,controller.signal)
       .then(result => {
         if (live) setDetail(result)
       })
       .catch((reason: unknown) => {
         if (live) setError(reason instanceof ApiError ? reason.message : '读取行程详情失败。')
       })
-    getCarStatus(carId).then(result => { if (live) setStatus(result) }).catch(() => {})
     if (newerDriveId && /^\d+$/.test(drive.id) && /^\d+$/.test(newerDriveId)) {
-      getParkedBetween(carId, drive.id, newerDriveId)
+      getParkedBetween(carId, drive.id, newerDriveId,controller.signal)
         .then(result => {
           if (live) setParked(result)
         })
@@ -134,6 +138,7 @@ function DriveDetailView({
     }
     return () => {
       live = false
+      controller.abort()
     }
   }, [carId, drive.id, newerDriveId])
 
@@ -172,7 +177,7 @@ function DriveDetailView({
     return count === 1 ? `仅 1 个采样点，无法绘制${name}曲线` : `无${name}采样数据`
   }
   const series: StackSeriesDef[] = [
-    { key: 'power', title: '功率', unit: 'kW', color: DATA_COLORS.teal, height: 148, digits: 1, emptyReason: insufficient('power', '功率') ?? (countOf(rows, 'power') < points.length * 0.5 ? '功率采样稀疏，仅显示已有采样点' : undefined) },
+    { key: 'power', title: '功率', unit: 'kW', color: DATA_COLORS.teal, height: 148, digits: 1, emptyReason: insufficient('power', '功率') },
     { key: 'speed', title: '速度', unit: 'km/h', color: DATA_COLORS.graphite, height: 130, domain: [0, 'auto'], emptyReason: insufficient('speed', '速度') },
     { key: 'soc', title: '电量', unit: '%', color: DATA_COLORS.tealDeep, height: 70, domain: [0, 100], emptyReason: insufficient('soc', '电量') },
   ]
@@ -234,7 +239,7 @@ function DriveDetailView({
         <button className="apple-btn-secondary" onClick={onBack} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
           <span style={{ display: 'inline-flex', transform: 'rotate(180deg)' }}><Icon name="chevron" size={14} /></span>
           返回列表
-        </button>
+        </button<button className="apple-btn-secondary" style={{float:'right'}} onClick={()=>{setFullCurves(true);requestAnimationFrame(()=>document.getElementById('full-curves')?.scrollIntoView({block:'start'}))}}>详细曲线</button>>
       </div>
 
       <Panel style={{ borderRadius: 24 }}>
@@ -279,11 +284,8 @@ function DriveDetailView({
           <StatTile label="耗电量" value="--" caption="本机口径暂不可计算（无合格来源）" />
         )}
         <StatTile label="平均能耗" value={efficiency != null ? fmtNum(efficiency, 1) : '--'} unit="kWh/100km" accent={TILE_COLORS.blue} caption={energy.method ? `本机口径 · ${driveEnergyMethodLabel(energy)}` : undefined} />
-        <StatTile label="平均速度" value={num(current.speedAvgKmh)} unit="km/h" />
-        <StatTile label="最高速度" value={num(current.speedMaxKmh)} unit="km/h" caption="本段行程记录值" />
-        {maxPowerKw != null ? <StatTile label="最大功率" value={fmtNum(maxPowerKw, 1)} unit="kW" accent={TILE_COLORS.orange} caption="逐点采样峰值" /> : null}
         <BatteryTile from={current.startBatteryLevel} to={current.endBatteryLevel} />
-        <StatTile label="车外平均温度" value={num(current.outsideTempAvgC, 1)} unit="°C" accent={TILE_COLORS.purple} />
+
         <StatTile
           label="里程表"
           value={current.odometerStartKm != null && current.odometerEndKm != null ? `${Math.round(current.odometerStartKm).toLocaleString('zh-CN')} → ${Math.round(current.odometerEndKm).toLocaleString('zh-CN')}` : '--'}
@@ -295,9 +297,11 @@ function DriveDetailView({
         <Panel><p style={{ fontSize: 14, color: V3.label2 }}>这条记录处于隔离状态，曲线不可用。</p></Panel>
       ) : detail && points.length ? (
         <>
-          <Panel title="采样曲线">
-            <StackChart data={rows} series={series} syncKey={`drive-${drive.id}`} />
-          </Panel>
+          <Panel title="速度"><div className="ml-day-nav"><span>平均 {num(current.speedAvgKmh)} km/h</span><span>最高 {num(current.speedMaxKmh)} km/h</span></div><StackChart data={rows} series={[series[1]]} syncKey={`drive-speed-${drive.id}`} /></Panel>
+          <Panel title="功率"><p className="text-secondary" style={{fontSize:13,marginBottom:12}}>峰值 {maxPowerKw==null?'—':fmtNum(maxPowerKw,1)} kW · 仅使用实际采样</p><StackChart data={rows} series={[series[0]]} syncKey={`drive-power-${drive.id}`} /></Panel>
+          <p className="text-secondary" style={{fontSize:12}}>孤立的点表示少量实际采样；断开部分缺少观测，不补画连续曲线。</p>
+          <details open={fullCurves} className="ml-disclosure" id="full-curves" onToggle={e=>setFullCurves(e.currentTarget.open)}><summary>详细曲线</summary><div>
+          <StackChart data={rows} series={[series[2]]} syncKey={`drive-soc-${drive.id}`} />
           {hasTemp ? (
             <Panel title="温度（逐点采样）">
               <StackChart data={rows} series={tempSeries} syncKey={`drive-temp-${drive.id}`} />
@@ -322,26 +326,13 @@ function DriveDetailView({
               <BarsPanel data={speedBuckets.map(b => ({ label: b.label, value: b.count }))} unit="次" color={DATA_COLORS.graphite} height={150} />
             </Panel>
           ) : null}
+          </div></details>
         </>
       ) : detail ? (
         <Panel><p style={{ fontSize: 14, color: V3.label2 }}>这段行程没有可用的采样曲线。</p></Panel>
       ) : (
         <Skeleton height={420} />
       )}
-
-      {status?.tpms ? (
-        <Panel title="轮胎气压（当前快照）">
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 12 }}>
-            <StatTile label="左前" value={num(status.tpms.fl, 1)} unit="bar" />
-            <StatTile label="右前" value={num(status.tpms.fr, 1)} unit="bar" />
-            <StatTile label="左后" value={num(status.tpms.rl, 1)} unit="bar" />
-            <StatTile label="右后" value={num(status.tpms.rr, 1)} unit="bar" />
-          </div>
-          <p style={{ fontSize: 12, color: V3.label3, marginTop: 10, lineHeight: 1.6 }}>
-            服务端只保存当前胎压快照；历史趋势由本浏览器本地采样记录（见温度与统计相关页面说明）。
-          </p>
-        </Panel>
-      ) : null}
 
       {parked ? (
         <Panel title="之后驻车">
@@ -418,35 +409,22 @@ function DriveDetailView({
 
 export default function DrivesPage() {
   const { cars, car, carId, setCarId, error: carError } = useCar()
-  const [rows, setRows] = useState<WebDriveSummary[]>([])
-  const [page, setPage] = useState(1)
-  const [totalPages, setTotalPages] = useState(1)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const {rows, page, totalPages, loading, error, reload, loadMore} = usePagedHistory<WebDriveSummary>(carId,getDrivesPage)
   const [selected, setSelected] = useState<{ drive: WebDriveSummary; newerDriveId: string | null } | null>(null)
   const history = useHistory(carId)
+  const [windowDays,setWindowDays]=useState(7)
+  const groups=useMemo(()=>{
+    const byDay=new Map<string,WebDriveSummary[]>()
+    for(const row of rows){const key=civilDay(row.startDate)??'日期未知';byDay.set(key,[...(byDay.get(key)??[]),row])}
+    if(!windowDays)return [...byDay].sort((a,b)=>b[0].localeCompare(a[0])).map(([key,items])=>({key,items}))
+    const today=new Date(), end=civilDay(today.toISOString())!
+    today.setDate(today.getDate()-windowDays+1)
+    const start=civilDay(today.toISOString())!
+    return calendarDays(start,end).reverse().map(key=>({key,items:byDay.get(key)??[]}))
+  },[rows,windowDays])
 
-  const loadPage = useCallback(async (targetCar: number, targetPage: number, append: boolean) => {
-    setLoading(true)
-    setError(null)
-    try {
-      const result = await getDrivesPage(targetCar, targetPage)
-      setRows(previous => (append ? [...previous, ...result.rows] : result.rows))
-      setPage(targetPage)
-      setTotalPages(result.totalPages)
-    } catch (reason) {
-      setError(reason instanceof ApiError ? reason.message : '读取行程记录失败。')
-    } finally {
-      setLoading(false)
-    }
-  }, [])
 
-  useEffect(() => {
-    if (carId == null) return
-    setSelected(null)
-    setRows([])
-    void loadPage(carId, 1, false)
-  }, [carId, loadPage])
+  useEffect(() => { setSelected(null) },[carId])
 
   const summary = useMemo(() => {
     const all = history.drives
@@ -476,6 +454,7 @@ export default function DrivesPage() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+        <button className="apple-btn-secondary" disabled={loading} onClick={() => {void reload();void history.reload()}}>刷新记录</button>
         <h1 style={{ fontSize: 28, fontWeight: 700 }}>行程记录</h1>
         {cars.length > 1 ? (
           <select className="apple-input" style={{ width: 'auto' }} value={carId ?? ''} onChange={event => setCarId(Number(event.target.value))}>
@@ -514,14 +493,17 @@ export default function DrivesPage() {
         </Panel>
       ) : null}
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {rows.map((drive, index) => {
+      <div className="ml-day-nav" aria-label="行程日期范围"><button aria-pressed={windowDays===7} onClick={()=>setWindowDays(7)}>近一周</button><button aria-pressed={windowDays===30} onClick={()=>setWindowDays(30)}>近一月</button><button aria-pressed={windowDays===0} onClick={()=>setWindowDays(0)}>全部已加载</button></div>
+      <Panel title="按日行程次数"><BarsPanel data={groups.filter(g=>g.key!=='日期未知').slice().reverse().map(g=>({label:g.key.slice(5),value:g.items.length}))} unit="次" color={DATA_COLORS.graphite} height={140}/><p className="text-secondary" style={{fontSize:12}}>按已返回记录统计；空柱不证明当天没有行程。</p></Panel>
+      <DayCards key={`${carId}:${windowDays}`} groups={groups}>{group => <>{group.items.map(drive => {
+          const index=rows.findIndex(row=>row===drive)
           const model = recentDriveModel(drive)
           const newerDriveId = index > 0 ? rows[index - 1].id : null
           const driveEnergy = resolveSummaryEnergy(drive, car?.model ?? null)
           return (
+            <div key={drive.id}>
+            {index>0 && carId!=null ? <ParkingBetween key={`${carId}:${drive.id}:${rows[index-1].id}`} carId={carId} older={drive} newer={rows[index-1]} /> : null}
             <button
-              key={drive.id}
               className="apple-card hover-lift"
               onClick={() => setSelected({ drive, newerDriveId })}
               style={{ display: 'block', width: '100%', textAlign: 'left', cursor: 'pointer', color: 'inherit', font: 'inherit' }}
@@ -547,9 +529,10 @@ export default function DrivesPage() {
                   {driveEnergy.efficiencyWhKm != null ? <Chip icon="chart" tone="blue" text={`能耗 ${(driveEnergy.efficiencyWhKm / 10).toFixed(1)} kWh/100km`} /> : null}
                 </span>
               </div>
-            </button>
+            </button></div>
           )
-        })}
+        })}</>}</DayCards>
+      <div>
         {!rows.length && !loading ? (
           <Panel><p style={{ fontSize: 14, color: V3.label2 }}>暂无行程记录。</p></Panel>
         ) : null}
@@ -563,7 +546,7 @@ export default function DrivesPage() {
       </div>
 
       {page < totalPages ? (
-        <button className="apple-btn-secondary" disabled={loading} onClick={() => carId != null && void loadPage(carId, page + 1, true)}>
+        <button className="apple-btn-secondary" disabled={loading} onClick={() => void loadMore()}>
           加载更多
         </button>
       ) : null}
