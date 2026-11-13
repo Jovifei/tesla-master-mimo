@@ -1,5 +1,5 @@
 import { ChargeActivityGrid } from '../../components/PresentationControls'
-import { civilDay } from '../../domain/ui_presentation'
+import { calendarHistoryGroups, civilDay } from '../../domain/ui_presentation'
 import { useAppearance } from '../../services/appearance'
 import { Button, Map as TaroMap, Picker, ScrollView, Text, View } from '@tarojs/components'
 import Taro, { useDidHide, useDidShow, usePageScroll, useUnload } from '@tarojs/taro'
@@ -144,7 +144,6 @@ export default function ChargesPage() {
   useEffect(() => {
     selectedIdRef.current = selected?.id ?? null
   }, [selected])
-  const [chartKind, setChartKind] = useState<'energy' | 'cost' | 'count'>('energy')
   const [chargeTypeFilter, setChargeTypeFilter] = useState<'all' | 'ac' | 'dc'>('all')
   const [costFilter, setCostFilter] = useState<'all' | 'has' | 'none'>('all')
   const [selectedLocation, setSelectedLocation] = useState<string | null>(null)
@@ -630,8 +629,13 @@ export default function ChargesPage() {
     months.set(key, month)
   }
   const chartMonths = [...months.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([, month]) => month)
-  const chartValue = (month: typeof chartMonths[number]) => chartKind === 'energy' ? month.energy : chartKind === 'cost' ? month.cost : month.count
-  const chartKnown = (month: typeof chartMonths[number]) => chartKind === 'energy' ? month.energyKnown : chartKind === 'cost' ? month.costKnown : month.count
+  const dailyCells = calendarHistoryGroups(chartMonths.map(day => ({ key: day.label, label: day.label, items: [day] })), query.startDate, query.endDate)
+    .filter(group => group.key !== 'unknown').sort((a, b) => a.key.localeCompare(b.key)).map(group => {
+      const day = group.items[0]
+      return { key: group.key, label: group.key.slice(8), value: day?.energyKnown ? day.energy : null,
+        approximate: Boolean(day && day.energyKnown < day.count),
+        display: day ? `${day.energyKnown ? `${day.energy.toFixed(2)} kWh` : '电量待确认'} · 已知 ${day.energyKnown} / ${day.count} 条` : '尚未读到该日记录，不代表未充电' }
+    })
   const detailCoordinate = selectedEvidence?.charge ? mapCoordinate(selectedEvidence.charge.latitude, selectedEvidence.charge.longitude) : null
   const sampleStats = (key: 'powerKw' | 'voltageV' | 'currentA' | 'temperatureC') => {
     const values = (selectedEvidence?.points ?? []).map(point => point[key]).filter((value): value is number => value != null && Number.isFinite(value))
@@ -687,19 +691,13 @@ export default function ChargesPage() {
         <Button className="button" onClick={() => setNotices([])}>关闭提示</Button>
       </View> : null}
       {car && !loading ? <HistoryIntervalSummary interval={intervalView} query={query} kind="charges" /> : null}
-      {car && chartMonths.length ? <View className="card charge-month-chart">
-        <Text className="section-title">充电趋势</Text>
-        <View className="charge-chart-tabs">
-          {([['energy', '电量'], ['cost', '费用'], ['count', '次数']] as const).map(([kind, label]) =>
-            <Button key={kind} className={`charge-chart-tab ${chartKind === kind ? 'charge-chart-tab-active' : ''}`} onClick={() => setChartKind(kind)}>{label}</Button>)}
-        </View>
-        <ChargeActivityGrid unit={chartKind === 'energy' ? 'kWh' : chartKind === 'count' ? '次' : chartCurrency || '币种待确认'} cells={chartMonths.map(month => ({
-          key: month.label, label: month.label.slice(5), value: chartKnown(month) ? chartValue(month) : null,
-          precision: chartKind === 'cost' ? 2 : chartKind === 'count' ? 0 : 1,
-          approximate: (chartKind === 'cost' && month.costEstimated) || chartKnown(month) < month.count,
-          display: `${chartKnown(month) ? `${chartKind === 'cost' && month.costEstimated ? '含估算 ' : ''}${chartValue(month).toFixed(chartKind === 'count' ? 0 : 2)} ${chartKind === 'energy' ? 'kWh' : chartKind === 'count' ? '次' : chartCurrency}` : '未知'} · 已知 ${chartKnown(month)} / ${month.count} 条`,
-        }))} />
-        <Text className="muted">统计已返回的 {chartItems.length} 条记录；费用仅在同币种时合计。</Text>
+      {car && dailyCells.length ? <View className="card charge-month-chart">
+        <Text className="section-title">按日充入电量</Text>
+        <ChargeActivityGrid unit="kWh" cells={dailyCells} />
+        <Text className="muted">统计已返回的 {chartItems.length} 条记录；深浅只表达电量，空格不补零。</Text>
+      </View> : null}
+      {car && !loading ? <View className="history-coverage-note">
+        <Text className="muted">{offline ? '当前为本机缓存' : '当前已返回记录'} · 最近日期 {visibleItems[0]?.startDate ? historyDetailDateTime(visibleItems[0].startDate) : '尚未读到'}。日期筛选、短充过滤和分页会影响展示；这不证明此后没有充电。</Text>
       </View> : null}
       {noticeLimited ? <Text className="muted history-notice-limit">本机前台提示记录不可写或已达上限，后续提示暂停；历史仍可查看</Text> : null}
 

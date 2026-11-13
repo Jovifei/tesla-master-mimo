@@ -43,7 +43,7 @@ beforeEach(() => {
   platform.values.set('matelink.wechat.session.v1', { apiOrigin: 'https://api.example.test', accessToken: 'synthetic-access', refreshToken: null, expiresAt: null, userId: 'user-a', linkRequired: false })
   // These fixtures describe fixed October 14 history; keep the historical tests
   // on an explicit all-time selection instead of depending on the wall clock.
-  for (const uid of ['uid7', 'uid8', 'fixture-vehicle']) platform.values.set(`${historyCacheKey('drives', 'user-a', uid, 'https://api.example.test')}.query`, { startDate: '', endDate: '', minDistanceKm: 0 })
+  for (const kind of ['drives', 'charges'] as const) for (const uid of ['uid7', 'uid8', 'fixture-vehicle']) platform.values.set(`${historyCacheKey(kind, 'user-a', uid, 'https://api.example.test')}.query`, { startDate: '', endDate: '', minDistanceKm: 0 })
 })
 afterEach(async () => {
   if (renderer) { await act(async () => { platform.unload(); renderer!.unmount() }); renderer = null }
@@ -128,7 +128,7 @@ describe('history pages consume canonical data across layers', () => {
     await act(async () => { platform.show() }); await flush()
     expect(page.root.findByProps({ className: 'history-detail-overlay' }).findByProps({ ariaLabel: `${kind === 'drives' ? '总电耗' : '电池充入'} 2 kWh` })).toBeDefined()
     if (kind === 'drives') {
-      await click(page, '行程曲线')
+      await click(page, '详细曲线')
       expect(platform.navigateTo).toHaveBeenLastCalledWith({ url: '/pages/analysis/index?kind=curves&id=2' })
     } else {
       // Charge curves render inline in the detail now (App parity); the
@@ -190,7 +190,7 @@ describe('history pages consume canonical data across layers', () => {
       expect(panel.props.scrollTop).toBe(180)
       if (change === 'aliasUnknown') {
         if (kind === 'drives') {
-          await click(page, '行程曲线')
+          await click(page, '详细曲线')
           expect(platform.navigateTo).toHaveBeenLastCalledWith({ url: '/pages/analysis/index?kind=curves&id=11' })
         } else {
           expect(page.root.findAllByType('button' as React.ElementType).some(node => node.children.join('') === '查看SOC、功率、电压、电流、温度曲线')).toBe(false)
@@ -375,8 +375,8 @@ describe('history pages consume canonical data across layers', () => {
     const interval = page.root.findByProps({ className: 'card history-interval' })
     expect(interval.findByProps({ ariaLabel: '充电次数 2 次' })).toBeDefined()
     expect(interval.findByProps({ ariaLabel: '能量 2 kWh' })).toBeDefined()
-    await click(page, '次数')
-    expect(page.root.findAllByProps({ className: 'activity-number' }).map(node => node.children.join(''))).toContain('2')
+    expect(page.root.findAllByProps({ className: 'charge-chart-tabs' })).toHaveLength(0)
+    expect(page.root.findAllByType('button').some(node => node.props.ariaLabel?.includes('2.00 kWh'))).toBe(true)
     const { historyCacheKey, readHistoryCache } = await import('../services/history_cache')
     const key = historyCacheKey('charges', 'user-a', 'uid7', 'https://api.example.test')
     const stored = readHistoryCache<Charge>({ getStorageSync: (name: string) => platform.values.get(name), setStorageSync: (name: string, value: unknown) => { platform.values.set(name, value) } }, key)
@@ -511,7 +511,7 @@ describe('history pages consume canonical data across layers', () => {
     await act(async () => { page.root.findByProps({ className: 'history-record' }).props.onClick() }); await flush()
     expect(page.root.findAllByProps({ ariaLabel: '时长 130 分钟' })).toHaveLength(2)
     expect(JSON.stringify(page.toJSON())).toContain('总电耗 -0.25 kWh')
-    await click(page, '行程曲线')
+    await click(page, '详细曲线')
     expect(platform.navigateTo).toHaveBeenCalledWith({ url: '/pages/analysis/index?kind=curves&id=1' })
   })
   it('renders the four qualified trip metrics and actual partial chart, retains proof on weak refresh and rejects incompatible peak units', async () => {

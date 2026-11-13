@@ -28,7 +28,7 @@ export default function HistoryDateChips({ query, onChange }: {
       if (days != null && days > 0) start.setDate(start.getDate() - (days - 1))
       const startDate = days == null ? '' : civil(start)
       const selected = query.startDate === startDate && query.endDate === (days == null ? '' : endDate)
-      return <Button key={String(days)} className={`history-chip ${selected ? 'history-chip-selected' : ''}`} onClick={() => onChange({ startDate, endDate: days == null ? '' : endDate })}>
+      return <Button key={String(days)} className={`history-chip ${selected ? 'history-chip-selected' : ''}`} onClick={() => onChange({ startDate, endDate: days == null ? '' : endDate, relativeDays: days == null ? undefined : days === 0 ? 1 : days })}>
         {days == null ? copy('history.all') : days === 0 ? copy('history.today') : days === 365 ? copy('history.lastYear') : copy('history.lastDays', { days })}
       </Button>
     })}

@@ -1,0 +1,90 @@
+name: Mini App-alignment qualification 20261113
+on:
+  push:
+    branches: [codex/ui-product-mini-20261109]
+    paths: ['.github/workflows/ui-alignment-mini-20261113.yml']
+permissions:
+  contents: read
+jobs:
+  source:
+    if: github.repository == 'Jovifei/tesla-master-mimo'
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    outputs:
+      sha: ${{ steps.commit.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 8
+      - name: Validate reviewed source against immutable mini baseline
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = ea874217c6c89d7e9bcdb2b40af0b12ddcfe5a28
+          git diff --exit-code 1a8cdbede3799a9d4f2bab39620e4c9b7e023fa6 HEAD -- miniprogram/src
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64,gzip,hashlib,subprocess
+          encoded=''.join(Path(f'tools/ui-alignment-20261113/mini.{i}.b64').read_text().strip() for i in range(4))
+          assert len(encoded)==17048, len(encoded)
+          patch=gzip.decompress(base64.b64decode(encoded,validate=True))
+          assert hashlib.sha256(patch).hexdigest()=='d1fb6804d3cceaf658334e899cb503ae3ad0856016bdb62f6cf5d752bd4b1cdb'
+          paths=[l[6:] for l in patch.decode().splitlines() if l.startswith('+++ b/')]
+          assert len(paths)==14 and all(p.startswith('miniprogram/src/') and '..' not in p for p in paths)
+          protected=['drive_energy','charge_cost.ts','parked_proof','address_display','api.ts','history_controller','history_cache']
+          assert not any(x in p for p in paths for x in protected)
+          subprocess.run(['git','apply','--unidiff-zero','--check','--whitespace=error','-'],input=patch,check=True)
+          subprocess.run(['git','apply','--unidiff-zero','--whitespace=error','-'],input=patch,check=True)
+          PY
+      - id: commit
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add miniprogram/src/
+          git rm tools/ui-alignment-20261113/mini.*.b64
+          git diff --cached --check
+          git commit -m 'feat(mini): align App calendar cards, energy grid, compact settings and honest data status'
+          git push origin HEAD:refs/heads/codex/ui-product-mini-20261109
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+  verify:
+    needs: source
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: miniprogram
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.source.outputs.sha }}
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Locked dependencies and source identity
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm ci --prefix test-tooling --ignore-scripts --no-audit --no-fund
+          mkdir -p evidence/ui-alignment
+          git rev-parse HEAD HEAD^{tree} HEAD^ > evidence/ui-alignment/SOURCE_HEAD.txt
+      - name: Typecheck actual product
+        run: npm run typecheck 2>&1 | tee evidence/ui-alignment/typecheck.log
+      - name: All original safety and new presentation tests
+        if: success() || failure()
+        env:
+          TZ: Asia/Shanghai
+        run: npm test -- --reporter=default --reporter=junit --outputFile.junit=evidence/ui-alignment/tests.xml 2>&1 | tee evidence/ui-alignment/tests.log
+      - name: Real WeChat compiler and original asset budgets
+        if: success() || failure()
+        run: npm run build:weapp 2>&1 | tee evidence/ui-alignment/build.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mini-alignment-${{ needs.source.outputs.sha }}
+          path: |
+            miniprogram/evidence/ui-alignment/
+            miniprogram/dist/
+          retention-days: 7
+          if-no-files-found: error

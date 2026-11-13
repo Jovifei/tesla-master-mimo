@@ -1,7 +1,7 @@
 import type { WechatStorage } from '../services/session'
 import { isHistoryQuarantined } from './history'
 
-export type HistoryQuery = { startDate: string; endDate: string; minDistanceKm: number; maxDistanceKm?: number }
+export type HistoryQuery = { startDate: string; endDate: string; minDistanceKm: number; maxDistanceKm?: number; relativeDays?: number }
 export const emptyHistoryQuery = (): HistoryQuery => ({ startDate: '', endDate: '', minDistanceKm: 0 })
 
 function civilFromDate(date: Date): string {
@@ -12,14 +12,14 @@ function civilFromDate(date: Date): string {
 export function defaultDriveHistoryQuery(now = new Date()): HistoryQuery {
   const endDate = civilFromDate(now)
   const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6)
-  return { startDate: civilFromDate(start), endDate, minDistanceKm: 0 }
+  return { startDate: civilFromDate(start), endDate, minDistanceKm: 0, relativeDays: 7 }
 }
 
 /** Android parity: ChargesViewModel defaults to LAST_30_DAYS (30 days inclusive) */
 export function defaultChargeHistoryQuery(now = new Date()): HistoryQuery {
   const endDate = civilFromDate(now)
   const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 29)
-  return { startDate: civilFromDate(start), endDate, minDistanceKm: 0 }
+  return { startDate: civilFromDate(start), endDate, minDistanceKm: 0, relativeDays: 30 }
 }
 
 function civilDate(value: unknown): string {
@@ -33,11 +33,12 @@ export function normalizeHistoryQuery(value: unknown): HistoryQuery {
   if (startDate && endDate && startDate > endDate) [startDate, endDate] = [endDate, startDate]
   const minDistanceKm = typeof row.minDistanceKm === 'number' && Number.isFinite(row.minDistanceKm) && row.minDistanceKm >= 0 && row.minDistanceKm <= 10000 ? row.minDistanceKm : 0
   const maxDistanceKm = typeof row.maxDistanceKm === 'number' && Number.isFinite(row.maxDistanceKm) && row.maxDistanceKm > minDistanceKm && row.maxDistanceKm <= 10000 ? row.maxDistanceKm : undefined
-  return { startDate, endDate, minDistanceKm, ...(maxDistanceKm === undefined ? {} : { maxDistanceKm }) }
+  const relativeDays = [1, 7, 30, 365].includes(row.relativeDays ?? -1) && startDate && endDate ? row.relativeDays : undefined
+  return { startDate, endDate, minDistanceKm, ...(maxDistanceKm === undefined ? {} : { maxDistanceKm }), ...(relativeDays === undefined ? {} : { relativeDays }) }
 }
 /** A newly chosen endpoint wins if it crosses the other endpoint. */
 export function selectHistoryDate(query: HistoryQuery, field: 'startDate' | 'endDate', value: string): HistoryQuery {
-  const next = { ...query, [field]: civilDate(value) }
+  const next = { ...query, relativeDays: undefined, [field]: civilDate(value) }
   if (next.startDate && next.endDate && next.startDate > next.endDate) {
     if (field === 'startDate') next.endDate = next.startDate
     else next.startDate = next.endDate
@@ -48,7 +49,7 @@ export function readHistoryQuery(storage: Pick<WechatStorage, 'getStorageSync'>,
   try {
     const raw = storage.getStorageSync(`${scope}.query`)
     if (raw === undefined || raw === null || raw === '') return fallback
-    return normalizeHistoryQuery(raw)
+    return refreshRelativeHistoryQuery(normalizeHistoryQuery(raw))
   } catch { return fallback }
 }
 export function writeHistoryQuery(storage: Pick<WechatStorage, 'setStorageSync'>, scope: string, query: HistoryQuery): boolean {
@@ -87,4 +88,11 @@ export function filterHistory<T extends { startDate?: string | null; distanceKm?
     const day = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
     return (!query.startDate || day >= query.startDate) && (!query.endDate || day <= query.endDate)
   })
+}
+
+/** Only explicitly selected relative presets roll forward. Old custom dates remain untouched. */
+export function refreshRelativeHistoryQuery(query: HistoryQuery, now = new Date()): HistoryQuery {
+  if (![1, 7, 30, 365].includes(query.relativeDays ?? -1) || !Number.isFinite(now.getTime())) return query
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - query.relativeDays! + 1)
+  return { ...query, startDate: civilFromDate(start), endDate: civilFromDate(now) }
 }

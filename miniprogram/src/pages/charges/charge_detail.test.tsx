@@ -1,3 +1,4 @@
+import { historyCacheKey } from '../../services/history_cache'
 import React from 'react'
 import renderer, { act, type ReactTestRenderer } from 'react-test-renderer'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
@@ -26,6 +27,8 @@ let offline = false
 beforeEach(() => {
   vi.resetModules(); platform.values.clear(); platform.request.mockReset(); platform.login.mockReset(); platform.navigateTo.mockReset(); offline = false
   vi.stubEnv('TARO_APP_API_BASE_URL', origin); platform.values.set('matelink.wechat.session.v1', session('owner'))
+  // Fixed October fixtures explicitly request all-time history; they must not age out of a rolling 30-day product default.
+  platform.values.set(`${historyCacheKey('charges', 'owner', 'uid7', origin)}.query`, { startDate: '', endDate: '', minDistanceKm: 0 })
   platform.request.mockImplementation(async ({ url }: { url: string }) => {
     if (offline) throw new Error('synthetic offline')
     if (url.endsWith('/cars')) return response({ cars: [{ car_id: 7, vehicle_uid: 'uid7', name: '合成车辆' }] })
@@ -322,13 +325,12 @@ it('shows an App-style short address, marked default-price estimate and only ret
   expect(summary.findByProps({ ariaLabel: '费用 ≈27.38 CNY' })).toBeDefined()
   expect(summary.findByProps({ ariaLabel: '单次均价 ≈27.38 CNY' })).toBeDefined()
   expect(shown()).toContain('费用按 App 默认 ¥1.14/kWh 估算')
-  await click('费用')
   const chart = tree!.root.findByProps({ className: 'card charge-month-chart' })
   const cells = chart.findAllByType('button').filter(node => node.props.className?.includes('charge-activity-cell'))
-  expect(cells).toHaveLength(1)
-  expect(cells[0].props.ariaLabel).toContain('含估算 27.38 CNY')
-  await act(async () => cells[0].props.onClick())
-  expect(chart.findByProps({ className: 'charge-activity-selection' }).children.join('')).toContain('含估算 27.38 CNY')
+  expect(cells.filter(node => node.props.ariaLabel.includes('已知 1 / 1 条'))).toHaveLength(1)
+  expect(cells.find(node => node.props.ariaLabel.includes('已知 1 / 1 条'))!.props.ariaLabel).toContain('24.02 kWh')
+  await act(async () => cells.find(node => node.props.ariaLabel.includes('已知 1 / 1 条'))!.props.onClick())
+  expect(chart.findByProps({ className: 'charge-activity-selection' }).children.join('')).toContain('24.02 kWh')
   expect(chart.findAllByProps({ className: 'muted' }).some(node => node.children.join('').includes('已返回的 1 条记录'))).toBe(true)
   await detail()
   const panel = tree!.root.findByProps({ className: 'history-detail-overlay' })
@@ -384,7 +386,7 @@ it('keeps a missing CNY bill estimate separate from an actual foreign-currency z
 it.each([
   { currency: 'CNY', defaultPrice: 0, card: '充电费用 ≈¥0.00', chart: '≈¥0.00', source: '已保存默认电价 ¥0/kWh' },
   { currency: 'EUR', defaultPrice: 2, card: '充电费用 ≈20.00 EUR', chart: '≈20.00 EUR', source: '已保存默认电价 2 EUR/kWh' },
-])('uses scoped saved $currency default price $defaultPrice before the App fallback, without using TOU rates', async ({ currency, defaultPrice, card, chart, source }) => {
+])('uses scoped saved $currency default price $defaultPrice before the App fallback, without using TOU rates', async ({ currency, defaultPrice, card, source }) => {
   const { tariffKey } = await import('../../domain/tariff')
   platform.values.set(tariffKey('owner', origin), { currency, defaultPrice, enabled: true, peak: 9, flat: 8, valley: 7, timeZone: 'Asia/Shanghai' })
   const legacy = { ...charge, source: 'teslamate_archive', cost: null, currency_code: null, energy_contract: null, charge_energy_added: 10, charge_details: [] }
@@ -399,9 +401,9 @@ it.each([
   const row = tree!.root.findByProps({ className: 'history-record' })
   expect(row.findByProps({ ariaLabel: card })).toBeDefined()
   expect(shown()).toContain(source)
-  await click('费用')
-  const cell = tree!.root.findAllByType('button').find(node => node.props.className?.includes('charge-activity-cell'))!
-  expect(cell.props.ariaLabel).toContain(chart.startsWith('≈¥') ? chart.replace('≈¥', '含估算 ') + ' CNY' : chart.replace('≈', '含估算 '))
+  const cell = tree!.root.findAllByType('button').find(node => node.props.className?.includes('charge-activity-cell') && node.props.ariaLabel.includes('已知 1 / 1 条'))!
+  expect(cell.props.ariaLabel).toContain('10.00 kWh')
+  expect(tree!.root.findAllByProps({ className: 'charge-chart-tabs' })).toHaveLength(0)
   await detail()
   expect(shown()).toContain(`费用来源：按 ${source} 与合格电池充入量估算`)
   const { historyCacheKey, readHistoryCache } = await import('../../services/history_cache')

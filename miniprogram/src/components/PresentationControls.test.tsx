@@ -1,7 +1,7 @@
 import React from 'react'
 import TestRenderer, { act } from 'react-test-renderer'
 import { afterEach, expect, it, vi } from 'vitest'
-import { activityLevel, civilDay, historyDayGroups, normalizeAppearance, verticalDayTarget } from '../domain/ui_presentation'
+import { chargeCellPaint, activityLevel, calendarHistoryGroups, daySwipeTarget, civilDay, historyDayGroups, normalizeAppearance, verticalDayTarget } from '../domain/ui_presentation'
 
 const storage = vi.hoisted(() => ({ values: new Map<string, unknown>(), writes: [] as string[], fail: false }))
 vi.mock('@tarojs/components', () => ({ View: 'view', Text: 'text', Button: 'button', Switch: 'switch' }))
@@ -18,11 +18,11 @@ const groups = historyDayGroups([
   { key: 'd2', date: '2026-11-08T12:00:00+09:00' }, { key: 'd3', date: '2026-11-07T12:00:00+09:00' },
 ], row => row.date)
 function render(scope = 'A') { return <VerticalDayStack groups={groups} scopeKey={scope}>{group => <span>{group.items.map(item => item.key).join(',')}</span>}</VerticalDayStack> }
-afterEach(async () => { if (tree) await act(async () => tree!.unmount()); tree = null; storage.fail = false; writeAppearance({ palette: 'neutral', reducedMotion: false }); storage.values.clear(); storage.writes = [] })
+afterEach(async () => { if (tree) await act(async () => tree!.unmount()); tree = null; storage.fail = false; writeAppearance({ palette: 'neutral', reducedMotion: false, dayAxis: 'horizontal' }); storage.values.clear(); storage.writes = [] })
 it('defaults to C, accepts only A/C and preserves valid zero/unknown levels', () => {
-  expect(normalizeAppearance(null)).toEqual({ palette: 'neutral', reducedMotion: false })
+  expect(normalizeAppearance(null)).toEqual({ palette: 'neutral', reducedMotion: false, dayAxis: 'horizontal' })
   expect(normalizeAppearance({ palette: 'blue', reducedMotion: 'true' })).toEqual(normalizeAppearance(null))
-  expect(normalizeAppearance({ palette: 'cream', reducedMotion: true })).toEqual({ palette: 'cream', reducedMotion: true })
+  expect(normalizeAppearance({ palette: 'cream', reducedMotion: true, dayAxis: 'horizontal' })).toEqual({ palette: 'cream', reducedMotion: true, dayAxis: 'horizontal' })
   expect(activityLevel(0, 50)).toBe(0); expect(activityLevel(null, 50)).toBe(0); expect(activityLevel(50, 50)).toBe(4)
   expect(activityLevel(NaN, 5)).toBe(0); expect(activityLevel(-1, 5)).toBe(0)
   expect(civilDay('not-a-date')).toBeNull()
@@ -37,31 +37,31 @@ it('vertical policy is bounded, axis-aware and rejects nonfinite input', () => {
   expect(verticalDayTarget(1, 4, 0, -20)).toBe(1)
   expect(verticalDayTarget(1, 4, NaN, 80)).toBe(1)
 })
-it('renders only current-day content, exposes two rear dates, switches vertically and resets per scope', async () => {
+it('renders only current-day content, exposes every rear date, switches horizontally and resets per scope', async () => {
   await act(async () => { tree = TestRenderer.create(render()) })
   const body = () => tree!.root.findByType('span').children.join('')
   expect(body()).toBe('d0,p0')
   const rear = () => tree!.root.findAllByProps({ className: 'day-stack-date' })
-  expect(rear()).toHaveLength(2)
+  expect(rear()).toHaveLength(3)
   expect(rear().map(node => node.children.join('')).join('')).not.toContain('d1')
   const gesture = () => tree!.root.findByProps({ className: 'day-stack-header' })
   await act(async () => {
-    gesture().props.onTouchStart({ touches: [{ pageX: 30, pageY: 100 }] })
-    gesture().props.onTouchEnd({ changedTouches: [{ pageX: 32, pageY: 20 }] })
+    gesture().props.onTouchStart({ touches: [{ pageX: 100, pageY: 30 }] })
+    gesture().props.onTouchEnd({ changedTouches: [{ pageX: 20, pageY: 32 }] })
   })
   expect(body()).toBe('d1,p1')
   await act(async () => {
-    gesture().props.onTouchStart({ touches: [{ pageX: 30, pageY: 20 }] })
-    gesture().props.onTouchEnd({ changedTouches: [{ pageX: 32, pageY: 100 }] })
+    gesture().props.onTouchStart({ touches: [{ pageX: 20, pageY: 30 }] })
+    gesture().props.onTouchEnd({ changedTouches: [{ pageX: 100, pageY: 32 }] })
   })
   expect(body()).toBe('d0,p0')
   await act(async () => rear()[0].props.onClick())
-  expect(body()).toBe('d2')
+  expect(body()).toBe('d3')
   await act(async () => tree!.update(render('B')))
   expect(body()).toBe('d0,p0')
   expect(tree!.root.findByProps({ className: 'day-stack-body' }).props.onTouchEnd).toBeUndefined()
   await act(async () => {
-    gesture().props.onTouchStart({ touches: [{ pageX: 30, pageY: 100 }] })
+    gesture().props.onTouchStart({ touches: [{ pageX: 100, pageY: 30 }] })
     gesture().props.onTouchCancel()
     gesture().props.onTouchEnd({ changedTouches: [{ pageX: 30, pageY: 0 }] })
   })
@@ -123,4 +123,49 @@ it('refreshes the selected day, forgets a removed selection and cancels multi-to
   expect(body()).toBe('d0,p0')
   await act(async () => tree!.update(scene()))
   expect(body()).toBe('d0,p0')
+})
+
+it('renders the full selected week including empty dates without manufacturing history; raises and collapses a rear date', async () => {
+  const week = calendarHistoryGroups(groups, '2026-11-04', '2026-11-10')
+  expect(week).toHaveLength(7)
+  expect(week.flatMap(group => group.items)).toHaveLength(6)
+  await act(async () => { tree = TestRenderer.create(<VerticalDayStack groups={week} scopeKey="week">{group => <span>{group.items.map(row => row.key).join(',')}</span>}</VerticalDayStack>) })
+  expect(tree!.root.findAllByProps({ className: 'day-stack-date' })).toHaveLength(6)
+  const yesterday = () => tree!.root.findAllByProps({ className: 'day-stack-date' }).find(node => node.children.join('').includes('2026-11-09'))!
+  await act(async () => yesterday().props.onClick())
+  expect(tree!.root.findByType('span').children.join('')).toBe('d1,p1')
+  await act(async () => yesterday().props.onClick())
+  expect(tree!.root.findByType('span').children.join('')).toBe('d0,p0')
+  await act(async () => tree!.root.findAllByProps({ className: 'day-stack-date' })[0].props.onClick())
+  expect(JSON.stringify(tree!.toJSON())).toContain('当天尚无已返回记录')
+  expect(calendarHistoryGroups(groups, '2026-02-30', '2026-11-10')).toEqual(groups)
+})
+it('persists optional vertical direction, rejects orthogonal gestures, and retains zero body side effects', async () => {
+  expect(daySwipeTarget(0, 7, -80, 3)).toBe(1)
+  expect(daySwipeTarget(0, 7, 3, -80)).toBe(0)
+  expect(daySwipeTarget(0, 7, 3, -80, 'vertical')).toBe(1)
+  expect(daySwipeTarget(0, 7, 80, 0)).toBe(0)
+  expect(daySwipeTarget(6, 7, -80, 0)).toBe(6)
+  await act(async () => { tree = TestRenderer.create(render()) })
+  await act(async () => { writeAppearance({ dayAxis: 'vertical' }) })
+  const gesture = tree!.root.findByProps({ className: 'day-stack-header' })
+  await act(async () => { gesture.props.onTouchStart({ touches: [{ pageX: 10, pageY: 100 }] }); gesture.props.onTouchEnd({ changedTouches: [{ pageX: 10, pageY: 10 }] }) })
+  expect(tree!.root.findByType('span').children.join('')).toBe('d1,p1')
+  expect(readAppearance().dayAxis).toBe('vertical')
+})
+
+it('matches App charge tile fixed-scale palette and readable contrast in both themes', () => {
+  expect(chargeCellPaint(0)).toEqual({ background:'#f3f3f5',foreground:'#000000' })
+  expect(chargeCellPaint(null,'cream')).toEqual({ background:'#f5f3ed',foreground:'#000000' })
+  expect(chargeCellPaint(60)).toEqual({ background:'#424244',foreground:'#ffffff' })
+  expect(chargeCellPaint(120)).toEqual(chargeCellPaint(60))
+  expect(chargeCellPaint(40).background).toBe('#78787a')
+  expect(chargeCellPaint(0,'neutral',true)).toEqual({background:'#242a31',foreground:'#ffffff'})
+  expect(chargeCellPaint(60,'neutral',true)).toEqual({background:'#bec0c3',foreground:'#000000'})
+})
+it('keeps date and two controls in the same App-aligned header row', async () => {
+  await act(async () => { tree=TestRenderer.create(render()) })
+  const row=tree!.root.findByProps({className:'day-stack-heading-row'})
+  expect(row.findByProps({className:'section-title'}).children.join('')).toContain('2026-11-10')
+  expect(row.findAllByType('button').map(n=>n.props.ariaLabel)).toEqual(['较新日期','较旧日期'])
 })
