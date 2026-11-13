@@ -112,10 +112,7 @@ function ChargeGridState({ cells, unit }: { cells: ActivityCell[]; unit: string 
       {Array.from({ length: leading }, (_, i) => <View key={`pad-${i}`} />)}
       {visible.map(cell => <Button key={cell.key}
         className={`charge-activity-cell level-${activityLevel(cell.value, max)}${selected === cell.key ? ' is-selected' : ''}`}
-        style={daily ? { '--charge-cell-bg': chargeCellPaint(cell.value, appearance.palette).background,
-          '--charge-cell-ink': chargeCellPaint(cell.value, appearance.palette).foreground,
-          '--charge-cell-bg-dark': chargeCellPaint(cell.value, appearance.palette, true).background,
-          '--charge-cell-ink-dark': chargeCellPaint(cell.value, appearance.palette, true).foreground } : undefined}
+        style={daily ? `--charge-cell-bg:${chargeCellPaint(cell.value, appearance.palette).background};--charge-cell-ink:${chargeCellPaint(cell.value, appearance.palette).foreground};--charge-cell-bg-dark:${chargeCellPaint(cell.value, appearance.palette, true).background};--charge-cell-ink-dark:${chargeCellPaint(cell.value, appearance.palette, true).foreground}` : undefined}
         ariaLabel={`${cell.key}，${cell.display}`} onClick={() => setSelected(cell.key)}>
         <Text>{daily ? cell.key.slice(8) : cell.label}</Text><Text className="activity-number">{activityNumber(cell, unit)}</Text>
       </Button>)}
