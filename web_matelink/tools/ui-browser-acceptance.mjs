@@ -42,8 +42,8 @@ try{
  await record('mobile navigation is compact, expandable, keyboard dismissible and route-closing',async()=>{
   await go('/drives');assert.ok((await page.locator('.ml-header').boundingBox()).height<=90)
   const menu=page.getByRole('button',{name:'导航',exact:true});await menu.click();assert.equal(await page.locator('#site-navigation').isVisible(),true)
-  await page.keyboard.press('Escape');assert.equal(await page.locator('#site-navigation').isVisible(),false)
-  await menu.click();await page.getByRole('link',{name:'设置',exact:true}).click();await page.waitForURL('**/me');assert.equal(await page.locator('#site-navigation').isVisible(),false)
+  await page.keyboard.press('Escape');await page.locator('#site-navigation').waitFor({state:'hidden'})
+  await menu.click();await page.getByRole('link',{name:'设置',exact:true}).click();await page.waitForURL('**/me');await page.locator('#site-navigation').waitFor({state:'hidden'})
  })()
  await record('real trip page uses seven calendar cards and preserves parking',async()=>{
   await go('/drives');await page.locator('.ml-day-header h2').waitFor();assert.match(await page.locator('.ml-day-header h2').innerText(),/2026-11-13/)

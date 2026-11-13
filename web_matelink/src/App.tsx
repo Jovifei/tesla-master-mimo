@@ -167,7 +167,7 @@ function Shell({ children }: { children: ReactNode }) {
           MateLink
         </div>
         <button className="ml-mobile-menu" aria-expanded={navigationOpen} aria-controls="site-navigation" onClick={()=>setNavigationOpen(v=>!v)}>{navigationOpen?'收起导航':'导航'}</button>
-        <nav id="site-navigation" aria-label="主导航" style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
+        <nav id="site-navigation" aria-label="主导航" onClick={e=>{if(e.target instanceof Element && e.target.closest('a[href]'))setNavigationOpen(false)}} style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
           {NAV_GROUPS.map(group => (
             <GroupMenu key={group.label} group={group} />
           ))}
