@@ -1,0 +1,7 @@
+<resources>
+    <string name="ui_day_axis_title">日期面板切换</string>
+    <string name="ui_day_horizontal">左右滑动</string>
+    <string name="ui_day_vertical">上下滑动</string>
+    <string name="ui_day_axis_note">只在日期抬头切换日期；下方记录始终正常上下滚动。</string>
+    <string name="ui_day_swipe_horizontal">日期抬头左右滑动 · 点击后层日期展开或收回</string>
+</resources>

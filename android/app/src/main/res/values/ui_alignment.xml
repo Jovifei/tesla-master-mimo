@@ -1,0 +1,7 @@
+<resources>
+    <string name="ui_day_axis_title">Day card navigation</string>
+    <string name="ui_day_horizontal">Left / right</string>
+    <string name="ui_day_vertical">Up / down</string>
+    <string name="ui_day_axis_note">Swipe the date header to change days. The records below always scroll normally.</string>
+    <string name="ui_day_swipe_horizontal">Swipe the date header left / right · tap an exposed date to raise or collapse it</string>
+</resources>
