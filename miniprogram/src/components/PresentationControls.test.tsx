@@ -1,7 +1,7 @@
 import React from 'react'
 import TestRenderer, { act } from 'react-test-renderer'
 import { afterEach, expect, it, vi } from 'vitest'
-import { activityLevel, calendarHistoryGroups, daySwipeTarget, civilDay, historyDayGroups, normalizeAppearance, verticalDayTarget } from '../domain/ui_presentation'
+import { chargeCellPaint, activityLevel, calendarHistoryGroups, daySwipeTarget, civilDay, historyDayGroups, normalizeAppearance, verticalDayTarget } from '../domain/ui_presentation'
 
 const storage = vi.hoisted(() => ({ values: new Map<string, unknown>(), writes: [] as string[], fail: false }))
 vi.mock('@tarojs/components', () => ({ View: 'view', Text: 'text', Button: 'button', Switch: 'switch' }))
@@ -152,4 +152,20 @@ it('persists optional vertical direction, rejects orthogonal gestures, and retai
   await act(async () => { gesture.props.onTouchStart({ touches: [{ pageX: 10, pageY: 100 }] }); gesture.props.onTouchEnd({ changedTouches: [{ pageX: 10, pageY: 10 }] }) })
   expect(tree!.root.findByType('span').children.join('')).toBe('d1,p1')
   expect(readAppearance().dayAxis).toBe('vertical')
+})
+
+it('matches App charge tile fixed-scale palette and readable contrast in both themes', () => {
+  expect(chargeCellPaint(0)).toEqual({ background:'#f3f3f5',foreground:'#000000' })
+  expect(chargeCellPaint(null,'cream')).toEqual({ background:'#f5f3ed',foreground:'#000000' })
+  expect(chargeCellPaint(60)).toEqual({ background:'#424244',foreground:'#ffffff' })
+  expect(chargeCellPaint(120)).toEqual(chargeCellPaint(60))
+  expect(chargeCellPaint(40).background).toBe('#78787a')
+  expect(chargeCellPaint(0,'neutral',true)).toEqual({background:'#242a31',foreground:'#ffffff'})
+  expect(chargeCellPaint(60,'neutral',true)).toEqual({background:'#bec0c3',foreground:'#000000'})
+})
+it('keeps date and two controls in the same App-aligned header row', async () => {
+  await act(async () => { tree=TestRenderer.create(render()) })
+  const row=tree!.root.findByProps({className:'day-stack-heading-row'})
+  expect(row.findByProps({className:'section-title'}).children.join('')).toContain('2026-11-10')
+  expect(row.findAllByType('button').map(n=>n.props.ariaLabel)).toEqual(['较新日期','较旧日期'])
 })

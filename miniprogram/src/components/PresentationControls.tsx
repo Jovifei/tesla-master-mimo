@@ -1,6 +1,6 @@
 import { Button, Switch, Text, View } from '@tarojs/components'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { activityLevel, civilDay, dayCaption, daySwipeTarget, type DayGroup } from '../domain/ui_presentation'
+import { chargeCellPaint, activityLevel, civilDay, dayCaption, daySwipeTarget, type DayGroup } from '../domain/ui_presentation'
 import { useAppearance, writeAppearance } from '../services/appearance'
 
 export function PresentationPreferences() {
@@ -70,13 +70,14 @@ function DayStackState<T>({ groups, children }: { groups: DayGroup<T>[]; childre
     </View>)}
     <View className="day-stack-front">
       <View className="day-stack-header" catchMove onTouchStart={start} onTouchMove={move} onTouchEnd={end} onTouchCancel={() => { touch.current = null }}>
-        <Text className="section-title">{dayCaption(active.key)}</Text>
+        <View className="day-stack-heading-row">
+          <Text className="section-title">{dayCaption(active.key)}</Text>
+          <View className="day-stack-arrows">
+            <Button disabled={index === 0} onClick={() => selectIndex(index - 1)} ariaLabel="较新日期">{appearance.dayAxis === 'horizontal' ? '‹' : '↑'}</Button>
+            <Button disabled={index === groups.length - 1} onClick={() => selectIndex(index + 1)} ariaLabel="较旧日期">{appearance.dayAxis === 'horizontal' ? '›' : '↓'}</Button>
+          </View>
+        </View>
         <Text className="muted">{appearance.dayAxis === 'horizontal' ? '左右' : '上下'}滑动日期抬头切换 · 正文正常滚动</Text>
-      </View>
-      <View className="day-stack-navigation">
-        <Button disabled={index === 0} onClick={() => selectIndex(index - 1)} ariaLabel="较新日期">{appearance.dayAxis === 'horizontal' ? '‹' : '↑'} 较新</Button>
-        <Text className="muted">{index + 1} / {groups.length} 个日期</Text>
-        <Button disabled={index === groups.length - 1} onClick={() => selectIndex(index + 1)} ariaLabel="较旧日期">{appearance.dayAxis === 'horizontal' ? '›' : '↓'} 较旧</Button>
       </View>
       <View key={active.key} className="day-stack-body">{active.items.length ? children(active) : <Text className="day-stack-empty">当天尚无已返回记录；不代表没有行程。</Text>}</View>
       {index > 0 ? <Button className="day-stack-close" onClick={() => selectIndex(0)}>收回至 {dayCaption(groups[0].key)}</Button> : null}
@@ -94,6 +95,7 @@ export function ChargeActivityGrid({ cells, unit }: { cells: ActivityCell[]; uni
   return <ChargeGridState key={JSON.stringify(cells.map(cell => cell.key)) + unit} cells={cells} unit={unit} />
 }
 function ChargeGridState({ cells, unit }: { cells: ActivityCell[]; unit: string }) {
+  const appearance = useAppearance()
   const pageSize = 28
   const [page, setPage] = useState(Math.max(0, Math.ceil(cells.length / pageSize) - 1))
   const [selected, setSelected] = useState<string | null>(null)
@@ -110,6 +112,10 @@ function ChargeGridState({ cells, unit }: { cells: ActivityCell[]; unit: string 
       {Array.from({ length: leading }, (_, i) => <View key={`pad-${i}`} />)}
       {visible.map(cell => <Button key={cell.key}
         className={`charge-activity-cell level-${activityLevel(cell.value, max)}${selected === cell.key ? ' is-selected' : ''}`}
+        style={daily ? { '--charge-cell-bg': chargeCellPaint(cell.value, appearance.palette).background,
+          '--charge-cell-ink': chargeCellPaint(cell.value, appearance.palette).foreground,
+          '--charge-cell-bg-dark': chargeCellPaint(cell.value, appearance.palette, true).background,
+          '--charge-cell-ink-dark': chargeCellPaint(cell.value, appearance.palette, true).foreground } : undefined}
         ariaLabel={`${cell.key}，${cell.display}`} onClick={() => setSelected(cell.key)}>
         <Text>{daily ? cell.key.slice(8) : cell.label}</Text><Text className="activity-number">{activityNumber(cell, unit)}</Text>
       </Button>)}

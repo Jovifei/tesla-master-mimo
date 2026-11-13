@@ -97,3 +97,25 @@
 .settings-nav-row:last-child { border-bottom: 0; }
 .section-card .analysis-curve { margin: 24rpx -8rpx 0; padding: 16rpx 8rpx 0; box-shadow: none; border: 0; border-radius: 0; }
 @media (prefers-reduced-motion: reduce) { .axis-horizontal .day-stack-body, .axis-vertical .day-stack-body { animation: none; } }
+
+/* Exact semantic surfaces from Android Color.kt / Theme.kt, not a separate mini redesign. */
+:root, page, .appearance-neutral, .appearance-cream {
+  --apple-label-secondary: #626268; --apple-surface-secondary: #f3f3f5;
+  --apple-surface-tertiary: #ececef; --apple-separator: #e5e5ea;
+  --day-rear: #ffffff; --day-rear-selected: #f3f3f5;
+}
+.appearance-cream { --apple-surface-secondary: #f5f3ed; --apple-surface-tertiary: #ebe7de; --apple-separator: #e4e0d6; --day-rear: #fffefa; --day-rear-selected: #f3f0e8; }
+.day-stack-rear { background: var(--day-rear); }
+.day-stack-rear.is-selected { background: var(--day-rear-selected); }
+.day-stack-header { min-height: 192rpx; box-sizing: border-box; padding: 16rpx 8rpx 16rpx 32rpx; border-bottom: 1px solid var(--apple-separator); }
+.day-stack-heading-row { display:flex; align-items:center; gap: 8rpx; }
+.day-stack-heading-row > .section-title { flex:1; min-width:0; font-size:32rpx; font-weight:600; }
+.day-stack-arrows { display:flex; flex-shrink:0; }
+.day-stack-arrows button { width:96rpx; height:96rpx; margin:0; padding:0; border:0; background:transparent; color:var(--apple-label-primary); font-size:40rpx; line-height:96rpx; }
+.day-stack-arrows button::after { border:0; }
+.day-stack-arrows button[disabled] { opacity:.38; }
+.charge-activity-cell[style] { background:var(--charge-cell-bg); color:var(--charge-cell-ink); }
+@media (prefers-color-scheme: dark) {
+  :root, page, .appearance-neutral, .appearance-cream { --apple-label-secondary:#b7bdc6; --apple-surface-secondary:#242a31; --apple-surface-tertiary:#282d34; --apple-separator:#323840; --day-rear:#191d22; --day-rear-selected:#20252b; }
+  .charge-activity-cell[style] { background:var(--charge-cell-bg-dark); color:var(--charge-cell-ink-dark); }
+}

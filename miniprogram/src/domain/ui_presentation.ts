@@ -1,3 +1,4 @@
+import { mixSrgbInOklab } from './charge_palette'
 /** Presentation-only policy. Does not fetch, infer records, or change history. */
 export type Palette = 'neutral' | 'cream'
 export type DayAxis = 'horizontal' | 'vertical'
@@ -66,4 +67,15 @@ export function calendarHistoryGroups<T>(groups: DayGroup<T>[], start: string, e
     return byDate.get(key) ?? { key, label: key, items: [] as T[] }
   })
   return [...calendar, ...groups.filter(group => group.key === 'unknown' || group.key < start || group.key > end)]
+}
+
+/** Matches Android ChargeActivityGrid: surfaceVariant -> primary, 60 kWh at 80% mix. */
+export function chargeCellPaint(value: number | null, palette: Palette = 'neutral', dark = false): { background: string; foreground: string } {
+  const ratio = value != null && Number.isFinite(value) && value > 0 ? Math.min(value / 60, 1) * 0.8 : 0
+  const from = dark ? [36,42,49] : palette === 'cream' ? [245,243,237] : [243,243,245]
+  const to = dark ? [234,234,236] : [29,29,31]
+  const rgb = mixSrgbInOklab(from, to, ratio)
+  const linear = rgb.map(v => { const x=v/255; return x<=0.04045?x/12.92:((x+0.055)/1.055)**2.4 })
+  const luminance = linear[0]*.2126+linear[1]*.7152+linear[2]*.0722
+  return { background: '#'+rgb.map(v=>v.toString(16).padStart(2,'0')).join(''), foreground: luminance>.179?'#000000':'#ffffff' }
 }
