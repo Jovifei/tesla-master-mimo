@@ -8,7 +8,7 @@
 
 | 微信版本 | 提交日期 | Git Commit | 生产 API 入口 | 单测状态 | 模拟器巡检状态 | 当前后台状态 |
 |---|---|---|---|---|---|---|
-| **0.6.8** | 2026-11-13 | 本条流档初次提交（待填完整 SHA） | `https://api.teslalink.joviluma.com/` | 1115/1115 + 资源 6/6 | 生产未登录与合成配置各 9 页，Console error 无命中 | **上传成功** / 体验版状态待核实 |
+| **0.6.8** | 2026-11-13 | `1b42f9ac220e5371e688b1633abf15a3f96702b5` | `https://api.teslalink.joviluma.com/` | 1115/1115 + 资源 6/6 | 生产未登录与合成配置各 9 页，Console error 无命中 | **上传成功** / 体验版状态待核实 |
 | **0.6.7** | 2026-11-07 | `f2e0a8e` | `https://api.teslalink.joviluma.com/` | 79/79 PASS (100%) | 6 核心页面 0 Error | **开发版已上传** / 待设为体验版 |
 | **0.6.5** | 2026-11-04 | `799a41c` | `https://api.teslalink.joviluma.com/` | Vitest 4.1.12 PASS | 基础校验通过 | **当前体验版** |
 | **0.6.4** | 2026-11-03 | `0e4cd56` | `https://api.teslalink.joviluma.com/` | PASS | 微信审核通过 | **审核通过待发布** |
@@ -22,7 +22,7 @@
 
 * **发布类型**：日期和未知值显示修复、驻车邻接保护、微信样式兼容与模拟环境隔离。
 * **Git 分支**：`codex/mini-ui-delivery-20261112`
-* **Git Commit Hash**：本条流档初次提交（待填完整 SHA）；上传时基线 `1a8cdbede3799a9d4f2bab39620e4c9b7e023fa6`，源码含未提交修改。
+* **Git Commit Hash**：`1b42f9ac220e5371e688b1633abf15a3f96702b5`；上传时基线 `1a8cdbede3799a9d4f2bab39620e4c9b7e023fa6`，源码含未提交修改。
 * **源码身份**：上传时暂存 `miniprogram/` 子树 `645b240a41879e52bd269288118f92010315e928`；工作区源码清单 SHA-256 `7ca72581304b30fbb7e20f30ba9350eeb2e4bc3f4a4cdb8fa722b5ff584f5f65`。
 * **运行参数与环境**：`TARO_APP_API_BASE_URL=https://api.teslalink.joviluma.com/`、`TARO_APP_MOCK_FIXTURE=false`、`miniprogramRoot=dist/`、AppID `wxc84899ab6146f1be`。
 * **微信上传回执包体积**：主包 `1,256,155` B；vehicle-assets-1 至 6 依次 `1,739,942 / 1,733,729 / 1,790,676 / 1,708,732 / 1,770,275 / 1,547,115` B；总包 `11,546,624` B。
