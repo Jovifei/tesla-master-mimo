@@ -1,0 +1,93 @@
+name: Mini alignment final strict gates
+on:
+  push:
+    branches: [codex/ui-product-mini-20261109]
+    paths: ['.github/workflows/ui-mini-final-alignment-20261113.yml']
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: bash
+jobs:
+  source:
+    if: github.repository == 'Jovifei/tesla-master-mimo'
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    outputs:
+      sha: ${{ steps.commit.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 3
+      - name: Resolve the two demonstrated presentation assertions
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = 85f3de78095d3753a5f54a1cdb9fc4383253c388
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('miniprogram/src/components/PresentationControls.tsx');s=p.read_text();assert s.count('60 kWh 及以上为最深色')==1
+          p.write_text(s.replace('60 kWh 及以上为最深色','60 度电（kWh）及以上为最深色'))
+          p=Path('miniprogram/src/pages/charges/charge_detail.test.tsx');s=p.read_text();assert s.count('24.00 kWh')==2
+          p.write_text(s.replace('24.00 kWh','24.02 kWh'))
+          PY
+      - id: commit
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add miniprogram/src/
+          git diff --cached --check
+          git commit -m 'fix(mini): clarify fixed-scale legend and test actual daily energy precision'
+          git push origin HEAD:refs/heads/codex/ui-product-mini-20261109
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+  verify:
+    needs: source
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+        working-directory: miniprogram
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.source.outputs.sha }}
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm ci --prefix test-tooling --ignore-scripts --no-audit --no-fund
+          mkdir -p evidence/ui-alignment
+          git rev-parse HEAD HEAD^{tree} HEAD^ > evidence/ui-alignment/SOURCE_HEAD.txt
+      - name: Typecheck
+        run: npm run typecheck 2>&1 | tee evidence/ui-alignment/typecheck.log
+      - name: All existing and new tests
+        if: success() || failure()
+        env:
+          TZ: Asia/Shanghai
+        run: npm test -- --reporter=default --reporter=junit --outputFile.junit=evidence/ui-alignment/tests.xml 2>&1 | tee evidence/ui-alignment/tests.log
+      - name: WeChat compiler and original asset budgets
+        if: success() || failure()
+        run: npm run build:weapp 2>&1 | tee evidence/ui-alignment/build.log
+      - name: Independent XML zero-failure gate
+        if: success() || failure()
+        run: |
+          python3 - <<'PY'
+          import xml.etree.ElementTree as E
+          root=E.parse('evidence/ui-alignment/tests.xml').getroot();cases=list(root.iter('testcase'))
+          assert len(cases)>=1031,len(cases)
+          assert not any(x.find('failure') is not None or x.find('error') is not None or x.find('skipped') is not None for x in cases)
+          print('Verified',len(cases),'tests, zero failures/errors/skips')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mini-alignment-final-${{ needs.source.outputs.sha }}
+          path: |
+            miniprogram/evidence/ui-alignment/
+            miniprogram/dist/
+          retention-days: 7
+          if-no-files-found: error
