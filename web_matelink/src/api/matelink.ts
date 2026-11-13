@@ -30,6 +30,14 @@ const viteEnv = (import.meta as unknown as { env?: Record<string, string | undef
 export const API_BASE = viteEnv.VITE_MATELINK_API_BASE ?? ''
 
 const SESSION_KEY = 'matelink-web-session-v1'
+let sessionGeneration = 0
+const sessionListeners = new Set<() => void>()
+function sessionChanged(): void { sessionGeneration++; for (const fn of sessionListeners) fn() }
+if (typeof window !== 'undefined') window.addEventListener('storage', event => { if (event.key === SESSION_KEY || event.key === null) sessionChanged() })
+export function sessionScope(): string { return `${sessionGeneration}:${loadSession()?.userId ?? ''}` }
+export function subscribeSession(fn: () => void): () => void { sessionListeners.add(fn); return () => { sessionListeners.delete(fn) } }
+function assertScope(scope: string): void { if (sessionScope() !== scope) throw new ApiError('会话已变化，已忽略旧响应。', 'stale_session') }
+
 
 export class ApiError extends Error {
   code: string
@@ -84,10 +92,12 @@ export function loadSession(storage: Pick<Storage, 'getItem'> = localStorage): W
 
 export function saveSession(session: WebSession, storage: Pick<Storage, 'setItem'> = localStorage): void {
   storage.setItem(SESSION_KEY, JSON.stringify(session))
+  sessionChanged()
 }
 
 export function clearSession(storage: Pick<Storage, 'removeItem'> = localStorage): void {
   storage.removeItem(SESSION_KEY)
+  sessionChanged()
 }
 
 /** Access token usable for at least `skewMs` longer. */
@@ -113,39 +123,48 @@ function toSession(payload: unknown, fallbackUserId = ''): WebSession {
 async function request(path: string, init: RequestInit & { accessToken?: string } = {}): Promise<unknown> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   if (init.accessToken) headers.Authorization = `Bearer ${init.accessToken}`
-  let response: Response
+  const controller = new AbortController()
+  const cancel = () => controller.abort()
+  if (init.signal?.aborted) controller.abort()
+  init.signal?.addEventListener('abort', cancel, { once: true })
+  const timeout = setTimeout(cancel, 20_000)
   try {
-    response = await fetch(`${API_BASE}${path}`, { ...init, headers: { ...headers, ...(init.headers ?? {}) } })
-  } catch {
+    const response = await fetch(`${API_BASE}${path}`, { ...init, signal: controller.signal, headers: { ...headers, ...(init.headers ?? {}) } })
+    const text = await response.text()
+    let payload: unknown = null
+    try { payload = text ? JSON.parse(text) : null } catch { /* malformed responses stay unknown */ }
+    if (!response.ok) {
+      const code = isRecord(payload) && typeof payload.error === 'string' ? payload.error : `http_${response.status}`
+      throw new ApiError(`请求失败（${response.status}）：${code}`, code, response.status)
+    }
+    return payload
+  } catch (error) {
+    if (error instanceof ApiError) throw error
+    if (controller.signal.aborted) throw new ApiError('请求已取消或超时，请重试。', 'request_cancelled')
     throw new ApiError('无法连接服务器，请检查网络后重试。', 'network_error')
-  }
-  const text = await response.text()
-  let payload: unknown = null
-  try {
-    payload = text ? JSON.parse(text) : null
-  } catch {
-    payload = null
-  }
-  if (!response.ok) {
-    const code = isRecord(payload) && typeof payload.error === 'string' ? payload.error : `http_${response.status}`
-    throw new ApiError(`请求失败（${response.status}）：${code}`, code, response.status)
-  }
-  return payload
+  } finally { clearTimeout(timeout); init.signal?.removeEventListener('abort', cancel) }
 }
 
-/** Authenticated request with one transparent refresh-and-retry on 401. */
+/** A late response or refresh cannot cross an account/logout boundary. */
 async function authedRequest(path: string, init: Omit<RequestInit, 'headers'> = {}): Promise<unknown> {
+  const scope = sessionScope()
   let session = loadSession()
   if (!session) throw new ApiError('尚未登录。', 'session_required', 401)
-  if (!sessionIsUsable(session, Date.now())) {
-    session = await refreshSession()
-  }
+  if (!sessionIsUsable(session, Date.now())) session = await refreshSession()
+  assertScope(scope)
+  if (init.signal?.aborted) throw new ApiError('请求已取消。', 'request_cancelled')
   try {
-    return await request(path, { ...init, accessToken: session.accessToken })
+    const payload = await request(path, { ...init, accessToken: session.accessToken })
+    assertScope(scope)
+    return payload
   } catch (error) {
-    if (error instanceof ApiError && error.status === 401) {
+    assertScope(scope)
+    if (error instanceof ApiError && error.status === 401 && !init.signal?.aborted) {
       const refreshed = await refreshSession()
-      return request(path, { ...init, accessToken: refreshed.accessToken })
+      assertScope(scope)
+      const payload = await request(path, { ...init, accessToken: refreshed.accessToken })
+      assertScope(scope)
+      return payload
     }
     throw error
   }
@@ -200,21 +219,28 @@ export async function exchangeTicket(ticket: string): Promise<WebSession> {
   return session
 }
 
-export async function refreshSession(): Promise<WebSession> {
-  const current = loadSession()
-  if (!current) throw new ApiError('尚未登录。', 'session_required', 401)
-  try {
-    const payload = await request('/v1/session/refresh', {
-      method: 'POST',
-      body: JSON.stringify({ refresh_token: current.refreshToken }),
-    })
-    const session = toSession(payload, current.userId)
-    saveSession(session)
-    return session
-  } catch (error) {
-    clearSession()
-    throw error
-  }
+let refreshFlight: { scope: string; promise: Promise<WebSession> } | null = null
+export function refreshSession(): Promise<WebSession> {
+  const scope = sessionScope(), current = loadSession()
+  if (!current) return Promise.reject(new ApiError('尚未登录。', 'session_required', 401))
+  if (refreshFlight?.scope === scope) return refreshFlight.promise
+  const promise = (async () => {
+    try {
+      const payload = await request('/v1/session/refresh', { method: 'POST', body: JSON.stringify({ refresh_token: current.refreshToken }) })
+      assertScope(scope)
+      const session = toSession(payload, current.userId)
+      if (session.userId !== current.userId) throw new ApiError('刷新身份不匹配。', 'invalid_session_response')
+      // Token rotation is not a new login; preserve current request ownership.
+      localStorage.setItem(SESSION_KEY, JSON.stringify(session))
+      return session
+    } catch (error) {
+      // A network timeout must not erase a valid session. Never erase a newer login.
+      if (sessionScope() === scope && error instanceof ApiError && (error.status === 401 || error.status === 403)) clearSession()
+      throw error
+    } finally { if (refreshFlight?.scope === scope) refreshFlight = null }
+  })()
+  refreshFlight = { scope, promise }
+  return promise
 }
 
 export async function logout(): Promise<void> {
@@ -417,15 +443,15 @@ export function normalizeDrive(raw: Record<string, unknown>, distanceUnit: strin
   }
 }
 
-export async function getCars(): Promise<WebCar[]> {
-  const payload = await authedRequest('/api/v1/cars')
+export async function getCars(signal?: AbortSignal): Promise<WebCar[]> {
+  const payload = await authedRequest('/api/v1/cars', { signal })
   const data = unwrap(payload)
   const rows = Array.isArray(data.cars) ? data.cars : []
   return rows.filter(isRecord).map(normalizeCar).filter((car): car is WebCar => car !== null)
 }
 
-export async function getCarStatus(carId: number): Promise<WebCarStatus> {
-  const payload = await authedRequest(`/api/v1/cars/${carId}/status`)
+export async function getCarStatus(carId: number, signal?: AbortSignal): Promise<WebCarStatus> {
+  const payload = await authedRequest(`/api/v1/cars/${carId}/status`, { signal })
   return normalizeStatus(payload)
 }
 
@@ -436,8 +462,8 @@ export async function getRecentDrives(carId: number, show = 5): Promise<WebDrive
 
 export type HistoryPage<T> = { rows: T[]; totalPages: number }
 
-export async function getDrivesPage(carId: number, page: number, show = 20): Promise<HistoryPage<WebDriveSummary>> {
-  const payload = await authedRequest(`/api/v1/cars/${carId}/drives?page=${page}&show=${show}`)
+export async function getDrivesPage(carId: number, page: number, show = 20, signal?: AbortSignal): Promise<HistoryPage<WebDriveSummary>> {
+  const payload = await authedRequest(`/api/v1/cars/${carId}/drives?page=${page}&show=${show}`, { signal })
   const data = unwrap(payload)
   const rows = Array.isArray(data.drives) ? data.drives : []
   const meta = isRecord(data.meta) ? data.meta : {}
@@ -508,8 +534,8 @@ export function normalizeCharge(raw: Record<string, unknown>, temperatureUnit = 
   }
 }
 
-export async function getChargesPage(carId: number, page: number, show = 20): Promise<HistoryPage<WebCharge>> {
-  const payload = await authedRequest(`/api/v1/cars/${carId}/charges?page=${page}&show=${show}`)
+export async function getChargesPage(carId: number, page: number, show = 20, signal?: AbortSignal): Promise<HistoryPage<WebCharge>> {
+  const payload = await authedRequest(`/api/v1/cars/${carId}/charges?page=${page}&show=${show}`, { signal })
   const data = unwrap(payload)
   const rows = Array.isArray(data.charges) ? data.charges : []
   const meta = isRecord(data.meta) ? data.meta : {}
@@ -584,8 +610,8 @@ export function parseChargeDetail(payload: unknown): ChargeDetail {
   return { charge, points, summary, reason: ongoing ? 'ongoing_response_samples_only' : 'response_samples_only' }
 }
 
-export async function getChargeDetail(carId: number, chargeId: string): Promise<ChargeDetail> {
-  const payload = await authedRequest(`/api/v1/cars/${carId}/charges/${encodeURIComponent(chargeId)}`)
+export async function getChargeDetail(carId: number, chargeId: string, signal?: AbortSignal): Promise<ChargeDetail> {
+  const payload = await authedRequest(`/api/v1/cars/${carId}/charges/${encodeURIComponent(chargeId)}`, { signal })
   return parseChargeDetail(payload)
 }
 
@@ -640,8 +666,8 @@ export function parseDriveDetail(payload: unknown): DriveDetail {
   return { drive, points, reason: 'response_samples_only' }
 }
 
-export async function getDriveDetail(carId: number, driveId: string): Promise<DriveDetail> {
-  const payload = await authedRequest(`/api/v1/cars/${carId}/drives/${encodeURIComponent(driveId)}`)
+export async function getDriveDetail(carId: number, driveId: string, signal?: AbortSignal): Promise<DriveDetail> {
+  const payload = await authedRequest(`/api/v1/cars/${carId}/drives/${encodeURIComponent(driveId)}`, { signal })
   return parseDriveDetail(payload)
 }
 
@@ -700,9 +726,9 @@ export function parseParked(payload: unknown): WebParked | null {
   }
 }
 
-export async function getParkedBetween(carId: number, olderDriveId: string, newerDriveId: string): Promise<WebParked | null> {
+export async function getParkedBetween(carId: number, olderDriveId: string, newerDriveId: string, signal?: AbortSignal): Promise<WebParked | null> {
   try {
-    const payload = await authedRequest(`/api/matelink/v1/cars/${carId}/parked/${olderDriveId}/${newerDriveId}`)
+    const payload = await authedRequest(`/api/matelink/v1/cars/${carId}/parked/${olderDriveId}/${newerDriveId}`, { signal })
     return parseParked(payload)
   } catch (error) {
     if (error instanceof ApiError && error.code === 'parked_history_bounds_unavailable') return null
@@ -789,20 +815,20 @@ export async function deleteVehiclePlace(carId: number, placeId: number): Promis
 
 /** Page through the full history for analysis; capped, with the cap reported honestly. */
 export async function getAllHistory(
-  carId: number
+  carId: number, signal?: AbortSignal
 ): Promise<{ drives: WebDriveSummary[]; charges: WebCharge[]; complete: boolean }> {
   const MAX_PAGES = 30
   const drives: WebDriveSummary[] = []
   const charges: WebCharge[] = []
   let complete = true
   for (let page = 1; page <= MAX_PAGES; page++) {
-    const result = await getDrivesPage(carId, page)
+    const result = await getDrivesPage(carId, page, 20, signal)
     drives.push(...result.rows)
     if (page >= result.totalPages) break
     if (page === MAX_PAGES) complete = false
   }
   for (let page = 1; page <= MAX_PAGES; page++) {
-    const result = await getChargesPage(carId, page)
+    const result = await getChargesPage(carId, page, 20, signal)
     charges.push(...result.rows)
     if (page >= result.totalPages) break
     if (page === MAX_PAGES) complete = false

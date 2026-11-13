@@ -39,6 +39,7 @@ export default function Login() {
     setExchanging(true)
     try {
       await exchangeTicket(ticket)
+      setPaste('')
       navigate('/', { replace: true })
     } catch (reason) {
       setError(reason instanceof ApiError ? `完成登录失败：${reason.message}（票据 2 分钟内有效，过期请重新授权）` : '完成登录失败，请重新授权。')
@@ -47,8 +48,9 @@ export default function Login() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-      <div className="apple-card" style={{ maxWidth: 420, width: '100%' }}>
+    <div className="ml-login">
+      <div className="apple-card ml-login-card">
+        <div className="ml-login-mark" aria-hidden>M</div>
         <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 8 }}>MateLink</h1>
         <p className="text-secondary" style={{ fontSize: 14, lineHeight: 1.6, marginBottom: 20 }}>
           使用 Tesla 官方授权登录。MateLink 不会接触你的 Tesla 账号密码；授权经 Tesla 官网完成，可随时在 Tesla 账号里撤销。
@@ -60,8 +62,8 @@ export default function Login() {
           点击即表示同意《服务条款》与《隐私政策》（版本 2026-08-21，与 App、小程序相同）。
         </p>
 
-        <div style={{ borderTop: '0.5px solid var(--apple-separator)', marginTop: 24, paddingTop: 20 }}>
-          <h2 style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>授权后没有自动跳回？粘贴返回链接完成登录</h2>
+        <details>
+          <summary>授权后没有自动跳回？</summary>
           <p className="text-secondary" style={{ fontSize: 13, lineHeight: 1.6, marginBottom: 12 }}>
             在已登记的网页地址上，授权完成后会自动跳回并完成登录。若浏览器停在了“授权成功，正在返回 MateLink…”页面，把那个页面地址栏里的完整链接粘贴到这里即可。票据 2 分钟内有效且只能用一次。
           </p>
@@ -70,12 +72,12 @@ export default function Login() {
             rows={3}
             value={paste}
             onChange={event => setPaste(event.target.value)}
-            placeholder="粘贴 https://auth.teslalink.joviluma.com/oauth/callback?ticket=… 链接"
+            aria-label="授权返回链接" autoComplete="off" spellCheck={false} placeholder="粘贴 https://auth.teslalink.joviluma.com/oauth/callback?ticket=… 链接"
           />
           <button className="apple-btn-secondary" style={{ marginTop: 12 }} disabled={exchanging || !paste.trim()} onClick={() => void completeWithPaste()}>
             {exchanging ? '正在完成登录…' : '完成登录'}
           </button>
-        </div>
+        </details>
 
         {error ? <p className="text-error" style={{ fontSize: 13, marginTop: 16, lineHeight: 1.6 }}>{error}</p> : null}
       </div>

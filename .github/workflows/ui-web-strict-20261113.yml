@@ -1,0 +1,98 @@
+name: Web alignment strict product checks
+on:
+  push:
+    branches: [codex/ui-product-web-20261109]
+    paths: ['.github/workflows/ui-web-strict-20261113.yml']
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: bash
+jobs:
+  source:
+    if: github.repository == 'Jovifei/tesla-master-mimo'
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    outputs:
+      sha: ${{ steps.commit.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 3
+      - name: Repair exact demonstrated syntax errors
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = b27637c3605109d209b0186fe6d48c57457dfa44
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('web_matelink/src/pages/DrivesPage.tsx');s=p.read_text()
+          assert '</button<button' in s and '详细曲线</button>>' in s
+          p.write_text(s.replace('</button<button','</button><button').replace('详细曲线</button>>','详细曲线</button>'))
+          p=Path('web_matelink/src/pages/usePagedHistory.ts');s=p.read_text()
+          assert s.rstrip().endswith('loadMore:()=>load(current.page+1,true)}')
+          p.write_text(s+'}\n')
+          PY
+      - id: commit
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add web_matelink/src/
+          git diff --cached --check
+          git commit -m 'fix(web): close drive detail action and paged history hook syntax'
+          git push origin HEAD:refs/heads/codex/ui-product-web-20261109
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+  verify:
+    needs: source
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+        working-directory: web_matelink
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.source.outputs.sha }}
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          mkdir -p evidence/ui-alignment
+          git rev-parse HEAD HEAD^{tree} HEAD^ > evidence/ui-alignment/SOURCE_HEAD.txt
+      - name: TypeScript and real HTML build
+        run: npm run build 2>&1 | tee evidence/ui-alignment/build.log
+      - name: Full unit regressions
+        if: success() || failure()
+        run: npm test 2>&1 | tee evidence/ui-alignment/unit-tests.log
+      - name: Lint product
+        if: success() || failure()
+        run: npm run lint 2>&1 | tee evidence/ui-alignment/lint.log
+      - name: Isolated browser setup only
+        if: success()
+        run: |
+          npm install --prefix "$RUNNER_TEMP/ui-browser" --no-audit --no-fund --ignore-scripts playwright@1.56.1
+          "$RUNNER_TEMP/ui-browser/node_modules/.bin/playwright" install --with-deps chromium
+          sudo apt-get update -qq && sudo apt-get install -y fonts-noto-cjk
+      - name: Built product synthetic browser interactions
+        if: success()
+        run: |
+          npm run preview -- --host 127.0.0.1 --port 4173 > evidence/ui-alignment/server.log 2>&1 &
+          server=$!;trap 'kill "$server" || true' EXIT
+          for n in $(seq 1 30); do if curl -fsS http://127.0.0.1:4173/ >/dev/null; then break; fi; sleep 1; done
+          PLAYWRIGHT_MODULE="$RUNNER_TEMP/ui-browser/node_modules/playwright/index.mjs" node tools/ui-browser-acceptance.mjs 2>&1 | tee evidence/ui-alignment/browser.log
+      - name: Immutable tested source archive
+        if: always()
+        run: git -C .. archive --format=zip HEAD web_matelink > evidence/ui-alignment/tested-web-source.zip
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: web-alignment-strict-${{ needs.source.outputs.sha }}
+          path: |
+            web_matelink/evidence/ui-alignment/
+            web_matelink/dist/
+          retention-days: 7
+          if-no-files-found: error

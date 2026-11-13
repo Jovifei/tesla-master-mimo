@@ -1,0 +1,97 @@
+name: Web final visual and recovery acceptance
+on:
+  push:
+    branches: [codex/ui-product-web-20261109]
+    paths: ['.github/workflows/ui-web-visual-20261113.yml']
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: bash
+jobs:
+  source:
+    if: github.repository == 'Jovifei/tesla-master-mimo'
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    outputs:
+      sha: ${{ steps.commit.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 4
+      - name: Apply reviewed visual polish without changing numerical contracts
+        run: |
+          test "$(git rev-parse HEAD^)" = 1eb152302869374fc027af017fbe271e0852ebf0
+          python3 tools/ui-alignment-20261113/web-polish.py
+          git diff --exit-code e1276792caf286ffe724aeef58f707f9b568df53 -- web_matelink/src/api/drive-energy.ts web_matelink/src/api/recent-drive.ts web_matelink/src/api/analysis.ts web_matelink/src/api/charge-filter.ts
+      - id: commit
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add web_matelink/
+          git rm tools/ui-alignment-20261113/web-polish.py
+          git diff --cached --check
+          git commit -m 'feat(web): compact mobile navigation and paired charging calendar with preserved detail table'
+          git push origin HEAD:refs/heads/codex/ui-product-web-20261109
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+  verify:
+    needs: source
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+        working-directory: web_matelink
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.source.outputs.sha }}
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          mkdir -p evidence/ui-alignment
+          git rev-parse HEAD HEAD^{tree} HEAD^ > evidence/ui-alignment/SOURCE_HEAD.txt
+      - name: Actual TypeScript and HTML build
+        run: npm run build 2>&1 | tee evidence/ui-alignment/build.log
+      - name: All existing and new unit tests
+        if: success() || failure()
+        run: npm test 2>&1 | tee evidence/ui-alignment/unit-tests.log
+      - name: Lint
+        if: success() || failure()
+        run: npm run lint 2>&1 | tee evidence/ui-alignment/lint.log
+      - name: Browser tooling isolated from product dependencies
+        if: success()
+        run: |
+          npm install --prefix "$RUNNER_TEMP/ui-browser" --no-audit --no-fund --ignore-scripts playwright@1.56.1
+          "$RUNNER_TEMP/ui-browser/node_modules/.bin/playwright" install --with-deps chromium
+          sudo apt-get update -qq && sudo apt-get install -y fonts-noto-cjk
+      - name: Browser checks on built product, synthetic API only
+        if: success()
+        run: |
+          npm run preview -- --host 127.0.0.1 --port 4173 > evidence/ui-alignment/server.log 2>&1 &
+          server=$!;trap 'kill "$server" || true' EXIT
+          for n in $(seq 1 30); do if curl -fsS http://127.0.0.1:4173/ >/dev/null; then break; fi; sleep 1; done
+          PLAYWRIGHT_MODULE="$RUNNER_TEMP/ui-browser/node_modules/playwright/index.mjs" node tools/ui-browser-acceptance.mjs 2>&1 | tee evidence/ui-alignment/browser.log
+          python3 - <<'PY'
+          import json
+          d=json.load(open('evidence/ui-alignment/browser/report.json'))
+          assert len(d['checks'])>=25 and all(c['pass'] for c in d['checks'])
+          assert not d['errors'] and not d['external']
+          PY
+      - name: Archive exactly tested product
+        if: always()
+        run: git -C .. archive --format=zip HEAD web_matelink > evidence/ui-alignment/tested-web-source.zip
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: web-visual-final-${{ needs.source.outputs.sha }}
+          path: |
+            web_matelink/evidence/ui-alignment/
+            web_matelink/dist/
+          retention-days: 7
+          if-no-files-found: error

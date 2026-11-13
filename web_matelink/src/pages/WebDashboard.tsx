@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { getCarStatus, getChargeDetail, type ChargeDetail } from '../api/matelink'
 import type { WebCarStatus, WebChargePoint } from '../api/matelink-types'
@@ -24,29 +24,33 @@ const DAY = 86_400_000
 
 export default function WebDashboard() {
   const { cars, car, carId, setCarId, error: carError } = useCar()
-  const [status, setStatus] = useState<WebCarStatus | null>(null)
+  const [statusState, setStatusState] = useState<{owner: number; value: WebCarStatus} | null>(null)
+  const status = statusState?.owner === carId ? statusState.value : null
+  const statusRequest = useRef<AbortController | null>(null)
   const [statusError, setStatusError] = useState<string | null>(null)
   const [windowDays, setWindowDays] = useState(7)
   const history = useHistory(carId)
-  const [chargePoints, setChargePoints] = useState<ReadonlyMap<string, readonly WebChargePoint[]>>(new Map())
-  const [liveDetail, setLiveDetail] = useState<ChargeDetail | null>(null)
+  const [chargePointState, setChargePointState] = useState<{owner: number; values: ReadonlyMap<string, readonly WebChargePoint[]>} | null>(null)
+  const chargePoints = chargePointState?.owner === carId ? chargePointState.values : new Map<string, readonly WebChargePoint[]>()
+  const [liveState, setLiveState] = useState<{owner: number; value: ChargeDetail} | null>(null)
+  const liveDetail = liveState?.owner === carId ? liveState.value : null
   const location = useLocation()
 
   const charging = status?.chargingState === 'Charging'
 
   const loadStatus = useCallback(async () => {
-    if (carId == null) return
+    if (carId == null || statusRequest.current) return
+    const controller = new AbortController(); statusRequest.current = controller
     try {
-      const next = await getCarStatus(carId)
-      setStatus(next)
-      setStatusError(null)
-    } catch {
-      setStatusError('读取车辆状态失败，请稍后重试。')
-    }
+      const next = await getCarStatus(carId, controller.signal)
+      if (!controller.signal.aborted) { setStatusState({owner:carId,value:next}); setStatusError(null) }
+    } catch { if (!controller.signal.aborted) setStatusError('读取车辆状态失败，请稍后重试。') }
+    finally { if(statusRequest.current===controller) statusRequest.current=null }
   }, [carId])
-
   useEffect(() => {
+    statusRequest.current?.abort();statusRequest.current=null;setStatusError(null)
     void loadStatus()
+    return () => {statusRequest.current?.abort();statusRequest.current=null}
   }, [loadStatus])
 
   // 动态（所有者选项 A）：充电中每 20 秒刷新状态。
@@ -68,53 +72,51 @@ export default function WebDashboard() {
 
   // Fetch real in-charge samples for the stitch (bounded, most recent first).
   useEffect(() => {
-    if (carId == null || !history.charges.length) return
+    if (carId == null || !history.charges.length) {setChargePointState(null);return}
     const inWindow = history.charges
       .filter(c => {
         const end = Date.parse(c.endDate ?? c.startDate ?? '')
         return Number.isFinite(end) && end >= windowStart
       })
       .slice(0, 6)
-    let cancelled = false
+    const controller = new AbortController()
+    setChargePointState(null)
     void (async () => {
       const map = new Map<string, readonly WebChargePoint[]>()
       for (const charge of inWindow) {
+        if(controller.signal.aborted) return
         try {
-          const detail = await getChargeDetail(carId, charge.id)
+          const detail = await getChargeDetail(carId, charge.id, controller.signal)
           if (detail.points.length >= 2) map.set(charge.id, detail.points)
         } catch {
           /* boundary stitch still applies */
         }
       }
-      if (!cancelled) setChargePoints(map)
+      if (!controller.signal.aborted) setChargePointState({owner:carId,values:map})
     })()
     return () => {
-      cancelled = true
+      controller.abort()
     }
   }, [carId, history.charges, windowStart])
 
   const liveCharge = useMemo(() => history.charges.find(c => c.isCharging) ?? null, [history.charges])
   useEffect(() => {
-    if (carId == null || !liveCharge) {
-      setLiveDetail(null)
-      return
-    }
-    let cancelled = false
+    setLiveState(null)
+    if (carId == null || !liveCharge) return
+    const controller = new AbortController()
+    let busy=false
     const fetchDetail = async () => {
+      if (busy || controller.signal.aborted) return
+      busy=true
       try {
-        const detail = await getChargeDetail(carId, liveCharge.id)
-        if (!cancelled) setLiveDetail(detail)
-      } catch {
-        /* keep last good detail */
-      }
+        const detail = await getChargeDetail(carId, liveCharge.id, controller.signal)
+        if (!controller.signal.aborted) setLiveState({owner:carId,value:detail})
+      } catch { /* do not promote failed requests to new evidence */ }
+      finally { busy=false }
     }
     void fetchDetail()
-    if (!charging) return () => { cancelled = true }
-    const timer = window.setInterval(() => void fetchDetail(), 20_000)
-    return () => {
-      cancelled = true
-      window.clearInterval(timer)
-    }
+    const timer = charging ? window.setInterval(() => void fetchDetail(), 20_000) : undefined
+    return () => {controller.abort();if(timer)window.clearInterval(timer)}
   }, [carId, liveCharge, charging])
 
   const segments = useMemo(
@@ -163,7 +165,7 @@ export default function WebDashboard() {
 
   return (
     <div>
-      <div style={{ margin: '-20px -32px 16px' }}>
+      <div className="ml-premise">
         <PremiseStrip source={status?.source ?? null} observedAt={status?.observedAt ?? null} onRefresh={() => void loadStatus()} />
       </div>
       <PageTitle title={car ? `${car.name} · 总览` : '总览'}>
@@ -179,7 +181,7 @@ export default function WebDashboard() {
       {!status && !statusError ? <LoadingNote text="正在读取车辆状态…" /> : null}
       {status ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 300px), 1fr))', gap: 16 }}>
             <Panel
               title="电量"
               action={
@@ -218,7 +220,7 @@ export default function WebDashboard() {
                 </div>
               </div>
             </Panel>
-            <div style={{ gridColumn: 'span 2', minWidth: 0 }}>
+            <div style={{ minWidth: 0 }}>
               <Panel title="电量曲线" action={<span style={{ fontSize: 12, color: V3.label3 }}>近 {windowDays} 天 · 充电采样与行程边界拼接，充电过程同图呈现</span>}>
                 {segments.length ? <SocStitchChart segments={segments} height={216} /> : <div style={{ fontSize: 13, color: V3.label3 }}>该时段暂无可拼接的电量记录。</div>}
               </Panel>
@@ -271,7 +273,7 @@ export default function WebDashboard() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 16 }}>
             <GaugeArc label="车内温度" value={status.insideTempC} min={-20} max={45} unit="°C" digits={1} />
             <GaugeArc label="车外温度" value={status.outsideTempC} min={-20} max={45} unit="°C" digits={1} />
-            <div style={{ gridColumn: 'span 2', minWidth: 0 }}>
+            <div style={{ minWidth: 0 }}>
               <Panel title="安全与位置">
                 <div style={{ fontSize: 13.5, color: V3.label2, lineHeight: 1.9 }}>
                   <div>车锁：{status.locked == null ? '未知' : status.locked ? '已上锁' : '未上锁'} · 哨兵模式：{status.sentryMode == null ? '未知' : status.sentryMode ? '开启' : '关闭'} · 车窗：{status.windowsOpen == null ? '未知' : status.windowsOpen ? '未关' : '已关'}</div>

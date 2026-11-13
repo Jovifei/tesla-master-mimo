@@ -1,0 +1,101 @@
+name: Web release candidate strict review
+on:
+  push:
+    branches: [codex/ui-product-web-20261109]
+    paths: ['.github/workflows/ui-web-release-review-20261113.yml']
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: bash
+jobs:
+  source:
+    if: github.repository == 'Jovifei/tesla-master-mimo'
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    outputs:
+      sha: ${{ steps.commit.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 3
+      - name: Repair mobile navigation state contract
+        run: |
+          test "$(git rev-parse HEAD^)" = f708af78d2eadbcf59b6c1b4774ff1e6cd6e249f
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('web_matelink/src/App.tsx');s=p.read_text();old='<nav id="site-navigation" aria-label="主导航" style=';assert old in s
+          p.write_text(s.replace(old,'<nav id="site-navigation" aria-label="主导航" onClick={e=>{if(e.target instanceof Element && e.target.closest(\'a[href]\'))setNavigationOpen(false)}} style='))
+          p=Path('web_matelink/tools/ui-browser-acceptance.mjs');s=p.read_text();old="assert.equal(await page.locator('#site-navigation').isVisible(),false)";assert s.count(old)==2
+          p.write_text(s.replace(old,"await page.locator('#site-navigation').waitFor({state:'hidden'})"))
+          PY
+      - id: commit
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add web_matelink/src/App.tsx web_matelink/tools/ui-browser-acceptance.mjs
+          git diff --cached --check
+          git commit -m 'fix(web): dismiss mobile navigation immediately and await observable UI state in regression'
+          git push origin HEAD:refs/heads/codex/ui-product-web-20261109
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+  verify:
+    needs: source
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+        working-directory: web_matelink
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.source.outputs.sha }}
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          mkdir -p evidence/ui-alignment
+          git rev-parse HEAD HEAD^{tree} HEAD^ > evidence/ui-alignment/SOURCE_HEAD.txt
+      - name: Build actual product
+        run: npm run build 2>&1 | tee evidence/ui-alignment/build.log
+      - name: Full unit regressions
+        if: success() || failure()
+        run: npm test 2>&1 | tee evidence/ui-alignment/unit-tests.log
+      - name: Lint
+        if: success() || failure()
+        run: npm run lint 2>&1 | tee evidence/ui-alignment/lint.log
+      - name: Browser tooling only
+        if: success()
+        run: |
+          npm install --prefix "$RUNNER_TEMP/ui-browser" --no-audit --no-fund --ignore-scripts playwright@1.56.1
+          "$RUNNER_TEMP/ui-browser/node_modules/.bin/playwright" install --with-deps chromium
+          sudo apt-get update -qq && sudo apt-get install -y fonts-noto-cjk
+      - name: Built page gesture and presentation verification
+        if: success()
+        run: |
+          npm run preview -- --host 127.0.0.1 --port 4173 > evidence/ui-alignment/server.log 2>&1 &
+          server=$!;trap 'kill "$server" || true' EXIT
+          for n in $(seq 1 30); do if curl -fsS http://127.0.0.1:4173/ >/dev/null; then break; fi; sleep 1; done
+          PLAYWRIGHT_MODULE="$RUNNER_TEMP/ui-browser/node_modules/playwright/index.mjs" node tools/ui-browser-acceptance.mjs 2>&1 | tee evidence/ui-alignment/browser.log
+          python3 - <<'PY'
+          import json
+          d=json.load(open('evidence/ui-alignment/browser/report.json'))
+          assert len(d['checks'])>=25 and all(c['pass'] for c in d['checks'])
+          assert not d['errors'] and not d['external']
+          PY
+      - name: Archive immutable tested source
+        if: always()
+        run: git -C .. archive --format=zip HEAD web_matelink > evidence/ui-alignment/tested-web-source.zip
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: web-release-candidate-${{ needs.source.outputs.sha }}
+          path: |
+            web_matelink/evidence/ui-alignment/
+            web_matelink/dist/
+          retention-days: 7
+          if-no-files-found: error

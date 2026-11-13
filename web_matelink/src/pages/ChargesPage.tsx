@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { ChargeCalendar } from '../components/ChargeCalendar'
+import { usePagedHistory } from './usePagedHistory'
+import { useEffect, useMemo, useState } from 'react'
 import { ApiError, getCarStatus, getChargeDetail, getChargesPage, type ChargeDetail } from '../api/matelink'
 import type { WebCarStatus, WebCharge } from '../api/matelink-types'
 import { EMPTY_CHARGE_FILTER, chargeAddresses, filterCharges, type ChargeFilter } from '../api/charge-filter'
 import { averagePowerKw, unitPricePerKwh } from '../api/panel-data'
 import { BatteryPill, Icon, SegControl, Skeleton } from '../components/viz'
 import { ChargeRuler, Panel, V3 } from '../components/v3'
-import { BarsPanel, DATA_COLORS, ScatterPanel, StackChart, StatTile, TILE_COLORS, fmtDuration, fmtNum, type ChartRow, type StackSeriesDef } from '../components/panels'
+import { DATA_COLORS, ScatterPanel, StackChart, StatTile, TILE_COLORS, fmtDuration, fmtNum, type ChartRow, type StackSeriesDef } from '../components/panels'
 import { DataTable, GapTile, MapPanel } from '../components/tm'
 import { useCar } from './useCar'
 import { useHistory } from './useHistory'
@@ -27,23 +29,6 @@ function formatTime(iso: string | null): string {
   return Number.isNaN(date.getTime()) ? '--' : date.toLocaleString('zh-CN', { hour12: false })
 }
 
-function monthlyEnergy(rows: WebCharge[]): { label: string; value: number }[] {
-  const byMonth = new Map<string, { order: number; label: string; value: number }>()
-  for (const row of rows) {
-    if (!row.startDate) continue
-    const date = new Date(row.startDate)
-    if (Number.isNaN(date.getTime())) continue
-    const key = `${date.getFullYear()}-${date.getMonth()}`
-    const entry = byMonth.get(key) ?? { order: date.getFullYear() * 12 + date.getMonth(), label: `${date.getMonth() + 1}月`, value: 0 }
-    entry.value += row.energyAddedKwh ?? 0
-    byMonth.set(key, entry)
-  }
-  return [...byMonth.values()]
-    .sort((a, b) => a.order - b.order)
-    .slice(-6)
-    .map(entry => ({ label: entry.label, value: Math.round(entry.value * 10) / 10 }))
-}
-
 function countOf(rows: ChartRow[], key: string): number {
   return rows.reduce((count, row) => (row[key] != null ? count + 1 : count), 0)
 }
@@ -53,47 +38,37 @@ function ChargeDetailView({ carId, charge, onBack }: { carId: number; charge: We
   const [error, setError] = useState<string | null>(null)
   const [liveStatus, setLiveStatus] = useState<WebCarStatus | null>(null)
 
-  const loadDetail = useCallback(async () => {
-    try {
-      const result = await getChargeDetail(carId, charge.id)
-      setDetail(result)
-      setError(null)
-    } catch (reason: unknown) {
-      setError(reason instanceof ApiError ? reason.message : '读取充电详情失败。')
+  useEffect(() => {
+    const controller=new AbortController();let pending=false
+    setDetail(null);setError(null)
+    const load=async()=>{
+      if(pending || controller.signal.aborted)return
+      pending=true
+      try{const result=await getChargeDetail(carId,charge.id,controller.signal);if(!controller.signal.aborted){setDetail(result);setError(null)}}
+      catch(reason){if(!controller.signal.aborted)setError(reason instanceof ApiError?reason.message:'读取充电详情失败。')}
+      finally{pending=false}
     }
-  }, [carId, charge.id])
+    void load()
+    const timer=charge.isCharging?window.setInterval(()=>void load(),20_000):null
+    return()=>{controller.abort();if(timer!=null)window.clearInterval(timer)}
+  },[carId,charge.id,charge.isCharging])
 
+  // Current status never substitutes for historical curve samples; one cancellable request at a time.
   useEffect(() => {
-    void loadDetail()
-  }, [loadDetail])
-
-  // 动态：充电中的会话每 20 秒刷新，曲线实时延伸。
-  useEffect(() => {
+    setLiveStatus(null)
     if (!charge.isCharging) return
-    const timer = window.setInterval(() => void loadDetail(), 20_000)
-    return () => window.clearInterval(timer)
-  }, [charge.isCharging, loadDetail])
-
-  // 实时区：状态快照的当前功率/电压/电流/电池加热（仅充电中存在当前值；
-  // 电池加热无历史序列，历史详情不设加热面板）。
-  useEffect(() => {
-    if (!charge.isCharging) return
-    let cancelled = false
+    const controller=new AbortController();let pending=false
     const fetchStatus = async () => {
-      try {
-        const next = await getCarStatus(carId)
-        if (!cancelled) setLiveStatus(next)
-      } catch {
-        /* keep last good status */
-      }
+      if(pending || controller.signal.aborted)return
+      pending=true
+      try { const next=await getCarStatus(carId,controller.signal);if(!controller.signal.aborted)setLiveStatus(next) }
+      catch { /* retain only this scope's last returned status */ }
+      finally {pending=false}
     }
     void fetchStatus()
-    const timer = window.setInterval(() => void fetchStatus(), 20_000)
-    return () => {
-      cancelled = true
-      window.clearInterval(timer)
-    }
-  }, [carId, charge.isCharging])
+    const timer=window.setInterval(()=>void fetchStatus(),20_000)
+    return()=>{controller.abort();window.clearInterval(timer)}
+  },[carId,charge.id,charge.isCharging])
 
   const current = detail?.charge ?? charge
   const summary = detail?.summary
@@ -164,7 +139,7 @@ function ChargeDetailView({ carId, charge, onBack }: { carId: number; charge: We
       {error ? <Panel><p style={{ color: V3.errorText, fontSize: 14.5 }}>{error}</p></Panel> : null}
 
       {charge.isCharging && liveStatus ? (
-        <Panel title="实时充电" action={<span style={{ fontSize: 12, color: V3.label3 }}>状态快照当前值 · 每 20 秒刷新</span>}>
+        <Panel title="最近充电状态" action={<span style={{ fontSize: 12, color: V3.label3 }}>状态快照当前值 · 每 20 秒刷新</span>}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12 }}>
             <StatTile label="当前功率" value={liveStatus.chargerPowerKw != null ? fmtNum(liveStatus.chargerPowerKw, 1) : '--'} unit="kW" accent={TILE_COLORS.orange} />
             {liveStatus.liveVoltageV != null ? <StatTile label="当前电压" value={String(Math.round(liveStatus.liveVoltageV))} unit="V" accent={TILE_COLORS.purple} /> : null}
@@ -177,7 +152,7 @@ function ChargeDetailView({ carId, charge, onBack }: { carId: number; charge: We
         </Panel>
       ) : null}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 8fr) minmax(0, 4fr)', gap: 16, alignItems: 'start' }}>
+      <div className="ml-detail-columns" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 8fr) minmax(0, 4fr)', gap: 16, alignItems: 'start' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
           {!detail ? (
             <>
@@ -266,42 +241,21 @@ function ChargeDetailView({ carId, charge, onBack }: { carId: number; charge: We
 
 export default function ChargesPage() {
   const { cars, car, carId, setCarId, error: carError } = useCar()
-  const [rows, setRows] = useState<WebCharge[]>([])
-  const [page, setPage] = useState(1)
-  const [totalPages, setTotalPages] = useState(1)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const {rows, page, totalPages, loading, error, reload, loadMore} = usePagedHistory<WebCharge>(carId,getChargesPage)
   const [filter, setFilter] = useState<ChargeFilter>(EMPTY_CHARGE_FILTER)
   const [selected, setSelected] = useState<WebCharge | null>(null)
   const [status, setStatus] = useState<WebCarStatus | null>(null)
   const history = useHistory(carId)
 
-  const loadPage = useCallback(async (targetCar: number, targetPage: number, append: boolean) => {
-    setLoading(true)
-    setError(null)
-    try {
-      const result = await getChargesPage(targetCar, targetPage)
-      setRows(previous => (append ? [...previous, ...result.rows] : result.rows))
-      setPage(targetPage)
-      setTotalPages(result.totalPages)
-    } catch (reason) {
-      setError(reason instanceof ApiError ? reason.message : '读取充电记录失败。')
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
   useEffect(() => {
-    if (carId == null) return
-    setSelected(null)
-    setRows([])
-    void loadPage(carId, 1, false)
-    getCarStatus(carId).then(setStatus).catch(() => setStatus(null))
-  }, [carId, loadPage])
+    const controller=new AbortController(); setSelected(null);setStatus(null)
+    if(carId!=null)getCarStatus(carId,controller.signal).then(s=>{if(!controller.signal.aborted)setStatus(s)}).catch(()=>{})
+    return()=>controller.abort()
+  },[carId])
 
   const visible = useMemo(() => filterCharges(rows, filter), [rows, filter])
   const addresses = useMemo(() => chargeAddresses(rows), [rows])
-  const monthly = useMemo(() => monthlyEnergy(rows), [rows])
+  const dailyRows = useMemo(() => filterCharges(history.charges, filter), [history.charges, filter])
 
   const summary = useMemo(() => {
     const all = history.charges
@@ -330,13 +284,13 @@ export default function ChargesPage() {
   }
 
   const chargingNow = status?.chargingState?.toLowerCase() === 'charging'
-  const monthlyTotal = monthly.reduce((sum, entry) => sum + entry.value, 0)
   const snapshot = status?.source === 'telemetry_cache'
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
         <h1 style={{ fontSize: 28, fontWeight: 700 }}>充电记录</h1>
+        <button className="apple-btn-secondary" disabled={loading} onClick={() => {void reload();void history.reload()}}>刷新记录</button>
         {cars.length > 1 ? (
           <select className="apple-input" style={{ width: 'auto' }} value={carId ?? ''} onChange={event => setCarId(Number(event.target.value))}>
             {cars.map(item => (
@@ -349,7 +303,7 @@ export default function ChargesPage() {
       {error ? <Panel><p style={{ color: V3.errorText, fontSize: 14.5 }}>{error}</p></Panel> : null}
 
       {chargingNow && status ? (
-        <Panel title="正在充电" action={<span style={{ fontSize: 13, color: V3.label3 }}>{car?.name ?? ''} · 实时</span>}>
+        <Panel title="正在充电" action={<span style={{ fontSize: 13, color: V3.label3 }}>{car?.name ?? ''} · {snapshot ? '缓存快照' : '最近返回状态'}</span>}>
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 22, flexWrap: 'wrap' }}>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
               <span className="tabular" style={{ fontSize: 44, fontWeight: 600, lineHeight: 1, color: V3.label }}>
@@ -435,17 +389,13 @@ export default function ChargesPage() {
         </button>
       </div>
 
-      {monthly.length ? (
-        <Panel title="近六个月充入电量">
-          <BarsPanel
-            data={monthly}
-            unit="kWh"
-            color={DATA_COLORS.teal}
-            height={170}
-            summary={<span>基于已加载记录 · 合计 <span className="tabular" style={{ fontWeight: 600, color: V3.label }}>{monthlyTotal.toFixed(1)} kWh</span></span>}
-          />
-        </Panel>
-      ) : null}
+      <div className="ml-charge-layout"><ChargeCalendar rows={dailyRows} /><div className="ml-charge-records">
+      <p className="text-secondary" role="status" style={{fontSize:13,lineHeight:1.7}}>
+        {rows[0]?.startDate ? `当前已返回的最新记录：${formatTime(rows[0].startDate)}。` : '尚未收到充电历史。'}
+        {visible.length !== rows.length ? `筛选隐藏了 ${rows.length-visible.length} 条。` : ''}
+        {page < totalPages ? '还有后续分页，可加载更多。' : '当前接口分页已读完，但不证明车辆同步完整。'}
+        期间有充电却未显示时，请核对账号、车辆、筛选和服务端同步；不要清除历史。
+      </p>
 
       {loading && !visible.length ? (
         <>
@@ -454,7 +404,16 @@ export default function ChargesPage() {
           <Skeleton height={132} />
         </>
       ) : (
-        <Panel title="充电记录" action={<span style={{ fontSize: 12, color: V3.label3 }}>逐列参数 · 点击任意一行查看单次充电详情</span>}>
+        <Panel title="充电记录" action={<span style={{ fontSize: 12, color: V3.label3 }}>点选记录查看详情</span>}>
+          <div className="ml-charge-list">
+            {visible.map(charge => <button key={charge.id} className="ml-charge-record" onClick={()=>setSelected(charge)}>
+              <div className="ml-charge-record-top"><strong>{charge.address??'地点尚未返回'}</strong><strong className="tabular">{num(charge.energyAddedKwh,1)} <small>kWh</small></strong></div>
+              <div className="ml-charge-record-sub"><span>{formatTime(charge.startDate)}</span><span>{charge.chargeMode==='dc'?'直流':charge.chargeMode==='ac'?'交流':'类型待确认'}</span></div>
+              <div className="ml-charge-record-bottom"><span>{fmtDuration(charge.durationMinutes)}</span><BatteryPill from={charge.startBatteryLevel} to={charge.endBatteryLevel}/><span>{charge.cost==null?'费用未知':`${num(charge.cost,2)} ${charge.currency??'元'}`}</span></div>
+            </button>)}
+            {!visible.length ? <p className="ml-empty">没有符合当前条件的已返回记录。</p>:null}
+          </div>
+          <details className="ml-record-parameters"><summary>完整参数表</summary>
           <DataTable
             columns={[
               { label: '开始时间' },
@@ -496,12 +455,14 @@ export default function ChargesPage() {
               if (charge) setSelected(charge)
             }}
           />
+          </details>
         </Panel>
       )}
+      </div></div>
       {loading && visible.length ? <Skeleton height={72} radius={14} /> : null}
 
       {page < totalPages ? (
-        <button className="apple-btn-secondary" disabled={loading} onClick={() => carId != null && void loadPage(carId, page + 1, true)}>
+        <button className="apple-btn-secondary" disabled={loading} onClick={() => void loadMore()}>
           加载更多
         </button>
       ) : null}
