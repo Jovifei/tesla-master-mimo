@@ -19,3 +19,4 @@ export function usePagedHistory<T>(carId: number | null, loader: (id: number, pa
   useEffect(()=>{setState(empty<T>(carId));void load(1,false);return()=>request.current?.abort()},[carId,load])
   const current=state.owner===carId?state:empty<T>(carId)
   return {...current,reload:()=>load(1,false),loadMore:()=>load(current.page+1,true)}
+}

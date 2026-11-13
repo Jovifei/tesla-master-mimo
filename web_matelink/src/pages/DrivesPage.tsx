@@ -239,7 +239,7 @@ function DriveDetailView({
         <button className="apple-btn-secondary" onClick={onBack} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
           <span style={{ display: 'inline-flex', transform: 'rotate(180deg)' }}><Icon name="chevron" size={14} /></span>
           返回列表
-        </button<button className="apple-btn-secondary" style={{float:'right'}} onClick={()=>{setFullCurves(true);requestAnimationFrame(()=>document.getElementById('full-curves')?.scrollIntoView({block:'start'}))}}>详细曲线</button>>
+        </button><button className="apple-btn-secondary" style={{float:'right'}} onClick={()=>{setFullCurves(true);requestAnimationFrame(()=>document.getElementById('full-curves')?.scrollIntoView({block:'start'}))}}>详细曲线</button>
       </div>
 
       <Panel style={{ borderRadius: 24 }}>
