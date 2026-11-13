@@ -8,6 +8,7 @@ import {
   historyDetailDateTime,
   historyEditorialDate,
   normalizeHistoryQuery,
+  refreshRelativeHistoryQuery,
   readHistoryQuery,
   writeHistoryQuery,
 } from './history_query'
@@ -82,6 +83,7 @@ describe('persisted local calendar history query', () => {
       startDate: '2026-10-24', // 7 days inclusive: 24, 25, 26, 27, 28, 29, 30
       endDate: '2026-10-30',
       minDistanceKm: 0,
+      relativeDays: 7,
     })
 
     const chargeQuery = defaultChargeHistoryQuery(fixedNow)
@@ -89,6 +91,7 @@ describe('persisted local calendar history query', () => {
       startDate: '2026-10-01', // 30 days inclusive: 30 - 29 = 1
       endDate: '2026-10-30',
       minDistanceKm: 0,
+      relativeDays: 30,
     })
   })
 
@@ -98,4 +101,15 @@ describe('persisted local calendar history query', () => {
     const fallback = { startDate: '2026-10-24', endDate: '2026-10-30', minDistanceKm: 0 }
     expect(readHistoryQuery(storage, 'empty-scope', fallback)).toEqual(fallback)
   })
+})
+
+it('rolls explicitly relative charge dates into November without moving custom October filters', () => {
+  const october = defaultChargeHistoryQuery(new Date(2026, 9, 27, 12))
+  const november = refreshRelativeHistoryQuery(october, new Date(2026, 10, 12, 12))
+  expect(november.endDate).toBe('2026-11-12')
+  const row = { startDate: '2026-11-11T12:00:00+08:00' }
+  expect(filterHistory([row], november)).toEqual([row])
+  expect(filterHistory([row], october)).toEqual([])
+  const custom = { startDate: '2026-10-01', endDate: '2026-10-27', minDistanceKm: 0 }
+  expect(refreshRelativeHistoryQuery(custom, new Date(2026, 10, 12))).toEqual(custom)
 })

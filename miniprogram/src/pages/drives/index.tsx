@@ -1,5 +1,5 @@
 import { VerticalDayStack } from '../../components/PresentationControls'
-import { historyDayGroups } from '../../domain/ui_presentation'
+import { calendarHistoryGroups, historyDayGroups } from '../../domain/ui_presentation'
 import { useAppearance } from '../../services/appearance'
 import { Button, Map as TaroMap, Picker, ScrollView, Text, View } from '@tarojs/components'
 import Taro, { useDidHide, useDidShow, usePageScroll, useUnload } from '@tarojs/taro'
@@ -7,7 +7,6 @@ import { useEffect, useRef, useState } from 'react'
 import { historyRowKey, isHistoryIdentityAmbiguous, isHistoryQuarantined, pageCanContinue, sameHistoryIdentity, sortHistoryByStartDate } from '../../domain/history'
 import { buildDriveHistoryItems, parkedAddressLabel, verifiedParkedPairs, type DriveHistoryItem } from '../../domain/drive_history'
 import { mapCoordinate } from '../../domain/map_coordinate'
-import { elevationStats } from '../../domain/drive_elevation'
 import { formatParkedAddress, formatRouteAddresses, toChineseDisplayAddress } from '../../domain/address_display'
 import { getAppNavGeometry } from '../../services/nav_geometry'
 import { copy } from '../../i18n/copy'
@@ -28,6 +27,7 @@ import LoadingIndicator from '../../components/LoadingIndicator'
 import HistoryIntervalSummary from '../../components/HistoryIntervalSummary'
 import HistoryDateChips from '../../components/HistoryDateChips'
 import { inspectForegroundEvents, observeForegroundEvents, type ForegroundNotice } from '../../services/foreground_events'
+import EvidenceCurve from '../../components/EvidenceCurve'
 import MetricValue, { displayNumber, formatSocRange, peakSpeedKmh } from '../../components/MetricValue'
 import VisualIcon from '../../components/VisualIcon'
 import LoadedDriveChart from '../../components/LoadedDriveChart'
@@ -73,6 +73,7 @@ const emptyMeta: HistoryPageMeta = {
 
 export default function DrivesPage() {
   const appearance = useAppearance()
+  const [curveSampleIndex, setCurveSampleIndex] = useState(0)
   const [cars, setCars] = useState<Car[]>([])
   const [car, setCar] = useState<Car | null>(null)
   const [items, setItems] = useState<Drive[]>([])
@@ -100,6 +101,7 @@ export default function DrivesPage() {
       if (!detailContext.current || historyRowKey(detailContext.current.row) !== historyRowKey(row)) detailScrollTop.current = 0
       detailContext.current = { user: session.userId, origin: getApiOrigin(), uid: car.stableId, generation: getApiSessionGeneration(), row }
     } else { detailContext.current = null; detailCacheBaseline.current = null }
+    setCurveSampleIndex(0)
     setSelectedState(row)
     return nativeTabBar(Boolean(row))
   }
@@ -604,12 +606,12 @@ export default function DrivesPage() {
           <Text className="section-title">行程历史</Text>
           {loading ? <LoadingIndicator label="正在读取行程…" compact /> : null}
           {historyItems.length === 0 && visibleItems.length === 0 && trustedItems.length > 0 ? <Text className="muted">{copy('history.noMatchedDrives')}</Text> : null}
-          <VerticalDayStack groups={historyDayGroups(historyItems, item => item.kind === 'drive' ? item.drive.startDate : item.startDate)}
+          <VerticalDayStack groups={calendarHistoryGroups(historyDayGroups(historyItems, item => item.kind === 'drive' ? item.drive.startDate : item.endDate), query.startDate, query.endDate)}
             scopeKey={JSON.stringify([getApiOrigin(), readAppSession(Taro)?.userId, getApiSessionGeneration(), car?.stableId, query])}>
           {group => group.items.map(item => item.kind === 'parked' ? (
             <View key={item.key} className="history-record history-parked" onClick={() => { void openParked(item) }}>
               <View className="parked-heading">
-                <View className="parked-icon"><VisualIcon name="vehicle" /></View>
+                <View className="parked-icon"><Text>P</Text></View>
                 <View className="parked-main"><Text className="parked-title">驻车于 {formatParkedAddress(parkedAddress(item), '未知位置')}</Text>
                   <Text className="parked-date">{historyEditorialDate(item.startDate)}</Text></View>
                 <View className="parked-end"><Text className="parked-duration">{item.minutes >= 60 ? `${Math.floor(item.minutes / 60)}h ${item.minutes % 60}m` : `${item.minutes}m`}</Text>
@@ -658,7 +660,7 @@ export default function DrivesPage() {
           <View className="history-detail-heading" style={{ paddingTop: `${navGeo.navBarTop}px`, paddingRight: `${navGeo.capsuleRightPadding}px`, minHeight: `${navGeo.headerTotalHeight}px` }}>
             <Button className="detail-back" onClick={closeDetail}>‹ 返回</Button>
             <Text className="section-title">行程详情</Text>
-            <Button className="detail-curves-btn" onClick={() => { void Taro.navigateTo({ url: `/pages/analysis/index?kind=curves&id=${encodeURIComponent(selected.id)}` }) }}>行程曲线</Button>
+            <Button className="detail-curves-btn" onClick={() => { void Taro.navigateTo({ url: `/pages/analysis/index?kind=curves&id=${encodeURIComponent(selected.id)}` }) }}>详细曲线</Button>
           </View>
 
           {/* 1. 路线地图 */}
@@ -759,6 +761,7 @@ export default function DrivesPage() {
                 <MetricValue label="报告均速" value={selected.speedAvgKmh} unit="km/h" digits={0} />
                 <MetricValue label="距离均速" value={avgDistSpeed} unit="km/h" digits={0} />
               </View>
+              {selectedEvidence ? <EvidenceCurve id="drive-inline-speed" title="速度曲线" unit="km/h" points={selectedEvidence.points} valueOf={point => point.speedKmh} selected={curveSampleIndex} onSelect={setCurveSampleIndex} isCurrent={() => pageVisible.current && detailContext.current?.row === selected && detailContext.current?.generation === getApiSessionGeneration()} /> : null}
             </View>
           })()}
 
@@ -780,6 +783,7 @@ export default function DrivesPage() {
                 <MetricValue label="峰值回收" value={maxRegen} unit="kW" digits={0} />
                 <MetricValue label="平均功率 (样本)" value={avgPower} unit="kW" digits={1} />
               </View>
+              {selectedEvidence ? <EvidenceCurve id="drive-inline-power" title="功率曲线" unit="kW" points={selectedEvidence.points} valueOf={point => point.powerKw} selected={curveSampleIndex} onSelect={setCurveSampleIndex} isCurrent={() => pageVisible.current && detailContext.current?.row === selected && detailContext.current?.generation === getApiSessionGeneration()} /> : null}
             </View>
           })()}
 
@@ -808,35 +812,6 @@ export default function DrivesPage() {
               ) : null}
             </View>
           })()}
-
-          {/* 7. 分组面板：海拔（App DriveDetailScreen 同组） */}
-          {(() => {
-            const stats = elevationStats(selectedEvidence?.points ?? [])
-            if (!stats) return null
-            return <View className="section-card">
-              <View className="section-card-header">
-                <View className="section-card-title"><VisualIcon name="route" /><Text>海拔</Text></View>
-              </View>
-              <View className="telemetry-metric-strip">
-                <MetricValue label="样本最高" value={stats.max} unit="m" digits={0} />
-                <MetricValue label="样本最低" value={stats.min} unit="m" digits={0} />
-                <MetricValue label="累计爬升" value={stats.gain != null ? `+${stats.gain}` : null} unit="m" />
-                <MetricValue label="累计下降" value={stats.loss != null ? `-${stats.loss}` : null} unit="m" />
-              </View>
-            </View>
-          })()}
-
-          {/* 8. 分组面板：环境温度 */}
-          {selected.outsideTempC != null ? (
-            <View className="section-card">
-              <View className="section-card-header">
-                <View className="section-card-title"><VisualIcon name="cloud" /><Text>环境温度</Text></View>
-              </View>
-              <View className="telemetry-metric-strip">
-                <MetricValue label="车外温度" value={selected.outsideTempC} unit="°C" digits={1} />
-              </View>
-            </View>
-          ) : null}
 
           {cacheWarning ? <Text className="error">当前详情尚未保存到本机。</Text> : null}
           {error ? <Text className="error">{error}</Text> : null}

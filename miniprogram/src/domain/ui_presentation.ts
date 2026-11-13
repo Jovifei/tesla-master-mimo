@@ -1,16 +1,21 @@
 /** Presentation-only policy. Does not fetch, infer records, or change history. */
 export type Palette = 'neutral' | 'cream'
-export type Appearance = { palette: Palette; reducedMotion: boolean }
+export type DayAxis = 'horizontal' | 'vertical'
+export type Appearance = { palette: Palette; reducedMotion: boolean; dayAxis: DayAxis }
 export function normalizeAppearance(value: unknown): Appearance {
   const v = value && typeof value === 'object' ? value as Record<string, unknown> : {}
-  return { palette: v.palette === 'cream' ? 'cream' : 'neutral', reducedMotion: v.reducedMotion === true }
+  return { palette: v.palette === 'cream' ? 'cream' : 'neutral', reducedMotion: v.reducedMotion === true, dayAxis: v.dayAxis === 'vertical' ? 'vertical' : 'horizontal' }
 }
 export function verticalDayTarget(index: number, count: number, dx: number, dy: number): number {
+  return daySwipeTarget(index, count, dx, dy, 'vertical')
+}
+export function daySwipeTarget(index: number, count: number, dx: number, dy: number, axis: DayAxis = 'horizontal'): number {
   if (!Number.isInteger(count) || count <= 0) return 0
   const current = Math.max(0, Math.min(count - 1, Number.isInteger(index) ? index : 0))
   if (!Number.isFinite(dx) || !Number.isFinite(dy)) return current
-  if (Math.abs(dy) < 48 || Math.abs(dy) <= Math.abs(dx) * 1.2) return current
-  return Math.max(0, Math.min(count - 1, current + (dy < 0 ? 1 : -1)))
+  const main = axis === 'horizontal' ? dx : dy, cross = axis === 'horizontal' ? dy : dx
+  if (Math.abs(main) < 48 || Math.abs(main) <= Math.abs(cross) * 1.2) return current
+  return Math.max(0, Math.min(count - 1, current + (main < 0 ? 1 : -1)))
 }
 export function civilDay(value: string | null | undefined): string | null {
   if (!value) return null
@@ -47,4 +52,18 @@ export function dayCaption(key: string, now = new Date()): string {
 export function activityLevel(value: number | null, max: number): number {
   if (value == null || !Number.isFinite(value) || value <= 0 || !Number.isFinite(max) || max <= 0) return 0
   return Math.max(1, Math.min(4, Math.ceil(value / max * 4)))
+}
+
+/** Empty calendar slots are presentation, never manufactured history or zero-energy records. */
+export function calendarHistoryGroups<T>(groups: DayGroup<T>[], start: string, end: string): DayGroup<T>[] {
+  if (civilDay(start) !== start || civilDay(end) !== end || !start || !end || start > end) return groups
+  const first = Date.parse(`${start}T12:00:00Z`), last = Date.parse(`${end}T12:00:00Z`)
+  const days = Math.round((last - first) / 86400000) + 1
+  if (days < 1 || days > 366) return groups
+  const byDate = new Map(groups.map(group => [group.key, group]))
+  const calendar = Array.from({ length: days }, (_, index) => {
+    const key = new Date(last - index * 86400000).toISOString().slice(0, 10)
+    return byDate.get(key) ?? { key, label: key, items: [] as T[] }
+  })
+  return [...calendar, ...groups.filter(group => group.key === 'unknown' || group.key < start || group.key > end)]
 }
