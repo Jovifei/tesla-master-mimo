@@ -12,17 +12,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 1
-          persist-credentials: false
-      - name: Archive immutable platform source without user data or credentials
-        env:
-          GH_TOKEN: ${{ github.token }}
+          fetch-depth: 2
+      - name: Archive immutable platform source without credentials
         run: |
           set -euo pipefail
           mkdir -p source-evidence
           for pair in app:a75ae213a9cbd91d153e45c6236536e6c0b1327f mini:1a8cdbede3799a9d4f2bab39620e4c9b7e023fa6 web:9cece6f0ff5d9b24f6c026a7f6d5331becac41c3; do
             name=${pair%%:*}; sha=${pair#*:}
-            git -c http.extraheader="AUTHORIZATION: bearer $GH_TOKEN" fetch --depth=1 origin "$sha"
+            git fetch --depth=2 origin "$sha"
             git show -s --format='%H%n%T%n%P' "$sha" > "source-evidence/$name-identity.txt"
             git ls-tree -r "$sha" > "source-evidence/$name-tree.txt"
             SHA="$sha" OUT="source-evidence/$name-source.zip" python3 - <<'PY'
