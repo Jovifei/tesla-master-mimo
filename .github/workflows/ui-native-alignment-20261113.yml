@@ -1,0 +1,73 @@
+name: Android directional UI isolated acceptance
+on:
+  push:
+    branches: [codex/ui-product-app-20261109]
+    paths: ['.github/workflows/ui-native-alignment-20261113.yml']
+permissions:
+  contents: read
+jobs:
+  native:
+    if: github.repository == 'Jovifei/tesla-master-mimo'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 95bda618c7d9d09ff50985c9befe8558fb24a0e7
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+          log-accepted-android-sdk-licenses: false
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Prepare isolated runner without production credentials
+        run: |
+          set -euo pipefail
+          test "$GITHUB_ACTIONS" = true
+          test -c /dev/kvm
+          sudo chmod 0666 /dev/kvm
+          mkdir -p emulator-evidence
+          git rev-parse HEAD HEAD^{tree} HEAD^ > emulator-evidence/SOURCE_HEAD.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('android/gradle.properties')
+          keys={'systemProp.http.proxyHost','systemProp.http.proxyPort','systemProp.https.proxyHost','systemProp.https.proxyPort','systemProp.http.nonProxyHosts'}
+          p.write_text('\n'.join(x for x in p.read_text().splitlines() if x.split('=',1)[0] not in keys)+'\n')
+          PY
+          cat > emulator-evidence/run.sh <<'SH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          test "$(adb devices | awk 'NR>1 && $2=="device" {print $1}')" = emulator-5554
+          test "$(adb -s emulator-5554 shell getprop ro.kernel.qemu | tr -d '\r')" = 1
+          adb -s emulator-5554 shell settings put global airplane_mode_on 1
+          adb -s emulator-5554 shell svc wifi disable
+          trap 'adb -s emulator-5554 pull /sdcard/Android/data/com.matelink.test.mock/files/ui-product-evidence emulator-evidence/screenshots || true' EXIT
+          bash android/gradlew -p android :app:connectedDebugAndroidTest --no-daemon --max-workers=1 -Dorg.gradle.jvmargs='-Xmx4g -XX:MaxMetaspaceSize=1g -XX:+UseSerialGC' -Pkotlin.compiler.execution.strategy=in-process -PallowConnectedDeviceTests=isolated-device -PMATELINK_INSTRUMENTATION_CLASSES=com.matelink.ui.components.UiProductContractAndroidTest -PJOURVOLT_API_BASE_URL=http://127.0.0.1:18090/ -PJOURVOLT_AUTH_HOST=auth.teslalink.joviluma.com 2>&1 | tee emulator-evidence/tests.log
+          SH
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: aosp_atd
+          arch: x86_64
+          profile: pixel_4
+          ram-size: 3072M
+          disk-size: 8G
+          emulator-boot-timeout: 700
+          disable-animations: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot-load -no-snapshot-save -no-metrics -accel on
+          script: bash emulator-evidence/run.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-alignment-native-95bda618
+          path: |
+            emulator-evidence/
+            android/app/build/outputs/androidTest-results/
+            android/app/build/reports/androidTests/
+          retention-days: 7
+          if-no-files-found: error
