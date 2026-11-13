@@ -1,0 +1,98 @@
+name: Web actual-product alignment qualification
+on:
+  push:
+    branches: [codex/ui-product-web-20261109]
+    paths: ['.github/workflows/ui-web-alignment-20261113.yml']
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: bash
+jobs:
+  source:
+    if: github.repository == 'Jovifei/tesla-master-mimo'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    outputs:
+      sha: ${{ steps.commit.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 4
+      - name: Apply bounded reviewed edits to existing Web product
+        run: |
+          set -euo pipefail
+          git diff --exit-code 9cece6f0ff5d9b24f6c026a7f6d5331becac41c3 HEAD -- web_matelink/src/api/matelink.ts web_matelink/src/pages/ChargesPage.tsx web_matelink/src/pages/DrivesPage.tsx web_matelink/src/App.tsx
+          python3 tools/ui-alignment-20261113/web-entry.py
+          python3 tools/ui-alignment-20261113/web-runtime.py
+          python3 tools/ui-alignment-20261113/web-pages.py
+          python3 tools/ui-alignment-20261113/web-dashboard.py
+          git diff --exit-code 9cece6f0ff5d9b24f6c026a7f6d5331becac41c3 -- web_matelink/src/api/drive-energy.ts web_matelink/src/api/recent-drive.ts web_matelink/src/api/analysis.ts web_matelink/src/api/charge-filter.ts
+          git diff --check
+      - id: commit
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add web_matelink/
+          git rm tools/ui-alignment-20261113/web-*.py
+          git commit -m 'feat(web): wire selectable white themes, day cards, daily charging and scoped recovery'
+          git push origin HEAD:refs/heads/codex/ui-product-web-20261109
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+  verify:
+    needs: source
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+        working-directory: web_matelink
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.source.outputs.sha }}
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Locked dependencies and immutable identity
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          mkdir -p evidence/ui-alignment
+          git rev-parse HEAD HEAD^{tree} HEAD^ > evidence/ui-alignment/SOURCE_HEAD.txt
+      - name: Build actual TypeScript and HTML application
+        run: npm run build 2>&1 | tee evidence/ui-alignment/build.log
+      - name: All original and new isolated unit tests
+        if: success() || failure()
+        run: npm test 2>&1 | tee evidence/ui-alignment/unit-tests.log
+      - name: Lint product
+        if: success() || failure()
+        run: npm run lint 2>&1 | tee evidence/ui-alignment/lint.log
+      - name: Browser tooling only; no product dependency changes
+        if: success()
+        run: |
+          npm install --prefix "$RUNNER_TEMP/ui-browser" --no-audit --no-fund --ignore-scripts playwright@1.56.1
+          "$RUNNER_TEMP/ui-browser/node_modules/.bin/playwright" install --with-deps chromium
+          sudo apt-get update -qq && sudo apt-get install -y fonts-noto-cjk
+      - name: Real built pages with synthetic API and denied external requests
+        if: success()
+        run: |
+          set -euo pipefail
+          npm run preview -- --host 127.0.0.1 --port 4173 > evidence/ui-alignment/server.log 2>&1 &
+          server=$!;trap 'kill "$server" || true' EXIT
+          for n in $(seq 1 30); do if curl -fsS http://127.0.0.1:4173/ >/dev/null; then break; fi; sleep 1; done
+          PLAYWRIGHT_MODULE="$RUNNER_TEMP/ui-browser/node_modules/playwright/index.mjs" node tools/ui-browser-acceptance.mjs 2>&1 | tee evidence/ui-alignment/browser.log
+      - name: Archive tested source
+        if: always()
+        run: git archive --format=zip HEAD web_matelink > evidence/ui-alignment/tested-web-source.zip
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: web-alignment-${{ needs.source.outputs.sha }}
+          path: |
+            web_matelink/evidence/ui-alignment/
+            web_matelink/dist/
+          retention-days: 7
+          if-no-files-found: error
