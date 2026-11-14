@@ -564,3 +564,15 @@
 .charge-row-cost { font-size: 22rpx; font-weight: 600; padding: 4rpx 12rpx; border-radius: 8rpx; background: rgba(34, 197, 94, 0.12); color: #16a34a; }
 .charge-row-cost-estimate { background: rgba(245, 158, 11, 0.12); color: #d97706; }
 .charge-row-cost-free { background: rgba(15, 122, 134, 0.12); color: #0f766e; }
+
+/* 修改总价按钮（App SCR-10 入口），与 drives 详情头按钮同版式 */
+.history-detail-heading .detail-curves-btn {
+  font-size: 24rpx;
+  font-weight: 600;
+  color: #157a86;
+  background: rgba(21, 122, 134, 0.1);
+  padding: 10rpx 22rpx;
+  border-radius: 999rpx;
+  border: none;
+  margin-left: auto;
+}

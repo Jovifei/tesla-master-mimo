@@ -1033,14 +1033,98 @@ button {
 .account-manage .account-row-danger .account-row-label { color: #dc2626; }
 .account-manage .account-row-chevron { color: var(--dashboard-muted, #9ca3af); font-size: 30rpx; }
 
-/* 更多页账号区：微信小程序自研登录面的行组样式 */
-.account-manage .account-row {
-  display: flex; align-items: center; justify-content: space-between;
-  width: 100%; min-height: 88rpx; padding: 0 8rpx;
-  background: transparent; border: none; border-radius: 0;
-  border-bottom: 1rpx solid rgba(0, 0, 0, 0.06); text-align: left;
-}
 .account-manage .account-row:last-child { border-bottom: none; }
 .account-manage .account-row-label { font-size: 30rpx; color: var(--dashboard-on-surface, #1f2937); }
 .account-manage .account-row-danger .account-row-label { color: #dc2626; }
 .account-manage .account-row-chevron { color: var(--dashboard-muted, #9ca3af); font-size: 30rpx; }
+
+/* 全局弹窗：跨页使用（充电详情 修改总价 等），层级高于详情浮层 2000 */
+/* Modals */
+.remote-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 3000;
+  padding: 32rpx;
+
+  .remote-modal-dialog {
+    width: 100%;
+    max-width: 600rpx;
+    background: #ffffff;
+    border-radius: 28rpx;
+    padding: 36rpx;
+    display: flex;
+    flex-direction: column;
+    gap: 24rpx;
+
+    .modal-title {
+      font-size: 34rpx;
+      font-weight: 700;
+      color: var(--dashboard-text);
+      text-align: center;
+    }
+
+    .modal-body {
+      font-size: 26rpx;
+      color: var(--dashboard-muted);
+      line-height: 1.5;
+      text-align: center;
+    }
+
+    .modal-lead-value {
+      font-size: 52rpx;
+      font-weight: 700;
+      color: var(--dashboard-primary);
+      text-align: center;
+    }
+
+    .slider-field {
+      display: flex;
+      flex-direction: column;
+      gap: 12rpx;
+
+      .field-label {
+        font-size: 26rpx;
+        font-weight: 600;
+        color: var(--dashboard-text);
+      }
+    }
+
+    .input-field {
+      display: flex;
+      flex-direction: column;
+      gap: 12rpx;
+
+      .field-label {
+        font-size: 26rpx;
+        font-weight: 600;
+        color: var(--dashboard-text);
+      }
+
+      .place-name-input {
+        height: 76rpx;
+        border: 1rpx solid rgba(233, 237, 242, 0.9);
+        border-radius: 16rpx;
+        padding: 0 20rpx;
+        font-size: 28rpx;
+      }
+    }
+
+    .modal-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 16rpx;
+      margin-top: 8rpx;
+
+      .button {
+        margin: 0;
+      }
+    }
+  }
+}
