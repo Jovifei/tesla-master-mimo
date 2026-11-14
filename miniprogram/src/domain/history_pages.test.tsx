@@ -89,6 +89,22 @@ async function click(record: ReactTestRenderer, text: string) {
 /** Actual pages -> actual API adapter -> fake Taro transport -> actual controllers/scoped storage.
  * No controller, API, energy projection or React page is mocked. */
 describe('history pages consume canonical data across layers', () => {
+  it('shows a labeled estimate for a Fleet drive when independent SOC and capacity evidence is present', async () => {
+    const fleet = { ...summary, energy_contract: { version: 1, net_energy: { value_kwh: null, unit: 'kWh',
+      source: 'telemetry_mqtt', quality: 'unknown', reason: 'no_verified_driving_net_energy' } } }
+    platform.request.mockImplementation(async ({ url }: { url: string }) => {
+      if (url.endsWith('/cars')) return respond({ cars: [{ ...cars[0], current_capacity: 60 }] })
+      if (url.endsWith('/drives/1')) return respond({ drive: fleet })
+      return respond({ drives: [fleet], meta: { page: 1, show: 20, total_pages: 1 } })
+    })
+    const page = await mount('drives')
+    const record = page.root.findByProps({ className: 'history-record' })
+    expect(record.findByProps({ ariaLabel: '能量 30 kWh/100km' })).toBeDefined()
+    expect(record.findByProps({ className: 'history-source' }).children.join('')).toBe('估算能耗')
+    await act(async () => { record.props.onClick() }); await flush()
+    expect(page.root.findByProps({ className: 'history-detail-overlay' }).findByProps({ ariaLabel: '总电耗 0.6 kWh' })).toBeDefined()
+  })
+
   it.each(['drives', 'charges'] as const)('exposes and preserves the $kind advanced filters when expanded and collapsed', async kind => {
     platform.request.mockImplementation(async ({ url }: { url: string }) => {
       if (url.endsWith('/cars')) return respond({ cars })

@@ -143,6 +143,18 @@ function powerIntegral(raw: RawDrive): DrivePowerIntegral {
   return result
 }
 
+function exactFleetMissingNetContract(value: unknown, source: unknown): boolean {
+  const proof = row(value), net = row(proof.net_energy)
+  const required = new Set(['value_kwh', 'unit', 'source', 'quality', 'reason'])
+  const optional = new Set(['method', 'measurement_point', 'source_field', 'start_date', 'end_date', 'observed_start_at',
+    'observed_end_at', 'time_basis', 'coverage_kind', 'coverage_seconds', 'coverage_ratio', 'covered_energy_kwh',
+    'activity_evidence', 'capacity_kwh', 'capacity_basis', 'capacity_source_field', 'capacity_model', 'capacity_trim',
+    'calculation_version', 'start_soc', 'end_soc'])
+  return source === 'telemetry_mqtt' && proof.version === 1 && Object.keys(proof).every(key => key === 'version' || key === 'net_energy') &&
+    net.value_kwh === null && net.unit === 'kWh' && net.source === source && net.quality === 'unknown' &&
+    net.reason === 'no_verified_driving_net_energy' && Object.keys(net).every(key => required.has(key) || optional.has(key) && net[key] === null)
+}
+
 /** Keeps only parsed energy input; addresses, coordinates, credentials and route arrays are excluded. */
 export function driveEnergyReceipt(raw: RawDrive, distanceUnit?: string | null): DriveEnergyReceipt {
   const input = row(raw), result: Row = { parsedEnergyVersion: 1, distance_unit: distanceUnit === undefined ? 'km' : distanceUnit }
@@ -158,8 +170,11 @@ export function driveEnergyReceipt(raw: RawDrive, distanceUnit?: string | null):
     for (const key of ['start_battery_level', 'end_battery_level']) if (own(battery, key)) parsed[key] = soc(battery[key])
     result.battery_details = parsed
   }
-  if (input.energy_contract != null) result.energy_contract = contract(input.energy_contract)
-  else if (own(input, 'energy_contract')) result.energy_contract = null
+  if (own(input, 'energy_contract')) {
+    result.energy_contract = input.energy_contract != null ? contract(input.energy_contract) : null
+    // Keep whether the original wire shape was exact; normalization may turn malformed fields into null.
+    result.fleetMissingNetContract = exactFleetMissingNetContract(input.energy_contract, input.source)
+  }
   if (own(input, 'drive_details')) result.power_integral = powerIntegral(raw)
   return result as DriveEnergyReceipt
 }
@@ -201,18 +216,22 @@ function projection(value: number | null, distance: unknown, evidence: EnergyMet
 export function resolveDriveEnergy(raw: RawDrive | DriveEnergyReceipt, car?: Car): DriveEnergy {
   const input = (raw as DriveEnergyReceipt).parsedEnergyVersion === 1 ? raw as DriveEnergyReceipt : driveEnergyReceipt(raw)
   const distance = driveDistanceKm(input)
+  let fleetMissingNet = false
   if (input.energy_contract != null) {
     const proof = contract(input.energy_contract), m = proof.net_energy ?? null
-    const value = validVersion(proof) && (!input.source || m?.source === input.source) &&
-      ['api_reported_net', 'drive_power_integral', 'energy_remaining_delta', 'soc_capacity_estimate'].includes(m?.method ?? '') ? qualified(m, input.start_date, input.end_date) : null
-    return projection(value, distance, m, reason(m?.reason) ?? (value === null ? 'unqualified_energy_contract' : null))
+    fleetMissingNet = input.fleetMissingNetContract === true && exactFleetMissingNetContract(input.energy_contract, input.source)
+    if (!fleetMissingNet) {
+      const value = validVersion(proof) && (!input.source || m?.source === input.source) &&
+        ['api_reported_net', 'drive_power_integral', 'energy_remaining_delta', 'soc_capacity_estimate'].includes(m?.method ?? '') ? qualified(m, input.start_date, input.end_date) : null
+      return projection(value, distance, m, reason(m?.reason) ?? (value === null ? 'unqualified_energy_contract' : null))
+    }
   }
   const legacy = input.source == null || input.source === 'teslamate_archive'
   const scalar = legacy ? number(input.energy_consumed_net) : null
   const basis: EnergyMetric = { unit: 'kWh', source: input.source ?? 'legacy_api', start_date: input.start_date, end_date: input.end_date }
   if (scalar !== null) return projection(scalar, distance, { ...basis, value_kwh: scalar, method: 'api_reported_net', measurement_point: 'reported_net',
     quality: 'reported', time_basis: 'source_report', coverage_kind: 'provider_report' }, 'api_reported_net_energy')
-  const power = input.source === 'local_import' || input.source === 'local_history' ? undefined : input.power_integral
+  const power = fleetMissingNet || input.source === 'local_import' || input.source === 'local_history' ? undefined : input.power_integral
   const first = instant(input.start_date), last = instant(input.end_date)
   const windowSeconds = first && last && compare(last, first) > 0 ? elapsed(first, last) : null
   const compatiblePower = power && windowSeconds !== null && number(power.coverageSeconds) !== null && power.coverageSeconds >= 0 &&
@@ -248,21 +267,36 @@ function capacityRank(m: EnergyMetric | null | undefined): number {
   return ['api_reported_current_capacity', 'provided_capacity'].includes(m?.capacity_basis ?? '') ? 3 : m?.capacity_basis === 'model_trim_assumption' ? 2 : m?.capacity_basis === 'model_assumption' ? 1 : 0
 }
 
+function matchesRetainedEnergy(m: EnergyMetric, receipt: DriveEnergyReceipt, source: string | null): boolean {
+  const receiptSource = receipt.source ?? 'legacy_api'
+  return m.source === receiptSource && (source ?? 'legacy_api') === receiptSource &&
+    qualified(m, receipt.start_date, receipt.end_date) !== null &&
+    (m.method !== 'soc_capacity_estimate' ||
+      m.start_soc === receipt.battery_details?.start_battery_level && m.end_soc === receipt.battery_details?.end_battery_level)
+}
+
+function retainedDriveEnergy(prior: Drive, shown: Drive, receipt: DriveEnergyReceipt): DriveEnergy {
+  const proof = prior.energy?.evidence
+  if (!proof) return resolveDriveEnergy(receipt)
+  if (!matchesRetainedEnergy(proof, receipt, prior.source)) return projection(null, shown.distanceKm, null, 'history_energy_evidence_mismatch')
+  return projection(qualified(proof, shown.startDate, shown.endDate), shown.distanceKm, proof, reason(proof.reason))
+}
+
 /** Generic admission remains authoritative; a missing summary is not a fresh detail proof. */
 export function mergeDriveEnergyRecord(prior: Drive, incoming: Drive, admittedBase: Drive): Drive {
   const sameShownWindow = prior.id === admittedBase.id && prior.source === admittedBase.source &&
     sameEnergyInstant(prior.startDate, admittedBase.startDate) && sameEnergyInstant(prior.endDate, admittedBase.endDate)
   if (!incoming.energyReceipt) {
     const retained = sameShownWindow && prior.energyReceipt ? prior.energyReceipt : undefined
-    const proof = retained ? prior.energy?.evidence : null
-    const energy = retained ? (proof ? projection(qualified(proof, admittedBase.startDate, admittedBase.endDate), admittedBase.distanceKm, proof, reason(proof.reason)) : resolveDriveEnergy(retained)) : projection(null, admittedBase.distanceKm, null, 'legacy_cache_without_energy_receipt')
+    const energy = retained ? retainedDriveEnergy(prior, admittedBase, retained)
+      : projection(null, admittedBase.distanceKm, null, 'legacy_cache_without_energy_receipt')
     return { ...admittedBase, energy, energyReceipt: retained, energyConsumedKwh: energy.energyKwh, efficiencyWhKm: energy.efficiencyWhKm }
   }
   const old = prior.energyReceipt ?? {}, fresh = incoming.energyReceipt
   if (incoming.source !== admittedBase.source && incoming.source !== null) {
-    const retained = sameShownWindow && prior.energyReceipt !== undefined
-    const energy = retained ? prior.energy ?? resolveDriveEnergy(old) : projection(null, admittedBase.distanceKm, null, 'history_source_window_changed')
-    return { ...admittedBase, energy, energyReceipt: retained ? old : undefined, energyConsumedKwh: energy.energyKwh, efficiencyWhKm: energy.efficiencyWhKm }
+    const retained = sameShownWindow ? prior.energyReceipt : undefined
+    const energy = retained ? retainedDriveEnergy(prior, admittedBase, retained) : projection(null, admittedBase.distanceKm, null, 'history_source_window_changed')
+    return { ...admittedBase, energy, energyReceipt: retained, energyConsumedKwh: energy.energyKwh, efficiencyWhKm: energy.efficiencyWhKm }
   }
   const sameSource = prior.energyReceipt !== undefined && prior.id === incoming.id && (prior.source === incoming.source || !own(fresh, 'source'))
   let input: DriveEnergyReceipt = sameSource ? { ...old, ...fresh, parsedEnergyVersion: 1 } : { ...fresh, parsedEnergyVersion: 1 }
@@ -276,7 +310,10 @@ export function mergeDriveEnergyRecord(prior: Drive, incoming: Drive, admittedBa
     // A sparse list row may retain a detail odometer only with that odometer's unit.
     if (fresh.odometer_details?.odometer_distance == null && (fresh.distance_unit === 'km' || fresh.distance_unit === 'mi'))
       input.distance_unit = old.distance_unit
-    if (fresh.energy_contract == null && old.energy_contract != null) input.energy_contract = old.energy_contract
+    if (fresh.energy_contract == null && old.energy_contract != null) {
+      input.energy_contract = old.energy_contract
+      input.fleetMissingNetContract = old.fleetMissingNetContract
+    }
     input.odometer_details = { ...input.odometer_details,
       odometer_distance: input.odometer_details?.odometer_distance ?? old.odometer_details?.odometer_distance }
     input.battery_details = { ...input.battery_details,
@@ -299,7 +336,9 @@ export function mergeDriveEnergyRecord(prior: Drive, incoming: Drive, admittedBa
     qualified(input.energy_contract.net_energy, old.start_date, old.end_date) !== null) delete input.energy_contract
   const previous = compatible ? prior.energy ?? resolveDriveEnergy(old) : null
   const retained = previous?.energyKwh !== null && previous?.evidence &&
-    qualified(previous.evidence, old.start_date, old.end_date) !== null ? previous.evidence : null
+    qualified(previous.evidence, old.start_date, old.end_date) !== null &&
+    matchesRetainedEnergy(previous.evidence, old, prior.source)
+    ? previous.evidence : null
   const proposed = incoming.energy?.evidence
   const qualifiedProposal = proposed?.method === 'soc_capacity_estimate' && qualified(proposed, input.start_date, input.end_date) !== null &&
     (!input.source || proposed.source === input.source) && proposed.start_soc === input.battery_details?.start_battery_level && proposed.end_soc === input.battery_details?.end_battery_level

@@ -176,6 +176,28 @@ it('actual manual selection saves a scoped bounded trip and rebuilds detail offl
   expect(shown()).toContain('行程时间线')
   expect(shown()).toContain('能耗配对 1/2')
 })
+it('labels only usable estimated segment efficiency in manual trip details', async () => {
+  const estimated = (id: number, energy: number, distance = 10) => {
+    const drive = rawDrive(id, energy, distance)
+    return { ...drive, energy_contract: { version: 1, net_energy: { ...drive.energy_contract.net_energy,
+      quality: 'estimated', method: 'drive_power_integral', measurement_point: 'drive_power', coverage_kind: 'time', coverage_ratio: 1 } } }
+  }
+  drives = [estimated(1, 2), rawDrive(2, 2), rawDrive(3, null), estimated(4, 2, 0), estimated(5, 0)]
+  await mount('longTrips'); await click('创建长途旅程')
+  await act(async () => { tree!.root.findByType('input').props.onInput({ detail: { value: '合成质量标识' } }) })
+  for (let i = 0; i < drives.length; i++) {
+    const button = tree!.root.findAllByType('button').find(node => node.children.join('').startsWith('选择 行驶'))!
+    await act(async () => { button.props.onClick() })
+  }
+  await click('保存本机长途旅程')
+  const labels = tree!.root.findAllByProps({ className: 'insight-table-row' })
+    .map(row => row.findByProps({ className: 'metric' }).props.ariaLabel)
+  expect(labels).toHaveLength(5)
+  expect(labels).toContain('段平均能耗（估算） 20 kWh/100km')
+  expect(labels).toContain('段平均能耗（估算） 0 kWh/100km')
+  expect(labels).toContain('段平均能耗 20 kWh/100km')
+  expect(labels.filter(label => label === '段平均能耗 暂无数据')).toHaveLength(2)
+})
 it('reads actual current-charge endpoint with genuine zero power and routes to charge history', async () => {
   current = rawCharge(1, 0, 'EUR')
   await mount('currentCharge')

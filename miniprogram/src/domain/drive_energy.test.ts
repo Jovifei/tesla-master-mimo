@@ -18,6 +18,44 @@ const drive = (input: RawDrive, vehicle?: Car): Drive => {
 }
 
 describe('qualified per-drive energy inputs', () => {
+  it('estimates independently when Fleet explicitly lacks a verified net-energy value', () => {
+    const energy_contract: EnergyContract = { version: 1, net_energy: { value_kwh: null, unit: 'kWh',
+      source: 'telemetry_mqtt', quality: 'unknown', reason: 'no_verified_driving_net_energy' } }
+    const result = resolveDriveEnergy(raw({ energy_contract }), car)
+    expect(result.energyKwh).toBeCloseTo(0.784, 12)
+    expect(result).toMatchObject({ source: 'soc_capacity_estimate', quality: 'estimated',
+      evidence: { method: 'soc_capacity_estimate', start_soc: 80, end_soc: 79 } })
+    expect(resolveDriveEnergy(raw({ energy_contract })).energyKwh).toBeNull()
+    expect(resolveDriveEnergy(raw({ energy_contract, battery_details: { start_battery_level: 80, end_battery_level: 80 } }), car).energyKwh).toBeNull()
+    expect(resolveDriveEnergy(raw({ energy_contract, end_date: null }), car).energyKwh).toBeNull()
+
+    const samples = [0, 15, 30, 45, 60].map(seconds => ({ date: `2026-10-14T00:${seconds === 60 ? '01' : '00'}:${String(seconds % 60).padStart(2, '0')}.000000001Z`, power: 10 }))
+    // The deployed Fleet route does not establish that its power field is drive power.
+    expect(resolveDriveEnergy(raw({ energy_contract, battery_details: null, drive_details: samples })).energyKwh).toBeNull()
+    const reopened = JSON.parse(JSON.stringify(driveEnergyReceipt(raw({ energy_contract }))))
+    expect(resolveDriveEnergy(reopened, car).energyKwh).toBeCloseTo(0.784, 12)
+  })
+
+  it('does not estimate over other or contradictory explicit unknown contracts', () => {
+    const sentinel: EnergyMetric = { value_kwh: null, unit: 'kWh', source: 'telemetry_mqtt', quality: 'unknown', reason: 'no_verified_driving_net_energy' }
+    const rejected: EnergyContract[] = [
+      { version: 2, net_energy: sentinel },
+      { version: 1, net_energy: { ...sentinel, source: 'other_source' } },
+      { version: 1, net_energy: { ...sentinel, unit: 'Wh' } },
+      { version: 1, net_energy: { ...sentinel, reason: 'provider_energy_unsupported' } },
+      { version: 1, net_energy: { ...sentinel, value_kwh: 0 } },
+      { version: 1, net_energy: { ...sentinel, method: 'api_reported_net' } },
+    ]
+    for (const energy_contract of rejected) expect(resolveDriveEnergy(raw({ energy_contract }), car).energyKwh).toBeNull()
+    expect(resolveDriveEnergy(raw({ source: 'teslamate_archive', energy_contract: { version: 1, net_energy: sentinel } }), car).energyKwh).toBeNull()
+    for (const malformed of [{ value_kwh: '7' }, { method: {} }, { start_date: 123 }]) {
+      const net_energy = { ...sentinel, ...malformed } as unknown as EnergyMetric
+      const receipt = driveEnergyReceipt(raw({ energy_contract: { version: 1, net_energy } }))
+      expect(resolveDriveEnergy(receipt, car).energyKwh).toBeNull()
+      expect(resolveDriveEnergy(JSON.parse(JSON.stringify(receipt)), car).energyKwh).toBeNull()
+    }
+  })
+
   it('rejects default capacity assumptions while retaining explicit capacity for unknown models', () => {
     for (const model of [null, '', 'unknown', 'Roadster']) {
       const vehicle = { ...car, model }
@@ -111,6 +149,39 @@ describe('qualified per-drive energy inputs', () => {
 })
 
 describe('canonical drive and charge energy merge', () => {
+  it('retains a bound Fleet SOC estimate through a weak same-window summary', () => {
+    const energy_contract: EnergyContract = { version: 1, net_energy: { value_kwh: null, unit: 'kWh',
+      source: 'telemetry_mqtt', quality: 'unknown', reason: 'no_verified_driving_net_energy' } }
+    const prior = drive(raw({ energy_contract }), car)
+    const weak = drive(raw({ energy_contract: null, battery_details: null, odometer_details: null }))
+    const next = mergeDriveEnergyRecord(prior, weak, prior)
+    expect(next.energyConsumedKwh).toBeCloseTo(0.784, 12)
+    expect(next.energy?.quality).toBe('estimated')
+    const reopened = JSON.parse(JSON.stringify(next)) as Drive
+    expect(mergeDriveEnergyRecord(reopened, weak, reopened).energyConsumedKwh).toBeCloseTo(0.784, 12)
+  })
+
+  it('does not reuse cached estimate capacity when its source or SOC conflicts with the receipt', () => {
+    const energy_contract: EnergyContract = { version: 1, net_energy: { value_kwh: null, unit: 'kWh',
+      source: 'telemetry_mqtt', quality: 'unknown', reason: 'no_verified_driving_net_energy' } }
+    const prior = drive(raw({ energy_contract }), car)
+    const weak = drive(raw({ energy_contract: null, battery_details: null, odometer_details: null }))
+    const evidence = prior.energy!.evidence!
+    for (const changed of [
+      { ...evidence, source: 'teslamate_archive' },
+      { ...evidence, end_soc: 78, value_kwh: 1.568 },
+    ]) {
+      const forged = JSON.parse(JSON.stringify({ ...prior, energy: { ...prior.energy, evidence: changed } })) as Drive
+      for (const summary of [weak, { ...weak, energyReceipt: undefined }, { ...weak, source: 'fleet_api' }]) {
+        expect(mergeDriveEnergyRecord(forged, summary, forged).energyConsumedKwh).toBeNull()
+      }
+    }
+    const wrongWindow = { ...prior, energyReceipt: { ...prior.energyReceipt, end_date: '2026-10-14T00:02:00Z' } }
+    for (const summary of [{ ...weak, energyReceipt: undefined }, { ...weak, source: 'fleet_api' }]) {
+      expect(mergeDriveEnergyRecord(wrongWindow, summary, wrongWindow).energyConsumedKwh).toBeNull()
+    }
+  })
+
   it('keeps known SOC and distance through same-window weak null scalar fields', () => {
     const prior = drive(raw(), car)
     const weak = drive(raw({ battery_details: { start_battery_level: null, end_battery_level: null },

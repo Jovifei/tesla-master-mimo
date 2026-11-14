@@ -35,6 +35,146 @@ describe('actual evidence-backed insight calculations', () => {
     expect(aggregateDriveHistory([insightDrive(drive('4', 10, 0))]).energy.value).toBe(0)
     expect(aggregateDriveHistory([insightDrive(unknown)]).energy.value).toBeNull()
   })
+  it('does not borrow another receipt across an explicit record, source, window, distance or SOC conflict', () => {
+    const base = drive('1', 10, 2)
+    const aligned = { ...base, startBatteryLevel: 80, endBatteryLevel: 79,
+      energyReceipt: { ...base.energyReceipt!, battery_details: { start_battery_level: 80, end_battery_level: 79 } } }
+    const cases: [string, Drive][] = [
+      ['id', { ...aligned, id: 'other' }],
+      ['source', { ...aligned, source: 'teslamate_archive' }],
+      ['session', { ...aligned, sessionId: 'one', energyReceipt: { ...aligned.energyReceipt!, session_id: 'other' } }],
+      ['source instance', { ...aligned, sourceInstanceId: 'one', energyReceipt: { ...aligned.energyReceipt!, source_instance_id: 'other' } }],
+      ['source vehicle', { ...aligned, sourceVehicleId: 'one', energyReceipt: { ...aligned.energyReceipt!, source_vehicle_id: 'other' } }],
+      ['source record', { ...aligned, sourceRecordId: 'one', energyReceipt: { ...aligned.energyReceipt!, source_record_id: 'other' } }],
+      ['source alias', { ...aligned, energyReceipt: { ...aligned.energyReceipt!, source_id: 'one', source_record_id: 'other' } }],
+      ['start', { ...aligned, startDate: '2026-10-15T00:00:00Z' }],
+      ['end', { ...aligned, endDate: '2026-10-14T00:31:00Z' }],
+      ['distance', { ...aligned, distanceKm: 11 }],
+      ['start SOC', { ...aligned, startBatteryLevel: 81 }],
+      ['end SOC', { ...aligned, endBatteryLevel: 78 }],
+      ['proof SOC', { ...aligned, energyReceipt: { ...aligned.energyReceipt!, energy_contract: { version: 1,
+        net_energy: { ...aligned.energyReceipt!.energy_contract!.net_energy!, start_soc: 81 } } } }],
+      ['proof and receipt SOC', { ...aligned, startBatteryLevel: null, energyReceipt: { ...aligned.energyReceipt!, energy_contract: { version: 1,
+        net_energy: { ...aligned.energyReceipt!.energy_contract!.net_energy!, start_soc: 81 } } } }],
+      ['receipt without source and mismatched proof source', { ...aligned, source: 'teslamate_archive',
+        energyReceipt: { ...aligned.energyReceipt!, source: null } }],
+    ]
+    expect(insightDrive(aligned).energy?.energyKwh).toBe(2)
+    for (const [why, row] of cases) {
+      const checked = insightDrive(row)
+      expect(checked.energy?.energyKwh, why).toBeNull()
+      expect(checked.energyConsumedKwh, why).toBeNull()
+      expect(checked.efficiencyWhKm, why).toBeNull()
+      expect(aggregateDriveHistory([checked]).energy.value, why).toBeNull()
+      const trip = makeManualTrip('trip', 'synthetic', [{ kind: 'drive', drive: row }], start)
+      expect(trip?.legs, why).toHaveLength(1)
+      expect(manualTripSummary(trip!).energy.value, why).toBeNull()
+      const storage = store()
+      expect(writeManualTrip(storage, scope, trip!), why).toBe(true)
+      const restored = readManualTrips(storage, scope)[0]
+      expect(restored?.legs, why).toHaveLength(1)
+      expect(manualTripSummary(restored).energy.value, why).toBeNull()
+    }
+  })
+
+  it('does not borrow energy when an explicit null source or window conflicts with the outer row', () => {
+    const base = drive('explicit-null', 10, 4)
+    const receipt = base.energyReceipt!
+    const cases: [string, Drive][] = [
+      ['receipt source', { ...base, energyReceipt: { ...receipt, source: null } }],
+      ['outer source', { ...base, source: null }],
+      ['receipt start', { ...base, energyReceipt: { ...receipt, start_date: null } }],
+      ['outer start', { ...base, startDate: null }],
+      ['receipt end', { ...base, energyReceipt: { ...receipt, end_date: null } }],
+      ['outer end', { ...base, endDate: null }],
+    ]
+    for (const [why, row] of cases) {
+      const checked = insightDrive(row)
+      expect(checked.energy?.energyKwh, why).toBeNull()
+      expect(aggregateDriveHistory([checked]).efficiency.value, why).toBeNull()
+    }
+
+    const legacy = driveEnergyReceipt({ drive_id: 'legacy-null', source: 'teslamate_archive',
+      start_date: start, end_date: null, odometer_details: { odometer_distance: 10 }, energy_consumed_net: 4 })
+    const legacyDrive = { ...base, id: 'legacy-null', source: 'teslamate_archive', energyReceipt: legacy }
+    expect(insightDrive(legacyDrive).energy?.energyKwh).toBeNull()
+
+    const sparse = { ...legacy }
+    delete sparse.end_date
+    expect(insightDrive({ ...legacyDrive, energyReceipt: sparse }).energy?.energyKwh).toBe(4)
+    const bothNull = { ...base, source: null, energyReceipt: { ...receipt, source: null } }
+    expect(insightDrive(bothNull).energy?.energyKwh).toBe(4)
+  })
+
+  it('does not pair an explicit unknown distance unit or null odometer with the outer distance', () => {
+    const base = drive('units', 10, 4)
+    const cases = [
+      { ...base.energyReceipt!, distance_unit: 'yards' },
+      { ...base.energyReceipt!, distance_unit: null },
+      { ...base.energyReceipt!, odometer_details: { odometer_distance: null } },
+    ]
+    for (const receipt of cases) {
+      const checked = insightDrive({ ...base, energyReceipt: receipt })
+      expect(checked.energy?.energyKwh).toBeNull()
+      expect(aggregateDriveHistory([checked]).efficiency.value).toBeNull()
+    }
+
+    const defaultMetric = { ...base.energyReceipt! }
+    delete defaultMetric.distance_unit
+    expect(aggregateDriveHistory([insightDrive({ ...base, energyReceipt: defaultMetric })]).efficiency.value).toBe(40)
+    expect(aggregateDriveHistory([insightDrive(base)]).efficiency.value).toBe(40)
+  })
+
+  it.each([-5, 'bad', NaN, Infinity])('does not pair an explicitly invalid odometer value %s', value => {
+    const base = drive('invalid-distance', 10, 4)
+    const receipt = { ...base.energyReceipt!, odometer_details: { odometer_distance: value as number } }
+    const checked = insightDrive({ ...base, energyReceipt: receipt })
+    expect(checked.energy?.energyKwh).toBeNull()
+    expect(aggregateDriveHistory([checked]).efficiency.value).toBeNull()
+  })
+
+  it('retains missing odometer fields and a genuine zero distance', () => {
+    const base = drive('sparse-distance', 10, 4)
+    const missingField = { ...base.energyReceipt!, odometer_details: {} }
+    const missingDetails = { ...base.energyReceipt! }
+    delete missingDetails.odometer_details
+    expect(aggregateDriveHistory([insightDrive({ ...base, energyReceipt: missingField })]).efficiency.value).toBe(40)
+    expect(aggregateDriveHistory([insightDrive({ ...base, energyReceipt: missingDetails })]).efficiency.value).toBe(40)
+    const zero = insightDrive(drive('zero-distance', 0, 4))
+    expect(zero.energy?.energyKwh).toBe(4)
+    expect(aggregateDriveHistory([zero])).toMatchObject({ distance: { value: 0 }, energy: { value: 4 }, efficiency: { value: null } })
+  })
+
+  it('accepts the same instants and converted distance without creating a false conflict', () => {
+    const base = drive('equivalent', 10, 2)
+    const equivalent = { ...base, startDate: '2026-10-14T08:00:00+08:00', endDate: '2026-10-14T08:30:00+08:00',
+      distanceKm: 10 * 1.609344, energyReceipt: { ...base.energyReceipt!, distance_unit: 'mi' } }
+    expect(insightDrive(equivalent).energy).toMatchObject({ energyKwh: 2, quality: 'reported' })
+  })
+
+  it('keeps legacy evidence and aligned power estimates when there is no explicit conflict', () => {
+    const legacy = { ...drive('legacy', 10, 2) }
+    delete legacy.energyReceipt
+    expect(insightDrive(legacy).energy).toMatchObject({ energyKwh: 2, quality: 'reported' })
+    const samples = Array.from({ length: 61 }, (_, i) => ({
+      date: new Date(Date.parse(start) + i * 30_000).toISOString(), power: 10,
+    }))
+    const receipt = driveEnergyReceipt({ drive_id: 'power', source: 'telemetry_mqtt', start_date: start, end_date: end,
+      odometer_details: { odometer_distance: 10 }, drive_details: samples })
+    const power = { ...drive('power', 10, 2), energyReceipt: receipt, energy: resolveDriveEnergy(receipt) }
+    expect(insightDrive(power).energy).toMatchObject({ quality: 'estimated', source: 'power_samples' })
+    expect(insightDrive(power).energy?.energyKwh).toBeCloseTo(5, 12)
+  })
+
+  it('keeps aligned reported zero and never substitutes a contradictory receipt in range statistics', () => {
+    const zero = drive('zero', 10, 0)
+    expect(insightDrive(zero).energy).toMatchObject({ energyKwh: 0, quality: 'reported' })
+    expect(manualTripSummary(makeManualTrip('zero', 'synthetic', [{ kind: 'drive', drive: zero }], start)!).energy.value).toBe(0)
+    const conflict = Array.from({ length: 10 }, (_, i) => ({ ...drive(String(i), 30, 6), id: `other-${i}` }))
+    const capacity = { currentCapacityKwh: 60, source: 'teslamate', observedAt: start, qualityState: 'observed' }
+    expect(personalizedRange(conflict, capacity, null, now)).toMatchObject({ candidateCount: 0, rangeKm: null })
+  })
+
   it('separates explicit currencies and pairs a charge price only with that charge qualified input', () => {
     const result = chargeCosts([charge('1', 0, 'EUR', 2), charge('2', 10, 'USD', 4), charge('3', 100, null, 100), charge('4', null, 'USD'), charge('5', 90, 'USD', null)])
     expect(result).toMatchObject({ unknownCurrency: 1, missingCost: 1, total: 5 })
