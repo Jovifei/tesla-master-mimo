@@ -1183,3 +1183,36 @@
     }
   }
 }
+
+/* --- v2.1.87 parity additions --- */
+/* Status chips open confirm dialogs like the App StatusChip (clickable). */
+.dashboard-state-chip { cursor: pointer; }
+.dashboard-chip-spinner {
+  width: 28rpx; height: 28rpx; border-radius: 50%;
+  border: 3rpx solid var(--dashboard-primary, #0f766e); border-right-color: transparent;
+  animation: dashboard-chip-spin 0.8s linear infinite;
+}
+@keyframes dashboard-chip-spin { to { transform: rotate(360deg); } }
+/* Charging HUD header: value stacked over label (App charging HUD column). */
+.dashboard-hud-power { display: flex; flex-direction: column; align-items: flex-start; margin-left: 12rpx; }
+/* App floating command capsule (top center, auto-dismissing). */
+.dashboard-command-capsule {
+  position: fixed; top: 24rpx; left: 50%; transform: translateX(-50%);
+  z-index: 40; display: flex; align-items: center; gap: 12rpx;
+  padding: 16rpx 28rpx; border-radius: 48rpx;
+  background: var(--dashboard-surface-high, #fff); box-shadow: 0 8rpx 24rpx rgba(0, 0, 0, 0.18);
+  border: 1rpx solid rgba(0, 0, 0, 0.08);
+}
+.dashboard-command-capsule-text { font-size: 26rpx; color: var(--dashboard-on-surface, #1f2937); }
+.dashboard-command-capsule-text.capsule-accepted { color: #10b981; }
+.dashboard-command-capsule-text.capsule-failed { color: var(--dashboard-error, #dc2626); }
+/* Partial dashboard: name + 同步中 badge row (App PartialVehicleDashboard). */
+.dashboard-partial-header { display: flex; align-items: center; justify-content: space-between; }
+.dashboard-partial-name { font-size: 40rpx; font-weight: 700; }
+.dashboard-partial-badge {
+  padding: 8rpx 20rpx; border-radius: 999rpx; background: var(--dashboard-warning, #f59e0b);
+  color: #fff; font-size: 24rpx;
+}
+/* Climate dialog stepper (App: − value +, 16.0–28.0 °C). */
+.climate-stepper { display: flex; align-items: center; justify-content: space-between; margin: 16rpx 0; }
+.climate-stepper-value { font-size: 44rpx; font-weight: 700; color: var(--dashboard-primary, #0f766e); }

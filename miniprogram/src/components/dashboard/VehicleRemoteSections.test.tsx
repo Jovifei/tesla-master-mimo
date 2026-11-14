@@ -12,292 +12,174 @@ vi.mock('@tarojs/components', () => ({
 
 import ReactTestRenderer, { act } from 'react-test-renderer'
 import VehicleRemoteSections from './VehicleRemoteSections'
-import type { CarStatus, ChargingSite, VehiclePlace } from '../../services/types'
+import type { ChargingSite, VehiclePlace } from '../../services/types'
 
-const testStatus: CarStatus = {
-  state: 'online',
-  model: '3',
-  trim: null,
-  exteriorColor: null,
-  wheelType: null,
-  batteryLevel: 85,
-  ratedRange: 420,
-  odometer: 15000,
-  location: { latitude: 30.27, longitude: 120.15 },
-  locked: true,
-  sentryMode: false,
-  windowsOpen: false,
-  doorsOpen: false,
-  trunkOpen: false,
-  frunkOpen: false,
-  isClimateOn: false,
-  insideTemp: 21.0,
-  outsideTemp: 19.0,
-  pluggedIn: true,
-  speed: 0,
-  power: 0,
-  shiftState: 'P',
-  heading: 0,
-  chargingState: 'Disconnected',
-  chargeEnergyAdded: 0,
-  chargerPower: 0,
-  chargeLimitSoc: 80,
-  driverTempSetting: 21.5,
-  passengerTempSetting: 21.5,
-  observedAt: '2026-11-06T00:00:00Z',
-  source: 'telemetry',
-  commandAuthorization: { ready: true, missingScopes: null },
-  }
+const baseProps = {
+  carId: 1,
+  hasLocation: true,
+  nearbySites: null as ChargingSite[] | null,
+  nearbyLoading: false,
+  nearbyError: false,
+  onLoadNearby: vi.fn(),
+  onNavigateSite: undefined,
+  places: null as VehiclePlace[] | null,
+  placesLoading: false,
+  placesError: false,
+  onLoadPlaces: vi.fn(),
+  onCreatePlace: vi.fn(async () => {}),
+  onDeletePlace: vi.fn(async () => {}),
+}
 
-describe('VehicleRemoteSections', () => {
-  it('renders automotive control groups and executes quick action commands', async () => {
-    const onExecute = vi.fn().mockResolvedValue(undefined)
-    let renderer: ReactTestRenderer.ReactTestRenderer | null = null
+function site(overrides: Partial<ChargingSite>): ChargingSite {
+  return {
+    name: '杭州未来科技城宝龙广场',
+    type: 'supercharger',
+    latitude: 30.27,
+    longitude: 120.15,
+    distance_km: 1.3,
+    available_stalls: 4,
+    total_stalls: 8,
+    site_closed: false,
+    price_text: '¥1.25/度 (分时¥0.95~1.65)',
+    parking_policy: '超充免费停车2小时',
+    ...overrides,
+  } as ChargingSite
+}
 
-    await act(async () => {
-      renderer = ReactTestRenderer.create(
-        <VehicleRemoteSections
-          carId={1}
-          status={testStatus}
-          onExecuteCommand={onExecute}
-          busyCommand={null}
-          commandOutcome={null}
-          onDismissOutcome={() => {}}
-          nearbySites={null}
-          nearbySource={null}
-          nearbyLoading={false}
-          nearbyError={false}
-          onLoadNearby={() => {}}
-          places={null}
-          placesLoading={false}
-          placesError={false}
-          onLoadPlaces={() => {}}
-          onCreatePlace={async () => {}}
-          onDeletePlace={async () => {}}
-        />
-      )
-    })
+function place(overrides: Partial<VehiclePlace> = {}): VehiclePlace {
+  return { id: 7, name: '家', latitude: 30.27, longitude: 120.15, radius_m: 200, ...overrides } as VehiclePlace
+}
 
-    const root = renderer!.root
-    expect(root.findByProps({ className: 'card vehicle-remote-card' })).toBeDefined()
+function renderSection(props: Partial<typeof baseProps> = {}) {
+  let renderer: ReactTestRenderer.ReactTestRenderer | null = null
+  const merged = { ...baseProps, ...props }
+  const view = (
+    <VehicleRemoteSections
+      carId={merged.carId}
+      hasLocation={merged.hasLocation}
+      nearbySites={merged.nearbySites}
+      nearbyLoading={merged.nearbyLoading}
+      nearbyError={merged.nearbyError}
+      onLoadNearby={merged.onLoadNearby}
+      onNavigateSite={merged.onNavigateSite}
+      places={merged.places}
+      placesLoading={merged.placesLoading}
+      placesError={merged.placesError}
+      onLoadPlaces={merged.onLoadPlaces}
+      onCreatePlace={merged.onCreatePlace}
+      onDeletePlace={merged.onDeletePlace}
+    />
+  )
+  return { merged, view, done: async () => { await act(async () => { renderer = ReactTestRenderer.create(view) }); return renderer! } }
+}
 
-    // Test flash lights execution
-    const flashBtn = root.findAllByProps({ className: 'remote-action-btn' }).find(btn => {
-      return btn.findAllByProps({ className: 'btn-label' }).some(node => node.children.includes('闪灯'))
-    })
-    expect(flashBtn).toBeDefined()
-
-    await act(async () => {
-      flashBtn!.props.onClick()
-    })
-    expect(onExecute).toHaveBeenCalledWith('flash')
+describe('VehicleRemoteSections (v2.1.87 parity)', () => {
+  it('auto-loads nearby sites and places on mount like the App LaunchedEffect blocks', async () => {
+    const { merged, done } = renderSection()
+    await done()
+    expect(merged.onLoadNearby).toHaveBeenCalled()
+    expect(merged.onLoadPlaces).toHaveBeenCalled()
   })
 
-  it('renders re-authorization panel when command authorization ready is false', async () => {
-    const unreadyStatus: CarStatus = {
-      ...testStatus,
-      commandAuthorization: { ready: false, missingScopes: ['vehicle_cmds'] },
-    }
-    const onReauth = vi.fn()
-
-    let renderer: ReactTestRenderer.ReactTestRenderer | null = null
-    await act(async () => {
-      renderer = ReactTestRenderer.create(
-        <VehicleRemoteSections
-          carId={1}
-          status={unreadyStatus}
-          onReauthorize={onReauth}
-          onExecuteCommand={async () => {}}
-          busyCommand={null}
-          commandOutcome={null}
-          onDismissOutcome={() => {}}
-          nearbySites={null}
-          nearbySource={null}
-          nearbyLoading={false}
-          nearbyError={false}
-          onLoadNearby={() => {}}
-          places={null}
-          placesLoading={false}
-          placesError={false}
-          onLoadPlaces={() => {}}
-          onCreatePlace={async () => {}}
-          onDeletePlace={async () => {}}
-        />
-      )
-    })
-
-    const root = renderer!.root
-    const panel = root.findByProps({ className: 'card vehicle-reauth-panel' })
-    expect(panel).toBeDefined()
-    const reauthBtn = panel.findByProps({ className: 'button' })
-    await act(async () => {
-      reauthBtn.props.onClick()
-    })
-    expect(onReauth).toHaveBeenCalled()
-  })
-
-  it('renders nearby charging sites with distance and stalls when loaded', async () => {
-    const sites: ChargingSite[] = [
-      {
-        name: '未来科技城超级充电站',
-        type: 'supercharger',
-        latitude: 30.28,
-        longitude: 120.16,
-        distance_km: 1.2,
-        available_stalls: 6,
-        total_stalls: 8,
-        site_closed: false,
-        price_text: '¥0.95~1.65/度',
-        parking_policy: '超充免费停车2小时',
-      },
-      {
-        name: '余杭目的地充电站',
-        type: 'destination_charging',
-        latitude: 30.29,
-        longitude: 120.17,
-        distance_km: 3.5,
-        available_stalls: null,
-        total_stalls: null,
-        site_closed: false,
-        price_text: null,
-        parking_policy: null,
-      },
-    ]
-
-    let renderer: ReactTestRenderer.ReactTestRenderer | null = null
-    await act(async () => {
-      renderer = ReactTestRenderer.create(
-        <VehicleRemoteSections
-          carId={1}
-          status={testStatus}
-          onExecuteCommand={async () => {}}
-          busyCommand={null}
-          commandOutcome={null}
-          onDismissOutcome={() => {}}
-          nearbySites={sites}
-          nearbySource="fleet_api"
-          nearbyLoading={false}
-          nearbyError={false}
-          onLoadNearby={() => {}}
-          places={null}
-          placesLoading={false}
-          placesError={false}
-          onLoadPlaces={() => {}}
-          onCreatePlace={async () => {}}
-          onDeletePlace={async () => {}}
-        />
-      )
-    })
-
-    const root = renderer!.root
+  it('renders at most five site rows with 公里 distance and the App price/parking row', async () => {
+    const sites = Array.from({ length: 8 }, (_, index) => site({ name: `站 ${index}`, distance_km: index + 0.5 }))
+    const { done } = renderSection({ nearbySites: sites })
+    const renderer = await done()
+    const root = renderer.root
     const rows = root.findAllByProps({ className: 'nearby-site-row' })
-    expect(rows.length).toBe(2)
-    expect(rows[0].findByProps({ className: 'site-name' }).children.join('')).toContain('未来科技城超级充电站')
-    expect(rows[0].findByProps({ className: 'site-distance' }).children.join('')).toContain('1.2 km')
-    // App parity: price + parking row, backend values win over defaults.
-    expect(rows[0].findByProps({ className: 'site-price' }).children.join('')).toContain('¥0.95~1.65/度')
-    expect(rows[0].findByProps({ className: 'site-parking' }).children.join('')).toContain('超充免费停车2小时')
-    expect(rows[1].findByProps({ className: 'site-price' }).children.join('')).toContain('¥1.15/度')
-    expect(rows[1].findByProps({ className: 'site-parking' }).children.join('')).toContain('前2小时免费停车')
+    expect(rows).toHaveLength(5)
+    const distances = root.findAllByProps({ className: 'site-distance' }).map(node => node.children.join(''))
+    expect(distances).toEqual(['0.5 公里', '1.5 公里', '2.5 公里', '3.5 公里', '4.5 公里'])
+    expect(root.findAllByProps({ className: 'site-price' })[0].children).toEqual(['¥1.25/度 (分时¥0.95~1.65)'])
+    const parking = root.findAllByProps({ className: 'site-parking' })[0].children.join('')
+    expect(parking).toBe('超充免费停车2小时')
+    expect(parking).not.toContain('🅿')
+    // Supercharger subtitle keeps the App wording and stall occupancy.
+    const desc = root.findAllByProps({ className: 'site-desc' })[0].children.join('')
+    expect(desc).toBe('超级充电站 · 空闲 4/8')
   })
 
-  it('navigates to a nearby site when its row is tapped', async () => {
-    const sites: ChargingSite[] = [
-      {
-        name: '未来科技城超级充电站',
-        type: 'supercharger',
-        latitude: 30.28,
-        longitude: 120.16,
-        distance_km: 1.2,
-        available_stalls: 6,
-        total_stalls: 8,
-        site_closed: false,
-        price_text: null,
-        parking_policy: null,
-      },
-    ]
-    const onNavigateSite = vi.fn()
-    let renderer: ReactTestRenderer.ReactTestRenderer | null = null
-    await act(async () => {
-      renderer = ReactTestRenderer.create(
-        <VehicleRemoteSections
-          carId={1}
-          status={testStatus}
-          onExecuteCommand={async () => {}}
-          busyCommand={null}
-          commandOutcome={null}
-          onDismissOutcome={() => {}}
-          nearbySites={sites}
-          nearbySource="fleet_api"
-          nearbyLoading={false}
-          nearbyError={false}
-          onLoadNearby={() => {}}
-          onNavigateSite={onNavigateSite}
-          places={null}
-          placesLoading={false}
-          placesError={false}
-          onLoadPlaces={() => {}}
-          onCreatePlace={async () => {}}
-          onDeletePlace={async () => {}}
-        />
-      )
-    })
-    const row = renderer!.root.findByProps({ className: 'nearby-site-row' })
-    await act(async () => {
-      row.props.onClick()
-    })
-    expect(onNavigateSite).toHaveBeenCalledTimes(1)
-    expect(onNavigateSite.mock.calls[0][0].name).toBe('未来科技城超级充电站')
+  it('renders destination-charging wording for non-supercharger sites', async () => {
+    const { done } = renderSection({ nearbySites: [site({ type: 'destination', name: '商场目的地充电', price_text: null, parking_policy: null, available_stalls: null, total_stalls: null })] })
+    const renderer = await done()
+    expect(renderer.root.findByProps({ className: 'site-desc' }).children.join('')).toBe('目的地充电')
+    // App NearbyChargingModels fallbacks for missing price/parking.
+    expect(renderer.root.findByProps({ className: 'site-price' }).children).toEqual(['¥1.15/度'])
+    expect(renderer.root.findByProps({ className: 'site-parking' }).children.join('')).toBe('前2小时免费停车')
   })
 
-  it('renders vehicle places list and handles deletion', async () => {
-    const places: VehiclePlace[] = [
-      { id: 10, name: '家', latitude: 30.27, longitude: 120.15, radius_m: 200 },
-      { id: 11, name: '公司', latitude: 30.30, longitude: 120.20, radius_m: 300 },
-    ]
-    const onDelete = vi.fn().mockResolvedValue(undefined)
+  it('shows the App failure copy with a retry control and never a command card', async () => {
+    const { done } = renderSection({ nearbyError: true })
+    const renderer = await done()
+    const root = renderer.root
+    expect(root.findAllByProps({ className: 'muted' }).some(node => node.children.join('') === '附近充电站加载失败，请重试。')).toBe(true)
+    expect(root.findAllByProps({ className: 'card vehicle-remote-card' })).toHaveLength(0)
+    expect(root.findAllByProps({ className: 'command-group' })).toHaveLength(0)
+  })
 
-    let renderer: ReactTestRenderer.ReactTestRenderer | null = null
-    await act(async () => {
-      renderer = ReactTestRenderer.create(
-        <VehicleRemoteSections
-          carId={1}
-          status={testStatus}
-          onExecuteCommand={async () => {}}
-          busyCommand={null}
-          commandOutcome={null}
-          onDismissOutcome={() => {}}
-          nearbySites={null}
-          nearbySource={null}
-          nearbyLoading={false}
-          nearbyError={false}
-          onLoadNearby={() => {}}
-          places={places}
-          placesLoading={false}
-          placesError={false}
-          onLoadPlaces={() => {}}
-          onCreatePlace={async () => {}}
-          onDeletePlace={onDelete}
-        />
-      )
-    })
+  it('keeps the App empty copy when no sites are returned', async () => {
+    const { done } = renderSection({ nearbySites: [] })
+    const renderer = await done()
+    expect(renderer.root.findAllByProps({ className: 'muted' }).some(node => node.children.join('') === '车辆附近暂无可显示的充电站。')).toBe(true)
+  })
 
-    const root = renderer!.root
-    const rows = root.findAllByProps({ className: 'place-row' })
-    expect(rows.length).toBe(2)
-    expect(rows[0].findByProps({ className: 'place-name' }).children.join('')).toContain('家')
+  it('lists saved places with App radius wording and opens the App add-place dialog', async () => {
+    const { merged, done } = renderSection({ places: [place()] })
+    const renderer = await done()
+    const root = renderer.root
+    expect(root.findByProps({ className: 'place-name' }).children).toEqual(['家'])
+    expect(root.findByProps({ className: 'place-radius' }).children.join('')).toBe('半径 200 米')
+    const trigger = root.findAllByType('button').find(btn => btn.props.children === '把当前位置存为地点')
+    expect(trigger).toBeDefined()
+    await act(async () => {
+      trigger!.props.onClick()
+    })
+    // App dialog title is 把当前位置存为地点 — not an invented caption.
+    expect(root.findByProps({ className: 'modal-title' }).children.join('')).toBe('把当前位置存为地点')
+    const labels = root.findAllByProps({ className: 'field-label' }).map(node => node.children.join(''))
+    expect(labels).toEqual(['地点名称', '半径 200 米'])
+  })
 
-    const deleteBtn = rows[0].findByProps({ className: 'place-delete-btn' })
+  it('saves a place through the App dialog fields', async () => {
+    const { merged, done } = renderSection({ places: [] })
+    const renderer = await done()
+    const root = renderer.root
+    const trigger = root.findAllByType('button').find(btn => btn.props.children === '把当前位置存为地点')
     await act(async () => {
-      deleteBtn.props.onClick()
+      trigger!.props.onClick()
     })
-    // App parity: deletion requires the confirmation dialog first.
-    expect(onDelete).not.toHaveBeenCalled()
-    expect(root.findByProps({ className: 'modal-title' }).children.join('')).toContain('删除地点「家」')
-    const confirmBtn = root.findByProps({ className: 'button place-delete-confirm-btn' })
+    const input = root.findByType('input')
     await act(async () => {
-      confirmBtn.props.onClick()
+      input.props.onInput({ detail: { value: '公司' } })
     })
-    expect(onDelete).toHaveBeenCalledWith(10)
+    const save = root.findAllByType('button').find(btn => btn.props.children === '保存')
+    expect(save).toBeDefined()
+    await act(async () => {
+      save!.props.onClick()
+    })
+    expect(merged.onCreatePlace).toHaveBeenCalledWith('公司', 200)
+  })
+
+  it('confirms deletion with the App 删除地点「name」？ dialog', async () => {
+    const { merged, done } = renderSection({ places: [place()] })
+    const renderer = await done()
+    const root = renderer.root
+    await act(async () => {
+      root.findByProps({ className: 'place-delete-btn' }).props.onClick()
+    })
+    expect(root.findByProps({ className: 'modal-title' }).children.join('')).toBe('删除地点「家」？')
+    const confirm = root.findAllByType('button').find(btn => btn.props.children === '确认执行')
+    await act(async () => {
+      confirm!.props.onClick()
+    })
+    expect(merged.onDeletePlace).toHaveBeenCalledWith(7)
+  })
+
+  it('asks to save the current position only when the vehicle reports a location', async () => {
+    const { done } = renderSection({ hasLocation: false })
+    const renderer = await done()
+    const texts = renderer.root.findAllByProps({ className: 'muted' }).map(node => node.children.join(''))
+    expect(texts).toContain('还没有保存的地点。把车辆当前位置存下来即可命名。')
+    expect(renderer.root.findAllByProps({ className: 'muted place-no-pos' }).map(node => node.children.join(''))).toEqual(['暂无车辆位置，暂时无法添加地点。'])
   })
 })

@@ -16,7 +16,13 @@ export const dashboardMetric = (value: number | null | undefined, unit: string, 
 export const dashboardTemperature = (value: number | null | undefined): string => value == null || !Number.isFinite(value) ? '等待车辆' : `${value.toFixed(1)}°C`
 export function dashboardRange(status: CarStatus) { return status.ratedRange ?? status.idealRange ?? status.estimatedRange ?? null }
 export function dashboardShift(value: string | null | undefined): string | null { const shift = value?.trim().toUpperCase(); return shift && ['P', 'R', 'N', 'D'].includes(shift) ? shift : null }
-export function dashboardState(value: string | null | undefined): string { return ({ online: '在线', driving: '行驶', charging: '充电', asleep: '休眠', suspended: '休眠', offline: '离线', waking: '连接中', parked: '驻车' } as Record<string, string>)[value?.toLowerCase() ?? ''] ?? '状态未知' }
+/** App DashboardScreen.vehicleStateLabel: known states map to fixed labels,
+ * anything else renders the raw state, and a blank state renders no pill. */
+export function dashboardState(value: string | null | undefined): string | null {
+  const state = value?.trim().toLowerCase()
+  if (!state) return null
+  return ({ online: '在线', driving: '行驶中', charging: '充电中', asleep: '休眠', suspended: '休眠', offline: '离线', unavailable: '数据不可用', unknown: '未知' } as Record<string, string>)[state] ?? value!.trim()
+}
 export function dashboardPower(value: number | null | undefined) { return { label: value != null && value > 0 ? '消耗' : value != null && value < 0 ? '回收' : '功率', value: value == null ? null : Math.abs(value) } }
 export function dashboardRemaining(hours: number | null | undefined): string {
   if (hours == null || !Number.isFinite(hours) || hours < 0) return '暂无数据'

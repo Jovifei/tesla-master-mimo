@@ -77,3 +77,16 @@ export function commandErrorMessage(errorClass: string | null | undefined): stri
     default: return '命令执行失败，请稍后重试。'
   }
 }
+
+/** App DashboardScreen floating command capsule (v2.1.87): while a command is
+ * in flight 正在送达车机指令..., on success 指令已送达并生效, and failures read
+ * 车机离线休眠中 / 特斯拉车机权限未授权 / 指令未生效 (X). The capsule auto-clears
+ * after 3.5 s — no dismiss button. */
+export function commandCapsuleText(outcome: { status: 'accepted' | 'failed'; errorClass?: string | null }): string {
+  if (outcome.status === 'accepted') return '指令已送达并生效'
+  switch (outcome.errorClass) {
+    case 'offline': return '车机离线休眠中'
+    case 'unauthorized': return '特斯拉车机权限未授权'
+    default: return `指令未生效 (${outcome.errorClass ?? 'error'})`
+  }
+}

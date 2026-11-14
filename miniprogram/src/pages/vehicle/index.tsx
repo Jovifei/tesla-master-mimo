@@ -1,24 +1,27 @@
 import { useAppearance } from '../../services/appearance'
-import { Button, Map, Picker, Text, View } from '@tarojs/components'
+import { Button, Map, Text, View } from '@tarojs/components'
 import Taro, { useDidHide, useDidShow, usePageScroll, useUnload } from '@tarojs/taro'
 import { useEffect, useRef, useState } from 'react'
 import VisualIcon from '../../components/VisualIcon'
 import ReadinessChecklist from '../../components/ReadinessChecklist'
-import MetricValue from '../../components/MetricValue'
 import { DashboardVehicleArt, DashboardHero, DashboardHud, DashboardInfoCard, DashboardTpms, DashboardCurrentCharge, DashboardRecentDrive } from '../../components/dashboard/DashboardParts'
 import DashboardIcon from '../../components/dashboard/DashboardIcon'
-import { dashboardMetric, dashboardSource, dashboardSnapshot, dashboardReportTime, dashboardVehicleSubtitle, dashboardTemperature } from '../../components/dashboard/presentation'
+import { dashboardMetric, dashboardSnapshot, dashboardTemperature } from '../../components/dashboard/presentation'
 import { mapCoordinate } from '../../domain/map_coordinate'
 import { mergeVehicleVisualConfig, resolveVehicleVisual } from '../../domain/vehicle_visual'
 import { ensureVehicleAsset } from '../../services/vehicle_assets'
 import AppearanceSelector from '../../components/dashboard/AppearanceSelector'
-import VehicleRemoteSections, { type CommandOutcome } from '../../components/dashboard/VehicleRemoteSections'
+import VehicleRemoteSections from '../../components/dashboard/VehicleRemoteSections'
 import type { ChargingSite, Drive, VehiclePlace } from '../../services/types'
 import { locationDisplayText } from '../../domain/recent_drive'
 import { DEFAULT_VEHICLE_APPEARANCE, clearVehicleAppearance, readVehicleAppearance, writeVehicleAppearance, type VehicleAppearanceScope } from '../../services/vehicle_appearance'
 import './index.scss'
 import { observeTpmsCache, readTpmsCache } from '../../services/tpms_cache'
 import LoadingIndicator from '../../components/LoadingIndicator'
+import { commandCapsuleText } from '../../domain/vehicle_commands'
+
+/** Dashboard command outcome, mirroring the App's CommandOutcome sealed class. */
+type CommandOutcome = { status: 'accepted' | 'failed'; command: string; verified?: boolean; errorClass?: string }
 import { findReadinessItem, readinessViewFor, toReadinessView } from '../../domain/readiness'
 import { ApiError, ensureWechatSession, getApiOrigin, getApiSessionGeneration, matelinkApi } from '../../services/api'
 import { carSelectionStorageKey, type Car, type CarStatus, type ReadinessItem, type TelemetryPairing } from '../../services/types'
@@ -37,10 +40,6 @@ import { MOCK_FIXTURE_ENABLED } from '../../services/mock_fixture'
 function messageFor(error: unknown): string {
   if (error instanceof ApiError) return error.message
   return '无法读取 MateLink 服务，请稍后重试'
-}
-
-function booleanLabel(value: boolean | null, yes: string, no: string): string | null {
-  return value == null ? null : value ? yes : no
 }
 
 function dashboardHeaderGeometry(): { top: number; toolbarOffset: number; coverHeight: number; capsuleCover: { top: number; left: number; height: number } | null } {
@@ -97,8 +96,14 @@ export default function VehiclePage() {
   const [tpmsCacheReason, setTpmsCacheReason] = useState<string | null>(null)
   const [busyCommand, setBusyCommand] = useState<string | null>(null)
   const [commandOutcome, setCommandOutcome] = useState<CommandOutcome | null>(null)
+  // App dashboard confirm dialogs (v2.1.87): each chip opens one AlertDialog —
+  // lock/port/sentry confirmations and the climate temperature stepper.
+  const [lockConfirm, setLockConfirm] = useState<boolean | null>(null)
+  const [portConfirm, setPortConfirm] = useState<boolean | null>(null)
+  const [sentryConfirm, setSentryConfirm] = useState<boolean | null>(null)
+  const [climateDialog, setClimateDialog] = useState(false)
+  const [climateTempTarget, setClimateTempTarget] = useState(22.0)
   const [nearbySites, setNearbySites] = useState<ChargingSite[] | null>(null)
-  const [nearbySource, setNearbySource] = useState<string | null>(null)
   const [nearbyLoading, setNearbyLoading] = useState(false)
   const [nearbyError, setNearbyError] = useState(false)
   const [places, setPlaces] = useState<VehiclePlace[] | null>(null)
@@ -136,6 +141,30 @@ export default function VehiclePage() {
     }
   }
 
+  // App LaunchedEffect(remoteUiState.outcome): the capsule clears itself after
+  // 3.5 s — there is no dismiss control.
+  useEffect(() => {
+    if (!commandOutcome) return
+    const timer = setTimeout(() => setCommandOutcome(null), 3500)
+    return () => clearTimeout(timer)
+  }, [commandOutcome])
+
+  // App chip confirm dialogs execute through the same command path, always
+  // with confirm = true, and close the dialog immediately.
+  const handleChipAction = (chip: 'lock' | 'plug' | 'climate' | 'sentry') => {
+    if (!status) return
+    if (chip === 'lock') setLockConfirm(status.locked != true)
+    else if (chip === 'plug') setPortConfirm(status.chargePortDoorOpen == true)
+    else if (chip === 'sentry') setSentryConfirm(status.sentryMode != true)
+    else {
+      setClimateTempTarget(status.driverTempSetting ?? 22.0)
+      setClimateDialog(true)
+    }
+  }
+  const runChipCommand = (command: string, params?: Record<string, unknown>) => {
+    void handleExecuteCommand(command, params, true)
+  }
+
   const handleLoadNearby = async () => {
     if (!car) return
     setNearbyLoading(true)
@@ -143,7 +172,6 @@ export default function VehiclePage() {
     try {
       const data = await matelinkApi.getNearbyChargingSites(car.id, car)
       setNearbySites(data.sites)
-      setNearbySource(data.meta?.source ?? null)
     } catch {
       setNearbyError(true)
     } finally {
@@ -451,48 +479,6 @@ export default function VehiclePage() {
     return () => { stopped = true; if (timer !== undefined) clearTimeout(timer) }
   }, [visible, loading, car?.id, car?.stableId, car?.remoteVerified])
 
-  const selectCar = (event: { detail: { value: number | string } }) => {
-    const index = Number(event.detail.value)
-    const next = cars[index]
-    const session = readAppSession(Taro)
-    if (!next || !session?.userId) return
-    let currentOrigin: string | null = null
-    try { currentOrigin = getApiOrigin() } catch { /* invalid origin cannot own a vehicle selection */ }
-    if (pageOwner.current !== `${session.userId}:${getApiSessionGeneration()}` || !currentOrigin || pageOrigin.current !== currentOrigin) {
-      invalidatePage()
-      setCars([])
-      setCar(null)
-      setStatus(null)
-      setHistoryEvidence(null)
-      setReadinessItems([])
-      setPairing(null)
-      setRecentDrive(null)
-      return
-    }
-    scopeGate.current.invalidate()
-    clearImage()
-    saveSelection(session.userId!, next.stableId)
-    setCar(next)
-    setStatus(null)
-    setHistoryEvidence(null)
-    setReadinessItems([])
-    setPairing(null)
-    setRecentDrive(null)
-    if (next.remoteVerified === false) {
-      requestVersion.current += 1
-      setLoading(false)
-      setCached(true)
-      try {
-        const origin = getApiOrigin()
-        setStatus(readVehicleCache(Taro, session.userId!, origin, next.stableId))
-        setHistoryEvidence(inspectHistoryCache(Taro, session.userId!, next.stableId, origin))
-      }
-      catch { setStatus(null) }
-      return
-    }
-    void load()
-  }
-
   const copyOfficialLink = () => {
     const url = pairing?.virtual_key_url
     if (!url) {
@@ -530,7 +516,6 @@ export default function VehiclePage() {
   const defaultAppearance = !manualAppearance && !detectedAppearance.model && !detectedAppearance.exteriorColor
   const appearance = manualAppearance ?? (defaultAppearance ? DEFAULT_VEHICLE_APPEARANCE : detectedAppearance)
   const visual = resolveVehicleVisual(appearance)
-  const appearanceLabel = manualAppearance ? `手动外观${manualAppearance.modelYear ? ` · ${manualAppearance.modelYear}款` : ''}` : defaultAppearance ? '默认外观 · 黑色 Model Y 焕新版' : null
   const openAppearance = () => {
     appearanceTicket.current = { version: requestVersion.current, generation: getApiSessionGeneration(), owner: readAppSession(Taro)?.userId ?? null }
     setAppearanceOpen(true)
@@ -571,26 +556,27 @@ export default function VehiclePage() {
   const activeDriving = status?.state?.toLowerCase() === 'driving' || (status?.speed ?? 0) > 0
   const activeCharging = status?.chargingState?.toLowerCase() === 'charging'
   const snapshot = dashboardSnapshot(status, cached, foregroundNow)
-  const map = !cached && status?.location ? mapCoordinate(status.location.latitude, status.location.longitude) : null
+  // App map card renders whenever the snapshot carries coordinates — a cached
+  // snapshot shows the map too.
+  const map = status?.location ? mapCoordinate(status.location.latitude, status.location.longitude) : null
   const navigate = (url: string) => { void Taro.navigateTo({ url }) }
   const settings = () => navigate('/pages/tools/index?kind=settings')
   const openBattery = () => navigate('/pages/insights/index?kind=battery')
-  const location = locationDisplayText({ geofence: status?.geofence, location: status?.location, recentDrive }) ?? '暂无数据'
+  const location = locationDisplayText({ geofence: status?.geofence, location: status?.location, recentDrive }) ?? '等待车端 GPS'
   const headerGeometry = dashboardHeaderGeometry()
   return (
     <View className={`page vehicle-page ${uiAppearance.className}`} style={{ paddingTop: `${headerGeometry.top}px` }}>
       {coverSystemBar ? <View className="dashboard-system-bar-cover" style={{ height: `${headerGeometry.coverHeight}px` }} /> : null}
       {coverSystemBar && headerGeometry.capsuleCover ? <View className="dashboard-capsule-cover" style={{ top: `${headerGeometry.capsuleCover.top}px`, left: `${headerGeometry.capsuleCover.left}px`, height: `${headerGeometry.capsuleCover.height}px` }} /> : null}
       <View className="dashboard-toolbar">
-        <View className="dashboard-title"><Text>{car?.displayName || car?.name || '车辆'}</Text><Text>{dashboardVehicleSubtitle(car?.model, car?.trim) || '车型待识别'}</Text></View>
-        <View className="dashboard-toolbar-right" style={{ paddingTop: `${headerGeometry.toolbarOffset}px` }}><View className="dashboard-toolbar-actions"><Text className={`dashboard-snapshot-badge dashboard-snapshot-${snapshot.kind}`} data-kind={snapshot.kind}>{snapshot.label}</Text><Button className="dashboard-icon-button" ariaLabel="刷新车辆" loading={loading} onClick={() => { void load() }}><DashboardIcon name="refresh" tone="muted" /></Button><Button className="dashboard-icon-button" ariaLabel="设置" onClick={settings}><DashboardIcon name="settings" tone="muted" /></Button></View><Text className="dashboard-report-time">{dashboardReportTime(status?.observedAt)}</Text></View>
+        <View className="dashboard-title"><Text>{car?.displayName || car?.name || 'My Tesla'}</Text></View>
+        <View className="dashboard-toolbar-right" style={{ paddingTop: `${headerGeometry.toolbarOffset}px` }}><View className="dashboard-toolbar-actions"><Button className="dashboard-icon-button" ariaLabel="刷新" loading={loading} onClick={() => { void load() }}><DashboardIcon name="refresh" tone="muted" /></Button><Button className="dashboard-icon-button" ariaLabel="设置" onClick={settings}><DashboardIcon name="settings" tone="muted" /></Button></View></View>
       </View>
       {MOCK_FIXTURE_ENABLED ? <View className="card vehicle-fixture-notice" style={{ backgroundColor: '#fff7ed', borderColor: '#c2410c' }}><Text className="section-title" style={{ color: '#9a3412', marginBottom: 0 }}>合成测试数据，未连接真实车辆</Text></View> : null}
-      {cars.length > 1 ? <Picker mode="selector" range={cars.map(item => item.displayName || item.name || '车辆')} value={Math.max(0, cars.findIndex(item => item.stableId === car?.stableId))} onChange={selectCar}><View className="vehicle-selector"><Text>当前车辆 · {car?.displayName || car?.name || '请选择车辆'}</Text><Text>切换⌄</Text></View></Picker> : null}
       {car && status ? <>
         <DashboardHud status={status} dismissed={hudDismissed} onDismiss={() => setHudDismissed(true)} onExpand={() => setHudDismissed(false)} onOpen={() => { void Taro.switchTab({ url: activeDriving ? '/pages/drives/index' : '/pages/charges/index' }) }} />
-        <DashboardHero car={car} status={status} imageSrc={imageSrc} imageLoading={imageLoading} imageError={imageError} onRetryImage={() => setImageRetry(value => value + 1)} onOpenBattery={openBattery} onManagePhoto={appearanceScope ? openAppearance : undefined} appearanceLabel={appearanceLabel} />
-        {loading ? <LoadingIndicator label="正在读取最新数据…" compact /> : null}
+        <DashboardHero car={car} status={status} imageSrc={imageSrc} imageLoading={imageLoading} imageError={imageError} onRetryImage={() => setImageRetry(value => value + 1)} onOpenBattery={openBattery} onManagePhoto={appearanceScope ? openAppearance : undefined} historyFallback={snapshot.kind === 'cached' || snapshot.kind === 'history'} commandsReady={status.commandAuthorization == null || status.commandAuthorization.ready === true} busyCommand={busyCommand} onChipAction={handleChipAction} />
+        {loading ? <LoadingIndicator compact /> : null}
         <View className="dashboard-location-row"><DashboardInfoCard label="里程" value={dashboardMetric(status.odometer, 'km', 0)} icon="speed" onClick={() => navigate('/pages/analysis/index?kind=mileage')} /><DashboardInfoCard label="位置" value={location} icon="location" onClick={() => { if (map) navigate('/pages/tools/index?kind=location'); else { focusDiagnostics.current = true; setShowDiagnostics(true) } }} /></View>
         {recentDrive ? <DashboardRecentDrive drive={recentDrive} onOpen={() => { void Taro.switchTab({ url: '/pages/drives/index' }) }} /> : null}
         <View className="dashboard-temperature-row"><DashboardInfoCard label="车内" value={dashboardTemperature(status.insideTemp)} icon="thermostat" onClick={() => navigate('/pages/tools/index?kind=temperature')} /><DashboardInfoCard label="车外" value={dashboardTemperature(status.outsideTemp)} icon="thermostat" onClick={() => navigate('/pages/tools/index?kind=temperature')} /></View>
@@ -600,14 +586,8 @@ export default function VehiclePage() {
         {activeCharging ? <DashboardCurrentCharge status={status} onOpen={() => navigate('/pages/insights/index?kind=currentCharge')} /> : null}
         <VehicleRemoteSections
           carId={car.id}
-          status={status}
-          onReauthorize={copyOfficialLink}
-          onExecuteCommand={handleExecuteCommand}
-          busyCommand={busyCommand}
-          commandOutcome={commandOutcome}
-          onDismissOutcome={() => setCommandOutcome(null)}
+          hasLocation={Boolean(status.location)}
           nearbySites={nearbySites}
-          nearbySource={nearbySource}
           nearbyLoading={nearbyLoading}
           nearbyError={nearbyError}
           onLoadNearby={() => void handleLoadNearby()}
@@ -619,13 +599,17 @@ export default function VehiclePage() {
           onCreatePlace={handleCreatePlace}
           onDeletePlace={handleDeletePlace}
         />
-      </> : car ? <View className="dashboard-partial">
-        <View className="dashboard-partial-hero"><DashboardVehicleArt car={car} imageSrc={imageSrc} imageLoading={imageLoading} imageError={imageError} onRetryImage={() => setImageRetry(value => value + 1)} onManagePhoto={appearanceScope ? openAppearance : undefined} appearanceLabel={appearanceLabel} /><Text className="dashboard-section-title">车辆状态暂不可用</Text><Text>当前仅显示已确认的车辆资料，状态数据尚未返回。</Text></View>
-        <View className="dashboard-location-row"><DashboardInfoCard label="车型" value={car.model ? `Model ${model}` : '暂无数据'} icon="car" /><DashboardInfoCard label="外观" value={car.exteriorColor || '暂无数据'} /></View>
-        <View className="dashboard-temperature-row"><DashboardInfoCard label="总行程" value="暂无数据" /><DashboardInfoCard label="总充电" value="暂无数据" /></View>
-        <DashboardInfoCard label="数据来源" value={cached ? '缓存车辆资料' : '已关联车辆资料'} />
-        <View className="dashboard-partial-actions"><Button className="button" onClick={() => { void load() }}>刷新车辆</Button><Button className="button button-secondary" onClick={settings}>设置</Button></View>
-      </View> : loading ? <View className="card"><LoadingIndicator label="正在恢复会话并读取车辆…" /></View> : <View className="card empty-state"><Text className="section-title">车辆外观预览</Text><DashboardVehicleArt car={{ model: appearance.model ?? null }} imageSrc={imageSrc} imageLoading={imageLoading} imageError={imageError} onRetryImage={() => setImageRetry(value => value + 1)} onManagePhoto={appearanceScope ? openAppearance : undefined} appearanceLabel={appearanceLabel} /><Text className="section-title">尚未绑定车辆</Text><Text className="muted">请先登录特斯拉账号并完成 Tesla 官方授权。外观预览不代表已绑定车辆，没有真实响应时不显示车辆数据。</Text><Button className="button" onClick={() => Taro.switchTab({ url: '/pages/me/index' })}>去完成登录与授权</Button></View>}
+      </> : (currentSession?.userId || error) ? <View className="dashboard-partial">
+        {/* App PartialVehicleDashboard renders whenever the status snapshot is
+            missing — including a car whose list has not loaded (car = null) or
+            an unusable server configuration (the error becomes the body text). */}
+        <View className="dashboard-partial-header"><Text className="dashboard-partial-name">{car?.displayName || car?.name || '车辆'}</Text><Text className="dashboard-partial-badge">同步中</Text></View>
+        <View className="dashboard-partial-hero"><DashboardVehicleArt car={car ?? { model: null }} imageSrc={imageSrc} imageLoading={imageLoading} imageError={imageError} onRetryImage={() => setImageRetry(value => value + 1)} onManagePhoto={appearanceScope ? openAppearance : undefined} /><Text className="dashboard-section-title">车辆已连接，实时状态同步中</Text><Text className="muted">{error ? error : 'MateLink 已能从 TeslaMate 读取这辆车。电量、位置、锁车、空调和胎压卡片需要实时状态接口返回快照。'}</Text></View>
+        <View className="dashboard-location-row"><DashboardInfoCard label="车型" value={car?.model ? `Model ${model}${car.trim ? ` ${car.trim}` : ''}` : '-'} icon="car" /><DashboardInfoCard label="外观" value={[car?.exteriorColor, car?.wheelType].filter(Boolean).join('\n') || '-'} /></View>
+        <View className="dashboard-temperature-row"><DashboardInfoCard label="总行程数" value="-" /><DashboardInfoCard label="总充电次数" value="-" /></View>
+        <DashboardInfoCard label="数据来源" value="真实 TeslaMate 车辆列表；实时状态同步中" />
+        <View className="dashboard-partial-actions"><Button className="button" onClick={() => { void load() }}>刷新</Button><Button className="button button-secondary" onClick={settings}>设置</Button></View>
+      </View> : loading ? <View className="card"><LoadingIndicator compact /></View> : <View className="card empty-state"><Text className="section-title">车辆外观预览</Text><DashboardVehicleArt car={{ model: appearance.model ?? null }} imageSrc={imageSrc} imageLoading={imageLoading} imageError={imageError} onRetryImage={() => setImageRetry(value => value + 1)} onManagePhoto={appearanceScope ? openAppearance : undefined} /><Text className="section-title">尚未绑定车辆</Text><Text className="muted">请先登录特斯拉账号并完成 Tesla 官方授权。外观预览不代表已绑定车辆，没有真实响应时不显示车辆数据。</Text><Button className="button" onClick={() => Taro.switchTab({ url: '/pages/me/index' })}>去完成登录与授权</Button></View>}
       {appearanceOpen && appearanceScope ? <AppearanceSelector key={`${appearanceScope.userId ?? 'preview'}:${appearanceScope.stableId ?? ''}`} initial={appearance} preview={!car} onClose={() => setAppearanceOpen(false)} onSave={value => {
         if (!appearanceEditorIsCurrent() || !writeVehicleAppearance(Taro, appearanceScope, value)) return false
         setAppearanceRevision(value => value + 1); return true
@@ -636,12 +620,64 @@ export default function VehiclePage() {
       {readiness.status === 'pairing_required' || readiness.status === 'permission_required' ? <Button className="button" onClick={copyOfficialLink}>打开 Tesla 官方授权入口</Button> : null}
       {readiness.status === 'telemetry_not_configured' ? <Text className="muted">持续采集需要服务端先完成配置，请联系管理员。</Text> : null}
       {readiness.status === 'telemetry_error' ? <Button className="button" loading={loading} onClick={retryTelemetry}>重新配置持续采集</Button> : null}
-      {error ? <Text className="error">{error}</Text> : null}
       {showDiagnostics ? <View className="dashboard-readiness-panel">
         <Button className="button button-secondary" onClick={() => setShowDiagnostics(false)}>收起数据状态</Button>
-        <View className="dashboard-evidence"><Text>{dashboardSource(status?.source)}</Text><Text>{status?.observedAt ? `状态报告时间：${status.observedAt}（未提供逐字段更新时间）` : '状态报告时间未提供，不能确认字段是否最新。'}</Text>{tpmsCacheReason ? <Text>{tpmsCacheReason}</Text> : null}</View>
         <ReadinessChecklist items={readinessItems} pairing={pairing} sessionReady={Boolean(currentSession)} diagnostics={{ car, status, cached, onlineError: Boolean(error), history: historyEvidence }} />
-        {status ? <View className="card"><Text className="section-title">状态报告详情</Text><View className="metric-grid"><MetricValue label="速度" value={status.speed} unit="km/h" /><MetricValue label="功率" value={status.power} unit="kW" negative={(status.power ?? 0) < 0} /><MetricValue label="空调" value={booleanLabel(status.isClimateOn, '开启', '关闭')} /></View></View> : null}
+      </View> : null}
+      {/* App dashboard confirm dialogs (DashboardScreen v2.1.87): the four
+          status chips open these AlertDialogs; every action sends confirm=true. */}
+      {lockConfirm != null ? <View className="remote-modal-overlay" onClick={() => setLockConfirm(null)}>
+        <View className="remote-modal-dialog" onClick={e => e.stopPropagation()}>
+          <Text className="modal-title">{lockConfirm ? '确认锁闭车辆' : '确认解锁车辆？'}</Text>
+          <Text className="modal-body">{lockConfirm ? '确定要锁闭车辆门锁吗？' : '解锁是高敏感操作。请确认车辆处于安全环境后再执行。'}</Text>
+          <View className="modal-actions">
+            <Button className="button" onClick={() => { setLockConfirm(null); runChipCommand(lockConfirm ? 'lock' : 'unlock') }}>确认执行</Button>
+            <Button className="button button-secondary" onClick={() => setLockConfirm(null)}>取消</Button>
+          </View>
+        </View>
+      </View> : null}
+      {portConfirm != null ? <View className="remote-modal-overlay" onClick={() => setPortConfirm(null)}>
+        <View className="remote-modal-dialog" onClick={e => e.stopPropagation()}>
+          <Text className="modal-title">{portConfirm ? '关闭充电口' : '打开充电口'}</Text>
+          <Text className="modal-body">{portConfirm ? '确定要关闭车辆充电接口吗？' : '确定要开启车辆充电接口吗？'}</Text>
+          <View className="modal-actions">
+            <Button className="button" onClick={() => { setPortConfirm(null); runChipCommand(portConfirm ? 'charge_port_close' : 'charge_port_open') }}>确认执行</Button>
+            <Button className="button button-secondary" onClick={() => setPortConfirm(null)}>取消</Button>
+          </View>
+        </View>
+      </View> : null}
+      {sentryConfirm != null ? <View className="remote-modal-overlay" onClick={() => setSentryConfirm(null)}>
+        <View className="remote-modal-dialog" onClick={e => e.stopPropagation()}>
+          <Text className="modal-title">{sentryConfirm ? '开启哨兵模式' : '关闭哨兵模式'}</Text>
+          <Text className="modal-body">{sentryConfirm ? '确定要开启哨兵防盗监控模式吗？' : '确定要关闭哨兵模式吗？'}</Text>
+          <View className="modal-actions">
+            <Button className="button" onClick={() => { setSentryConfirm(null); runChipCommand(sentryConfirm ? 'sentry_on' : 'sentry_off') }}>确认执行</Button>
+            <Button className="button button-secondary" onClick={() => setSentryConfirm(null)}>取消</Button>
+          </View>
+        </View>
+      </View> : null}
+      {climateDialog ? <View className="remote-modal-overlay" onClick={() => setClimateDialog(false)}>
+        <View className="remote-modal-dialog" onClick={e => e.stopPropagation()}>
+          <Text className="modal-title">空调温度与控制</Text>
+          <Text className="modal-body">{status?.isClimateOn === true ? `当前空调已开启 · 目标设定 ${climateTempTarget.toFixed(1)}°C` : `当前空调已关闭 · 预设目标 ${climateTempTarget.toFixed(1)}°C`}</Text>
+          <View className="climate-stepper">
+            <Button className="stepper-btn" disabled={climateTempTarget <= 16.0} onClick={() => setClimateTempTarget(value => Math.max(16.0, Number((value - 0.5).toFixed(1))))}>−</Button>
+            <Text className="climate-stepper-value">{climateTempTarget.toFixed(1)}°C</Text>
+            <Button className="stepper-btn" disabled={climateTempTarget >= 28.0} onClick={() => setClimateTempTarget(value => Math.min(28.0, Number((value + 0.5).toFixed(1))))}>+</Button>
+          </View>
+          <View className="modal-actions">
+            <Button className="button" onClick={() => { setClimateDialog(false); if (status?.isClimateOn === true) runChipCommand('climate_off'); else runChipCommand('climate_on', { driver_temp: climateTempTarget }) }}>{status?.isClimateOn === true ? '关闭空调' : '开启空调'}</Button>
+            <Button className="button button-secondary" onClick={() => setClimateDialog(false)}>取消</Button>
+          </View>
+        </View>
+      </View> : null}
+      {/* App Apple-style floating command capsule: busy spinner + 正在送达车机指令...,
+          then the outcome line; auto-clears after 3.5 s. */}
+      {(busyCommand !== null || commandOutcome !== null) ? <View className="dashboard-command-capsule">
+        {busyCommand !== null ? <>
+          <View className="dashboard-chip-spinner" />
+          <Text className="dashboard-command-capsule-text">正在送达车机指令...</Text>
+        </> : commandOutcome ? <Text className={`dashboard-command-capsule-text capsule-${commandOutcome.status}`}>{commandCapsuleText(commandOutcome)}</Text> : null}
       </View> : null}
     </View>
   )

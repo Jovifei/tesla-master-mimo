@@ -8,9 +8,8 @@ import { formatRouteAddresses, toChineseDisplayAddress } from './address_display
  * miniprogram has no client reverse-geocoder, so the address step uses
  * the latest drive's end address — but only when the car is still
  * within 300 m of that drive's end point, i.e. it has not moved since
- * the trip ended. The final fallback keeps the miniprogram's concise
- * map affordance instead of the App's raw-coordinates branch (the
- * mini's location card deliberately leaves coordinates to the map page).
+ * the trip ended. The final fallback mirrors the App's raw-coordinate
+ * branch ("%.4f, %.4f"); with no GPS at all the page shows 等待车端 GPS.
  */
 
 export type RecentDriveCardModel = {
@@ -59,14 +58,12 @@ export function recentDriveCardModel(drive: Drive): RecentDriveCardModel {
 
   const startSoc = drive.startBatteryLevel != null && drive.startBatteryLevel > 0 ? drive.startBatteryLevel : null
   const endSoc = drive.endBatteryLevel != null && drive.endBatteryLevel > 0 ? drive.endBatteryLevel : null
+  // App UnitFormatter.formatSocRange: a missing side renders as "—", never dropped.
+  const socText = (value: number | null) => value == null ? '—' : `${value}%`
   const socRangeText =
-    startSoc != null && endSoc != null
-      ? `${startSoc}% → ${endSoc}%`
-      : startSoc != null
-        ? `${startSoc}%`
-        : endSoc != null
-          ? `${endSoc}%`
-          : null
+    startSoc != null || endSoc != null
+      ? `${socText(startSoc)} → ${socText(endSoc)}`
+      : null
 
   return {
     routeText,
@@ -99,6 +96,9 @@ export function locationDisplayText(input: {
   if (geofence) return geofence
   const location = input.location
   if (!location) return null
+  // (0, 0) is the "no GPS fix yet" sentinel, not a real position — the page
+  // then falls back to the App's 等待车端 GPS wording.
+  if (location.latitude === 0 && location.longitude === 0) return null
   const drive = input.recentDrive
   if (
     drive?.endAddress &&
@@ -109,5 +109,7 @@ export function locationDisplayText(input: {
     const address = toChineseDisplayAddress(drive.endAddress) ?? drive.endAddress.trim()
     if (address) return address
   }
-  return '已获取位置 · 点击查看地图'
+  // App locationDisplay: without a geofence or cached address the card shows
+  // raw coordinates — "%.4f, %.4f" — never an invented affordance label.
+  return `${location.latitude.toFixed(4)}, ${location.longitude.toFixed(4)}`
 }

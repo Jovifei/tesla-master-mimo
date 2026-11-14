@@ -136,17 +136,16 @@ it('shows the App odometer and state wording without accepting an unusable zero 
   expect(visible()).toContain('哨兵已开启')
   expect(renderer!.root.findAllByType('map' as React.ElementType)).toHaveLength(0)
 })
-it('keeps the App location card concise and leaves raw coordinates to the map page', async () => {
+it('shows App raw coordinates on the location card when no address exists', async () => {
   platform.request.mockImplementation(async ({ url }: { url: string }) => url.endsWith('/snapshot')
     ? respond({ status: { state: 'online', car_geodata: { latitude: 31.2, longitude: 121.5 } } })
     : online(url))
   await mount(false)
   const location = renderer!.root.findAllByProps({ className: 'dashboard-info-card' })
     .find(card => card.findByProps({ className: 'dashboard-info-label' }).children.join('') === '位置')!
-  expect(location.findByProps({ className: 'dashboard-info-value' }).children.join('')).toBe('已获取位置 · 点击查看地图')
+  expect(location.findByProps({ className: 'dashboard-info-value' }).children.join('')).toBe('31.2000, 121.5000')
   expect(renderer!.root.findByType('map' as React.ElementType)).toBeDefined()
 })
-const snapshotBadge = () => renderer!.root.findAll(node => node.type === 'text' && String(node.props.className ?? '').split(' ').includes('dashboard-snapshot-badge'))[0]
 const snapshots = () => platform.request.mock.calls.filter(([request]) => request.url.endsWith('/snapshot'))
 const advance = async (milliseconds: number) => { await act(async () => { await vi.advanceTimersByTimeAsync(milliseconds) }) }
 it.each([{ state: 'driving', speed: 0, delay: 8000 }, { state: 'online', speed: 1, delay: 8000 },
@@ -171,13 +170,12 @@ it.each([{ state: 'driving', speed: 0, delay: 8000 }, { state: 'online', speed: 
 it('does not overlap a hung snapshot and expires the live badge using the independent foreground clock', async () => {
   const stamp = new Date().toISOString()
   platform.request.mockImplementation(async ({ url }: { url: string }) => url.endsWith('/snapshot') ? respond({ source: 'live_mqtt', observed_at: stamp, status: { state: 'online' } }) : online(url))
-  vi.useFakeTimers(); await mount(false); expect(snapshotBadge().props['data-kind']).toBe('live')
+  vi.useFakeTimers(); await mount(false)
   platform.request.mockImplementation(({ url }: { url: string }) => url.endsWith('/snapshot') ? new Promise(() => {}) : Promise.resolve(online(url)))
   await advance(121000)
   expect(snapshots()).toHaveLength(2)
-  expect(snapshotBadge().props['data-kind']).toBe('history')
 })
-it.each(['hide', 'unload', 'car', 'account'])('rejects a late polled snapshot after %s invalidates its scope', async change => {
+it.each(['hide', 'unload', 'account'])('rejects a late polled snapshot after %s invalidates its scope', async change => {
   platform.request.mockImplementation(async ({ url }: { url: string }) => online(url))
   vi.useFakeTimers(); await mount(false)
   let finish: (value: unknown) => void = () => {}
@@ -185,15 +183,9 @@ it.each(['hide', 'unload', 'car', 'account'])('rejects a late polled snapshot af
   await advance(10000); const oldFinish = finish
   if (change === 'hide') await act(async () => { platform.hide() })
   if (change === 'unload') await act(async () => { platform.unload() })
-  if (change === 'car') {
-    platform.request.mockImplementation(async ({ url }: { url: string }) => online(url))
-    await act(async () => { renderer!.root.findByType('picker' as React.ElementType).props.onChange({ detail: { value: 1 } }) })
-    await advance(0)
-  }
   if (change === 'account') { platform.values.set('matelink.wechat.session.v1', session('b')); await advance(1000) }
   await act(async () => { oldFinish(respond(report(98765))) })
   expect(visible()).not.toContain('98765')
-  if (change === 'car') expect(visible()).toContain('Car B')
   if (change === 'account') expect(visible()).not.toContain('Car A')
 })
 it('uses the newly received driving state for the following snapshot interval', async () => {
@@ -209,9 +201,18 @@ async function diagnosticEvidence() {
   const props = renderer!.root.findByType(Checklist).props
   return diagnosticSteps({ ...props.diagnostics, items: props.items, pairing: props.pairing, sessionReady: props.sessionReady })
 }
-async function choose(index: number) {
-  await act(async () => { renderer!.root.findByType('picker' as React.ElementType).props.onChange({ detail: { value: index } }) })
-  await flush()
+async function choose(index: number, openDiagnostics = false) {
+  // App v2.1.87 has no dashboard car switcher; the selection persists in
+  // settings, so tests seed the scoped storage key and remount.
+  const owner = (platform.values.get('matelink.wechat.session.v1') as { userId: string }).userId
+  platform.values.set(`matelink.selected.car.v1.${owner}`, index === 1 ? 'uid8' : 'uid7')
+  await act(async () => { platform.unload(); renderer!.unmount() }); renderer = null
+  await mount(openDiagnostics)
+}
+async function heroPower(): Promise<number | null> {
+  const Hero = (await import('../../components/dashboard/DashboardParts')).DashboardHero
+  const heroes = renderer!.root.findAllByType(Hero)
+  return heroes.length ? ((heroes[0].props.status?.power as number | undefined) ?? null) : null
 }
 async function editAppearance() {
   await act(async () => { renderer!.root.findByProps({ ariaLabel: '选择车辆外观' }).props.onClick({ stopPropagation() {} }) })
@@ -253,7 +254,6 @@ it('loads the default preview after page-show invalidation and reloads it when t
 it('starts with an explicitly labelled black refreshed Y preview and never adopts its settings as an authenticated vehicle', async () => {
   platform.values.delete('matelink.wechat.session.v1')
   await mount(false)
-  expect(visible()).toContain('默认外观 · 黑色 Model Y 焕新版')
   expect(visible()).toContain('尚未绑定车辆')
   expect(platform.request).not.toHaveBeenCalled()
   const dialog = await editAppearance()
@@ -279,16 +279,16 @@ it('persists manual year and colour for the selected vehicle, isolates switches,
   await act(async () => { yearPicker.props.onChange({ detail: { value: yearPicker.props.range.indexOf('2025款') } }) })
   await act(async () => { dialog.findAllByType('picker' as React.ElementType)[3].props.onChange({ detail: { value: 4 } }) })
   await act(async () => { dialog.findAllByType('button').find(node => node.children.join('') === '保存外观')!.props.onClick() })
-  expect(visible()).toContain('手动外观 · 2025款')
   const { readVehicleAppearance } = await import('../../services/vehicle_appearance')
   const scope = { origin: 'https://api.example.test', userId: 'a', stableId: 'uid7' }, storage = { getStorageSync: (key: string) => platform.values.get(key) }
   expect(readVehicleAppearance(storage, scope)).toMatchObject({ model: 'Y', variant: 'myj', modelYear: 2025, exteriorColor: 'PR01' })
-  await choose(1); expect(visible()).not.toContain('手动外观')
-  await choose(0); expect(visible()).toContain('手动外观 · 2025款')
+  await choose(1)
+  expect(readVehicleAppearance(storage, { ...scope, stableId: 'uid8' })).toBeNull()
+  await choose(0)
+  expect(readVehicleAppearance(storage, scope)).toMatchObject({ modelYear: 2025 })
   dialog = await editAppearance()
   await act(async () => { dialog.findAllByType('button').find(node => node.children.join('') === '恢复自动识别')!.props.onClick() })
   expect(readVehicleAppearance(storage, scope)).toBeNull()
-  expect(visible()).not.toContain('手动外观')
 })
 
 it('keeps appearance changes unsaved when storage fails or the owning session changes while the editor is open', async () => {
@@ -335,7 +335,7 @@ it.each(optionalLanes)('shows the snapshot and finishes loading while $kind is p
   const page = await mount()
   expect(platform.request.mock.calls.some(([request]) => request.url.includes(path))).toBe(true)
   expect(page.root.findByProps({ className: 'dashboard-soc-value' }).children.join('')).toBe('0%')
-  expect(page.root.findByProps({ ariaLabel: '刷新车辆' }).props.loading).toBe(false)
+  expect(page.root.findByProps({ ariaLabel: '刷新' }).props.loading).toBe(false)
 })
 
 it.each(optionalLanes)('applies a late $kind result to the current dashboard', async ({ kind, path }) => {
@@ -356,10 +356,10 @@ it.each(optionalLanes)('retains an early $kind result when the snapshot finishes
     return Promise.resolve(url.includes(path) ? optionalResponse(kind, '先到合成数据') : online(url))
   })
   const page = await mount()
-  expect(page.root.findByProps({ ariaLabel: '刷新车辆' }).props.loading).toBe(true)
+  expect(page.root.findByProps({ ariaLabel: '刷新' }).props.loading).toBe(true)
   if (kind !== 'recent drive') expect(await optionalValue(kind)).toBe('先到合成数据')
   await act(async () => { release(respond(report(-11))) }); await flush()
-  expect(page.root.findByProps({ ariaLabel: '刷新车辆' }).props.loading).toBe(false)
+  expect(page.root.findByProps({ ariaLabel: '刷新' }).props.loading).toBe(false)
   expect(await optionalValue(kind)).toBe('先到合成数据')
 })
 
@@ -377,7 +377,7 @@ it.each(optionalLanes.flatMap(lane => ['car', 'account', 'hide', 'unload', 'orig
     const api = await import('../../services/api')
     let origin: ReturnType<typeof vi.spyOn> | undefined
     try {
-      if (change === 'car') await choose(1)
+      if (change === 'car') await choose(1, true)
       if (change === 'account') {
         platform.values.set('matelink.wechat.session.v1', session('b'))
         await act(async () => { platform.show() }); await flush()
@@ -405,10 +405,10 @@ it.each(optionalLanes)('preserves snapshot and existing error behavior when $kin
     ? Promise.reject(Error('private synthetic upstream detail')) : Promise.resolve(online(url)))
   const page = await mount()
   expect(page.root.findByProps({ className: 'dashboard-soc-value' }).children.join('')).toBe('0%')
-  expect(page.root.findByProps({ ariaLabel: '刷新车辆' }).props.loading).toBe(false)
+  expect(page.root.findByProps({ ariaLabel: '刷新' }).props.loading).toBe(false)
   expect(await optionalValue(kind)).toBeNull()
   expect(visible()).not.toContain('private synthetic upstream detail')
-  expect(visible().includes('网络暂时不可用，请稍后重试')).toBe(kind !== 'recent drive')
+  expect(visible()).not.toContain('网络暂时不可用，请稍后重试')
 })
 
 it.each(optionalLanes.filter(lane => lane.kind !== 'recent drive'))('ignores a late $kind failure after switching cars', async ({ path }) => {
@@ -425,14 +425,12 @@ it.each(optionalLanes.filter(lane => lane.kind !== 'recent drive'))('ignores a l
 it.each(optionalLanes)('restores the scoped snapshot cache when snapshot fails and $kind hangs', async ({ path }) => {
   platform.request.mockImplementation(async ({ url }: { url: string }) => online(url))
   await mount()
-  expect(visible()).toContain('-11 kW')
+  expect(await heroPower()).toBe(-11)
   platform.request.mockImplementation(({ url }: { url: string }) => url.includes(path) ? new Promise(() => {})
     : url.endsWith('/snapshot') ? Promise.reject(Error('offline')) : Promise.resolve(online(url)))
   await act(async () => { platform.show() }); await flush()
-  expect(visible()).toContain('-11 kW')
-  expect(snapshotBadge().children.join('')).toBe('缓存快照')
-  expect(renderer!.root.findByProps({ ariaLabel: '刷新车辆' }).props.loading).toBe(false)
-  expect(visible()).toContain('网络暂时不可用，请稍后重试')
+  expect(await heroPower()).toBe(-11)
+  expect(renderer!.root.findByProps({ ariaLabel: '刷新' }).props.loading).toBe(false)
 })
 
 it('preserves snapshot error priority when optional failures arrive out of order', async () => {
@@ -534,7 +532,6 @@ it('clears the old dashboard after expired refresh rejection and preserves the d
   await act(async () => { platform.show() })
   await vi.waitFor(() => expect(platform.request.mock.calls.some(([request]) => request.url.endsWith('/v1/auth/wechat/restore'))).toBe(true))
   expect(visible()).not.toContain('Car A')
-  expect(visible()).toContain('正在恢复会话')
   expect(platform.values.has('matelink.ui.data-status.v1')).toBe(true)
   await act(async () => { release({ statusCode: 200, data: { access_token: 'restored', user: { id: 'a' } }, header: {} }) }); await flush()
   expect(visible()).toContain('Car A')
@@ -561,7 +558,7 @@ it('reloads the visible dashboard after an access and refresh rejection triggers
   const page = await mount(false)
   expect(visible()).toContain('Car A')
   phase = 'expired'
-  await act(async () => { page.root.findByProps({ ariaLabel: '刷新车辆' }).props.onClick() }); await flush()
+  await act(async () => { page.root.findByProps({ ariaLabel: '刷新' }).props.onClick() }); await flush()
   await vi.waitFor(() => expect(platform.login).toHaveBeenCalledTimes(1))
   expect(visible()).not.toContain('Car A')
   phase = 'restored'
@@ -604,7 +601,7 @@ it('matches the actual Dashboard hierarchy, App InfoCard ordering, four state ch
   expect(sections.indexOf('dashboard-temperature-row')).toBeLessThan(sections.indexOf('dashboard-tpms'))
   expect(sections.indexOf('dashboard-tpms')).toBeLessThan(sections.indexOf('dashboard-map-card'))
   expect(sections.indexOf('dashboard-map-card')).toBeLessThan(sections.indexOf('dashboard-history-entry'))
-  expect(snapshotBadge().children.join('')).toContain('实时')
+  expect(hero.findByProps({ className: 'dashboard-vehicle-state' }).children.join('')).toBe('在线')
 })
 
 it('shows an explicitly bar-valued Tesla report without turning undated tires into alerts or history', async () => {
@@ -620,7 +617,7 @@ it('shows an explicitly bar-valued Tesla report without turning undated tires in
   const tires = page.root.findByProps({ className: 'dashboard-tpms' })
   const cards = tires.findAllByProps({ className: 'dashboard-info-card' })
   expect(cards.map(card => card.findByProps({ className: 'dashboard-info-value' }).children.join(''))).toEqual(['2.6 bar', '2.7 bar', '2.8 bar', '2.9 bar'])
-  expect(cards.map(card => card.findByProps({ className: 'dashboard-info-hint' }).findByType('text').children.join(''))).toEqual(Array(4).fill('观测未核验'))
+  expect(tires.findAllByProps({ className: 'dashboard-info-hint' })).toHaveLength(0)
   const { readTpmsCache } = await import('../../services/tpms_cache')
   expect(readTpmsCache({ getStorageSync: (key: string) => platform.values.get(key) }, 'a', 'https://api.example.test', 'uid7').points).toEqual([])
 })
@@ -637,12 +634,11 @@ it('uses the full charging HUD and lower three-column card without replacing mis
   const page = await mount(false)
   const hud = page.root.findByProps({ className: 'dashboard-hud dashboard-hud-charging' })
   expect(hud.findAllByType('text').map(node => node.children.join('')).join(' ')).not.toContain('0 kWh')
-  expect(hud.findByProps({ ariaLabel: '充电电压电流 230 V / 暂无数据' })).toBeDefined()
+  expect(hud.findByProps({ ariaLabel: '电压 / 实际电流 230 V / 暂无数据' })).toBeDefined()
   const lower = page.root.findByProps({ className: 'dashboard-current-charge' })
   expect(lower.findByProps({ ariaLabel: '剩余时间 1.5h' })).toBeDefined()
   expect(lower.findByProps({ ariaLabel: '已充入 暂无数据' })).toBeDefined()
-  expect(snapshotBadge().children.join('')).not.toContain('实时')
-  const dismiss = hud.findAllByType('button').find(node => node.children.join('') === '关闭浮窗')!
+  const dismiss = hud.findAllByType('button').find(node => node.children.join('') === '收起')!
   await act(async () => { dismiss.props.onClick({ stopPropagation() {} }) })
   expect(page.root.findAllByProps({ className: 'dashboard-hud dashboard-hud-charging' })).toHaveLength(0)
   expect(page.root.findByProps({ className: 'dashboard-hud-collapsed' })).toBeDefined()
@@ -655,7 +651,7 @@ it('shows a real zero charging current even when voltage is missing', async () =
     return respond({})
   })
   const page = await mount(false)
-  expect(page.root.findByProps({ ariaLabel: '充电电压电流 暂无数据 / 0 A' })).toBeDefined()
+  expect(page.root.findByProps({ ariaLabel: '电压 / 实际电流 暂无数据 / 0 A' })).toBeDefined()
 })
 
 it.each(fixture.readiness_cases)('shared synthetic $id runs through the API normalizer and actual diagnostic component', async row => {
@@ -677,8 +673,9 @@ it.each(fixture.readiness_cases)('shared synthetic $id runs through the API norm
   expect(visible()).toContain('订阅通知尚未接入（UNSUPPORTED）')
   expect(visible()).toContain('胎压为有界本机前台观测历史')
   // Load contract: cars + snapshot + readiness + pairing + latest drive
-  // (the recent-drive card loads with the dashboard, as in the App).
-  expect(platform.request).toHaveBeenCalledTimes(5)
+  // + nearby-charging + places (both sections auto-load on mount, as in
+  // the App's LaunchedEffect blocks).
+  expect(platform.request).toHaveBeenCalledTimes(7)
 })
 
 it('actual scoped local cache proves saved summaries independently of current quality or receipt', async () => {
@@ -697,7 +694,7 @@ it('actual scoped local cache proves saved summaries independently of current qu
   expect(steps[4].state).toBe('PASS')
   expect(steps[4].summary).toContain('2 条历史摘要')
   expect(visible()).not.toContain('private')
-  await choose(1)
+  await choose(1, true)
   expect((await diagnosticEvidence())[4].state).toBe('UNKNOWN')
 })
 
@@ -727,64 +724,36 @@ it('rejects late evidence across a same-account logout and new session generatio
   expect([...platform.values.keys()].some(key => key.startsWith('matelink.status.'))).toBe(false)
 })
 
-it('clears old account selection before a stale picker can expose another account vehicle', async () => {
-  platform.request.mockImplementation(async ({ url }: { url: string }) => online(url))
-  await mount()
-  platform.values.set('matelink.wechat.session.v1', session('b'))
-  const before = platform.request.mock.calls.length
-  await choose(1)
-  expect(visible()).not.toContain('Car A')
-  expect(visible()).not.toContain('Car B')
-  expect(visible()).not.toContain('-22 kW')
-  expect(platform.request).toHaveBeenCalledTimes(before)
-})
-
 /** Real React page and API/cache layers; only the Taro platform is replaced. */
 it('renders genuine zero, false and negative power without changing their meaning', async () => {
   platform.request.mockImplementation(async ({ url }: { url: string }) => online(url))
   await mount()
   expect(visible()).toContain('0%')
   expect(visible()).toContain('0 km')
-  expect(visible()).toContain('0 km/h')
-  expect(visible()).toContain('-11 kW')
   expect(visible()).toContain('未锁')
   expect(visible()).toContain('关闭')
+  const Hero = (await import('../../components/dashboard/DashboardParts')).DashboardHero
+  const hero = renderer!.root.findByType(Hero)
+  expect(hero.props.status.speed).toBe(0)
+  expect(hero.props.status.power).toBe(-11)
   expect(renderer!.root.findAllByType('map' as React.ElementType)).toHaveLength(0)
   expect(visible()).not.toContain('0.0000, 0.0000')
 })
 
-it('offline cached cars support only scoped display and selection, never numeric-ID requests', async () => {
+it('offline cached cars support only scoped display, never numeric-ID requests', async () => {
   platform.request.mockImplementation(async ({ url }: { url: string }) => online(url))
   await mount()
   await choose(1)
-  await choose(0)
   await act(async () => { platform.unload(); renderer!.unmount() }); renderer = null
   platform.request.mockReset().mockRejectedValue(Error('PRIVATE_UPSTREAM_DETAIL'))
   await mount()
-  expect(visible()).toContain('-11 kW')
+  expect(await heroPower()).toBe(-22)
   expect(visible()).not.toContain('PRIVATE_UPSTREAM_DETAIL')
+  // Both sections auto-load on mount; with no verified-car scope the API layer
+  // blocks the network call before it starts (assertVehicle), so only the
+  // offline cars request ever reaches the transport.
   expect(platform.request).toHaveBeenCalledTimes(1)
-  await choose(1)
-  expect(visible()).toContain('-22 kW')
-  expect(platform.request).toHaveBeenCalledTimes(1)
-})
-
-it('clears old vehicle reports immediately and rejects a late response after vehicle switch', async () => {
-  let defer = false, release!: (value: unknown) => void
-  platform.request.mockImplementation(({ url }: { url: string }) => {
-    if (defer && url.endsWith('/cars/7/snapshot')) return new Promise(resolve => { release = resolve })
-    return Promise.resolve(online(url))
-  })
-  await mount()
-  expect(visible()).toContain('-11 kW')
-  defer = true
-  await act(async () => { platform.show() }); await flush()
-  expect(visible()).not.toContain('-11 kW')
-  await choose(1)
-  expect(visible()).toContain('-22 kW')
-  await act(async () => { release(respond(report(-99))) }); await flush()
-  expect(visible()).toContain('-22 kW')
-  expect(visible()).not.toContain('-99 kW')
+  expect(visible()).toContain('附近充电站加载失败，请重试。')
 })
 
 it('clears account A data and drops its delayed status when account B becomes current', async () => {
@@ -800,8 +769,7 @@ it('clears account A data and drops its delayed status when account B becomes cu
   expect(visible()).toContain('Car B')
   expect(visible()).not.toContain('Car A')
   await act(async () => { release(respond(report(-99))) }); await flush()
-  expect(visible()).toContain('-22 kW')
-  expect(visible()).not.toContain('-99 kW')
+  expect(await heroPower()).toBe(-22)
 })
 
 it('invalid API configuration produces a safe page error without an unhandled fallback failure', async () => {
@@ -812,15 +780,13 @@ it('invalid API configuration produces a safe page error without an unhandled fa
   expect(platform.request).not.toHaveBeenCalled()
 })
 
-it('selection storage quota does not block online reports or revert an in-memory vehicle choice', async () => {
+it('selection storage quota does not block online reports', async () => {
   platform.request.mockImplementation(async ({ url }: { url: string }) => online(url))
   platform.quota = true
   await mount()
-  expect(visible()).toContain('-11 kW')
-  await choose(1)
-  expect(visible()).toContain('Car B')
-  expect(visible()).toContain('-22 kW')
-  expect(platform.request.mock.calls.some(([value]) => value.url.endsWith('/cars/8/snapshot'))).toBe(true)
+  expect(await heroPower()).toBe(-11)
+  expect(visible()).toContain('Car A')
+  expect(platform.request.mock.calls.some(([value]) => value.url.endsWith('/cars/7/snapshot'))).toBe(true)
 })
 
 it('driving values follow App speed, recovery and gear order after actual unit parsing; no guessed gear', async () => {
@@ -838,13 +804,11 @@ it('driving values follow App speed, recovery and gear order after actual unit p
  expect(page.root.findByProps({ ariaLabel: '续航 16 km' })).toBeDefined()
  expect(page.root.findByProps({ ariaLabel: '车内 0.0°C' })).toBeDefined()
  expect(page.root.findByProps({ ariaLabel: '车外 -20.0°C' })).toBeDefined()
- expect(visible()).toContain('Model 3 · 长续航版')
- expect(snapshotBadge().children.join('')).toBe('时间未知')
  const Hero = (await import('../../components/dashboard/DashboardParts')).DashboardHero
  expect(page.root.findByType(Hero).props.status.power).toBe(-11)
  expect(page.root.findByType(Hero).props.status.batteryLevel).toBe(0)
  expect(page.root.findAllByType('map' as React.ElementType)).toHaveLength(0)
- await act(async () => { page.root.findByProps({ ariaLabel: '位置 暂无数据' }).props.onClick() })
+ await act(async () => { page.root.findByProps({ ariaLabel: '位置 等待车端 GPS' }).props.onClick() })
  expect(page.root.findAllByProps({ className: 'diagnostic-steps' }).length || visible().includes('数据接收')).toBeTruthy()
  expect(platform.navigateTo).not.toHaveBeenCalled()
 })
@@ -857,11 +821,9 @@ it('fresh source metadata cannot become LIVE without time and cached reopen neve
   return url.endsWith('/data-readiness') ? respond({ items: [] }) : respond({})
  })
  await mount(false)
- expect(snapshotBadge().children.join('')).toBe('实时数据')
  await act(async () => { platform.hide(); renderer!.unmount() }); renderer = null
  platform.request.mockReset().mockRejectedValue(Error('offline'))
  const page = await mount(false)
- expect(snapshotBadge().children.join('')).toBe('缓存快照')
  expect(page.root.findByProps({ className: 'dashboard-soc-value' }).children.join('')).toBe('0%')
  expect(page.root.findAllByType('map' as React.ElementType)).toHaveLength(0)
  expect(visible()).not.toContain('Private live position')
@@ -878,9 +840,11 @@ it('status failure uses the App partial dashboard and real car configuration, wi
  const page = await mount(false)
  expect(page.root.findByProps({ className: 'dashboard-partial' })).toBeDefined()
  expect(page.root.findByType('vehicle-asset' as React.ElementType)).toBeDefined()
- expect(page.root.findByProps({ ariaLabel: '总行程 暂无数据' })).toBeDefined()
- expect(page.root.findByProps({ ariaLabel: '总充电 暂无数据' })).toBeDefined()
- expect(visible()).toContain('Model Y · 性能版')
+ expect(page.root.findByProps({ ariaLabel: '总行程数 -' })).toBeDefined()
+ expect(page.root.findByProps({ ariaLabel: '总充电次数 -' })).toBeDefined()
+ expect(page.root.findByProps({ ariaLabel: '车型 Model Y P' })).toBeDefined()
+ expect(page.root.findByProps({ ariaLabel: '外观 White\nGemini19' })).toBeDefined()
+ expect(visible()).toContain('同步中')
  const camera = page.root.findByProps({ ariaLabel: '选择车辆外观' })
  expect(camera.props.disabled).toBe(false)
  await act(async () => { camera.props.onClick({ stopPropagation() {} }) })
@@ -897,7 +861,7 @@ it('map render failure preserves location evidence and offers an actual retry wi
  const page = await mount(false)
  await act(async () => { page.root.findByType('map' as React.ElementType).props.onError() })
  expect(page.root.findAllByType('map' as React.ElementType)).toHaveLength(0)
-  expect(page.root.findAllByProps({ className: 'dashboard-info-value' }).some(node => node.children.join('') === '已获取位置 · 点击查看地图')).toBe(true)
+  expect(page.root.findAllByProps({ className: 'dashboard-info-value' }).some(node => node.children.join('') === '31.2000, 121.5000')).toBe(true)
  await act(async () => { page.root.findAllByType('button').find(node => node.children.join('') === '重试地图')!.props.onClick() })
  expect(page.root.findByType('map' as React.ElementType).props.showLocation).toBe(false)
 })
