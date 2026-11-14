@@ -7,11 +7,15 @@ export type BatteryHealth = { maxRangeKm: number | null; currentRangeKm: number 
 export type SoftwareUpdate = { id: string; version: string | null; startDate: string | null; endDate: string | null }
 export type DriveEvidencePoint = { date: string; speedKmh: number | null; powerKw: number | null; batteryLevel: number | null; elevationM: number | null; latitude: number | null; longitude: number | null }
 export type DriveEvidence = { drive: Drive | null; points: DriveEvidencePoint[]; source: string | null; qualityState: string | null; pointsComplete: boolean; reason: string | null }
-export type ChargeEvidencePoint = { date: string; batteryLevel: number | null; powerKw: number | null; voltageV: number | null; currentA: number | null; temperatureC: number | null }
+export type ChargeFieldState = 'reported' | 'absent' | 'invalid'
+export type ChargeSampleChannel = 'batteryLevel' | 'powerKw' | 'voltageV' | 'currentA' | 'temperatureC'
+/** In-memory field presence is independent of the normalized number/null value. */
+export type ChargeEvidencePoint = { date: string; batteryLevel: number | null; powerKw: number | null; voltageV: number | null; currentA: number | null; temperatureC: number | null;
+  fieldState: Record<ChargeSampleChannel, ChargeFieldState>; sourceConflict: boolean }
 export type ChargeEvidenceSummary = { chargerPowerKw: number | null; chargerVoltageV: number | null; currentA: number | null; phases: number | null;
   currentRequestA: number | null; currentRequestMaxA: number | null; timeToFullHours: number | null; currentBatteryLevel: number | null;
   outsideTempC: number | null; startRatedRangeKm: number | null; endRatedRangeKm: number | null; odometerKm: number | null; isCharging: boolean | null }
-export type ChargeEvidence = { charge: Charge | null; points: ChargeEvidencePoint[]; summary: ChargeEvidenceSummary; source: string | null; qualityState: string | null; pointsComplete: boolean; reason: string | null }
+export type ChargeEvidence = { charge: Charge | null; points: ChargeEvidencePoint[]; summary: ChargeEvidenceSummary; source: string | null; qualityState: string | null; pointsComplete: boolean; hasUnplaceableSamples: boolean; reason: string | null }
 export type ParkedDetail = { olderDriveId: string | null; newerDriveId: string | null; startDate: string | null; endDate: string | null; address: string | null;
   startBatteryLevel: number | null; endBatteryLevel: number | null; batteryDelta: number | null;
   energyKwh: number | null; averagePowerW: number | null; peakPowerW: number | null;

@@ -57,7 +57,7 @@ it('uses update pagination metadata even if a raw page includes an invalid item'
 })
 it('annual report uses actual parsed history and exports a local valid PDF, not a fake complete history', async () => {
   await mount('report')
-  await act(async () => { renderer!.root.findByType('picker' as React.ElementType).props.onChange({ detail: { value: '2026' } }) })
+  await act(async () => { renderer!.root.findByType('picker' as React.ElementType).props.onChange({ detail: { value: String(new Date(start).getFullYear()) } }) })
   expect(text()).toContain('配对平均能耗')
   expect(text()).toContain('-5 kWh/100km')
   await click('导出年度 PDF')
@@ -123,4 +123,120 @@ it('does not display historical positions from a different source instance', asy
   await mount('whereWasI', { timestamp: '2026-01-01T00:10:00Z' }); await click('查询这个时刻')
   expect(renderer!.root.findAllByType('map' as React.ElementType)).toHaveLength(0)
   expect(text()).toContain('来源信息不一致')
+})
+
+it.each([
+  ['outside the selected instant', '2026-01-01T02:00:00Z', '2026-01-01T02:30:00Z', false],
+  ['different window containing the selected instant', start, '2026-01-01T00:20:00Z', false],
+  ['missing start', null, end, false],
+  ['missing end', start, null, false],
+  ['invalid start', '2026-02-30T00:00:00Z', end, false],
+  ['invalid end', start, '2026-02-30T00:30:00Z', false],
+  ['submillisecond start mismatch', '2026-01-01T00:00:00.000000001Z', end, false],
+  ['equivalent offset representations', '2025-12-31T16:00:00-08:00', '2025-12-31T16:30:00-08:00', true],
+] as const)('historical drive location handles %s', async (_name, detailStart, detailEnd, expectedMap) => {
+  const row = { drive_id: 1, start_date: start, end_date: end, source: 'teslamate_archive', source_instance_id: 'a', source_vehicle_id: '1', source_record_id: 'd1', quality_state: 'observed', odometer_details: { odometer_distance: 10 } }
+  platform.request.mockImplementation(async ({ url }: { url: string }) => {
+    if (url.endsWith('/cars')) return response({ cars: [{ car_id: 7, vehicle_uid: 'tools-car' }] })
+    if (url.endsWith('/drives/1')) return response({ drive: { ...row, start_date: detailStart, end_date: detailEnd, drive_details: [{ date: detailStart || start, latitude: 39.9, longitude: 116.4 }] } })
+    if (url.includes('/drives')) return response({ drives: [row], meta: { page: 1, show: 20, total_pages: 1 } })
+    return response({ charges: [], meta: { page: 1, show: 20, total_pages: 1 } })
+  })
+  await mount('whereWasI', { timestamp: '2026-01-01T00:10:00Z' }); await click('查询这个时刻')
+  expect(renderer!.root.findAllByType('map' as React.ElementType)).toHaveLength(expectedMap ? 1 : 0)
+  expect(text()).toContain(expectedMap ? '最近已有的行程位置采样（非插值）' : '时间窗')
+})
+
+it.each([
+  ['outside the selected instant', '2026-01-01T02:00:00Z', '2026-01-01T02:30:00Z', false],
+  ['different window containing the selected instant', start, '2026-01-01T00:20:00Z', false],
+  ['missing start', null, end, false],
+  ['missing end', start, null, false],
+  ['invalid start', '2026-02-30T00:00:00Z', end, false],
+  ['invalid end', start, '2026-02-30T00:30:00Z', false],
+  ['submillisecond start mismatch', '2026-01-01T00:00:00.000000001Z', end, false],
+  ['equivalent offset representations', '2025-12-31T16:00:00-08:00', '2025-12-31T16:30:00-08:00', true],
+] as const)('historical charge location handles %s', async (_name, detailStart, detailEnd, expectedMap) => {
+  const row = { charge_id: 1, start_date: start, end_date: end, source: 'teslamate_archive', source_instance_id: 'a', source_vehicle_id: '1', source_record_id: 'c1', quality_state: 'observed' }
+  platform.request.mockImplementation(async ({ url }: { url: string }) => {
+    if (url.endsWith('/cars')) return response({ cars: [{ car_id: 7, vehicle_uid: 'tools-car' }] })
+    if (url.endsWith('/charges/1')) return response({ charge: { ...row, start_date: detailStart, end_date: detailEnd, latitude: 39.9, longitude: 116.4 } })
+    if (url.includes('/drives')) return response({ drives: [], meta: { page: 1, show: 20, total_pages: 1 } })
+    if (url.includes('/charges')) return response({ charges: [row], meta: { page: 1, show: 20, total_pages: 1 } })
+    throw new Error('unexpected route')
+  })
+  await mount('whereWasI', { timestamp: '2026-01-01T00:10:00Z' }); await click('查询这个时刻')
+  expect(renderer!.root.findAllByType('map' as React.ElementType)).toHaveLength(expectedMap ? 1 : 0)
+  expect(text()).toContain(expectedMap ? '充电记录的地点' : '时间窗')
+})
+
+it.each([
+  ['changed endpoint', start, '2026-01-01T00:35:00Z', false],
+  ['missing endpoint', start, null, false],
+  ['changed start', '2026-01-01T00:05:00Z', end, false],
+  ['invalid start', '2026-02-30T00:00:00Z', end, false],
+  ['matching endpoint', '2026-01-01T08:00:00+08:00', '2026-01-01T08:30:00+08:00', true],
+] as const)('parked location handles a detail with %s', async (_name, detailStart, detailEnd, expectedMap) => {
+  const source = { source: 'teslamate_archive', source_instance_id: 'archive-a', source_vehicle_id: 'vehicle-a', quality_state: 'observed' }
+  const older = { ...source, drive_id: 1, start_date: start, end_date: end, odometer_details: { odometer_distance: 10 } }
+  const newer = { ...source, drive_id: 2, start_date: '2026-01-01T02:00:00Z', end_date: '2026-01-01T02:30:00Z', odometer_details: { odometer_distance: 10 } }
+  platform.request.mockImplementation(async ({ url }: { url: string }) => {
+    if (url.endsWith('/cars')) return response({ cars: [{ car_id: 7, vehicle_uid: 'tools-car' }] })
+    if (url.endsWith('/parked/1/2')) return response({ older_drive_id: 1, newer_drive_id: 2, start_date: end, end_date: newer.start_date, source: source.source, charge_sessions_complete: true })
+    if (url.endsWith('/drives/1')) return response({ drive: { ...older, start_date: detailStart, end_date: detailEnd, end_latitude: 39.9, end_longitude: 116.4 } })
+    if (url.includes('/drives')) return response({ drives: [newer, older], meta: { page: 1, show: 20, total_pages: 1 } })
+    if (url.includes('/charges')) return response({ charges: [], meta: { page: 1, show: 20, total_pages: 1 } })
+    throw new Error('unexpected route')
+  })
+  await mount('whereWasI', { timestamp: '2026-01-01T01:15:00Z' }); await click('查询这个时刻')
+  expect(platform.request.mock.calls.some(([request]) => request.url.endsWith('/parked/1/2'))).toBe(true)
+  expect(platform.request.mock.calls.some(([request]) => request.url.endsWith('/drives/1'))).toBe(true)
+  expect(renderer!.root.findAllByType('map' as React.ElementType)).toHaveLength(expectedMap ? 1 : 0)
+})
+
+it.each(['drives', 'charges'] as const)('does not use an invalid list window to request %s detail', async kind => {
+  const row = { ...(kind === 'drives' ? { drive_id: 1, odometer_details: { odometer_distance: 10 } } : { charge_id: 1 }),
+    start_date: '2026-02-30T00:00:00Z', end_date: '2026-03-02T00:30:00Z', source: 'teslamate_archive', quality_state: 'observed' }
+  platform.request.mockImplementation(async ({ url }: { url: string }) => {
+    if (url.endsWith('/cars')) return response({ cars: [{ car_id: 7, vehicle_uid: 'tools-car' }] })
+    if (url.includes('/drives')) return response({ drives: kind === 'drives' ? [row] : [], meta: { page: 1, show: 20, total_pages: 1 } })
+    if (url.includes('/charges')) return response({ charges: kind === 'charges' ? [row] : [], meta: { page: 1, show: 20, total_pages: 1 } })
+    throw new Error('unexpected route')
+  })
+  await mount('whereWasI', { timestamp: '2026-03-02T00:10:00Z' }); await click('查询这个时刻')
+  expect(platform.request.mock.calls.some(([request]) => request.url.endsWith(`/${kind}/1`))).toBe(false)
+  expect(renderer!.root.findAllByType('map' as React.ElementType)).toHaveLength(0)
+})
+
+it.each(['drives', 'charges'] as const)('does not display a quarantined %s detail despite a matching window', async kind => {
+  const row = { ...(kind === 'drives' ? { drive_id: 1, odometer_details: { odometer_distance: 10 } } : { charge_id: 1 }),
+    start_date: start, end_date: end, source: 'teslamate_archive', quality_state: 'observed' }
+  platform.request.mockImplementation(async ({ url }: { url: string }) => {
+    if (url.endsWith('/cars')) return response({ cars: [{ car_id: 7, vehicle_uid: 'tools-car' }] })
+    if (url.endsWith(`/${kind}/1`)) return response({ [kind === 'drives' ? 'drive' : 'charge']: { ...row, quality_state: 'quarantined', latitude: 39.9, longitude: 116.4, drive_details: [{ date: start, latitude: 39.9, longitude: 116.4 }] } })
+    if (url.includes('/drives')) return response({ drives: kind === 'drives' ? [row] : [], meta: { page: 1, show: 20, total_pages: 1 } })
+    if (url.includes('/charges')) return response({ charges: kind === 'charges' ? [row] : [], meta: { page: 1, show: 20, total_pages: 1 } })
+    throw new Error('unexpected route')
+  })
+  await mount('whereWasI', { timestamp: '2026-01-01T00:10:00Z' }); await click('查询这个时刻')
+  expect(platform.request.mock.calls.some(([request]) => request.url.endsWith(`/${kind}/1`))).toBe(true)
+  expect(renderer!.root.findAllByType('map' as React.ElementType)).toHaveLength(0)
+  expect(text()).toContain('记录状态不一致')
+})
+
+it('does not show a delayed matching-window drive location after switching accounts', async () => {
+  const row = { drive_id: 1, start_date: start, end_date: end, source: 'teslamate_archive', source_instance_id: 'a', source_vehicle_id: '1', quality_state: 'observed', odometer_details: { odometer_distance: 10 } }
+  let release!: (value: ReturnType<typeof response>) => void
+  platform.request.mockImplementation(({ url }: { url: string }) => {
+    if (url.endsWith('/cars')) return Promise.resolve(response({ cars: [{ car_id: 7, vehicle_uid: 'tools-car' }] }))
+    if (url.endsWith('/drives/1')) return new Promise(resolve => { release = resolve })
+    if (url.includes('/drives')) return Promise.resolve(response({ drives: [row], meta: { page: 1, show: 20, total_pages: 1 } }))
+    if (url.includes('/charges')) return Promise.resolve(response({ charges: [], meta: { page: 1, show: 20, total_pages: 1 } }))
+    throw new Error('unexpected route')
+  })
+  await mount('whereWasI', { timestamp: '2026-01-01T00:10:00Z' }); await click('查询这个时刻')
+  expect(release).toBeTypeOf('function')
+  platform.values.set('matelink.wechat.session.v1', { apiOrigin: 'https://api.example.test', accessToken: 'other-synthetic', userId: 'b' })
+  await act(async () => { release(response({ drive: { ...row, drive_details: [{ date: start, latitude: 39.9, longitude: 116.4 }] } })); await new Promise(resolve => setTimeout(resolve, 0)) })
+  expect(renderer!.root.findAllByType('map' as React.ElementType)).toHaveLength(0)
 })

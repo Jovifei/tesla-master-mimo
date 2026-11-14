@@ -101,16 +101,25 @@ export function distanceCurveEstimates(points: readonly { date: string; speedKmh
 }
 
 export const CURVE_RENDER_MAX_POINTS = 600
-export type CurveRenderPoint = { index: number; time: number; value: number; breakBefore: boolean }
-/** Render-only time bucket min/max selection. Receipts and cursor samples are never changed. */
-export function selectCurveSamples(source: readonly { time: number; value: number | null }[]) {
-  const valid: { index: number; time: number; value: number; segment: number }[] = []
-  let segment = 0, open = false
+export type CurveRenderPoint = { index: number; time: number; value: number; breakBefore: boolean; inferredBefore?: boolean }
+export type CurveSourcePoint = { time: number; value: number | null; fieldState?: 'reported' | 'absent' | 'invalid'; otherChannel?: boolean; sourceConflict?: boolean }
+/** Render-only projection. `inferredBefore` requires a visibly inferred connector, never an observed line. */
+export function selectCurveSamples(source: readonly CurveSourcePoint[], options: { inferAcrossOtherChannels?: boolean; forceDisconnected?: boolean } = {}) {
+  const valid: { index: number; time: number; value: number; segment: number; inferenceCount: number }[] = []
+  let segment = 0, open = false, inferenceCount = 0, lastTime = -Infinity
   for (let index = 0; index < source.length; index++) {
     const point = source[index]
-    if (point.value == null || !Number.isFinite(point.value) || !Number.isFinite(point.time)) { open = false; continue }
-    if (!open) { segment++; open = true }
-    valid.push({ index, time: point.time, value: point.value, segment })
+    const invalid = !Number.isFinite(point.time) || point.sourceConflict === true
+    if (!invalid && options.inferAcrossOtherChannels && point.fieldState === 'absent' && point.value === null && point.otherChannel === true) {
+      if (open && point.time > lastTime) { inferenceCount++; lastTime = point.time; continue }
+      open = false; continue
+    }
+    if (invalid || point.value == null || !Number.isFinite(point.value) ||
+      (options.inferAcrossOtherChannels && point.fieldState !== 'reported')) { open = false; continue }
+    if (open && options.inferAcrossOtherChannels && point.time <= lastTime) open = false
+    if (!open || options.forceDisconnected) { segment++; open = true }
+    valid.push({ index, time: point.time, value: point.value, segment, inferenceCount })
+    lastTime = point.time
   }
   let selected = valid
   const thinned = valid.length > CURVE_RENDER_MAX_POINTS
@@ -141,7 +150,11 @@ export function selectCurveSamples(source: readonly { time: number; value: numbe
     for (const bucket of buckets.values()) { indexes.add(bucket.min); indexes.add(bucket.max) }
     selected = [...indexes].sort((a, b) => a - b).map(index => valid[index])
   }
-  const points: CurveRenderPoint[] = selected.map((point, index) => ({ index: point.index, time: point.time, value: point.value,
-    breakBefore: index === 0 || selected[index - 1].segment !== point.segment }))
+  const points: CurveRenderPoint[] = selected.map((point, index) => {
+    const previous = selected[index - 1], hardBreak = !previous || previous.segment !== point.segment
+    const inferredBefore = !hardBreak && point.inferenceCount > previous.inferenceCount
+    return { index: point.index, time: point.time, value: point.value, breakBefore: hardBreak || inferredBefore,
+      ...(inferredBefore ? { inferredBefore: true } : {}) }
+  })
   return { points, thinned, sourceCount: source.length, validCount: valid.length, segmentCount: segment }
 }

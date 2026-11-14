@@ -261,7 +261,7 @@ describe('advanced App entry pages through actual authenticated consumers', () =
     })
     const page = await mount('chargeCurves', { chargeId: '4' })
     const curves = page.root.findAllByProps({ className: 'card analysis-curve' })
-    expect(curves.map(node => node.findByProps({ className: 'section-title' }).children.join(''))).toEqual(['充电电量变化', '充电功率', '充电电压', '充电电流', '充电温度'])
+    expect(curves.map(node => node.findByProps({ className: 'section-title' }).children.join(''))).toEqual(['充电电量变化', '充电功率', '充电电压', '充电电流', '环境温度'])
     expect(page.root.findAllByType('canvas' as React.ElementType)).toHaveLength(5)
     expect(curves[1].findByProps({ className: 'analysis-cursor' }).children.join('')).toContain('-2 kW')
     expect(curves[4].findByProps({ className: 'analysis-cursor' }).children.join('')).toContain('0 °C')

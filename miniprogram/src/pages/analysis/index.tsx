@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 import MetricValue, { displayNumber, peakSpeedKmh } from '../../components/MetricValue'
 import HistoryDateChips from '../../components/HistoryDateChips'
 import LoadingIndicator from '../../components/LoadingIndicator'
-import EvidenceCurve from '../../components/EvidenceCurve'
+import EvidenceCurve, { chargeCurveProvenance } from '../../components/EvidenceCurve'
 import SectionHeading from '../../components/SectionHeading'
 import SubpageHeader from '../../components/SubpageHeader'
 import { analysisDay, analysisGroups, analysisKind, analysisTitles, buildParkedWindows, calendarCells, distanceCurveEstimates, efficiencyDistribution, efficiencySpeedGroups, selectCurveSamples } from '../../domain/analysis'
@@ -423,11 +423,11 @@ export default function AnalysisPage() {
       {detailLoading ? <LoadingIndicator label="正在读取充电采样…" compact /> : null}
       {chargeEvidence?.charge && displayedCurveCharge ? <View className="card"><SectionHeading icon="energy" title="充电概览" /><Text>开始 {historyDetailDateTime(chargeEvidence.charge.startDate)} · 结束 {historyDetailDateTime(chargeEvidence.charge.endDate)}</Text><Text>{chargeEvidence.charge.address || '地点未知'}</Text><View className="metric-grid"><MetricValue label="电池充入" value={chargeEvidence.charge.energyAddedKwh} unit="kWh" /><MetricValue label="时长" value={chargeEvidence.charge.durationMinutes} unit="分钟" /><MetricValue label="费用" value={costValue(displayedCurveCharge)} unit={displayedCurveCharge.currency || '币种未知'} /><MetricValue label="采样数" value={chargeEvidence.points.length} unit="个" /></View><Text className="muted">{sourceLabel(chargeEvidence.source)} · {costSource(displayedCurveCharge)} · 响应采样部分覆盖；不把功率、电压或电流冒充充入电量。</Text></View> : null}
       {chargeEvidence ? <>
-        <EvidenceCurve {...curveProps} id="charge-soc" title="充电电量变化" unit="%" points={chargeEvidence.points} valueOf={point => point.batteryLevel} />
-        <EvidenceCurve {...curveProps} id="charge-power" title="充电功率" unit="kW" points={chargeEvidence.points} valueOf={point => point.powerKw} />
-        <EvidenceCurve {...curveProps} id="charge-voltage" title="充电电压" unit="V" points={chargeEvidence.points} valueOf={point => point.voltageV} />
-        <EvidenceCurve {...curveProps} id="charge-current" title="充电电流" unit="A" points={chargeEvidence.points} valueOf={point => point.currentA} />
-        <EvidenceCurve {...curveProps} id="charge-temperature" title="充电温度" unit="°C" points={chargeEvidence.points} valueOf={point => point.temperatureC} />
+        <EvidenceCurve {...curveProps} id="charge-soc" provenanceOf={point => chargeCurveProvenance(point, 'batteryLevel')} forceDisconnected={chargeEvidence.hasUnplaceableSamples} title="充电电量变化" unit="%" points={chargeEvidence.points} valueOf={point => point.batteryLevel} />
+        <EvidenceCurve {...curveProps} id="charge-power" provenanceOf={point => chargeCurveProvenance(point, 'powerKw')} forceDisconnected={chargeEvidence.hasUnplaceableSamples} title="充电功率" unit="kW" points={chargeEvidence.points} valueOf={point => point.powerKw} />
+        <EvidenceCurve {...curveProps} id="charge-voltage" provenanceOf={point => chargeCurveProvenance(point, 'voltageV')} forceDisconnected={chargeEvidence.hasUnplaceableSamples} title="充电电压" unit="V" points={chargeEvidence.points} valueOf={point => point.voltageV} />
+        <EvidenceCurve {...curveProps} id="charge-current" provenanceOf={point => chargeCurveProvenance(point, 'currentA')} forceDisconnected={chargeEvidence.hasUnplaceableSamples} title="充电电流" unit="A" points={chargeEvidence.points} valueOf={point => point.currentA} />
+        <EvidenceCurve {...curveProps} id="charge-temperature" provenanceOf={point => chargeCurveProvenance(point, 'temperatureC')} forceDisconnected={chargeEvidence.hasUnplaceableSamples} title="环境温度" unit="°C" points={chargeEvidence.points} valueOf={point => point.temperatureC} />
       </> : params.chargeId && !detailLoading ? <View className="card"><Text className="muted">暂无可验证的充电采样；离线缓存不保存充电原始曲线。</Text></View> : null}
     </> : null}
     {displayedChargeDetail ? <View className="card analysis-charge-detail"><Text className="section-title">充电详情</Text><Button className="button-secondary" onClick={() => { detailEpoch.current++; setChargeDetail(null) }}>关闭充电详情</Button><Text>{displayedChargeDetail.address || '地点未知'} · {historyDateTime(displayedChargeDetail.startDate)}</Text><View className="metric-grid"><MetricValue label="电池充入" value={displayedChargeDetail.energyAddedKwh} unit="kWh" /><MetricValue label="输入电量" value={displayedChargeDetail.energyUsedKwh} unit="kWh" /><MetricValue label="费用" value={costValue(displayedChargeDetail)} unit={displayedChargeDetail.currency || '币种未知'} /><MetricValue label="功率" value={displayedChargeDetail.chargerPowerKw} unit="kW" /></View><Text className="muted">{costSource(displayedChargeDetail)} · 原始上游账单 {shown(displayedChargeDetail.reportedCost, displayedChargeDetail.reportedCurrency || '币种未知')}</Text></View> : null}

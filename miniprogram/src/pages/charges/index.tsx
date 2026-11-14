@@ -1,5 +1,5 @@
 import { ChargeActivityGrid } from '../../components/PresentationControls'
-import { civilDay } from '../../domain/ui_presentation'
+import { calendarHistoryGroups, civilDay, dayCaption, historyDayGroups } from '../../domain/ui_presentation'
 import { useAppearance } from '../../services/appearance'
 import { MOCK_FIXTURE_ENABLED } from '../../services/mock_fixture'
 import { Button, Map as TaroMap, Picker, ScrollView, Text, View } from '@tarojs/components'
@@ -20,7 +20,7 @@ import { readAppSession } from '../../services/session'
 import { useSessionRecoveryReload } from '../../services/use_session_recovery'
 import { historyCacheKey, readHistoryCache, writeHistoryCache } from '../../services/history_cache'
 import LoadingIndicator from '../../components/LoadingIndicator'
-import EvidenceCurve from '../../components/EvidenceCurve'
+import EvidenceCurve, { chargeCurveProvenance } from '../../components/EvidenceCurve'
 import HistoryIntervalSummary from '../../components/HistoryIntervalSummary'
 import HistoryDateChips from '../../components/HistoryDateChips'
 import { inspectForegroundEvents, observeForegroundEvents, type ForegroundNotice } from '../../services/foreground_events'
@@ -57,22 +57,15 @@ function inputNumber(charge: Charge): number | null {
   const verified = verifiedEnergy(charge)
   return verified ? verified.inputEnergyKwh : charge.energy ? charge.energy.inputEnergyKwh : charge.energyUsedKwh
 }
-function modeLabel(charge: Charge): string {
-  if (charge.chargeModeConflict != null && charge.chargeModeConflict !== false) {
-    return copy('charges.modeUnknown')
-  }
-  const mode = verifiedEnergy(charge)?.chargeMode ?? charge.chargeMode
-  if (mode === 'ac') return copy('charges.ac')
-  if (mode === 'dc') return copy('charges.dc')
-  const durationHours = (charge.durationMinutes ?? 0) / 60
-  const avgPowerKw = durationHours > 0.05 && charge.energyAddedKwh != null && charge.energyAddedKwh > 0
-    ? charge.energyAddedKwh / durationHours
-    : null
-  if (avgPowerKw != null && avgPowerKw > 22.0) {
-    return copy('charges.dc')
-  }
-  return copy('charges.ac')
-}
+function chargeMode(charge: Charge): 'ac' | 'dc' | 'unknown' {
+  if (charge.chargeModeConflict != null && charge.chargeModeConflict !== false) return 'unknown'
+  const mode = charge.energy?.evidence ? verifiedEnergy(charge)?.chargeMode : charge.chargeMode
+  return mode === 'ac' || mode === 'dc' ? mode : 'unknown'
+}
+function modeLabel(charge: Charge): string {
+  const mode = chargeMode(charge)
+  return mode === 'ac' ? copy('charges.ac') : mode === 'dc' ? copy('charges.dc') : copy('charges.modeUnknown')
+}
 function displayAddress(address: string | null): string {
   if (!address || !address.trim()) return '位置未知'
   return formatParkedAddress(address, '位置未知')
@@ -145,7 +138,7 @@ export default function ChargesPage() {
   useEffect(() => {
     selectedIdRef.current = selected?.id ?? null
   }, [selected])
-  const [chartKind, setChartKind] = useState<'energy' | 'cost' | 'count'>('energy')
+  const [chartKind, setChartKind] = useState<'energy' | 'cost' | 'count'>('energy')
   const [chargeTypeFilter, setChargeTypeFilter] = useState<'all' | 'ac' | 'dc'>('all')
   const [costFilter, setCostFilter] = useState<'all' | 'has' | 'none'>('all')
   const [selectedLocation, setSelectedLocation] = useState<string | null>(null)
@@ -604,7 +597,7 @@ export default function ChargesPage() {
   const selectedView = selected ? costRows([selected])[0] : null
   const statisticsRows = (rows: readonly Charge[]) => costRows(appChargeListRows(appChargeStatisticsRows(rows), showShortCharges))
   const matchesSecondaryFilters = (row: CostedCharge) => {
-    const mode = row.chargeModeConflict != null && row.chargeModeConflict !== false ? 'unknown' : row.energy?.chargeMode ?? row.chargeMode ?? 'unknown'
+    const mode = chargeMode(row)
     if (chargeTypeFilter !== 'all' && mode !== chargeTypeFilter) return false
     if (costFilter === 'has' && row.cost == null) return false
     if (costFilter === 'none' && row.cost != null) return false
@@ -635,8 +628,18 @@ export default function ChargesPage() {
     months.set(day, month)
   }
   const chartMonths = [...months.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([, month]) => month)
-  const chartValue = (month: typeof chartMonths[number]) => chartKind === 'energy' ? month.energy : chartKind === 'cost' ? month.cost : month.count
-  const chartKnown = (month: typeof chartMonths[number]) => chartKind === 'energy' ? month.energyKnown : chartKind === 'cost' ? month.costKnown : month.count
+  const chartUnit = chartKind === 'energy' ? 'kWh' : chartKind === 'count' ? '次' : chartCurrency || '币种待确认'
+  const dailyCells = calendarHistoryGroups(chartMonths.map(day => ({ key: day.label, label: day.label, items: [day] })), query.startDate, query.endDate)
+    .filter(group => group.key !== 'unknown').sort((a, b) => a.key.localeCompare(b.key)).map(group => {
+      const day = group.items[0]
+      const known = day ? chartKind === 'energy' ? day.energyKnown : chartKind === 'cost' ? day.costKnown : day.count : 0
+      const value = day ? chartKind === 'energy' ? day.energy : chartKind === 'cost' ? day.cost : day.count : 0
+      const estimated = Boolean(day && chartKind === 'cost' && day.costEstimated)
+      return { key: group.key, label: group.key.slice(8), value: known ? value : null,
+        precision: chartKind === 'count' ? 0 : chartKind === 'cost' ? 2 : 1,
+        approximate: Boolean(day && (estimated || known < day.count)),
+        display: day ? `${known ? `${estimated ? '含估算 ' : ''}${value.toFixed(chartKind === 'count' ? 0 : 2)} ${chartUnit}` : '未知'} · 已知 ${known} / ${day.count} 条` : '尚未读到该日记录，不代表未充电' }
+    })
   const detailCoordinate = selectedEvidence?.charge ? mapCoordinate(selectedEvidence.charge.latitude, selectedEvidence.charge.longitude) : null
   const sampleStats = (key: 'powerKw' | 'voltageV' | 'currentA' | 'temperatureC') => {
     const values = (selectedEvidence?.points ?? []).map(point => point[key]).filter((value): value is number => value != null && Number.isFinite(value))
@@ -694,21 +697,19 @@ export default function ChargesPage() {
         <Button className="button" onClick={() => setNotices([])}>关闭提示</Button>
       </View> : null}
       {car && !loading ? <HistoryIntervalSummary interval={intervalView} query={query} kind="charges" /> : null}
-      {car && (chartMonths.length > 0 || unclassifiedCount > 0) ? <View className="card charge-month-chart">
-        <Text className="section-title">充电趋势</Text>
-        <View className="charge-chart-tabs">
-          {([['energy', '电量'], ['cost', '费用'], ['count', '次数']] as const).map(([kind, label]) =>
-            <Button key={kind} className={`charge-chart-tab ${chartKind === kind ? 'charge-chart-tab-active' : ''}`} onClick={() => setChartKind(kind)}>{label}</Button>)}
-        </View>
-        {chartMonths.length ? <ChargeActivityGrid unit={chartKind === 'energy' ? 'kWh' : chartKind === 'count' ? '次' : chartCurrency || '币种待确认'} cells={chartMonths.map(month => ({
-          key: month.label, label: month.label.slice(5), value: chartKnown(month) ? chartValue(month) : null,
-          precision: chartKind === 'cost' ? 2 : chartKind === 'count' ? 0 : 1,
-          approximate: (chartKind === 'cost' && month.costEstimated) || chartKnown(month) < month.count,
-          display: `${chartKnown(month) ? `${chartKind === 'cost' && month.costEstimated ? '含估算 ' : ''}${chartValue(month).toFixed(chartKind === 'count' ? 0 : 2)} ${chartKind === 'energy' ? 'kWh' : chartKind === 'count' ? '次' : chartCurrency}` : '未知'} · 已知 ${chartKnown(month)} / ${month.count} 条`,
-        }))} /> : <Text className="muted">暂无可按日期归类的充电记录。</Text>}
+      {car && (dailyCells.length > 0 || unclassifiedCount > 0) ? <View className="card charge-month-chart">
+        <Text className="section-title">充电趋势</Text>
+        <View className="charge-chart-tabs">
+          {([['energy', '电量'], ['cost', '费用'], ['count', '次数']] as const).map(([kind, label]) =>
+            <Button key={kind} className={`charge-chart-tab ${chartKind === kind ? 'charge-chart-tab-active' : ''}`} onClick={() => setChartKind(kind)}>{label}</Button>)}
+        </View>
+        {dailyCells.length ? <ChargeActivityGrid unit={chartUnit} cells={dailyCells} /> : <Text className="muted">暂无可按日期归类的充电记录。</Text>}
         <Text className="muted">统计已返回的 {chartRows.length} 条记录；费用仅在同币种时合计。</Text>
         {unclassifiedCount > 0 ? <Text className="muted">另有 {unclassifiedCount} 条记录日期无法确认，{query.startDate || query.endDate ? '无法判断是否属于当前日期范围，未计入日格。' : '未计入日格。'}</Text> : null}
-      </View> : null}
+      </View> : null}
+      {car && !loading ? <View className="history-coverage-note">
+        <Text className="muted">{offline ? '当前为本机缓存' : '当前已返回记录'} · 最近日期 {visibleItems[0]?.startDate ? historyDetailDateTime(visibleItems[0].startDate) : '尚未读到'}。日期筛选、短充过滤和分页会影响展示；这不证明此后没有充电。</Text>
+      </View> : null}
       {noticeLimited ? <Text className="muted history-notice-limit">本机前台提示记录不可写或已达上限，后续提示暂停；历史仍可查看</Text> : null}
 
       {chargeStarting && !current ? (
@@ -740,7 +741,10 @@ export default function ChargesPage() {
           <Text className="section-title charge-history-heading">充电历史</Text>
           {loading ? <LoadingIndicator label="正在读取充电记录…" compact /> : null}
           {visibleItems.length === 0 && trustedItems.length > 0 ? <Text className="muted">{copy('history.noMatchedCharges')}</Text> : null}
-          {visibleItems.map(item => (
+          {historyDayGroups(visibleItems, item => item.startDate).map(group => (
+            <View key={group.key} className="charge-history-day">
+              <Text className="charge-history-day-title">{dayCaption(group.key)}</Text>
+              {group.items.map(item => (
             <View key={historyRowKey(item)} className="history-record" onClick={() => { void openDetail(item) }}>
               <View className="history-charge-heading">
                 <View className="history-charge-location-box">
@@ -750,7 +754,7 @@ export default function ChargesPage() {
                     <Text className="location-date">{historyEditorialDate(item.startDate, false)}</Text>
                   </View>
                 </View>
-                <Text className={`history-charge-mode${modeLabel(item) === '模式未确认' ? ' history-charge-mode-unknown' : modeLabel(item) === copy('charges.dc') ? ' history-charge-mode-dc' : ' history-charge-mode-ac'}`}>{modeLabel(item)}</Text>
+                <Text className={`history-charge-mode history-charge-mode-${chargeMode(item)}`}>{modeLabel(item)}</Text>
               </View>
               <View className="history-record-metrics">
                 <MetricValue label={copy('history.duration')} value={item.durationMinutes != null && Number.isFinite(item.durationMinutes) && item.durationMinutes >= 0 ? item.durationMinutes : null} unit="m" icon="clock" digits={Number.isInteger(item.durationMinutes) ? 0 : 1} />
@@ -766,7 +770,7 @@ export default function ChargesPage() {
                 const unitCost = item.cost != null && item.energyAddedKwh != null && item.energyAddedKwh > 0.05
                   ? item.cost / item.energyAddedKwh
                   : null
-                const currency = item.currencyCode || item.currency || '¥'
+                const currency = item.currencyCode || item.currency || '币种未知 '
                 const submetrics = [
                   unitCost != null ? `单价 ≈ ${currency === 'CNY' ? '¥' : currency}${unitCost.toFixed(2)}/kWh` : null,
                   avgPowerKw != null ? `均功 ≈ ${avgPowerKw.toFixed(1)} kW` : null,
@@ -783,6 +787,8 @@ export default function ChargesPage() {
               ) : null}
               {'costProvenance' in item && item.costProvenance === 'manual' ? <Text className="metric-source">本机手动费用</Text> : null}
             </View>
+              ))}
+            </View>
           ))}
           {!offline && meta?.hasMore ? <Button className="button" loading={loadingMore} onClick={loadMore}>{copy('common.loadMore')}</Button> : null}
         </View>
@@ -793,17 +799,21 @@ export default function ChargesPage() {
         <View className="history-detail-surface">
           <View className="history-detail-heading" style={{ paddingTop: `${navGeo.navBarTop}px`, paddingRight: `${navGeo.capsuleRightPadding}px`, minHeight: `${navGeo.headerTotalHeight}px` }}><Button className="detail-back" onClick={closeDetail}>‹ 返回</Button><Text className="section-title">充电详情</Text></View>
           {MOCK_FIXTURE_ENABLED ? <View className="card fixture-data-notice" style={{ backgroundColor: '#fff7ed', borderColor: '#c2410c' }}><Text className="section-title" style={{ color: '#9a3412', marginBottom: 0 }}>合成测试数据，未连接真实车辆</Text></View> : null}
-          <View className="card charge-detail-intro"><Text className="section-title">位置与费用</Text><Text className="charge-detail-address">{displayAddress(selected.address)}</Text>
+          {detailCoordinate ? <View className="card charge-detail-map-card"><Text className="section-title">充电地点</Text>
+            {mapFailed ? <Text className="muted">地图暂时无法载入</Text> : <TaroMap className="charge-detail-map" latitude={detailCoordinate.latitude} longitude={detailCoordinate.longitude} scale={15} showLocation={false} markers={[{ id: 1, ...detailCoordinate, iconPath: '/assets/tabs/energy-selected.png', width: 24, height: 24 }]} onError={() => setMapFailed(true)} />}
+            <Text className="muted">仅展示本次在线详情返回的有效位置。</Text></View> : null}
+          <View className="card charge-detail-intro"><Text className="section-title">充电概览</Text><Text className="charge-detail-address">{displayAddress(selected.address)}</Text>
             <Text className="muted">开始 {historyDetailDateTime(selected.startDate)} · 结束 {historyDetailDateTime(selected.endDate)} · {modeLabel(selected)}</Text>
-            <MetricValue label="充电费用" {...costLabel(selectedView)} icon="account" />
+            <View className="history-record-metrics charge-overview-metrics">
+              <MetricValue label="电池充入" value={selected.energyAddedKwh} unit="kWh" icon="battery" />
+              <MetricValue label="SOC" {...formatSocRangeMetric(selected.startBatteryLevel, selected.endBatteryLevel, "暂无数据")} icon="battery" />
+              <MetricValue label="充电费用" {...costLabel(selectedView)} icon="account" />
+              <MetricValue label="报告功率" value={selectedEvidence?.summary.chargerPowerKw ?? selected.chargerPowerKw} unit="kW" icon="energy" />
+            </View>
             <Text className="muted">费用来源：{costState?.costProvenance === 'manual' ? '本机手动设置' : costState?.costProvenance === 'free' ? '免费（免费超级充电 · DC）' : costState?.costProvenance === 'actual' ? selectedView.cost === 0 ? '服务端报告0费用' : '服务端账单报告' : costState?.costProvenance === 'estimate' ? `按 ${estimateBasis(costState)} 与${costState.partialEstimatedCost != null ? "已采集部分电量" : "合格电池充入量"}估算，不是实际账单` : costState?.reportedCost === 0 && selected.source === 'teslamate_archive' ? 'TeslaMate 原始0表示未填，当前无合格估算' : '未知'}</Text>
           </View>
-          {detailCoordinate ? <View className="card charge-detail-map-card"><Text className="section-title">充电地点</Text>
-            {mapFailed ? <Text className="muted">地图暂时无法载入</Text> : <TaroMap className="charge-detail-map" latitude={detailCoordinate.latitude} longitude={detailCoordinate.longitude} scale={15} showLocation={false} markers={[{ id: 1, ...detailCoordinate, iconPath: '/assets/tabs/energy-selected.png', width: 24, height: 24 }]} onError={() => setMapFailed(true)} />}
-            <Text className="muted">仅展示本次在线详情返回的有效位置。</Text></View> : null}
           <Text className="section-title">电量</Text>
           <View className="telemetry-metric-strip metric-grid">
-            <MetricValue label="电池充入" value={selected.energyAddedKwh} unit="kWh" icon="battery" />
             <MetricValue label={inputLabel(selected)} value={inputNumber(selected)} unit="kWh" icon="energy" />
             <MetricValue label="AC输入效率" value={acEfficiency} unit="%" />
           </View>
@@ -814,23 +824,22 @@ export default function ChargesPage() {
           </View>
           <Text className="section-title">功率</Text>
           <View className="telemetry-metric-strip metric-grid">
-            <MetricValue label="报告功率" value={selectedEvidence?.summary.chargerPowerKw ?? selected.chargerPowerKw} unit="kW" icon="energy" />
             <MetricValue label="样本最高功率" value={powerStats.max} unit="kW" /><MetricValue label="样本最低功率" value={powerStats.min} unit="kW" /><MetricValue label="样本平均功率" value={powerStats.average} unit="kW" />
           </View>
-          {selected.energy?.chargeMode === 'ac' && qualifiedAcEnergyBalance(selected) ? <><Text className="section-title">电压与电流</Text><View className="telemetry-metric-strip metric-grid">
+          {(voltageStats.count > 0 || currentStats.count > 0 || selectedEvidence?.summary.chargerVoltageV != null || selectedEvidence?.summary.currentA != null) ? <><Text className="section-title">电压与电流</Text><View className="telemetry-metric-strip metric-grid">
             <MetricValue label="报告电压" value={selectedEvidence?.summary.chargerVoltageV ?? null} unit="V" /><MetricValue label="报告电流" value={selectedEvidence?.summary.currentA ?? null} unit="A" />
             <MetricValue label="样本最高电压" value={voltageStats.max} unit="V" /><MetricValue label="样本最低电压" value={voltageStats.min} unit="V" /><MetricValue label="样本平均电压" value={voltageStats.average} unit="V" />
             <MetricValue label="样本最高电流" value={currentStats.max} unit="A" /><MetricValue label="样本最低电流" value={currentStats.min} unit="A" /><MetricValue label="样本平均电流" value={currentStats.average} unit="A" />
           </View></> : null}
           <Text className="section-title">温度</Text>
           <View className="telemetry-metric-strip metric-grid"><MetricValue label="报告环境温度" value={selectedEvidence?.summary.outsideTempC ?? null} unit="°C" /><MetricValue label="样本最高温度" value={temperatureStats.max} unit="°C" /><MetricValue label="样本最低温度" value={temperatureStats.min} unit="°C" /><MetricValue label="样本平均温度" value={temperatureStats.average} unit="°C" /></View>
-          <Text className="muted">仅基于本次响应的有效采样：功率 {powerStats.count} / 电压 {voltageStats.count} / 电流 {currentStats.count} / 温度 {temperatureStats.count} 点；缺失不补0，均值为样本均值。</Text>
+          <Text className="muted">功率、电压、电流与环境温度按已有记录显示，缺失数据保持未知。</Text>
           {selectedEvidence ? <>
-            <EvidenceCurve id="charge-detail-soc" title="充电电量变化" unit="%" points={selectedEvidence.points} valueOf={point => point.batteryLevel} selected={curveSampleIndex} onSelect={setCurveSampleIndex} isCurrent={() => selectedIdRef.current === selected.id} />
-            <EvidenceCurve id="charge-detail-power" title="充电功率" unit="kW" points={selectedEvidence.points} valueOf={point => point.powerKw} selected={curveSampleIndex} onSelect={setCurveSampleIndex} isCurrent={() => selectedIdRef.current === selected.id} />
-            <EvidenceCurve id="charge-detail-voltage" title="充电电压" unit="V" points={selectedEvidence.points} valueOf={point => point.voltageV} selected={curveSampleIndex} onSelect={setCurveSampleIndex} isCurrent={() => selectedIdRef.current === selected.id} />
-            <EvidenceCurve id="charge-detail-current" title="充电电流" unit="A" points={selectedEvidence.points} valueOf={point => point.currentA} selected={curveSampleIndex} onSelect={setCurveSampleIndex} isCurrent={() => selectedIdRef.current === selected.id} />
-            <EvidenceCurve id="charge-detail-temperature" title="充电温度" unit="°C" points={selectedEvidence.points} valueOf={point => point.temperatureC} selected={curveSampleIndex} onSelect={setCurveSampleIndex} isCurrent={() => selectedIdRef.current === selected.id} />
+            <EvidenceCurve id="charge-detail-soc" provenanceOf={point => chargeCurveProvenance(point, 'batteryLevel')} forceDisconnected={selectedEvidence.hasUnplaceableSamples} title="充电电量变化" unit="%" points={selectedEvidence.points} valueOf={point => point.batteryLevel} selected={curveSampleIndex} onSelect={setCurveSampleIndex} isCurrent={() => selectedIdRef.current === selected.id} />
+            <EvidenceCurve id="charge-detail-power" provenanceOf={point => chargeCurveProvenance(point, 'powerKw')} forceDisconnected={selectedEvidence.hasUnplaceableSamples} title="充电功率" unit="kW" points={selectedEvidence.points} valueOf={point => point.powerKw} selected={curveSampleIndex} onSelect={setCurveSampleIndex} isCurrent={() => selectedIdRef.current === selected.id} />
+            <EvidenceCurve id="charge-detail-voltage" provenanceOf={point => chargeCurveProvenance(point, 'voltageV')} forceDisconnected={selectedEvidence.hasUnplaceableSamples} title="充电电压" unit="V" points={selectedEvidence.points} valueOf={point => point.voltageV} selected={curveSampleIndex} onSelect={setCurveSampleIndex} isCurrent={() => selectedIdRef.current === selected.id} />
+            <EvidenceCurve id="charge-detail-current" provenanceOf={point => chargeCurveProvenance(point, 'currentA')} forceDisconnected={selectedEvidence.hasUnplaceableSamples} title="充电电流" unit="A" points={selectedEvidence.points} valueOf={point => point.currentA} selected={curveSampleIndex} onSelect={setCurveSampleIndex} isCurrent={() => selectedIdRef.current === selected.id} />
+            <EvidenceCurve id="charge-detail-temperature" provenanceOf={point => chargeCurveProvenance(point, 'temperatureC')} forceDisconnected={selectedEvidence.hasUnplaceableSamples} title="环境温度" unit="°C" points={selectedEvidence.points} valueOf={point => point.temperatureC} selected={curveSampleIndex} onSelect={setCurveSampleIndex} isCurrent={() => selectedIdRef.current === selected.id} />
           </> : null}
           {selected.qualityState ? <Text className="muted">记录质量：{MOCK_FIXTURE_ENABLED && selected.source === 'mock_fixture' && selected.qualityState.trim().toLowerCase() === 'observed' ? '合成观测' : qualityLabel(selected.qualityState)}</Text> : null}
 

@@ -1,0 +1,47 @@
+.analysis-curve-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12rpx;
+  margin-bottom: 12rpx;
+}
+
+.analysis-curve-header .section-title {
+  flex: 1 1 180rpx;
+  min-width: 0;
+  margin: 0;
+}
+
+.analysis-curve-header .analysis-curve-expand {
+  flex: none;
+  width: auto;
+  margin: 0;
+  padding: 8rpx 20rpx;
+  color: #157a86;
+  background: #ddf0f1;
+  border: 0;
+  border-radius: 999rpx;
+  font-size: 24rpx;
+  line-height: 1.4;
+  white-space: nowrap;
+  &::after { border: 0; }
+}
+
+.analysis-curve .analysis-canvas { display: block; width: 100%; height: 400rpx; margin-top: 20rpx; }
+.analysis-curve .analysis-axis { display: flex; justify-content: space-between; gap: 16rpx; font-size: 24rpx; color: #6b7280; }
+.analysis-curve .analysis-axis > text { flex: 1; overflow-wrap: anywhere; }
+.analysis-curve .analysis-axis > text:last-child { text-align: right; }
+.analysis-curve .analysis-cursor { display: block; color: #157a86; font-size: 26rpx; line-height: 1.5; }
+.analysis-curve.analysis-curve-fullscreen,
+.section-card .analysis-curve.analysis-curve-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  margin: 0;
+  border-radius: 0;
+  overflow-y: auto;
+  background: #fff;
+  padding: 40rpx 32rpx calc(40rpx + env(safe-area-inset-bottom));
+  .analysis-canvas { height: 60vh; }
+}

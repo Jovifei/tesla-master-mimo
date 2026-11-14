@@ -61,10 +61,20 @@ const unknown = { ...reported, energy_contract: { version: 1, net_energy: { ...r
 const cars = [{ car_id: 7, vehicle_uid: 'uid7', name: 'Car A' }, { car_id: 8, vehicle_uid: 'uid8', name: 'Car B' }]
 function respond(data: unknown) { return { statusCode: 200, data: { data }, header: {} } }
 async function flush() { await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) }) }
-async function mount(kind: 'drives' | 'charges') {
+function fixtureDay() {
+  const date = new Date(start)
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+async function selectFixtureDay(page: ReactTestRenderer) {
+  const key = fixtureDay()
+  const button = page.root.findAllByProps({ className: 'day-stack-date' }).find(node => node.children.join('').includes(key))
+  if (button) { await act(async () => { button.props.onClick() }); await flush() }
+}
+async function mount(kind: 'drives' | 'charges', selectHistorical = true) {
   const Page = (kind === 'drives' ? await import('../pages/drives/index') : await import('../pages/charges/index')).default
   await act(async () => { renderer = TestRenderer.create(React.createElement(Page)) })
   await act(async () => { platform.show() }); await flush()
+  if (kind === 'drives' && selectHistorical) await selectFixtureDay(renderer!)
   return renderer!
 }
 
@@ -84,11 +94,162 @@ async function click(record: ReactTestRenderer, text: string) {
   const button = record.root.findAllByType('button').find(node => node.children.join('') === text)
   expect(button, text).toBeDefined()
   await act(async () => { button!.props.onClick() }); await flush()
+  if (text === '刷新' || text === '加载更多') await selectFixtureDay(record)
 }
+
+it('starts all-time drives on empty today while future, old and unknown remain reachable', async () => {
+  const now = new Date()
+  const day = (offset: number) => new Date(now.getFullYear(), now.getMonth(), now.getDate() + offset, 12)
+  const key = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+  const make = (id: number, date: Date | null, name: string) => ({ ...summary, drive_id: id, session_id: `synthetic-${id}`,
+    start_date: date?.toISOString() ?? null, end_date: date ? new Date(date.getTime() + 60_000).toISOString() : null,
+    start_address: name, end_address: name })
+  const rows = [make(1, day(1), '未来合成地址'), make(2, day(-1), '过去合成地址'), make(3, null, '未知日期合成地址')]
+  platform.request.mockImplementation(async ({ url }: { url: string }) => url.endsWith('/cars') ? respond({ cars })
+    : respond({ drives: rows, meta: { page: 1, show: 20, total_pages: 1 } }))
+  const page = await mount('drives', false)
+  const front = () => page.root.findByProps({ className: 'day-stack-heading-row' }).findByProps({ className: 'section-title' }).children.join('')
+  expect(front()).toContain(key(now))
+  expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(0)
+  expect(JSON.stringify(page.toJSON())).toContain('当天尚无已返回记录')
+  expect(page.root.findByProps({ className: 'day-stack-body' }).props.onTouchEnd).toBeUndefined()
+  expect(page.root.findAllByProps({ className: 'day-stack-date' }).map(node => node.children.join('')).join(' ')).toContain(key(day(-1)))
+  await act(async () => page.root.findByProps({ ariaLabel: '较新日期' }).props.onClick()); await flush()
+  expect(front()).toContain(key(day(1)))
+  expect(JSON.stringify(page.toJSON())).toContain('未来合成地址')
+  await act(async () => page.root.findByProps({ className: 'day-stack-close' }).props.onClick()); await flush()
+  expect(front()).toContain(key(now))
+  await act(async () => page.root.findByProps({ ariaLabel: '较旧日期' }).props.onClick()); await flush()
+  expect(front()).toContain(key(day(-1)))
+  expect(JSON.stringify(page.toJSON())).toContain('过去合成地址')
+  expect(page.root.findByProps({ ariaLabel: '较旧日期' }).props.disabled).toBe(true)
+  await click(page, '更多筛选')
+  expect(front()).toContain(key(day(-1)))
+  await click(page, '查看日期待确认')
+  expect(front()).toBe('日期待确认')
+  expect(JSON.stringify(page.toJSON())).toContain('未知日期合成地址')
+  await act(async () => page.root.findByProps({ className: 'day-stack-close' }).props.onClick()); await flush()
+  expect(front()).toContain(key(now))
+  const endPicker = page.root.findByProps({ className: 'history-actions' }).findAllByType('picker' as React.ElementType).filter(node => node.props.mode === 'date')[1]
+  await act(async () => endPicker.props.onChange({ detail: { value: key(day(-1)) } })); await flush()
+  expect(front()).toContain(key(day(-1)))
+  expect(JSON.stringify(page.toJSON())).toContain('过去合成地址')
+  await click(page, '清除筛选')
+  expect(front()).toContain(key(now))
+  await act(async () => page.root.findByProps({ ariaLabel: '较新日期' }).props.onClick()); await flush()
+  expect(front()).toContain(key(day(1)))
+})
+
+it.each(['start-only', 'end-only', 'long-range'] as const)('initializes empty today when the %s filter contains today', async range => {
+  const now = new Date()
+  const day = (offset: number) => new Date(now.getFullYear(), now.getMonth(), now.getDate() + offset, 12)
+  const key = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+  const query = { startDate: range === 'end-only' ? '' : key(day(range === 'long-range' ? -400 : -3)),
+    endDate: range === 'start-only' ? '' : key(day(range === 'long-range' ? 1 : 0)), minDistanceKm: 0 }
+  platform.values.set(`${historyCacheKey('drives', 'user-a', 'uid7', 'https://api.example.test')}.query`, query)
+  const old = day(-1)
+  platform.request.mockImplementation(async ({ url }: { url: string }) => url.endsWith('/cars') ? respond({ cars })
+    : respond({ drives: [{ ...summary, start_date: old.toISOString(), end_date: new Date(old.getTime() + 60_000).toISOString() }],
+      meta: { page: 1, show: 20, total_pages: 1 } }))
+  const page = await mount('drives', false)
+  const front = page.root.findByProps({ className: 'day-stack-heading-row' }).findByProps({ className: 'section-title' })
+  expect(front.children.join('')).toContain(key(now))
+  expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(0)
+  expect(JSON.stringify(page.toJSON())).toContain('当天尚无已返回记录')
+  expect(page.root.findAllByProps({ className: 'day-stack-date' }).some(node => node.children.join('').includes(key(old)))).toBe(true)
+})
+
+it('retains a manually selected day across refresh even while its cache is absent', async () => {
+  let release: ((value: unknown) => void) | undefined
+  let delayed = false
+  platform.request.mockImplementation(({ url }: { url: string }) => {
+    if (url.endsWith('/cars')) return Promise.resolve(respond({ cars }))
+    if (delayed && url.includes('/drives?')) return new Promise(resolve => { release = resolve })
+    return Promise.resolve(respond({ drives: [summary], meta: { page: 1, show: 20, total_pages: 1 } }))
+  })
+  const page = await mount('drives', false)
+  const beforeSelection = [...platform.values.keys()]
+  await selectFixtureDay(page)
+  expect([...platform.values.keys()]).toEqual(beforeSelection)
+  const front = () => page.root.findByProps({ className: 'day-stack-heading-row' }).findByProps({ className: 'section-title' }).children.join('')
+  const old = front()
+  expect(old).toContain(fixtureDay())
+  platform.values.delete(historyCacheKey('drives', 'user-a', 'uid7', 'https://api.example.test'))
+  delayed = true
+  const refresh = page.root.findAllByType('button').find(node => node.children.join('') === '刷新')!
+  await act(async () => { refresh.props.onClick() }); await flush()
+  expect(release).toBeDefined()
+  await act(async () => { release!(respond({ drives: [summary], meta: { page: 1, show: 20, total_pages: 1 } })) }); await flush()
+  expect(front()).toBe(old)
+  expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(1)
+})
+
+it.each(['vehicle', 'filter', 'account', 'generation'] as const)('does not reuse a selected date after %s changes', async change => {
+  const origin = 'https://api.example.test'
+  platform.request.mockImplementation(async ({ url }: { url: string }) => url.endsWith('/cars') ? respond({ cars })
+    : respond({ drives: [summary], meta: { page: 1, show: 20, total_pages: 1 } }))
+  const page = await mount('drives', false)
+  await selectFixtureDay(page)
+  const front = () => page.root.findByProps({ className: 'day-stack-heading-row' }).findByProps({ className: 'section-title' }).children.join('')
+  expect(front()).toContain(fixtureDay())
+  if (change === 'vehicle') {
+    const selector = page.root.findAllByType('picker' as React.ElementType).find(node => node.props.range?.includes('Car A'))!
+    await act(async () => selector.props.onChange({ detail: { value: 1 } })); await flush()
+  } else if (change === 'filter') {
+    await click(page, '通勤 (< 50km)')
+  } else {
+    if (change === 'generation') { const api = await import('../services/api'); await act(async () => { await api.matelinkApi.logout() }) }
+    const user = change === 'account' ? 'user-b' : 'user-a', base = origin
+    platform.values.set('matelink.wechat.session.v1', { apiOrigin: base, accessToken: 'synthetic-next', refreshToken: null, expiresAt: null, userId: user, linkRequired: false })
+    platform.values.set(`${historyCacheKey('drives', user, 'uid7', base)}.query`, { startDate: '', endDate: '', minDistanceKm: 0 })
+    await act(async () => platform.show()); await flush()
+  }
+  expect(front()).toContain('今天')
+  expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(0)
+  if (change === 'vehicle') {
+    const selector = page.root.findAllByType('picker' as React.ElementType).find(node => node.props.range?.includes('Car A'))!
+    await act(async () => selector.props.onChange({ detail: { value: 0 } })); await flush()
+    expect(front()).toContain('今天')
+  }
+  if (change === 'filter') { await click(page, '全部'); expect(front()).toContain('今天') }
+})
+
+it('starts a separately loaded API origin without the previous origin’s selected day', async () => {
+  const otherOrigin = 'https://other.example.test'
+  platform.request.mockImplementation(async ({ url }: { url: string }) => url.endsWith('/cars') ? respond({ cars })
+    : respond({ drives: [summary], meta: { page: 1, show: 20, total_pages: 1 } }))
+  const first = await mount('drives', false)
+  await selectFixtureDay(first)
+  expect(first.root.findByProps({ className: 'day-stack-heading-row' }).findByProps({ className: 'section-title' }).children.join('')).toContain(fixtureDay())
+  await act(async () => { platform.unload(); first.unmount() }); renderer = null
+  // API origin is a build-time constant; a different origin is loaded as a new app instance.
+  vi.resetModules(); vi.stubEnv('TARO_APP_API_BASE_URL', otherOrigin)
+  platform.values.set('matelink.wechat.session.v1', { apiOrigin: otherOrigin, accessToken: 'synthetic-next', refreshToken: null, expiresAt: null, userId: 'user-a', linkRequired: false })
+  platform.values.set(`${historyCacheKey('drives', 'user-a', 'uid7', otherOrigin)}.query`, { startDate: '', endDate: '', minDistanceKm: 0 })
+  const second = await mount('drives', false)
+  expect(second.root.findByProps({ className: 'day-stack-heading-row' }).findByProps({ className: 'section-title' }).children.join('')).toContain('今天')
+  expect(second.root.findAllByProps({ className: 'history-record' })).toHaveLength(0)
+})
 
 /** Actual pages -> actual API adapter -> fake Taro transport -> actual controllers/scoped storage.
  * No controller, API, energy projection or React page is mocked. */
 describe('history pages consume canonical data across layers', () => {
+  it('shows a labeled estimate for a Fleet drive when independent SOC and capacity evidence is present', async () => {
+    const fleet = { ...summary, energy_contract: { version: 1, net_energy: { value_kwh: null, unit: 'kWh',
+      source: 'telemetry_mqtt', quality: 'unknown', reason: 'no_verified_driving_net_energy' } } }
+    platform.request.mockImplementation(async ({ url }: { url: string }) => {
+      if (url.endsWith('/cars')) return respond({ cars: [{ ...cars[0], current_capacity: 60 }] })
+      if (url.endsWith('/drives/1')) return respond({ drive: fleet })
+      return respond({ drives: [fleet], meta: { page: 1, show: 20, total_pages: 1 } })
+    })
+    const page = await mount('drives')
+    const record = page.root.findByProps({ className: 'history-record' })
+    expect(record.findByProps({ ariaLabel: '能耗 30 kWh/100km' })).toBeDefined()
+    expect(record.findByProps({ className: 'history-source' }).children.join('')).toBe('估算能耗')
+    await act(async () => { record.props.onClick() }); await flush()
+    expect(page.root.findByProps({ className: 'history-detail-overlay' }).findByProps({ ariaLabel: '总电耗 0.6 kWh' })).toBeDefined()
+  })
+
   it.each(['drives', 'charges'] as const)('exposes and preserves the $kind advanced filters when expanded and collapsed', async kind => {
     platform.request.mockImplementation(async ({ url }: { url: string }) => {
       if (url.endsWith('/cars')) return respond({ cars })
@@ -143,7 +304,7 @@ describe('history pages consume canonical data across layers', () => {
     await act(async () => { platform.show() }); await flush()
     expect(page.root.findByProps({ className: 'history-detail-overlay' }).findByProps({ ariaLabel: `${kind === 'drives' ? '总电耗' : '电池充入'} 2 kWh` })).toBeDefined()
     if (kind === 'drives') {
-      await click(page, '行程曲线')
+      await click(page, '详细曲线')
       expect(platform.navigateTo).toHaveBeenLastCalledWith({ url: '/pages/analysis/index?kind=curves&id=2' })
     } else {
       // Charge curves render inline in the detail now (App parity); the
@@ -180,7 +341,7 @@ describe('history pages consume canonical data across layers', () => {
     if (kind === 'charges') await click(page, '显示短充')
     await click(page, '加载更多')
     const date = page.root.findAllByType('picker' as React.ElementType).find(node => node.props.mode === 'date')!
-    await act(async () => { date.props.onChange({ detail: { value: '2026-10-14' } }); platform.scroll({ scrollTop: 640 }) })
+    await act(async () => { date.props.onChange({ detail: { value: fixtureDay() } }); platform.scroll({ scrollTop: 640 }) })
     await act(async () => { page.root.findAllByProps({ className: 'history-record' })[0].props.onClick() }); await flush()
     expect(page.root.findByProps({ className: 'history-detail-overlay' }).findByProps({ ariaLabel: `${kind === 'drives' ? '总电耗' : '电池充入'} 2 kWh` })).toBeDefined()
     await act(async () => { page.root.findByProps({ className: 'history-detail-overlay' }).props.onScroll({ detail: { scrollTop: 180 } }); platform.hide() })
@@ -205,7 +366,7 @@ describe('history pages consume canonical data across layers', () => {
       expect(panel.props.scrollTop).toBe(180)
       if (change === 'aliasUnknown') {
         if (kind === 'drives') {
-          await click(page, '行程曲线')
+          await click(page, '详细曲线')
           expect(platform.navigateTo).toHaveBeenLastCalledWith({ url: '/pages/analysis/index?kind=curves&id=11' })
         } else {
           expect(page.root.findAllByType('button' as React.ElementType).some(node => node.children.join('') === '查看SOC、功率、电压、电流、温度曲线')).toBe(false)
@@ -215,7 +376,7 @@ describe('history pages consume canonical data across layers', () => {
       expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(2)
       expect(platform.pageScrollTo).toHaveBeenCalledWith({ scrollTop: 640, duration: 0 })
     }
-    expect(page.root.findAllByType('picker' as React.ElementType).some(node => node.props.mode === 'date' && node.props.value === '2026-10-14')).toBe(true)
+    expect(page.root.findAllByType('picker' as React.ElementType).some(node => node.props.mode === 'date' && node.props.value === fixtureDay())).toBe(true)
     const statistics = page.root.findByProps({ className: 'card history-interval' })
     if (kind === 'drives') expect(statistics.findByProps({ ariaLabel: `总行程数 ${change === 'quarantine' ? 2 : 3} 次` })).toBeDefined()
     else expect(statistics.findByProps({ ariaLabel: `能量 ${change === 'unknown' || change === 'aliasUnknown' || change === 'quarantine' ? 0 : change === 'correction' ? 3 : 2} kWh` })).toBeDefined()
@@ -235,7 +396,7 @@ describe('history pages consume canonical data across layers', () => {
     const page = await mount(kind)
     await click(page, '加载更多')
     const filter = page.root.findAllByType('picker' as React.ElementType).find(node => node.props.mode === 'date')!
-    await act(async () => { filter.props.onChange({ detail: { value: '2026-10-14' } }); platform.scroll({ scrollTop: 640 }) })
+    await act(async () => { filter.props.onChange({ detail: { value: fixtureDay() } }); platform.scroll({ scrollTop: 640 }) })
     await act(async () => { page.root.findAllByProps({ className: 'history-record' })[0].props.onClick() }); await flush()
     const panel = page.root.findByProps({ className: 'history-detail-overlay' })
     expect(panel.props.scrollY).toBe(true)
@@ -250,7 +411,7 @@ describe('history pages consume canonical data across layers', () => {
     await click(page, '‹ 返回')
     expect(page.root.findAllByProps({ className: 'history-detail-overlay' })).toHaveLength(0)
     expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(2)
-    expect(page.root.findAllByType('picker' as React.ElementType).some(node => node.props.mode === 'date' && node.props.value === '2026-10-14')).toBe(true)
+    expect(page.root.findAllByType('picker' as React.ElementType).some(node => node.props.mode === 'date' && node.props.value === fixtureDay())).toBe(true)
     expect(platform.pageScrollTo).toHaveBeenCalledWith({ scrollTop: 640, duration: 0 })
     expect(platform.showTabBar).toHaveBeenCalled()
     await click(page, '加载更多')
@@ -274,6 +435,7 @@ describe('history pages consume canonical data across layers', () => {
     await act(async () => { platform.show() }); await flush()
     expect(page.root.findAllByProps({ className: 'history-detail-overlay' })).toHaveLength(0)
     expect(JSON.stringify(page.toJSON())).not.toContain('Original vehicle')
+    if (kind === 'drives') await selectFixtureDay(page)
     await act(async () => { page.root.findByProps({ className: 'history-record' }).props.onClick() }); await flush()
     await act(async () => { platform.hide() })
     const { matelinkApi } = await import('../services/api')
@@ -317,7 +479,7 @@ describe('history pages consume canonical data across layers', () => {
       expect(saved.energy?.quality).toBe(fixture.expected.quality)
       const card = page.root.findByProps({ className: 'history-record' })
       const avg = fixture.expected.averageKwh100km
-      expect(card.findByProps({ ariaLabel: `能量 ${avg == null ? '暂无数据' : `${Number(avg.toFixed(1))} kWh/100km`}` })).toBeDefined()
+      expect(card.findByProps({ ariaLabel: `能耗 ${avg == null ? '暂无数据' : `${Number(avg.toFixed(1))} kWh/100km`}` })).toBeDefined()
     }
     assertConsumer()
     await act(async () => { platform.unload(); page.unmount() }); renderer = null
@@ -338,10 +500,10 @@ describe('history pages consume canonical data across layers', () => {
     })
     const page = await mount('drives')
     const cards = page.root.findAllByProps({ className: 'history-record' })
-    expect(cards[0].findByProps({ ariaLabel: '能量 12.4 kWh/100km' })).toBeDefined()
-    expect(cards[1].findByProps({ ariaLabel: '能量 -5 kWh/100km' })).toBeDefined()
+    expect(cards[0].findByProps({ ariaLabel: '能耗 12.4 kWh/100km' })).toBeDefined()
+    expect(cards[1].findByProps({ ariaLabel: '能耗 -5 kWh/100km' })).toBeDefined()
     expect(cards).toHaveLength(3) // The App hides the zero-distance parking manoeuvre.
-    expect(cards.some(card => card.findAllByProps({ ariaLabel: '距离 0 km' }).length > 0)).toBe(false)
+    expect(cards.some(card => card.findAllByProps({ ariaLabel: '里程 0 km' }).length > 0)).toBe(false)
     const interval = page.root.findByProps({ className: 'card history-interval' })
     expect(interval.findByProps({ ariaLabel: '总距离 36.09 km' })).toBeDefined()
     expect(interval.findByProps({ ariaLabel: '总行程数 3 次' })).toBeDefined()
@@ -351,7 +513,7 @@ describe('history pages consume canonical data across layers', () => {
     platform.request.mockImplementation(async ({ url }: { url: string }) => {
       if (url.endsWith('/cars')) return respond({ cars })
       if (url.endsWith('/current')) return respond({ charge: null })
-      return respond({ [kind]: kind === 'drives' ? [reported] : [{ charge_id: 1, source: 'teslamate_archive', start_date: start, end_date: end,
+      return respond({ [kind]: kind === 'drives' ? [{ ...reported, start_address: '合成起点', end_address: '合成终点' }] : [{ charge_id: 1, source: 'teslamate_archive', start_date: start, end_date: end,
         start_battery_level: 20, end_battery_level: 80, charge_energy_added: 10, cost: 5, currency: 'EUR', address: '真实地点' }],
         meta: { page: 1, show: 20, total_pages: 1 } })
     })
@@ -361,14 +523,40 @@ describe('history pages consume canonical data across layers', () => {
       kind === 'drives' ? ['总行程数', '总距离', '总时间', '最高速度'] : ['充电次数', '能量', '费用', '单次均价'])
     const record = page.root.findByProps({ className: 'history-record' })
     const sections = record.children.filter(child => typeof child !== 'string').map(child => child.props.className)
-    expect(sections.slice(0, kind === 'drives' ? 4 : 2)).toEqual(kind === 'drives'
-      ? ['history-record-date', 'history-record-evidence', 'history-route', 'history-record-metrics']
+    expect(sections.slice(0, 2)).toEqual(kind === 'drives'
+      ? ['history-record-header', 'history-record-metrics']
       : ['history-charge-heading', 'history-record-metrics'])
+    if (kind === 'drives') {
+      const header = record.findByProps({ className: 'history-record-header' })
+      expect(header.children.filter(child => typeof child !== 'string').map(child => child.props.className))
+        .toEqual(['history-record-leading', 'history-record-content', 'history-record-evidence', 'history-record-chevron'])
+      const content = header.findByProps({ className: 'history-record-content' })
+      expect(content.children.filter(child => typeof child !== 'string').map(child => child.props.className)).toEqual(['history-route', 'history-record-date'])
+      expect(content.findByProps({ className: 'history-route-start' }).children.join('')).toContain('合成起点')
+      expect(content.findByProps({ className: 'history-route-end' }).children.join('')).toContain('合成终点')
+      const evidence = header.findByProps({ className: 'history-record-evidence' })
+      expect(evidence.findByProps({ className: 'history-record-distance' }).children.join('')).toBe('2 km')
+      expect(evidence.findByProps({ className: 'history-soc' }).children.join('')).toBe('80% → 79%')
+    }
     expect(record.findByProps({ className: 'history-record-metrics' }).findAllByProps({ className: 'metric-label' }).map(node => node.children.join('')))
-      .toEqual(kind === 'drives' ? ['能量', '距离', '最高速度', '时长'] : ['时长', '能量', '充电费用', '电量'])
+      .toEqual(kind === 'drives' ? ['能耗', '里程', '时长', '最高速度'] : ['时长', '能量', '充电费用', '电量'])
     const body = page.root.findByProps({ className: kind === 'drives' ? 'page history-page drives-page appearance-neutral' : 'page history-page charges-page appearance-neutral' })
     const headerClasses = body.findAllByType('view').map(child => child.props.className).filter(Boolean)
     expect(headerClasses.indexOf('history-controls')).toBeLessThan(headerClasses.indexOf('card history-interval'))
+  })
+
+  it('keeps missing drive distance, SOC and route unknown in the aligned card', async () => {
+    const row = { ...unknown, odometer_details: null, battery_details: null, start_address: null, end_address: null }
+    platform.request.mockImplementation(async ({ url }: { url: string }) => url.endsWith('/cars')
+      ? respond({ cars }) : respond({ drives: [row], meta: { page: 1, show: 20, total_pages: 1 } }))
+    const page = await mount('drives')
+    const record = page.root.findByProps({ className: 'history-record' })
+    expect(record.findByProps({ className: 'history-record-distance' }).children.join('')).toBe('暂无数据')
+    expect(record.findByProps({ className: 'history-soc' }).children.join('')).toBe('暂无数据')
+    expect(record.findByProps({ className: 'history-route-start' }).children.join('')).toBe('未知地点')
+    expect(record.findByProps({ className: 'history-route-end' }).children.join('')).toBe('未知地点')
+    expect(record.findByProps({ ariaLabel: '能耗 暂无数据' })).toBeDefined()
+    expect(record.findAllByProps({ className: 'history-source' })).toHaveLength(0)
   })
 
   it('applies short-session filtering to qualified summary and chart while retaining incomplete list records', async () => {
@@ -390,8 +578,8 @@ describe('history pages consume canonical data across layers', () => {
     const interval = page.root.findByProps({ className: 'card history-interval' })
     expect(interval.findByProps({ ariaLabel: '充电次数 2 次' })).toBeDefined()
     expect(interval.findByProps({ ariaLabel: '能量 2 kWh' })).toBeDefined()
-    await click(page, '次数')
-    expect(page.root.findAllByProps({ className: 'activity-number' }).map(node => node.children.join(''))).toContain('2')
+    expect(page.root.findAllByProps({ className: 'charge-chart-tabs' })).toHaveLength(1)
+    expect(page.root.findAllByType('button').some(node => node.props.ariaLabel?.includes('2.00 kWh'))).toBe(true)
     const { historyCacheKey, readHistoryCache } = await import('../services/history_cache')
     const key = historyCacheKey('charges', 'user-a', 'uid7', 'https://api.example.test')
     const stored = readHistoryCache<Charge>({ getStorageSync: (name: string) => platform.values.get(name), setStorageSync: (name: string, value: unknown) => { platform.values.set(name, value) } }, key)
@@ -522,11 +710,11 @@ describe('history pages consume canonical data across layers', () => {
     const page = await mount('drives')
     expect(JSON.stringify(page.toJSON())).toContain('时长 130 分钟')
     expect(JSON.stringify(page.toJSON())).not.toContain('小时')
-    expect(JSON.stringify(page.toJSON())).toContain('距离 2 km')
+    expect(JSON.stringify(page.toJSON())).toContain('里程 2 km')
     await act(async () => { page.root.findByProps({ className: 'history-record' }).props.onClick() }); await flush()
     expect(page.root.findAllByProps({ ariaLabel: '时长 130 分钟' })).toHaveLength(2)
     expect(JSON.stringify(page.toJSON())).toContain('总电耗 -0.25 kWh')
-    await click(page, '行程曲线')
+    await click(page, '详细曲线')
     expect(platform.navigateTo).toHaveBeenCalledWith({ url: '/pages/analysis/index?kind=curves&id=1' })
   })
   it('renders the four qualified trip metrics and actual partial chart, retains proof on weak refresh and rejects incompatible peak units', async () => {
@@ -543,11 +731,11 @@ describe('history pages consume canonical data across layers', () => {
     const card = () => page.root.findAllByProps({ className: 'history-record' })[0]
     const assertCard = (speed: string) => {
       const labels = card().findAllByProps({ className: 'metric-label' }).map(node => node.children.join(''))
-      expect(labels).toEqual(['能量', '距离', '最高速度', '时长'])
+      expect(labels).toEqual(['能耗', '里程', '时长', '最高速度'])
       const semantics = card().findAllByProps({ className: 'metric' }).map(node => node.props.ariaLabel)
       expect(semantics).toContain('时长 1 分钟')
        expect(semantics).toContain(`最高速度 ${speed === '暂无数据' ? speed : `${speed} km/h`}`)
-      expect(semantics).toContain('能量 -12.5 kWh/100km')
+      expect(semantics).toContain('能耗 -12.5 kWh/100km')
       expect(semantics).not.toContain('总电耗 -0.25 kWh')
     }
     assertCard('82')
@@ -951,6 +1139,7 @@ describe('history pages consume canonical data across layers', () => {
     expect(JSON.stringify(page.toJSON())).toContain('未验证在线车辆')
     expect(JSON.stringify(page.toJSON())).not.toContain('private upstream diagnostic')
     await click(page, '清除筛选')
+    await selectFixtureDay(page)
     const before = platform.request.mock.calls.length
     await act(async () => { page.root.findByProps({ className: 'history-record' }).props.onClick() }); await flush()
     expect(platform.request.mock.calls).toHaveLength(before)
@@ -1129,6 +1318,7 @@ describe('history pages consume canonical data across layers', () => {
     await act(async () => { first.props.onClick() }); await flush()
     const selector = page.root.findAllByType('picker' as React.ElementType).find(node => node.props.range?.includes('Car A'))!
     await act(async () => { selector.props.onChange({ detail: { value: 1 } }) }); await flush()
+    await selectFixtureDay(page)
     expect(JSON.stringify(page.toJSON())).toContain('Car B history')
     await act(async () => { release!(respond({ car_id: 7, vehicle_uid: 'uid7', drive: reported })) }); await flush()
     expect(JSON.stringify(page.toJSON())).toContain('Car B history')
