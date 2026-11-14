@@ -278,6 +278,7 @@ export default function ToolsPage() {
   const profileEpoch = epoch.current
   return <View className={`page tools-page subpage-page ${appearance.className}`}>
     <SubpageHeader title={titles[kind]} subtitle={car?.displayName || car?.name || (noFetch.has(kind) ? null : '所选车辆')} />
+    <Text className="page-parity-note">本页为小程序自研界面，样式与 App 不逐字段对齐</Text>
     {MOCK_FIXTURE_ENABLED ? <View className="card fixture-data-notice" style={{ backgroundColor: '#fff7ed', borderColor: '#c2410c' }}><Text className="section-title" style={{ color: '#9a3412', marginBottom: 0 }}>合成测试数据，未连接真实车辆</Text></View> : null}
     {!noFetch.has(kind) ? <Button className="button button-secondary" loading={loading} onClick={() => { void load() }}>刷新数据</Button> : null}
     {error ? <Text className="error">{error}</Text> : null}

@@ -2,7 +2,7 @@ import { ChargeActivityGrid } from '../../components/PresentationControls'
 import { calendarHistoryGroups, civilDay, dayCaption, historyDayGroups } from '../../domain/ui_presentation'
 import { useAppearance } from '../../services/appearance'
 import { MOCK_FIXTURE_ENABLED } from '../../services/mock_fixture'
-import { Button, Map as TaroMap, Picker, ScrollView, Text, View } from '@tarojs/components'
+import { Button, Input, Map as TaroMap, Picker, ScrollView, Text, View } from '@tarojs/components'
 import Taro, { useDidHide, useDidShow, usePageScroll, useUnload } from '@tarojs/taro'
 import { useEffect, useRef, useState } from 'react'
 import { formatParkedAddress, toChineseDisplayAddress } from '../../domain/address_display'
@@ -31,7 +31,7 @@ import { resolveChargeEnergy } from '../../domain/drive_energy'
 import { qualifiedAcEnergyBalance } from '../../domain/charge_energy_balance'
 import { analysisApi } from '../../services/analysis_api'
 import type { ChargeEvidence } from '../../services/analysis_types'
-import { chargeEstimatePrice, overlayChargeCosts, type CostedCharge } from '../../services/charge_cost'
+import { chargeEstimatePrice, clearChargeCostOverride, overlayChargeCosts, writeChargeCostOverride, type CostedCharge } from '../../services/charge_cost'
 import { mapCoordinate } from '../../domain/map_coordinate'
 import { appChargeListRows, appChargeStatisticsRows } from '../../domain/app_history_projection'
 
@@ -146,6 +146,18 @@ export default function ChargesPage() {
   const [costFilter, setCostFilter] = useState<'all' | 'has' | 'none'>('all')
   const [selectedLocation, setSelectedLocation] = useState<string | null>(null)
   const [mapFailed, setMapFailed] = useState(false)
+  const [showPriceDialog, setShowPriceDialog] = useState(false)
+  const [priceInput, setPriceInput] = useState('')
+  const saveManualTotal = (amount: number | null, currency: string) => {
+    if (!costScope || !selected) return
+    const operation = ++lifecycleEpoch.current
+    const ok = amount == null
+      ? clearChargeCostOverride(Taro, costScope, selected, () => operation === lifecycleEpoch.current)
+      : writeChargeCostOverride(Taro, costScope, selected, amount, currency, () => operation === lifecycleEpoch.current)
+    setShowPriceDialog(false)
+    if (ok) { void load(); Taro.showToast({ title: amount == null ? '已恢复原始记录' : '已保存本机手填费用', icon: 'success' }) }
+    else Taro.showToast({ title: '本机费用未能保存，请重试', icon: 'none' })
+  }
   const [, setCostVersion] = useState(0)
   const selectedRef = useRef(selected), carRef = useRef(car)
   selectedRef.current = selected; carRef.current = car
@@ -807,7 +819,7 @@ export default function ChargesPage() {
       {selected && selectedView && !isHistoryQuarantined(selected) ? (
         <ScrollView className="history-detail-overlay" scrollY scrollTop={detailScrollTop.current} onScroll={event => { detailScrollTop.current = event.detail.scrollTop }} style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%' }} ariaLabel="充电详情">
         <View className="history-detail-surface">
-          <View className="history-detail-heading" style={{ paddingTop: `${navGeo.navBarTop}px`, paddingRight: `${navGeo.capsuleRightPadding}px`, minHeight: `${navGeo.headerTotalHeight}px` }}><Button className="detail-back" onClick={closeDetail}>‹ 返回</Button><Text className="section-title">充电详情</Text></View>
+          <View className="history-detail-heading" style={{ paddingTop: `${navGeo.navBarTop}px`, paddingRight: `${navGeo.capsuleRightPadding}px`, minHeight: `${navGeo.headerTotalHeight}px` }}><Button className="detail-back" onClick={closeDetail}>‹ 返回</Button><Text className="section-title">充电详情</Text><Button className="detail-curves-btn" onClick={() => { setPriceInput(selectedView?.cost != null && Number.isFinite(selectedView.cost) && selectedView?.costProvenance === 'manual' ? selectedView.cost.toFixed(2) : ''); setShowPriceDialog(true) }}>修改总价</Button></View>
           {MOCK_FIXTURE_ENABLED ? <View className="card fixture-data-notice" style={{ backgroundColor: '#fff7ed', borderColor: '#c2410c' }}><Text className="section-title" style={{ color: '#9a3412', marginBottom: 0 }}>合成测试数据，未连接真实车辆</Text></View> : null}
           <View className="card charge-detail-intro"><Text className="section-title">充电概览</Text><Text className="charge-detail-address">{displayAddress(selected.address)}</Text>
             <Text className="muted">开始 {historyDetailDateTime(selected.startDate)} · 结束 {historyDetailDateTime(selected.endDate)} · {modeLabel(selected)}</Text>
@@ -834,6 +846,28 @@ export default function ChargesPage() {
         </ScrollView>
       ) : null}
       {error && readAppSession(Taro) ? <Text className="error">{error}</Text> : null}
+      {showPriceDialog && selected ? <View className="remote-modal-overlay" onClick={() => setShowPriceDialog(false)}>
+        <View className="remote-modal-dialog" onClick={e => e.stopPropagation()}>
+          <Text className="modal-title">修改充电总价</Text>
+          <Text className="modal-body">手填费用只保存在本机，用于费用统计展示；不影响车辆或服务端数据。</Text>
+          <View className="input-field">
+            <Text className="field-label">本次充电总价</Text>
+            <Input
+              className="place-name-input"
+              type="digit"
+              placeholder={selectedView?.currencyCode === 'CNY' || !selectedView?.currencyCode ? '输入本次充电的人民币总价' : `输入本次充电的${selectedView.currencyCode}总价`}
+              value={priceInput}
+              onInput={e => setPriceInput(e.detail.value)}
+            />
+            {priceInput.trim() !== '' && !(Number.isFinite(Number(priceInput)) && Number(priceInput) >= 0) ? <Text className="error">请输入有效的非负价格</Text> : null}
+          </View>
+          <View className="modal-actions">
+            <Button className="button" disabled={priceInput.trim() === '' || !Number.isFinite(Number(priceInput)) || Number(priceInput) < 0} onClick={() => { void saveManualTotal(Number(priceInput), selectedView?.currencyCode ?? 'CNY') }}>保存</Button>
+            <Button className="button button-secondary" onClick={() => { void saveManualTotal(null, selectedView?.currencyCode ?? 'CNY') }}>使用原始记录</Button>
+            <Button className="button button-secondary" onClick={() => setShowPriceDialog(false)}>取消</Button>
+          </View>
+        </View>
+      </View> : null}
     </View>
   )
 }

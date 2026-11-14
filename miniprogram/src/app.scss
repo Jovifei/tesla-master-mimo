@@ -1017,3 +1017,30 @@ button {
 }
 
 @import "./styles/presentation.scss";
+
+/* 未与 App 逐字段对齐的自研页标注 */
+.page-parity-note { display: block; padding: 8rpx 16rpx 0; font-size: 22rpx; color: var(--dashboard-muted, #9ca3af); }
+
+/* 更多页账号区：与账号相关的行组（微信小程序自研登录面） */
+.account-manage .account-row {
+  display: flex; align-items: center; justify-content: space-between;
+  width: 100%; min-height: 88rpx; padding: 0 8rpx;
+  background: transparent; border: none; border-radius: 0;
+  border-bottom: 1rpx solid rgba(0, 0, 0, 0.06); text-align: left;
+}
+.account-manage .account-row:last-child { border-bottom: none; }
+.account-manage .account-row-label { font-size: 30rpx; color: var(--dashboard-on-surface, #1f2937); }
+.account-manage .account-row-danger .account-row-label { color: #dc2626; }
+.account-manage .account-row-chevron { color: var(--dashboard-muted, #9ca3af); font-size: 30rpx; }
+
+/* 更多页账号区：微信小程序自研登录面的行组样式 */
+.account-manage .account-row {
+  display: flex; align-items: center; justify-content: space-between;
+  width: 100%; min-height: 88rpx; padding: 0 8rpx;
+  background: transparent; border: none; border-radius: 0;
+  border-bottom: 1rpx solid rgba(0, 0, 0, 0.06); text-align: left;
+}
+.account-manage .account-row:last-child { border-bottom: none; }
+.account-manage .account-row-label { font-size: 30rpx; color: var(--dashboard-on-surface, #1f2937); }
+.account-manage .account-row-danger .account-row-label { color: #dc2626; }
+.account-manage .account-row-chevron { color: var(--dashboard-muted, #9ca3af); font-size: 30rpx; }

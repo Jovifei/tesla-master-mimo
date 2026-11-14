@@ -318,6 +318,7 @@ export default function AnalysisPage() {
   </View>)
   return <View className={`page analysis-page subpage-page ${appearance.className}`}>
     <SubpageHeader title={analysisTitles[kind]} subtitle={car?.displayName || car?.name || '所选车辆'} />
+    <Text className="page-parity-note">本页为小程序自研界面，样式与 App 不逐字段对齐</Text>
     {MOCK_FIXTURE_ENABLED ? <View className="card fixture-data-notice" style={{ backgroundColor: '#fff7ed', borderColor: '#c2410c' }}><Text className="section-title" style={{ color: '#9a3412', marginBottom: 0 }}>合成测试数据，未连接真实车辆</Text></View> : null}
     {cars.length > 1 ? <Picker mode="selector" range={cars.map(row => row.displayName || row.name || '车辆')} onChange={event => { selectedStable.current = cars[Number(event.detail.value)]?.stableId ?? null; void load() }}><View className="analysis-car">{car?.displayName || car?.name || '选择车辆'}</View></Picker> : null}
     {car ? <View className="analysis-controls"><HistoryDateChips kind="drives" query={query} onChange={updateQuery} /><View className="analysis-date-range">

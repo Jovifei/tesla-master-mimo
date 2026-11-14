@@ -33,8 +33,11 @@ async function mount() {
   await act(async () => { renderer = TestRenderer.create(React.createElement(Page)); })
   await act(async () => { platform.show() }); await flush()
 }
+// account rows nest the label inside a Text node; plain buttons keep flat children
+const findButton = (label: string) => renderer!.root.findAllByType('button').find(node =>
+  node.children.join('') === label || node.findAllByType('text' as React.ElementType).some(t => t.children.join('') === label))
 async function logout() {
-  const button = renderer!.root.findAllByType('button').find(node => node.children.join('') === '退出登录')!
+  const button = findButton('退出登录')!
   await act(async () => { button.props.onClick() }); await flush()
 }
 const visible = () => JSON.stringify(renderer!.toJSON())
@@ -119,7 +122,7 @@ it('hidden lifecycle invalidates a late logout completion and re-show reads the 
 
 const pendingKey = 'matelink.wechat.tesla-auth.v1'
 const pending = (transactionId: string) => ({ transactionId, clientProof: `fixture-proof-${transactionId}`, apiOrigin: 'https://api.example.test', expiresAt: null })
-const button = (label: string) => renderer!.root.findAllByType('button').find(node => node.children.join('') === label)!
+const button = (label: string) => findButton(label)!
 
 it('fixture mode never resumes stored authorization or exposes account and consent actions', async () => {
   vi.stubEnv('TARO_APP_MOCK_FIXTURE', 'true')
