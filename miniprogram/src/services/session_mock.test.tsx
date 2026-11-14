@@ -10,7 +10,7 @@ const platform = vi.hoisted(() => ({
   request: vi.fn(), login: vi.fn(), values: new Map<string, unknown>(),
   show: (() => {}) as () => void, hide: (() => {}) as () => void, unload: (() => {}) as () => void,
 }))
-vi.mock('@tarojs/components', () => ({ View: 'view', Text: 'text', Button: 'button', Picker: 'picker', Image: 'image', Map: 'map', ScrollView: 'scroll-view', Checkbox: 'checkbox', CheckboxGroup: 'checkboxgroup' }))
+vi.mock('@tarojs/components', () => ({ View: 'view', Text: 'text', Button: 'button', Picker: 'picker', Image: 'image', Map: 'map', ScrollView: 'scroll-view', Canvas: 'canvas', Slider: 'slider', Checkbox: 'checkbox', CheckboxGroup: 'checkboxgroup' }))
 vi.mock('@tarojs/taro', () => ({ default: {
   request: platform.request, login: platform.login,
   getStorageSync: (key: string) => platform.values.get(key),
@@ -52,8 +52,13 @@ it('fixture session and real read APIs use the configured isolated origin withou
   expect(charges.items).toHaveLength(20)
   expect(drives.items.every(row => row.source === 'mock_fixture')).toBe(true)
   expect(charges.items.every(row => row.source === 'mock_fixture')).toBe(true)
+  expect(charges.items.every(row => row.energyAddedKwh !== null && row.energyAddedKwh >= 0)).toBe(true)
   expect((await api.matelinkApi.getDriveDetail(car.id, drives.items[0].id, car))?.source).toBe('mock_fixture')
   expect((await api.matelinkApi.getChargeDetail(car.id, charges.items[0].id, car))?.source).toBe('mock_fixture')
+  const evidence = await (await import('./analysis_api')).analysisApi.getChargeEvidence(car, charges.items[0].id)
+  expect(evidence.points.filter(point => point.batteryLevel !== null)).toHaveLength(11)
+  expect(evidence.points.filter(point => point.powerKw !== null)).toHaveLength(10)
+  expect(evidence.source).toBe('mock_fixture')
   await expect(api.requestJson('/unmapped-fixture-route')).rejects.toMatchObject({ code: 'mock_fixture_unavailable' })
   expect(platform.request).not.toHaveBeenCalled()
   expect(platform.login).not.toHaveBeenCalled()
@@ -76,6 +81,14 @@ it.each(['drives', 'charges'] as const)('fixture %s page renders synthetic histo
   const Page = kind === 'drives' ? (await import('../pages/drives/index')).default : (await import('../pages/charges/index')).default
   await act(async () => { page = TestRenderer.create(React.createElement(Page)) })
   await act(async () => { platform.show(); await new Promise(resolve => setTimeout(resolve, 0)) })
+  if (kind === 'drives') {
+    await vi.waitFor(() => expect(page!.root.findAllByProps({ ariaLabel: '较旧日期' })).toHaveLength(1))
+    if (page!.root.findAllByProps({ className: 'history-record' }).length === 0) {
+      const navigation = ['较旧日期', '较新日期'].map(label => page!.root.findByProps({ ariaLabel: label })).find(button => !button.props.disabled)
+      expect(navigation).toBeDefined()
+      await act(async () => { navigation!.props.onClick(); await new Promise(resolve => setTimeout(resolve, 0)) })
+    }
+  }
   await vi.waitFor(() => expect(page!.root.findAllByProps({ className: 'history-record' }).length).toBeGreaterThan(0))
   expect(page!.root.findByProps({ className: 'card fixture-data-notice' }).findByType('text' as React.ElementType).children.join('')).toBe('合成测试数据，未连接真实车辆')
   expect(platform.request).not.toHaveBeenCalled()

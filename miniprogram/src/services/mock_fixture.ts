@@ -162,7 +162,7 @@ function rawDrive(row: PlannedDrive, withRoute: boolean): RawDrive {
   }
 }
 
-function rawCharge(row: PlannedCharge): RawCharge {
+function rawCharge(row: PlannedCharge, withSamples = false): RawCharge {
   return {
     charge_id: row.id, session_id: `mock-charge-${row.id}`,
     start_date: iso(row.start), end_date: iso(row.end),
@@ -177,7 +177,12 @@ function rawCharge(row: PlannedCharge): RawCharge {
     source: 'mock_fixture', quality_state: 'observed', quality_reason: 'mock_fixture_observed',
     battery_details: { start_battery_level: row.socStart, end_battery_level: row.socEnd },
     energy_contract: { version: 1, charge_mode: row.dc ? 'dc' : 'ac', charge_mode_evidence: 'mock_fixture_boundary_modes',
-      battery_input: { value_kwh: row.kwhAdded, source: 'mock_fixture', quality: 'reported', coverage_ratio: 1, coverage_seconds: Math.round((row.end - row.start) / 1000) } },
+      battery_input: { value_kwh: row.kwhAdded, unit: 'kWh', method: 'session_counter_delta', measurement_point: 'battery_input', source: 'mock_fixture', quality: 'reported', start_date: iso(row.start), end_date: iso(row.end), coverage_kind: 'endpoints', coverage_ratio: 1, coverage_seconds: Math.round((row.end - row.start) / 1000) } },
+    ...(withSamples ? { charge_details: Array.from({ length: 21 }, (_, index) => {
+      const ratio = index / 20, date = iso(row.start + (row.end - row.start) * ratio)
+      return index % 2 === 0 ? { date, battery_level: Math.round(row.socStart + (row.socEnd - row.socStart) * ratio) }
+        : { date, charger_details: { charger_power: row.dc ? round1(95 - 45 * ratio) : 7 } }
+    }) } : {}),
   }
 }
 
@@ -269,7 +274,7 @@ export function mockRequest(path: string, enabled: boolean = MOCK_FIXTURE_ENABLE
   if (history) {
     const [, kind, pageText, showText] = history
     if (kind === 'drives') return page('drives', planned.drives.map(row => rawDrive(row, false)), Number(pageText), Number(showText))
-    return page('charges', planned.charges.map(rawCharge), Number(pageText), Number(showText))
+    return page('charges', planned.charges.map(row => rawCharge(row)), Number(pageText), Number(showText))
   }
   const driveDetail = /^\/api\/v1\/cars\/\d+\/drives\/(\d+)$/.exec(path)
   if (driveDetail) {
@@ -279,7 +284,7 @@ export function mockRequest(path: string, enabled: boolean = MOCK_FIXTURE_ENABLE
   const chargeDetail = /^\/api\/v1\/cars\/\d+\/charges\/(\d+)$/.exec(path)
   if (chargeDetail) {
     const row = planned.charges.find(item => String(item.id) === chargeDetail[1])
-    return row ? { data: { charge: rawCharge(row) } } : { error: 'history_unavailable' }
+    return row ? { data: { charge: rawCharge(row, true) } } : { error: 'history_unavailable' }
   }
   const parked = /^\/api\/matelink\/v1\/cars\/\d+\/parked\/(\d+)\/(\d+)$/.exec(path)
   if (parked) {

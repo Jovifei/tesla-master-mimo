@@ -134,3 +134,56 @@ describe('advanced App analysis consumers', () => {
     }
   })
 })
+
+
+it('marks only cross-channel gaps as inference-required, retaining hard breaks and original indexes', () => {
+  const source = [
+    { time: 0, value: 0, fieldState: 'reported' as const },
+    { time: 1, value: null, fieldState: 'absent' as const, otherChannel: true },
+    { time: 2, value: -2, fieldState: 'reported' as const },
+    { time: 3, value: null, fieldState: 'invalid' as const, otherChannel: true },
+    { time: 4, value: 5, fieldState: 'reported' as const },
+    { time: 5, value: null, fieldState: 'absent' as const, otherChannel: false },
+    { time: 6, value: 6, fieldState: 'reported' as const },
+    { time: NaN, value: null, fieldState: 'absent' as const, otherChannel: true },
+    { time: 8, value: 8, fieldState: 'reported' as const },
+    { time: 9, value: 9, fieldState: 'reported' as const, sourceConflict: true },
+    { time: 10, value: 10, fieldState: 'reported' as const },
+  ]
+  const plot = selectCurveSamples(source, { inferAcrossOtherChannels: true })
+  expect(plot.points.map(p => [p.index, p.value, p.breakBefore, !!p.inferredBefore])).toEqual([
+    [0, 0, true, false], [2, -2, true, true], [4, 5, true, false], [6, 6, true, false], [8, 8, true, false], [10, 10, true, false],
+  ])
+  expect(selectCurveSamples(source).points.find(p => p.index === 2)?.breakBefore).toBe(true)
+  expect(selectCurveSamples(source, { inferAcrossOtherChannels: true, forceDisconnected: true }).points.every(p => p.breakBefore && !p.inferredBefore)).toBe(true)
+})
+
+it('preserves inferred and hard gaps when 20,000 samples are reduced for rendering', () => {
+  const samples = Array.from({ length: 20_000 }, (_, index) => index % 2
+    ? { time: index, value: null, fieldState: index === 9999 ? 'invalid' as const : 'absent' as const, otherChannel: true }
+    : { time: index, value: index === 0 ? 0 : index === 10002 ? -99 : index, fieldState: 'reported' as const })
+  const plot = selectCurveSamples(samples, { inferAcrossOtherChannels: true })
+  expect(plot.points.length).toBeLessThanOrEqual(600)
+  expect(plot.points[0]).toMatchObject({ index: 0, value: 0 })
+  expect(plot.points[plot.points.length - 1]?.index).toBe(19998)
+  expect(plot.points.some(p => p.value === -99)).toBe(true)
+  expect(plot.points.some(p => p.inferredBefore)).toBe(true)
+  const right = plot.points.find(p => p.index > 9999)!
+  expect(right.breakBefore).toBe(true)
+  expect(right.inferredBefore).not.toBe(true)
+})
+
+
+it('breaks inferred paths at duplicate or reversed times and contradictory field states', () => {
+  const source = [
+    { time: 5, value: 0, fieldState: 'reported' as const },
+    { time: 5, value: null, fieldState: 'absent' as const, otherChannel: true },
+    { time: 6, value: 1, fieldState: 'reported' as const },
+    { time: 7, value: null, fieldState: 'absent' as const, otherChannel: true },
+    { time: 6, value: 2, fieldState: 'reported' as const },
+    { time: 8, value: 3, fieldState: 'invalid' as const },
+    { time: 9, value: 4, fieldState: 'reported' as const },
+  ]
+  expect(selectCurveSamples(source, { inferAcrossOtherChannels: true }).points.map(p => [p.index, p.breakBefore, !!p.inferredBefore]))
+    .toEqual([[0, true, false], [2, true, false], [4, true, false], [6, true, false]])
+})

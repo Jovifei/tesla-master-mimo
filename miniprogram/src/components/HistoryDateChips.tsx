@@ -8,8 +8,8 @@ function civil(date: Date) { return `${date.getFullYear()}-${String(date.getMont
 export default function HistoryDateChips({ query, onChange }: {
   kind: 'drives' | 'charges'; query: HistoryQuery; onChange: (patch: Partial<HistoryQuery>) => void
 }) {
-  // App uses the same presets on both history tabs: 7d / 30d / all / today / custom.
-  const choices = [7, 30, null, 0]
+  // Keep the Android history presets on both tabs, including 90 days and one year.
+  const choices = [7, 30, 90, 365, null, 0]
   const today = new Date(), endDate = civil(today)
   const isPreset = choices.some(days => {
     const start = new Date(today.getFullYear(), today.getMonth(), today.getDate())
@@ -28,7 +28,7 @@ export default function HistoryDateChips({ query, onChange }: {
       if (days != null && days > 0) start.setDate(start.getDate() - (days - 1))
       const startDate = days == null ? '' : civil(start)
       const selected = query.startDate === startDate && query.endDate === (days == null ? '' : endDate)
-      return <Button key={String(days)} className={`history-chip ${selected ? 'history-chip-selected' : ''}`} onClick={() => onChange({ startDate, endDate: days == null ? '' : endDate })}>
+      return <Button key={String(days)} className={`history-chip ${selected ? 'history-chip-selected' : ''}`} onClick={() => onChange({ startDate, endDate: days == null ? '' : endDate, relativeDays: days == null ? undefined : days === 0 ? 1 : days })}>
         {days == null ? copy('history.all') : days === 0 ? copy('history.today') : days === 365 ? copy('history.lastYear') : copy('history.lastDays', { days })}
       </Button>
     })}

@@ -6,7 +6,7 @@ const platform = vi.hoisted(() => ({
   request: vi.fn(), values: new Map<string, unknown>(),
   show: (() => {}) as () => void, hide: (() => {}) as () => void, unload: (() => {}) as () => void,
 }))
-vi.mock('@tarojs/components', () => ({ View: 'view', Text: 'text', Button: 'button', Picker: 'picker', Image: 'image', Map: 'map', ScrollView: 'scroll-view' }))
+vi.mock('@tarojs/components', () => ({ View: 'view', Text: 'text', Button: 'button', Picker: 'picker', Image: 'image', Map: 'map', ScrollView: 'scroll-view', Canvas: 'canvas', Slider: 'slider' }))
 vi.mock('@tarojs/taro', () => ({ default: {
   request: platform.request, getStorageSync: (key: string) => platform.values.get(key),
   setStorageSync: (key: string, value: unknown) => { platform.values.set(key, value) },
@@ -30,6 +30,10 @@ const drive = (id: number, minutes: number, km: number, quality = 'observed') =>
   odometer_details: { odometer_distance: km }, battery_details: { start_battery_level: 80, end_battery_level: 79 } })
 
 async function flush() { await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) }) }
+async function selectFixtureDay(view: ReactTestRenderer) {
+  const older = view.root.findAllByProps({ ariaLabel: '较旧日期' }).find(button => !button.props.disabled)
+  if (older) { await act(async () => { older.props.onClick() }); await flush() }
+}
 async function mount() {
   const { writeAppSession } = await import('../../services/session')
   writeAppSession({ setStorageSync: (key, value) => platform.values.set(key, value) },
@@ -37,6 +41,7 @@ async function mount() {
   const Page = (await import('./index')).default
   await act(async () => { page = TestRenderer.create(<Page />) })
   await act(async () => { platform.show() }); await flush(); await flush()
+  await selectFixtureDay(page!)
   return page!
 }
 beforeEach(() => { vi.resetModules(); vi.stubEnv('TARO_APP_API_BASE_URL', origin); platform.values.clear(); platform.request.mockReset() })
@@ -120,6 +125,7 @@ it('reuses a confirmed proof after filtering the candidate out and back into vie
   await click('长途 (200km+)')
   expect(view.root.findAllByProps({ className: 'history-record history-parked' })).toHaveLength(0)
   await click('通勤 (< 50km)')
+  await selectFixtureDay(view)
   expect(view.root.findAllByProps({ className: 'history-record history-parked' })).toHaveLength(1)
   expect(platform.request.mock.calls.filter(([request]) => request.url.endsWith('/parked/1/3'))).toHaveLength(1)
 })
@@ -331,4 +337,165 @@ it('does not show route evidence returned for a different source instance with t
   const view = await mount()
   await act(async () => { view.root.findByProps({ className: 'history-record' }).props.onClick() }); await flush(); await flush()
   expect(view.root.findAllByType('map' as React.ElementType)).toHaveLength(0)
+})
+
+it('keeps elevation and ambient temperature while rendering qualified same-record curves inline', async () => {
+  const item = { ...drive(1, 0, 2), outside_temp_avg: 23 }
+  const detail = { ...item, drive_details: [
+    { date: at(0), speed: 0, power: 0, battery_level: 80, elevation: 100 },
+    { date: at(10), speed: 40, power: -4, battery_level: 79, elevation: 110 },
+  ] }
+  platform.request.mockImplementation(async ({ url }: { url: string }) => url.endsWith('/cars') ? response({ cars: [car] }) :
+    url.endsWith('/drives/1') ? response({ drive: detail }) : response({ drives: [item], meta: { page: 1, show: 20, total_pages: 1 } }))
+  const view = await mount()
+  await act(async () => { view.root.findByProps({ className: 'history-record' }).props.onClick() }); await flush(); await flush()
+  expect(view.root.findByProps({ ariaLabel: '车外温度 23 °C' })).toBeDefined()
+  expect(view.root.findByProps({ ariaLabel: '累计爬升 +10 m' })).toBeDefined()
+  for (const id of ['drive-inline-speed', 'drive-inline-power', 'drive-inline-soc']) expect(view.root.findByProps({ id })).toBeDefined()
+})
+
+
+it('does not show wrong-window evidence when the record detail fails', async () => {
+  const item = drive(1, 0, 2)
+  const otherWindow = { ...drive(1, 30, 2), drive_details: [
+    { date: at(30), latitude: 39.9, longitude: 116.4, speed: 10, power: 25, battery_level: 80, elevation: 100 },
+    { date: at(40), latitude: 39.91, longitude: 116.41, speed: 20, power: 30, battery_level: 79, elevation: 110 },
+  ] }
+  const pending: ((value: unknown) => void)[] = []
+  platform.request.mockImplementation(({ url }: { url: string }) => {
+    if (url.endsWith('/cars')) return Promise.resolve(response({ cars: [car] }))
+    if (url.endsWith('/drives/1')) return new Promise(resolve => { pending.push(resolve) })
+    return Promise.resolve(response({ drives: [item], meta: { page: 1, show: 20, total_pages: 1 } }))
+  })
+  const view = await mount()
+  await act(async () => { view.root.findByProps({ className: 'history-record' }).props.onClick() }); await flush()
+  expect(pending).toHaveLength(2)
+  await act(async () => { pending[0](response({ drive: otherWindow })) }); await flush()
+  expect(view.root.findAllByProps({ id: 'drive-inline-power' })).toHaveLength(0)
+  expect(view.root.findAllByType('map' as React.ElementType)).toHaveLength(0)
+  await act(async () => { pending[1]({ statusCode: 503, data: { error: 'unavailable' }, header: {} }) }); await flush()
+  expect(view.root.findAllByProps({ id: 'drive-inline-power' })).toHaveLength(0)
+})
+
+
+const windowEvidence = (minutes: number) => ({ ...drive(1, minutes, 2), drive_details: [
+  { date: at(minutes), latitude: 39.9, longitude: 116.4, speed: 10, power: 25, battery_level: 80, elevation: 100 },
+  { date: at(minutes + 10), latitude: 39.91, longitude: 116.41, speed: 20, power: 30, battery_level: 79, elevation: 110 },
+] })
+async function mountWindowRace() {
+  const item = drive(1, 0, 2), pending: ((value: unknown) => void)[] = []
+  platform.request.mockImplementation(({ url }: { url: string }) => {
+    if (url.endsWith('/cars')) return Promise.resolve(response({ cars: [car] }))
+    if (url.endsWith('/drives/1')) return new Promise(resolve => { pending.push(resolve) })
+    return Promise.resolve(response({ drives: [item], meta: { page: 1, show: 20, total_pages: 1 } }))
+  })
+  const view = await mount()
+  await act(async () => { view.root.findByProps({ className: 'history-record' }).props.onClick() }); await flush()
+  expect(pending).toHaveLength(2)
+  return { view, pending }
+}
+async function releaseDrive(pending: ((value: unknown) => void)[], index: number, detail: unknown) {
+  await act(async () => { pending[index](response({ drive: detail })) }); await flush()
+}
+function expectNoDriveSamples(view: ReactTestRenderer) {
+  for (const id of ['drive-inline-speed', 'drive-inline-power', 'drive-inline-soc']) expect(view.root.findAllByProps({ id })).toHaveLength(0)
+  expect(view.root.findAllByType('map' as React.ElementType)).toHaveLength(0)
+  expect(view.root.findAllByProps({ ariaLabel: '累计爬升 +10 m' })).toHaveLength(0)
+}
+
+it.each(['evidence-first', 'detail-first'] as const)('hides old-window samples after the selected window changes, %s', async order => {
+  const { view, pending } = await mountWindowRace()
+  if (order === 'evidence-first') {
+    await releaseDrive(pending, 0, windowEvidence(0))
+    expect(view.root.findAllByProps({ id: 'drive-inline-power' }).length).toBeGreaterThan(0)
+    await releaseDrive(pending, 1, drive(1, 30, 2))
+  } else {
+    await releaseDrive(pending, 1, drive(1, 30, 2))
+    await releaseDrive(pending, 0, windowEvidence(0))
+  }
+  expectNoDriveSamples(view)
+})
+
+it.each(['evidence-first', 'detail-first'] as const)('shows matching evidence after a corrected record arrives, %s', async order => {
+  const { view, pending } = await mountWindowRace()
+  if (order === 'evidence-first') {
+    await releaseDrive(pending, 0, windowEvidence(30))
+    expectNoDriveSamples(view)
+    await releaseDrive(pending, 1, drive(1, 30, 2))
+  } else {
+    await releaseDrive(pending, 1, drive(1, 30, 2))
+    await releaseDrive(pending, 0, windowEvidence(30))
+  }
+  for (const id of ['drive-inline-speed', 'drive-inline-power', 'drive-inline-soc']) expect(view.root.findAllByProps({ id }).length).toBeGreaterThan(0)
+  expect(view.root.findAllByType('map' as React.ElementType)).toHaveLength(1)
+})
+
+it('admits equivalent timezone instants but rejects a nanosecond window mismatch', async () => {
+  const { view, pending } = await mountWindowRace()
+  const original = windowEvidence(0)
+  const offset = (value: string) => new Date(Date.parse(value) + 8 * 3_600_000).toISOString().replace('Z', '+08:00')
+  await releaseDrive(pending, 0, { ...original, start_date: offset(original.start_date), end_date: offset(original.end_date) })
+  expect(view.root.findAllByProps({ id: 'drive-inline-power' }).length).toBeGreaterThan(0)
+  await releaseDrive(pending, 1, { ...drive(1, 0, 2), end_date: at(10).replace('.000Z', '.000000001Z') })
+  expectNoDriveSamples(view)
+})
+
+it('rejects a date-only record window even if its identity and sample dates match', async () => {
+  const item = { ...drive(1, 0, 2), start_date: at(0).slice(0, 10) }
+  const detail = { ...windowEvidence(0), start_date: item.start_date }
+  platform.request.mockImplementation(async ({ url }: { url: string }) => url.endsWith('/cars') ? response({ cars: [car] }) :
+    url.endsWith('/drives/1') ? response({ drive: detail }) : response({ drives: [item], meta: { page: 1, show: 20, total_pages: 1 } }))
+  const view = await mount()
+  await act(async () => { view.root.findByProps({ className: 'history-record' }).props.onClick() }); await flush(); await flush()
+  expectNoDriveSamples(view)
+})
+
+
+it('keeps matching evidence if the separate record-detail request fails', async () => {
+  const { view, pending } = await mountWindowRace()
+  await releaseDrive(pending, 0, windowEvidence(0))
+  await act(async () => { pending[1]({ statusCode: 503, data: { error: 'unavailable' }, header: {} }) }); await flush()
+  expect(view.root.findAllByProps({ id: 'drive-inline-power' }).length).toBeGreaterThan(0)
+})
+
+it.each([
+  ['positive submillisecond', '.000000001Z', '.000000002Z'],
+  ['equal', '.000000001Z', '.000000001Z'],
+  ['reversed', '.000000002Z', '.000000001Z'],
+] as const)('does not draw an unrepresentable %s window', async (_label, from, to) => {
+  const start = at(0).replace('.000Z', from), end = at(0).replace('.000Z', to)
+  const item = { ...drive(1, 0, 2), start_date: start, end_date: end }
+  const detail = { ...item, drive_details: [
+    { date: start, speed: 1, power: 10, battery_level: 80, latitude: 39.9, longitude: 116.4 },
+    { date: end, speed: 2, power: 11, battery_level: 79, latitude: 39.91, longitude: 116.41 },
+  ] }
+  platform.request.mockImplementation(async ({ url }: { url: string }) => url.endsWith('/cars') ? response({ cars: [car] }) :
+    url.endsWith('/drives/1') ? response({ drive: detail }) : response({ drives: [item], meta: { page: 1, show: 20, total_pages: 1 } }))
+  const view = await mount()
+  await act(async () => { view.root.findByProps({ className: 'history-record' }).props.onClick() }); await flush(); await flush()
+  expectNoDriveSamples(view)
+})
+
+
+it('does not display a late prior selection after opening another record', async () => {
+  const first = drive(1, 0, 2), second = drive(2, 30, 2)
+  const pending: Record<string, ((value: unknown) => void)[]> = { '1': [], '2': [] }
+  platform.request.mockImplementation(({ url }: { url: string }) => {
+    if (url.endsWith('/cars')) return Promise.resolve(response({ cars: [car] }))
+    if (url.endsWith('/drives/1')) return new Promise(resolve => { pending['1'].push(resolve) })
+    if (url.endsWith('/drives/2')) return new Promise(resolve => { pending['2'].push(resolve) })
+    if (url.includes('/parked/')) return Promise.resolve({ statusCode: 404, data: { error: 'parked_history_bounds_unavailable' }, header: {} })
+    return Promise.resolve(response({ drives: [second, first], meta: { page: 1, show: 20, total_pages: 1 } }))
+  })
+  const view = await mount()
+  const cards = view.root.findAllByProps({ className: 'history-record' })
+  await act(async () => { cards[1].props.onClick() }); await flush()
+  await act(async () => { cards[0].props.onClick() }); await flush()
+  expect(pending['1']).toHaveLength(2); expect(pending['2']).toHaveLength(2)
+  await releaseDrive(pending['1'], 0, windowEvidence(0))
+  await releaseDrive(pending['1'], 1, first)
+  expectNoDriveSamples(view)
+  await releaseDrive(pending['2'], 0, { ...windowEvidence(30), drive_id: 2, session_id: 'drive-2', source_record_id: 'record-2' })
+  await releaseDrive(pending['2'], 1, second)
+  expect(view.root.findAllByProps({ id: 'drive-inline-power' }).length).toBeGreaterThan(0)
 })

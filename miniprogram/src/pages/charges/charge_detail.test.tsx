@@ -55,6 +55,21 @@ async function edit(amount: string, currency: string) {
   await act(async () => { const fields = tree!.root.findAllByType('input'); fields[0].props.onInput({ detail: { value: amount } }); fields[1].props.onInput({ detail: { value: currency } }) })
 }
 const shown = () => tree!.root.findAllByType('text').map(node => node.children.join('')).join('\n')
+it('groups visible charges by their actual local day and keeps unknown dates last', async () => {
+  const older = { ...charge, charge_id: 2, session_id: 'older-charge', start_date: '2026-10-11T12:00:00Z' }
+  const undated = { ...charge, charge_id: 3, session_id: 'undated-charge', start_date: null }
+  platform.request.mockImplementation(async ({ url }: { url: string }) => url.endsWith('/cars')
+    ? response({ cars: [{ car_id: 7, vehicle_uid: 'uid7' }] }) : url.endsWith('/current') ? response({ charge: null })
+      : response({ charges: [older, undated, charge], meta: { page: 1, show: 20, total_pages: 1 } }))
+  await mount()
+  const groups = tree!.root.findAllByProps({ className: 'charge-history-day' })
+  expect(groups).toHaveLength(3)
+  expect(groups.map(group => group.findAllByProps({ className: 'history-record' }).length)).toEqual([1, 1, 1])
+  const { civilDay, dayCaption } = await import('../../domain/ui_presentation')
+  expect(groups.map(group => group.findByProps({ className: 'charge-history-day-title' }).children.join('')))
+    .toEqual([dayCaption(civilDay(charge.start_date)!), dayCaption(civilDay(older.start_date)!), '日期待确认'])
+  expect(shown()).toContain('另有 1 条记录日期无法确认')
+})
 it('real charge detail keeps its original observed-quality wording', async () => {
   vi.stubEnv('TARO_APP_MOCK_FIXTURE', 'false')
   await mount(); await detail()
@@ -219,6 +234,8 @@ it.each(['missing-mode', 'dc-mode', 'uppercase-mode', 'mismatched-basis', 'blank
   expect(panel.findByProps({ ariaLabel: '电池充入 8 kWh' })).toBeDefined()
   expect(panel.findByProps({ ariaLabel: `${reason === 'dc-mode' ? '输入电量（模式未确认）' : 'AC 输入'} 10 kWh` })).toBeDefined()
   expect(panel.findByProps({ ariaLabel: 'AC输入效率 暂无数据' })).toBeDefined()
+  expect(panel.findByProps({ ariaLabel: '样本平均电压 235 V' })).toBeDefined()
+  expect(panel.findByProps({ ariaLabel: '样本最低电流 0 A' })).toBeDefined()
 })
 it('shows a normalized AC/fast-charge conflict as unknown without losing reported energy or bill', async () => {
   const conflicting = { ...charge, fast_charger_present: true }
@@ -237,7 +254,8 @@ it('shows a normalized AC/fast-charge conflict as unknown without losing reporte
   expect(panel.findByProps({ ariaLabel: '输入电量（模式未确认） 10 kWh' })).toBeDefined()
   expect(panel.findByProps({ ariaLabel: '充电费用 0 EUR' })).toBeDefined()
   expect(panel.findByProps({ ariaLabel: 'AC输入效率 暂无数据' })).toBeDefined()
-  expect(panel.findAllByProps({ className: 'section-title' }).map(node => node.children.join(''))).not.toContain('电压与电流')
+  expect(panel.findByProps({ ariaLabel: '样本平均电压 235 V' })).toBeDefined()
+  expect(panel.findByProps({ ariaLabel: '样本平均电流 8 A' })).toBeDefined()
 })
 it('treats a malformed conflict marker in the reopened offline cache as unknown mode', async () => {
   await mount()
@@ -296,9 +314,9 @@ it('renders actual parsed charge detail in App section order, real sample extrem
   await mount(); await detail()
   const titles = tree!.root.findAllByProps({ className: 'section-title' }).map(node => node.children.join(''))
   const startIndex = titles.indexOf('充电详情')
-  expect(titles.slice(startIndex)).toEqual(['充电详情', '位置与费用', '电量', '电池', '功率', '电压与电流', '温度', '充电电量变化', '充电功率', '充电电压', '充电电流', '充电温度'])
+  expect(titles.slice(startIndex)).toEqual(['充电详情', '充电概览', '电量', '电池', '功率', '电压与电流', '温度', '充电电量变化', '充电功率', '充电电压', '充电电流', '环境温度'])
   for (const label of ['AC输入效率 80%', '起始SOC 20%', '结束SOC 80%', '样本最高功率 10 kW', '样本最低功率 0 kW', '样本平均功率 5 kW', '样本平均电压 235 V', '样本平均电流 8 A', '样本平均温度 21 °C']) expect(tree!.root.findAllByProps({ ariaLabel: label }), label).toHaveLength(1)
-  expect(shown()).toContain('功率 2 / 电压 2 / 电流 2 / 温度 2 点')
+  expect(shown()).toContain('缺失数据保持未知')
   // App parity: the five curves are inline in the detail; there is no
   // jump-to-analysis entry anymore.
   expect(tree!.root.findAllByType('button').some(node => node.children.join('') === '查看SOC、功率、电压、电流、温度曲线')).toBe(false)
@@ -332,20 +350,20 @@ it('shows an App-style short address, marked default-price estimate and only ret
   expect(summary.findByProps({ ariaLabel: '费用 ≈27.38 CNY' })).toBeDefined()
   expect(summary.findByProps({ ariaLabel: '单次均价 ≈27.38 CNY' })).toBeDefined()
   expect(shown()).toContain('费用按 App 默认 ¥1.14/kWh 估算')
-  await click('费用')
   const chart = tree!.root.findByProps({ className: 'card charge-month-chart' })
   const cells = chart.findAllByType('button').filter(node => node.props.className?.includes('charge-activity-cell'))
-  expect(cells).toHaveLength(1)
-  expect(cells[0].props.ariaLabel).toContain('含估算 27.38 CNY')
-  await act(async () => cells[0].props.onClick())
-  expect(chart.findByProps({ className: 'charge-activity-selection' }).children.join('')).toContain('含估算 27.38 CNY')
+  expect(cells.filter(node => node.props.ariaLabel.includes('已知 1 / 1 条'))).toHaveLength(1)
+  expect(cells.find(node => node.props.ariaLabel.includes('已知 1 / 1 条'))!.props.ariaLabel).toContain('24.02 kWh')
+  await act(async () => cells.find(node => node.props.ariaLabel.includes('已知 1 / 1 条'))!.props.onClick())
+  expect(chart.findByProps({ className: 'charge-activity-selection' }).children.join('')).toContain('24.02 kWh')
   expect(chart.findAllByProps({ className: 'muted' }).some(node => node.children.join('').includes('已返回的 1 条记录'))).toBe(true)
   await detail()
   const panel = tree!.root.findByProps({ className: 'history-detail-overlay' })
   expect(panel.findByProps({ ariaLabel: '充电费用 ≈¥27.38' })).toBeDefined()
   expect(shown()).toContain('费用来源：按 App 默认 ¥1.14/kWh 与合格电池充入量估算')
   expect(panel.findAllByType('map' as React.ElementType)).toHaveLength(0)
-  expect(panel.findAllByProps({ className: 'section-title' }).map(node => node.children.join(''))).not.toContain('电压与电流')
+  expect(panel.findByProps({ ariaLabel: '报告电压 230 V' })).toBeDefined()
+  expect(panel.findByProps({ ariaLabel: '报告电流 0 A' })).toBeDefined()
 })
 it('does not estimate a charge when its currency is explicitly unknown', async () => {
   const unknownCurrency = { ...charge, source: 'teslamate_archive', cost: null, currency_code: null, energy_contract: null, charge_energy_added: 10 }
@@ -354,6 +372,20 @@ it('does not estimate a charge when its currency is explicitly unknown', async (
       : response({ charges: [unknownCurrency], meta: { page: 1, show: 20, total_pages: 1 } }))
   await mount()
   expect(tree!.root.findByProps({ className: 'history-record' }).findByProps({ ariaLabel: '充电费用 暂无数据' })).toBeDefined()
+})
+it('keeps missing energy, SOC, cost and power unknown in the overview', async () => {
+  const unknown = { ...charge, cost: null, currency_code: null, charger_power: null, energy_contract: null,
+    battery_details: { start_battery_level: null, end_battery_level: null }, charge_details: [] }
+  platform.request.mockImplementation(async ({ url }: { url: string }) => url.endsWith('/cars')
+    ? response({ cars: [{ car_id: 7, vehicle_uid: 'uid7' }] }) : url.endsWith('/current') ? response({ charge: null })
+      : url.endsWith('/charges/1') ? response({ charge: unknown })
+        : response({ charges: [unknown], meta: { page: 1, show: 20, total_pages: 1 } }))
+  await mount(); await detail()
+  const overview = tree!.root.findByProps({ className: 'card charge-detail-intro' })
+  for (const label of ['电池充入 暂无数据', 'SOC 暂无数据', '充电费用 暂无数据', '报告功率 暂无数据']) {
+    expect(overview.findByProps({ ariaLabel: label }), label).toBeDefined()
+  }
+  expect(tree!.root.findByProps({ ariaLabel: '充电详情' }).findAllByType('map' as React.ElementType)).toHaveLength(0)
 })
 it('shows a map only for a valid online detail coordinate', async () => {
   const at = { ...charge, latitude: 31.2, longitude: 121.5 }
@@ -367,6 +399,13 @@ it('shows a map only for a valid online detail coordinate', async () => {
   const map = tree!.root.findByType('map' as React.ElementType)
   expect(map.props.latitude).not.toBe(31.2)
   expect(map.props.longitude).not.toBe(121.5)
+  const panel = tree!.root.findByProps({ className: 'history-detail-surface' })
+  const sections = panel.findAll(node => node.props.className === 'card charge-detail-map-card' || node.props.className === 'card charge-detail-intro')
+  expect(sections.map(node => node.props.className)).toEqual(['card charge-detail-map-card', 'card charge-detail-intro'])
+  const overview = sections[1]
+  for (const label of ['电池充入 8 kWh', 'SOC 20→80%', '充电费用 0 EUR', '报告功率 0 kW']) {
+    expect(overview.findByProps({ ariaLabel: label }), label).toBeDefined()
+  }
   expect(JSON.stringify([...platform.values.values()])).not.toContain('31.2')
 })
 it('keeps a missing CNY bill estimate separate from an actual foreign-currency zero in the summary', async () => {
@@ -394,7 +433,7 @@ it('keeps a missing CNY bill estimate separate from an actual foreign-currency z
 it.each([
   { currency: 'CNY', defaultPrice: 0, card: '充电费用 ≈¥0.00', chart: '≈¥0.00', source: '已保存默认电价 ¥0/kWh' },
   { currency: 'EUR', defaultPrice: 2, card: '充电费用 ≈20.00 EUR', chart: '≈20.00 EUR', source: '已保存默认电价 2 EUR/kWh' },
-])('uses scoped saved $currency default price $defaultPrice before the App fallback, without using TOU rates', async ({ currency, defaultPrice, card, chart, source }) => {
+])('uses scoped saved $currency default price $defaultPrice before the App fallback, without using TOU rates', async ({ currency, defaultPrice, card, source }) => {
   const { tariffKey } = await import('../../domain/tariff')
   platform.values.set(tariffKey('owner', origin), { currency, defaultPrice, enabled: true, peak: 9, flat: 8, valley: 7, timeZone: 'Asia/Shanghai' })
   const legacy = { ...charge, source: 'teslamate_archive', cost: null, currency_code: null, energy_contract: null, charge_energy_added: 10, charge_details: [] }
@@ -409,9 +448,9 @@ it.each([
   const row = tree!.root.findByProps({ className: 'history-record' })
   expect(row.findByProps({ ariaLabel: card })).toBeDefined()
   expect(shown()).toContain(source)
-  await click('费用')
-  const cell = tree!.root.findAllByType('button').find(node => node.props.className?.includes('charge-activity-cell'))!
-  expect(cell.props.ariaLabel).toContain(chart.startsWith('≈¥') ? chart.replace('≈¥', '含估算 ') + ' CNY' : chart.replace('≈', '含估算 '))
+  const cell = tree!.root.findAllByType('button').find(node => node.props.className?.includes('charge-activity-cell') && node.props.ariaLabel.includes('已知 1 / 1 条'))!
+  expect(cell.props.ariaLabel).toContain('10.00 kWh')
+  expect(tree!.root.findAllByProps({ className: 'charge-chart-tabs' })).toHaveLength(1)
   await detail()
   expect(shown()).toContain(`费用来源：按 ${source} 与合格电池充入量估算`)
   const { historyCacheKey, readHistoryCache } = await import('../../services/history_cache')
@@ -449,4 +488,136 @@ it('shows TeslaMate unfilled raw zero as an estimate until the owner explicitly 
   await detail()
   expect(shown()).toContain('费用来源：按 App 默认 ¥1.14/kWh 与合格电池充入量估算')
   expect(tree!.root.findAllByType('button').some(node => node.children.join('') === '编辑本机费用')).toBe(false)
+})
+
+it.each([false, true])('labels cross-channel inference and excludes source conflicts (conflict=%s)', async conflict => {
+  const partial = { ...charge, charge_details: [
+    { date: start, battery_level: 20 },
+    { date: '2026-10-14T00:10:00Z', charger_details: { charger_power: 0 } },
+    { date: end, battery_level: 80 },
+    ...(conflict ? [{ date: '2026-10-14T00:20:00Z', source: 'foreign-source', charger_details: { charger_power: 999 } }] : []),
+  ] }
+  platform.request.mockImplementation(async ({ url }: { url: string }) => {
+    if (url.endsWith('/cars')) return response({ cars: [{ car_id: 7, vehicle_uid: 'uid7' }] })
+    if (url.endsWith('/current')) return response({ charge: null })
+    if (url.endsWith('/charges/1')) return response({ charge: partial })
+    return response({ charges: [partial], meta: { page: 1, show: 20, total_pages: 1 } })
+  })
+  await mount(); await detail()
+  const panel = tree!.root.findByProps({ className: 'history-detail-overlay' })
+  const curves = panel.findAllByProps({ className: 'card analysis-curve' })
+  const soc = curves.find(curve => curve.findAllByProps({ className: 'section-title' }).some(title => title.children.join('') === '充电电量变化'))!
+  const socText = soc.findAllByType('text').map(node => node.children.join('')).join(' ')
+  if (conflict) expect(socText).not.toContain('虚线连接观测点')
+  else expect(socText).toContain('虚线连接观测点')
+  expect(panel.findByProps({ ariaLabel: '样本最高功率 0 kW' })).toBeDefined()
+  expect(panel.findAllByType('text').map(node => node.children.join('')).join(' ')).not.toContain('999')
+})
+
+it.each([
+  ['without average power', null],
+  ['with low average power', 8],
+  ['with high average power', 20],
+] as const)('does not infer a charging mode %s', async (_name, energy) => {
+  const row = { ...charge, source: 'teslamate_archive', charge_type: null, energy_contract: null, charge_energy_added: energy, cost: 4 }
+  platform.request.mockImplementation(async ({ url }: { url: string }) => {
+    if (url.endsWith('/cars')) return response({ cars: [{ car_id: 7, vehicle_uid: 'uid7' }] })
+    if (url.endsWith('/current')) return response({ charge: null })
+    if (url.endsWith('/charges/1')) return response({ charge: row })
+    return response({ charges: [row], meta: { page: 1, show: 20, total_pages: 1 } })
+  })
+  await mount()
+  const record = tree!.root.findByProps({ className: 'history-record' })
+  expect(record.findByProps({ className: 'history-charge-mode history-charge-mode-unknown' }).children.join('')).toBe('模式未确认')
+  expect(record.findAllByProps({ className: 'history-charge-submetrics' }).some(node => node.children.join('').includes('均功 ≈'))).toBe(energy !== null)
+  await detail()
+  expect(shown()).toContain('模式未确认')
+})
+
+it('keeps displayed charging modes consistent with AC and DC filters', async () => {
+  const legacy = { ...charge, source: 'teslamate_archive', energy_contract: null, cost: 4, charge_energy_added: 8 }
+  const rows = [
+    { ...legacy, charge_id: 1, session_id: 'synthetic-ac', charge_type: 'ac' },
+    { ...legacy, charge_id: 2, session_id: 'synthetic-dc', charge_type: 'dc' },
+    { ...legacy, charge_id: 3, session_id: 'synthetic-unknown-high', charge_type: null, charge_energy_added: 20 },
+    { ...legacy, charge_id: 4, session_id: 'synthetic-unknown-empty', charge_type: null, charge_energy_added: null },
+  ]
+  platform.request.mockImplementation(async ({ url }: { url: string }) => {
+    if (url.endsWith('/cars')) return response({ cars: [{ car_id: 7, vehicle_uid: 'uid7' }] })
+    if (url.endsWith('/current')) return response({ charge: null })
+    return response({ charges: rows, meta: { page: 1, show: 20, total_pages: 1 } })
+  })
+  await mount()
+  const records = () => tree!.root.findAllByProps({ className: 'history-record' })
+  const displayedAC = records().filter(row => row.findAllByProps({ className: 'history-charge-mode history-charge-mode-ac' }).length).length
+  const displayedDC = records().filter(row => row.findAllByProps({ className: 'history-charge-mode history-charge-mode-dc' }).length).length
+  expect(displayedAC).toBe(1)
+  expect(displayedDC).toBe(1)
+  expect(records().filter(row => row.findAllByProps({ className: 'history-charge-mode history-charge-mode-unknown' }).length)).toHaveLength(2)
+  const selector = () => tree!.root.findAllByType('picker' as React.ElementType).find(node => node.props.range?.join('|') === '全部|AC|DC')!
+  await act(async () => selector().props.onChange({ detail: { value: 1 } })); await flush()
+  expect(records()).toHaveLength(displayedAC)
+  await act(async () => selector().props.onChange({ detail: { value: 2 } })); await flush()
+  expect(records()).toHaveLength(displayedDC)
+})
+
+it.each([
+  ['reported AC', { ...charge, source: 'teslamate_archive', energy_contract: null, charge_type: 'ac', charge_energy_added: 8 }, 'ac', 'AC 充电'],
+  ['reported DC', { ...charge, source: 'teslamate_archive', energy_contract: null, charge_type: 'dc', charge_energy_added: 8 }, 'dc', 'DC 充电'],
+  ['reported fast charger', { ...charge, source: 'teslamate_archive', energy_contract: null, charge_type: null, fast_charger_present: true, charge_energy_added: 8 }, 'dc', 'DC 充电'],
+  ['verified AC contract', charge, 'ac', 'AC 充电'],
+  ['verified DC contract', { ...charge, charge_type: 'dc', energy_contract: { ...charge.energy_contract, charge_mode: 'dc', ac_input: null } }, 'dc', 'DC 充电'],
+  ['invalid contract and weak AC report', { ...charge, energy_contract: { ...charge.energy_contract, charge_mode_evidence: 'unverified' } }, 'unknown', '模式未确认'],
+] as const)('uses explicit evidence for %s', async (_name, row, mode, label) => {
+  platform.request.mockImplementation(async ({ url }: { url: string }) => {
+    if (url.endsWith('/cars')) return response({ cars: [{ car_id: 7, vehicle_uid: 'uid7' }] })
+    if (url.endsWith('/current')) return response({ charge: null })
+    if (url.endsWith('/charges/1')) return response({ charge: row })
+    return response({ charges: [row], meta: { page: 1, show: 20, total_pages: 1 } })
+  })
+  await mount()
+  expect(tree!.root.findByProps({ className: `history-charge-mode history-charge-mode-${mode}` }).children.join('')).toBe(label)
+  await detail()
+  expect(shown()).toContain(label)
+})
+
+it('does not revive a failed mode contract from a weak cached AC label', async () => {
+  await mount(); await act(async () => { platform.hide() })
+  const cached = platform.values.get(historyCacheKey('charges', 'owner', 'uid7', origin)) as { items: Array<{ chargeMode: string; energy: { chargeMode: string; evidence: { charge_mode_evidence: string } } }> }
+  expect(cached.items).toHaveLength(1)
+  cached.items[0].chargeMode = 'ac'
+  cached.items[0].energy.chargeMode = 'ac'
+  cached.items[0].energy.evidence.charge_mode_evidence = 'unverified'
+  offline = true
+  await act(async () => { platform.show() }); await flush()
+  expect(tree!.root.findByProps({ className: 'history-charge-mode history-charge-mode-unknown' }).children.join('')).toBe('模式未确认')
+  await detail()
+  expect(shown()).toContain('模式未确认')
+})
+
+it.each([
+  ['missing', undefined, undefined, 8, '币种未知'],
+  ['explicit null', null, undefined, 8, '币种未知'],
+  ['invalid', 'INVALID', undefined, 8, '币种未知'],
+  ['conflicting', 'USD', 'EUR', 8, '币种未知'],
+  ['actual zero without currency', undefined, undefined, 0, '币种未知'],
+  ['CNY', 'CNY', undefined, 8, '¥'],
+  ['foreign currency', 'EUR', undefined, 8, 'EUR'],
+] as const)('shows unit cost with %s currency without inventing a currency', async (_name, code, alternate, cost, expected) => {
+  const row: Record<string, unknown> = { ...charge, cost, currency_code: code, currency: alternate }
+  if (code === undefined) delete row.currency_code
+  if (alternate === undefined) delete row.currency
+  platform.request.mockImplementation(async ({ url }: { url: string }) => {
+    if (url.endsWith('/cars')) return response({ cars: [{ car_id: 7, vehicle_uid: 'uid7' }] })
+    if (url.endsWith('/current')) return response({ charge: null })
+    if (url.endsWith('/charges/1')) return response({ charge: row })
+    return response({ charges: [row], meta: { page: 1, show: 20, total_pages: 1 } })
+  })
+  await mount()
+  const record = tree!.root.findByProps({ className: 'history-record' })
+  const price = record.findByProps({ className: 'history-charge-submetrics' }).children.join('')
+  expect(price).toContain(expected)
+  expect(price).toContain(cost === 0 ? '0.00/kWh' : '1.00/kWh')
+  if (expected === '币种未知') expect(price).not.toContain('¥')
+  expect(record.findByProps({ ariaLabel: `充电费用 ${cost} ${expected === '币种未知' ? expected : code}` })).toBeDefined()
 })

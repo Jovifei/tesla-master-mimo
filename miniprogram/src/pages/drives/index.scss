@@ -122,24 +122,55 @@
   }
   .history-record-header {
     display: flex;
-    flex-direction: row;
-    justify-content: space-between;
     align-items: center;
+    gap: 12rpx;
     margin-bottom: 8rpx;
+  }
+  .history-record-leading {
+    flex: none;
+    width: 64rpx;
+    height: 64rpx;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--apple-teal-soft, #e4f2f2);
+    .visual-icon { width: 32rpx; height: 32rpx; }
+  }
+  .history-record-content {
+    flex: 1;
+    min-width: 0;
+    .history-route { margin: 0 0 6rpx; }
   }
   .history-record-date {
     display: block;
-    color: #6b7280;
+    color: var(--apple-label-secondary, #6b7280);
     font-size: 24rpx;
   }
   .history-record-evidence {
+    flex: none;
+    max-width: 35%;
     display: flex;
-    justify-content: flex-end;
-    align-items: center;
-    gap: 10rpx;
-    margin-top: 6rpx;
-    .history-source { order: -1; margin-right: auto; }
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4rpx;
+    text-align: right;
   }
+  .history-record-distance {
+    font-size: 28rpx;
+    font-weight: 600;
+    color: var(--apple-label-primary, #1f2937);
+  }
+  .history-soc {
+    font-size: 24rpx;
+    color: var(--apple-teal, #12636c);
+  }
+  .history-record-chevron {
+    flex: none;
+    color: var(--apple-label-tertiary, #aeb5be);
+    font-size: 32rpx;
+  }
+  .history-source { order: -1; margin-right: auto; }
   .history-soc {
     padding: 5rpx 14rpx;
     border-radius: 999rpx;
@@ -320,8 +351,8 @@
 
   .history-record-metrics .metric:nth-child(1) .visual-icon { color: #10b981; background: rgba(16, 185, 129, 0.12) !important; }
   .history-record-metrics .metric:nth-child(2) .visual-icon { color: #0284c7; background: rgba(2, 132, 199, 0.12) !important; }
-  .history-record-metrics .metric:nth-child(3) .visual-icon { color: #6366f1; background: rgba(99, 102, 241, 0.12) !important; }
-  .history-record-metrics .metric:nth-child(4) .visual-icon { color: #d97706; background: rgba(217, 119, 6, 0.12) !important; }
+  .history-record-metrics .metric:nth-child(3) .visual-icon { color: #d97706; background: rgba(217, 119, 6, 0.12) !important; }
+  .history-record-metrics .metric:nth-child(4) .visual-icon { color: #6366f1; background: rgba(99, 102, 241, 0.12) !important; }
 
   .history-summary-primary .metric:nth-child(1) .visual-icon { color: #0284c7; background: rgba(2, 132, 199, 0.12) !important; }
   .history-summary-primary .metric:nth-child(2) .visual-icon { color: #059669; background: rgba(5, 150, 105, 0.12) !important; }

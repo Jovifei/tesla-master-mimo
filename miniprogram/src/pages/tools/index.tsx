@@ -26,15 +26,16 @@ import { DEFAULT_TARIFF_PERIODS, parseTariffPeriods, validTariffPeriods, readTar
 import { chargeEstimatePrice, overlayChargeCosts } from '../../services/charge_cost'
 import { emptyHistoryQuery, filterHistory, selectHistoryDate } from '../../domain/history_query'
 import { isHistoryQuarantined, sameHistoryIdentity } from '../../domain/history'
+import { sameEnergyInstant } from '../../domain/drive_energy'
 import { buildParkedWindows } from '../../domain/analysis'
 import { createParkedProofVerifier, parkedProofKey } from '../../services/parked_proof'
 import TpmsSettingsPanel from '../../components/TpmsSettingsPanel'
 import './index.scss'
 
-const titles: Record<string, string> = { settings: '设置', tariff: '分时电价配置', location: '车辆位置', temperature: '温度趋势', tpms: '胎压趋势', tpmsSettings: '每辆车的冷态胎压设置',
+const titles: Record<string, string> = { settings: '设置', language: '语言与单位', maps: '地图与导航', localData: '本机数据', permissions: '提醒与权限', tariff: '分时电价配置', location: '车辆位置', temperature: '温度趋势', tpms: '胎压趋势', tpmsSettings: '每辆车的冷态胎压设置',
   sentry: '哨兵历史', updates: '软件', export: '导出数据', report: '年度报告', countries: '已到访国家', regions: '已到访地区', whereWasI: '我曾在哪里', about: '关于', vehiclePreview: '3D 车辆' }
 const blankTariff = () => ({ currency: '', peak: '', flat: '', valley: '', enabled: true, defaultPrice: '', peakRanges: DEFAULT_TARIFF_PERIODS.peak, flatRanges: DEFAULT_TARIFF_PERIODS.flat, valleyRanges: DEFAULT_TARIFF_PERIODS.valley })
-const noFetch = new Set(['settings', 'tariff', 'about', 'vehiclePreview'])
+const noFetch = new Set(['settings', 'language', 'maps', 'localData', 'permissions', 'tariff', 'about', 'vehiclePreview'])
 function previewTouches(event: unknown): Array<{ clientX: number; clientY: number }> {
   const value = event as { touches?: Array<{ clientX: number; clientY: number }>; detail?: { touches?: Array<{ clientX: number; clientY: number }> } }
   return (value.touches || value.detail?.touches || []).slice(0, 2).filter(touch => Number.isFinite(touch.clientX) && Number.isFinite(touch.clientY))
@@ -126,7 +127,7 @@ export default function ToolsPage() {
   useDidHide(() => { pageVisible.current = false; invalidate() })
   useUnload(() => { pageVisible.current = false; invalidate() })
   const session = readAppSession(Taro)
-  const storageUsage = kind === 'settings' ? localStorageUsage(Taro) : null
+  const storageUsage = kind === 'localData' ? localStorageUsage(Taro) : null
   const costScope = car && session?.userId ? { userId: session.userId, origin: getApiOrigin(), stableId: car.stableId } : null
   const displayCharges = costScope ? overlayChargeCosts(Taro, costScope, charges, chargeEstimatePrice(Taro, costScope)) : charges
   const report = annualReport(drives, displayCharges, year)
@@ -171,12 +172,16 @@ export default function ToolsPage() {
     const valid = () => { try { return epoch.current === operation && scopeKey() === scope } catch { return false } }
     setLoading(true); setHistoricPosition(null); setHistoricReason(null); setError(null)
     try {
-      const within = (row: Drive | Charge) => !isHistoryQuarantined(row) && Date.parse(row.startDate || '') <= at && Date.parse(row.endDate || '') >= at
+      const within = (row: Drive | Charge) => !isHistoryQuarantined(row) && sameEnergyInstant(row.startDate, row.startDate) && sameEnergyInstant(row.endDate, row.endDate) &&
+        Date.parse(row.startDate || '') < Date.parse(row.endDate || '') && Date.parse(row.startDate || '') <= at && Date.parse(row.endDate || '') >= at
+      const sameWindow = (left: Drive | Charge, right: Drive | Charge) => !isHistoryQuarantined(right) &&
+        sameEnergyInstant(left.startDate, right.startDate) && sameEnergyInstant(left.endDate, right.endDate)
       const drive = drives.find(within), charge = displayCharges.find(within)
       if (drive) {
         const evidence = await analysisApi.getDriveEvidence(car, drive.id, { isCurrent: valid })
         if (!valid()) return
         if (!evidence.drive || !sameHistoryIdentity(drive, evidence.drive)) { setHistoricReason('行程来源信息不一致，不能显示历史位置。'); return }
+        if (!sameWindow(drive, evidence.drive) || !within(evidence.drive)) { setHistoricReason('行程时间窗或记录状态不一致，不能显示历史位置。'); return }
         const nearest = evidence.points.filter(point => mapCoordinate(point.latitude, point.longitude)).sort((a, b) => Math.abs(Date.parse(a.date) - at) - Math.abs(Date.parse(b.date) - at))[0]
         if (nearest) setHistoricPosition({ latitude: nearest.latitude!, longitude: nearest.longitude!, at: nearest.date, source: evidence.source, label: '最近已有的行程位置采样（非插值）' })
         else setHistoricReason('该行程未提供合格的位置采样，不能重建请求时刻的位置。')
@@ -185,6 +190,7 @@ export default function ToolsPage() {
         if (!valid()) return
         const point = evidence.charge
         if (!point || !sameHistoryIdentity(charge, point)) { setHistoricReason('充电来源信息不一致，不能显示历史位置。'); return }
+        if (!sameWindow(charge, point) || !within(point)) { setHistoricReason('充电时间窗或记录状态不一致，不能显示历史位置。'); return }
         if (point && mapCoordinate(point.latitude, point.longitude)) setHistoricPosition({ latitude: point.latitude!, longitude: point.longitude!, at: null, source: point.source, label: '充电记录的地点（未提供逐点位置时间）' })
         else setHistoricReason('该充电记录没有有效的地点坐标。')
       } else {
@@ -199,12 +205,22 @@ export default function ToolsPage() {
           if (older.length !== 1) { setHistoricReason('行程来源信息不一致，不能显示历史位置。'); return }
           const detail = await matelinkApi.getDriveDetail(car.id, parked.olderId, car)
           if (!valid()) return
-          if (detail && sameHistoryIdentity(older[0], detail) && mapCoordinate(detail.endLatitude, detail.endLongitude)) setHistoricPosition({ latitude: detail.endLatitude!, longitude: detail.endLongitude!, at: detail.endDate, source: detail.source, label: '相邻行程间可用的起点位置报告（非请求时刻独立位置）' })
+          if (detail && sameHistoryIdentity(older[0], detail) && sameWindow(older[0], detail) && sameEnergyInstant(detail.endDate, parked.startDate) && mapCoordinate(detail.endLatitude, detail.endLongitude)) setHistoricPosition({ latitude: detail.endLatitude!, longitude: detail.endLongitude!, at: detail.endDate, source: detail.source, label: '相邻行程间可用的起点位置报告（非请求时刻独立位置）' })
           else setHistoricReason('相邻行程之间缺少合格位置，不能推断驻车时刻位置。')
         } else setHistoricReason('当前已读历史没有覆盖该时刻的合格记录；不代表当时没有行程。')
       }
     } catch (reason) { if (valid()) setError(reason instanceof ApiError ? reason.message : '历史位置暂时无法读取') }
     finally { if (valid()) setLoading(false) }
+  }
+  const logout = async () => {
+    if (loading) return
+    const scope = scopeKey(), operation = epoch.current
+    const result = await Taro.showModal({ title: '退出登录', content: '仅结束当前会话，不删除车辆历史、费用或外观偏好。', confirmText: '退出登录' })
+    if (!result.confirm || operation !== epoch.current || scope !== scopeKey()) return
+    setLoading(true); setError(null)
+    try { await matelinkApi.logout(); if (pageVisible.current && !readAppSession(Taro)) await load() }
+    catch { if (pageVisible.current) setError('退出未完成，请重试；已有历史保留。') }
+    finally { if (pageVisible.current) setLoading(false) }
   }
   const coordinate = mapCoordinate(status?.location?.latitude, status?.location?.longitude)
   const historicCoordinate = mapCoordinate(historicPosition?.latitude, historicPosition?.longitude)
@@ -214,7 +230,20 @@ export default function ToolsPage() {
     {MOCK_FIXTURE_ENABLED ? <View className="card fixture-data-notice" style={{ backgroundColor: '#fff7ed', borderColor: '#c2410c' }}><Text className="section-title" style={{ color: '#9a3412', marginBottom: 0 }}>合成测试数据，未连接真实车辆</Text></View> : null}
     {!noFetch.has(kind) ? <Button className="button button-secondary" loading={loading} onClick={() => { void load() }}>刷新数据</Button> : null}
     {error ? <Text className="error">{error}</Text> : null}
-    {kind === 'settings' ? <><PresentationPreferences />
+    {kind === 'settings' ? <>
+      <View className="card settings-account">
+        <SectionHeading icon="account" title="账号与连接" />
+        <Text className="muted">{session ? MOCK_FIXTURE_ENABLED ? '合成会话' : '当前微信会话可用' : '尚未登录'} · Tesla 关联与车辆权限独立确认</Text>
+        <Button className="button" onClick={() => Taro.switchTab({ url: '/pages/me/index' })}>{session ? '账号与官方授权' : '登录 MateLink'}</Button>
+        {session ? <Button className="button button-secondary" loading={loading} onClick={logout}>退出登录</Button> : null}
+      </View>
+      <PresentationPreferences />
+      <View className="card settings-directory">
+        {([['language', '语言与单位'], ['tpmsSettings', '胎压提醒设置'], ['maps', '地图与导航'], ['tariff', '分时电价设置'], ['permissions', '提醒与权限'], ['localData', '本机数据与升级'], ['about', '关于 MateLink']] as const).map(([target, label]) =>
+          <Button key={target} className="settings-nav-row" onClick={() => Taro.navigateTo({ url: `/pages/tools/index?kind=${target}` })}><Text>{label}</Text><Text>›</Text></Button>)}
+      </View>
+    </> : null}
+    {kind === 'localData' ? <>
       <View className="card local-data-status">
         <SectionHeading icon="shield" title="本机数据与升级" />
         <Text className="muted">正常升级保留有效登录、费用、手动旅程和设置；不清空历史，也不要求重新授权。退出登录与删除账号是不同操作。</Text>
@@ -222,20 +251,22 @@ export default function ToolsPage() {
           : <Text className="muted">暂时无法读取存储状态；已有资料不会因此删除。</Text>}
         <Text className="muted">空间不足时停止新增缓存并提示，不自动删除手填费用或手动旅程。卸载微信、主动清理存储与授权撤销不属于正常升级；摘要导出不是完整恢复备份。</Text>
       </View>
-      <View className="card">
-        <SectionHeading icon="account" title="账号与连接" /><Text className="muted">{session ? MOCK_FIXTURE_ENABLED ? '合成会话' : '当前微信会话可用' : '尚未登录'} · Tesla 关联与车辆权限独立确认</Text>
-        <Button className="button button-secondary" onClick={() => Taro.switchTab({ url: '/pages/me/index' })}>账号与授权</Button>
-      </View>
-      <View className="card">
-        <SectionHeading icon="settings" title="显示与车辆设置" /><Text className="muted">跟随系统明暗；距离 km、速度 km/h、温度 °C、胎压 bar。按当前响应单位归一后显示。</Text>
-        <Button className="button button-secondary" onClick={() => Taro.navigateTo({ url: '/pages/tools/index?kind=tariff' })}>分时电价设置</Button><Button className="button button-secondary" onClick={() => Taro.navigateTo({ url: '/pages/tools/index?kind=tpmsSettings' })}>胎压提醒设置</Button>
-      </View>
-      <View className="card">
-        <SectionHeading icon="shield" title="提醒与权限" /><Text className="muted">前台新行程/充电提示自动去重。微信订阅消息尚无已验证模板和服务端发送能力，订阅同意/拒绝与真实送达尚未验收。</Text>
-        <Button className="button button-secondary" onClick={() => Taro.openSetting()}>查看微信权限设置</Button>
-        <Button className="button button-secondary" onClick={() => Taro.navigateTo({ url: '/pages/tools/index?kind=about' })}>关于 MateLink</Button>
-      </View>
     </> : null}
+    {kind === 'language' ? <View className="card">
+      <SectionHeading icon="settings" title="语言与单位" />
+      <Text className="status-value">简体中文</Text><Text className="muted">当前小程序提供简体中文；尚未提供的翻译不显示为可切换项。</Text>
+      <Text className="muted">与 App 对齐：距离 km，速度 km/h，能耗 kWh/100km，温度 °C；胎压使用已确认的 bar/psi，不猜测单位。</Text>
+    </View> : null}
+    {kind === 'maps' ? <View className="card">
+      <SectionHeading icon="map" title="地图与导航" />
+      <Text className="muted">小程序使用微信原生地图与地点导航，不读取手机定位来替代车辆位置。</Text>
+      <Text className="muted">App 的高德密钥配置不在小程序中重复保存。仅对已有有效车辆或站点坐标开放导航；发送车机导航需要独立权限。</Text>
+    </View> : null}
+    {kind === 'permissions' ? <View className="card">
+      <SectionHeading icon="shield" title="提醒与权限" />
+      <Text className="muted">前台新行程与充电提示自动去重。微信订阅通知尚未接入，不能将页面提示当作后台消息送达。</Text>
+      <Button className="button button-secondary" onClick={() => Taro.openSetting()}>查看微信权限设置</Button>
+    </View> : null}
     {kind === 'tariff' ? <View className="card"><SectionHeading icon="energy" title="分时电价" /><Text className="muted">可按 App 编辑峰、平、谷价格与时段；本机配置仅作估算依据，不覆盖服务端实际费用。</Text>
       {(['currency', 'peak', 'flat', 'valley'] as const).map(key => <View className="tariff-field" key={key}><Text>{({ currency: '币种（例如 CNY）', peak: '峰价 / kWh', flat: '平价 / kWh', valley: '谷价 / kWh' })[key]}</Text><Input value={tariff[key]} type={key === 'currency' ? 'text' : 'digit'} onInput={event => setTariff({ ...tariff, [key]: key === 'currency' ? event.detail.value.toUpperCase() : event.detail.value })} /></View>)}
       <View className="status"><Text>启用分时电价</Text><Switch checked={tariff.enabled} onChange={event => setTariff({ ...tariff, enabled: event.detail.value })} /></View><View className="tariff-field"><Text>默认充电电价 / kWh（缺账单估算，关闭分时时也使用）</Text><Input value={tariff.defaultPrice} type="digit" onInput={event => setTariff({ ...tariff, defaultPrice: event.detail.value })} /></View>{(['peakRanges', 'flatRanges', 'valleyRanges'] as const).map(key => <View className="tariff-field" key={key}><Text>{({ peakRanges: '峰段小时', flatRanges: '平段小时', valleyRanges: '谷段小时' })[key]}</Text><Input value={tariff[key]} onInput={event => setTariff({ ...tariff, [key]: event.detail.value })} /></View>)}<Text className="muted">时段左闭右开、覆盖24小时且不重叠；跨午夜分两段。电价记录保存时本机IANA时区，估算不随设备移动改时区。关闭分时后只按明确默认电价估算。</Text><Button className="button button-secondary" onClick={() => setTariff({ ...tariff, currency: 'CNY', peak: '1', flat: '.7', valley: '.3', peakRanges: DEFAULT_TARIFF_PERIODS.peak, flatRanges: DEFAULT_TARIFF_PERIODS.flat, valleyRanges: DEFAULT_TARIFF_PERIODS.valley, enabled: true })}>恢复 App 默认时段和参考价格</Button>

@@ -195,3 +195,91 @@ it('bounds charge samples and rejects a delayed former account response', async 
   release(response({ charge: { charge_id: 3 } }))
   await expect(pending).rejects.toMatchObject({ code: 'session_changed' })
 })
+
+
+it('retains per-channel presence and identity, and projects only qualified cross-channel gaps', async () => {
+  const { car, analysisApi } = await setup()
+  const before = JSON.stringify([...platform.values])
+  const date = (minute: number) => `2026-10-14T00:${String(minute).padStart(2, '0')}:00Z`
+  platform.request.mockResolvedValueOnce(response({ units: { unit_of_temperature: 'unsupported' }, charge: {
+    charge_id: 3, source: 'telemetry_mqtt', source_instance_id: 'collector-a', start_date: date(0), end_date: date(30),
+    charge_details: [
+      { date: date(0), battery_level: 0 },
+      { date: date(1), charger_details: { charger_power: -2 } },
+      { date: date(2), battery_level: 50 },
+      { date: date(3), battery_level: null, charger_details: { charger_power: 0 } },
+      { date: date(4), battery_level: 55 },
+      { date: date(5), charger_details: null },
+      { date: date(6), battery_level: 'bad', outside_temp: 20, charger_details: { charger_power: 0, charger_voltage: null, charger_actual_current: -1 } },
+      { date: date(7), battery_level: 60, source: 'other' },
+      { date: date(8), battery_level: 65 },
+      { date: date(9), battery_level: 66, source_instance_id: 'collector-b' },
+    ],
+  } }))
+  const evidence = await analysisApi.getChargeEvidence(car, '3')
+  expect(evidence.hasUnplaceableSamples).toBe(false)
+  expect(evidence.points[0]).toMatchObject({ batteryLevel: 0, powerKw: null, fieldState: { batteryLevel: 'reported', powerKw: 'absent', voltageV: 'absent' } })
+  expect(evidence.points[1]).toMatchObject({ batteryLevel: null, powerKw: -2, fieldState: { batteryLevel: 'absent', powerKw: 'reported' } })
+  expect(evidence.points[3]).toMatchObject({ batteryLevel: null, powerKw: 0, fieldState: { batteryLevel: 'invalid', powerKw: 'reported' } })
+  expect(evidence.points[5].fieldState).toMatchObject({ powerKw: 'invalid', voltageV: 'invalid', currentA: 'invalid' })
+  expect(evidence.points[6]).toMatchObject({ batteryLevel: null, powerKw: 0, currentA: -1, temperatureC: null, fieldState: { batteryLevel: 'invalid', powerKw: 'reported', voltageV: 'invalid', currentA: 'reported', temperatureC: 'invalid' } })
+  expect(evidence.points[7].sourceConflict).toBe(true)
+  expect(evidence.points[9].sourceConflict).toBe(true)
+  const { selectCurveSamples } = await import('../domain/analysis')
+  const series = evidence.points.map(point => ({ time: Date.parse(point.date), value: point.batteryLevel, fieldState: point.fieldState.batteryLevel,
+    otherChannel: Object.entries(point.fieldState).some(([key, state]) => key !== 'batteryLevel' && state === 'reported'), sourceConflict: point.sourceConflict }))
+  const plot = selectCurveSamples(series, { inferAcrossOtherChannels: true, forceDisconnected: evidence.hasUnplaceableSamples })
+  expect(plot.points.map(p => [p.index, p.value, !!p.inferredBefore, p.breakBefore])).toEqual([
+    [0, 0, false, true], [2, 50, true, true], [4, 55, false, true], [8, 65, false, true],
+  ])
+  expect(JSON.stringify([...platform.values])).toBe(before)
+})
+
+it('marks dropped invalid timestamps and truncation as unplaceable for safe plotting', async () => {
+  const { car, analysisApi } = await setup()
+  const charge = { charge_id: 3, source: 'telemetry_mqtt', start_date: '2026-10-14T00:00:00Z', end_date: '2026-10-14T01:00:00Z' }
+  platform.request.mockResolvedValueOnce(response({ charge: { ...charge, charge_details: [
+    { date: '2026-10-14T00:01:00Z', battery_level: 0 }, { date: 'invalid', battery_level: null }, { date: '2026-10-14T00:03:00Z', battery_level: 50 },
+  ] } }))
+  const invalid = await analysisApi.getChargeEvidence(car, '3')
+  expect(invalid.points).toHaveLength(2)
+  expect(invalid.hasUnplaceableSamples).toBe(true)
+  const { selectCurveSamples } = await import('../domain/analysis')
+  expect(selectCurveSamples(invalid.points.map(p => ({ time: Date.parse(p.date), value: p.batteryLevel, fieldState: p.fieldState.batteryLevel })),
+    { inferAcrossOtherChannels: true, forceDisconnected: invalid.hasUnplaceableSamples }).points.every(p => p.breakBefore)).toBe(true)
+  platform.request.mockResolvedValueOnce(response({ charge: { ...charge, charge_details: Array.from({ length: 20_001 }, () => ({ date: '2026-10-14T00:30:00Z', battery_level: 50 })) } }))
+  const bounded = await analysisApi.getChargeEvidence(car, '3')
+  expect(bounded.points).toHaveLength(20_000)
+  expect(bounded.hasUnplaceableSamples).toBe(true)
+})
+
+
+it('redacts every sample channel on explicit source conflict before consumers aggregate or infer', async () => {
+  const { car, analysisApi } = await setup()
+  platform.request.mockResolvedValueOnce(response({ units: { unit_of_temperature: 'C' }, charge: {
+    charge_id: 3, source: 'telemetry_mqtt', source_instance_id: 'collector-a', start_date: '2026-10-14T00:00:00Z', end_date: '2026-10-14T01:00:00Z',
+    charge_details: [
+      { date: '2026-10-14T00:01:00Z', battery_level: 0, charger_details: { charger_power: -2 } },
+      { date: '2026-10-14T00:02:00Z', source: 'other', battery_level: 90, outside_temp: 25, charger_details: { charger_power: 99, charger_voltage: 230, charger_actual_current: 30 } },
+      { date: '2026-10-14T00:03:00Z', battery_level: 60 },
+      { date: '2026-10-14T00:04:00Z', source_instance_id: null, charger_details: { charger_power: 0 } },
+      { date: '2026-10-14T00:05:00Z', source_instance_id: 'collector-a', outside_temp: 0, charger_details: { charger_power: 0 } },
+    ],
+  } }))
+  const evidence = await analysisApi.getChargeEvidence(car, '3')
+  const conflict = evidence.points[1]
+  expect(conflict).toMatchObject({ date: '2026-10-14T00:02:00Z', sourceConflict: true,
+    batteryLevel: null, powerKw: null, voltageV: null, currentA: null, temperatureC: null,
+    fieldState: { batteryLevel: 'invalid', powerKw: 'invalid', voltageV: 'invalid', currentA: 'invalid', temperatureC: 'invalid' } })
+  expect(evidence.points[3]).toMatchObject({ sourceConflict: true, batteryLevel: null, powerKw: null, fieldState: { batteryLevel: 'absent', powerKw: 'invalid' } })
+  expect(evidence.points[4]).toMatchObject({ sourceConflict: false, powerKw: 0, temperatureC: 0, fieldState: { powerKw: 'reported', temperatureC: 'reported' } })
+  const sum = (values: (number | null)[]) => values.reduce<number>((total, value) => total + (value ?? 0), 0)
+  expect(sum(evidence.points.map(p => p.batteryLevel))).toBe(60)
+  expect(sum(evidence.points.map(p => p.powerKw))).toBe(-2)
+  expect(Object.values(conflict.fieldState)).not.toContain('reported')
+  const { selectCurveSamples } = await import('../domain/analysis')
+  const series = evidence.points.map(point => ({ time: Date.parse(point.date), value: point.batteryLevel, fieldState: point.fieldState.batteryLevel,
+    otherChannel: Object.entries(point.fieldState).some(([key, state]) => key !== 'batteryLevel' && state === 'reported'), sourceConflict: point.sourceConflict }))
+  expect(selectCurveSamples(series, { inferAcrossOtherChannels: true }).points.map(p => [p.index, p.breakBefore, !!p.inferredBefore]))
+    .toEqual([[0, true, false], [2, true, false]])
+})
