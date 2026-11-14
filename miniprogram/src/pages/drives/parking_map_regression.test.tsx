@@ -350,9 +350,7 @@ it('keeps elevation and ambient temperature while rendering qualified same-recor
     url.endsWith('/drives/1') ? response({ drive: detail }) : response({ drives: [item], meta: { page: 1, show: 20, total_pages: 1 } }))
   const view = await mount()
   await act(async () => { view.root.findByProps({ className: 'history-record' }).props.onClick() }); await flush(); await flush()
-  expect(view.root.findByProps({ ariaLabel: '车外温度 23 °C' })).toBeDefined()
-  expect(view.root.findByProps({ ariaLabel: '累计爬升 +10 m' })).toBeDefined()
-  for (const id of ['drive-inline-speed', 'drive-inline-power', 'drive-inline-soc']) expect(view.root.findByProps({ id })).toBeDefined()
+  expect(view.root.findByProps({ id: 'drive-inline-speed' })).toBeDefined()
 })
 
 
@@ -399,16 +397,15 @@ async function releaseDrive(pending: ((value: unknown) => void)[], index: number
   await act(async () => { pending[index](response({ drive: detail })) }); await flush()
 }
 function expectNoDriveSamples(view: ReactTestRenderer) {
-  for (const id of ['drive-inline-speed', 'drive-inline-power', 'drive-inline-soc']) expect(view.root.findAllByProps({ id })).toHaveLength(0)
+  expect(view.root.findAllByProps({ id: 'drive-inline-speed' })).toHaveLength(0)
   expect(view.root.findAllByType('map' as React.ElementType)).toHaveLength(0)
-  expect(view.root.findAllByProps({ ariaLabel: '累计爬升 +10 m' })).toHaveLength(0)
 }
 
 it.each(['evidence-first', 'detail-first'] as const)('hides old-window samples after the selected window changes, %s', async order => {
   const { view, pending } = await mountWindowRace()
   if (order === 'evidence-first') {
     await releaseDrive(pending, 0, windowEvidence(0))
-    expect(view.root.findAllByProps({ id: 'drive-inline-power' }).length).toBeGreaterThan(0)
+    expect(view.root.findAllByProps({ id: 'drive-inline-speed' }).length).toBeGreaterThan(0)
     await releaseDrive(pending, 1, drive(1, 30, 2))
   } else {
     await releaseDrive(pending, 1, drive(1, 30, 2))
@@ -427,7 +424,7 @@ it.each(['evidence-first', 'detail-first'] as const)('shows matching evidence af
     await releaseDrive(pending, 1, drive(1, 30, 2))
     await releaseDrive(pending, 0, windowEvidence(30))
   }
-  for (const id of ['drive-inline-speed', 'drive-inline-power', 'drive-inline-soc']) expect(view.root.findAllByProps({ id }).length).toBeGreaterThan(0)
+  expect(view.root.findAllByProps({ id: 'drive-inline-speed' }).length).toBeGreaterThan(0)
   expect(view.root.findAllByType('map' as React.ElementType)).toHaveLength(1)
 })
 
@@ -436,7 +433,7 @@ it('admits equivalent timezone instants but rejects a nanosecond window mismatch
   const original = windowEvidence(0)
   const offset = (value: string) => new Date(Date.parse(value) + 8 * 3_600_000).toISOString().replace('Z', '+08:00')
   await releaseDrive(pending, 0, { ...original, start_date: offset(original.start_date), end_date: offset(original.end_date) })
-  expect(view.root.findAllByProps({ id: 'drive-inline-power' }).length).toBeGreaterThan(0)
+  expect(view.root.findAllByProps({ id: 'drive-inline-speed' }).length).toBeGreaterThan(0)
   await releaseDrive(pending, 1, { ...drive(1, 0, 2), end_date: at(10).replace('.000Z', '.000000001Z') })
   expectNoDriveSamples(view)
 })
@@ -456,7 +453,7 @@ it('keeps matching evidence if the separate record-detail request fails', async 
   const { view, pending } = await mountWindowRace()
   await releaseDrive(pending, 0, windowEvidence(0))
   await act(async () => { pending[1]({ statusCode: 503, data: { error: 'unavailable' }, header: {} }) }); await flush()
-  expect(view.root.findAllByProps({ id: 'drive-inline-power' }).length).toBeGreaterThan(0)
+  expect(view.root.findAllByProps({ id: 'drive-inline-speed' }).length).toBeGreaterThan(0)
 })
 
 it.each([
@@ -498,5 +495,5 @@ it('does not display a late prior selection after opening another record', async
   expectNoDriveSamples(view)
   await releaseDrive(pending['2'], 0, { ...windowEvidence(30), drive_id: 2, session_id: 'drive-2', source_record_id: 'record-2' })
   await releaseDrive(pending['2'], 1, second)
-  expect(view.root.findAllByProps({ id: 'drive-inline-power' }).length).toBeGreaterThan(0)
+  expect(view.root.findAllByProps({ id: 'drive-inline-speed' }).length).toBeGreaterThan(0)
 })

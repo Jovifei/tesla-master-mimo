@@ -34,7 +34,7 @@ import EvidenceCurve from '../../components/EvidenceCurve'
 import MetricValue, { displayNumber, formatSocRange, peakSpeedKmh } from '../../components/MetricValue'
 import VisualIcon from '../../components/VisualIcon'
 import LoadedDriveChart from '../../components/LoadedDriveChart'
-import { availabilityLabel, capacityLabel, energyMethodLabel, qualityLabel, sourceLabel } from '../../domain/data_labels'
+import { availabilityLabel, capacityLabel, qualityLabel, sourceLabel } from '../../domain/data_labels'
 import { isAppRouteDrive, isAppStatisticsDrive } from './drive_parity'
 import AppDriveMonthChart from './AppDriveMonthChart'
 
@@ -775,7 +775,7 @@ export default function DrivesPage() {
             <View className="telemetry-metric-strip">
               <MetricValue label="距离" value={selected.distanceKm} unit="km" digits={1} />
               <MetricValue label="时长" value={duration(selected.durationMinutes).value} unit={duration(selected.durationMinutes).unit} digits={Number.isInteger(selected.durationMinutes) ? 0 : 1} />
-              <MetricValue label="平均能耗" value={efficiency(selected)} unit="kWh/100km" digits={1} negative={(efficiency(selected) ?? 0) < 0} />
+              <MetricValue label="能耗" value={efficiency(selected) ?? '暂不可用'} unit={efficiency(selected) != null ? 'kWh/100km' : undefined} negative={(efficiency(selected) ?? 0) < 0} />
             </View>
           </View>
 
@@ -796,74 +796,7 @@ export default function DrivesPage() {
             </View>
           })()}
 
-          {/* 5. 分组面板：功率 */}
-          {(() => {
-            const points = selectedEvidence?.points ?? []
-            const powers = points.map(p => p.powerKw).filter((p): p is number => p != null && Number.isFinite(p))
-            const outputPowers = powers.filter(p => p > 0)
-            const regenPowers = powers.filter(p => p < 0)
-            const maxOutput = outputPowers.length ? Math.max(...outputPowers) : null
-            const maxRegen = regenPowers.length ? Math.abs(Math.min(...regenPowers)) : null
-            const avgPower = powers.length ? Number((powers.reduce((a, b) => a + b, 0) / powers.length).toFixed(1)) : null
-            return <View className="section-card">
-              <View className="section-card-header">
-                <View className="section-card-title"><VisualIcon name="energy" /><Text>功率</Text></View>
-              </View>
-              <View className="telemetry-metric-strip">
-                <MetricValue label="峰值输出" value={maxOutput} unit="kW" digits={0} />
-                <MetricValue label="峰值回收" value={maxRegen} unit="kW" digits={0} />
-                <MetricValue label="平均功率 (样本)" value={avgPower} unit="kW" digits={1} />
-              </View>
-              {selectedEvidence && selectedEvidence.points.filter(point => point.powerKw != null && Number.isFinite(point.powerKw)).length >= 2 ? <EvidenceCurve id="drive-inline-power" title="功率曲线" unit="kW" points={selectedEvidence.points} valueOf={point => point.powerKw} selected={curveSampleIndex} onSelect={setCurveSampleIndex} isCurrent={() => pageVisible.current && detailContext.current?.row === selected && detailContext.current?.generation === getApiSessionGeneration()} /> : null}
-            </View>
-          })()}
-
-          {/* 6. 分组面板：电量 */}
-          {(() => {
-            const usedSoc = (selected.startBatteryLevel != null && selected.endBatteryLevel != null)
-              ? selected.startBatteryLevel - selected.endBatteryLevel : null
-            return <View className="section-card">
-              <View className="section-card-header">
-                <View className="section-card-title"><VisualIcon name="battery" /><Text>电量</Text></View>
-              </View>
-              <View className="telemetry-metric-strip">
-                <MetricValue label="起始电量" value={selected.startBatteryLevel} unit="%" digits={0} />
-                <MetricValue label="结束电量" value={selected.endBatteryLevel} unit="%" digits={0} />
-                <MetricValue label="已用电量" value={usedSoc} unit="%" digits={0} />
-                <MetricValue label="总电耗" value={energyValue(selected)} unit="kWh" negative={(energyValue(selected) ?? 0) < 0} />
-              </View>
-              {selectedEvidence && selectedEvidence.points.filter(point => point.batteryLevel != null && Number.isFinite(point.batteryLevel)).length >= 2 ? <EvidenceCurve id="drive-inline-soc" title="电量曲线" unit="%" points={selectedEvidence.points} valueOf={point => point.batteryLevel} selected={curveSampleIndex} onSelect={setCurveSampleIndex} isCurrent={() => pageVisible.current && detailContext.current?.row === selected && detailContext.current?.generation === getApiSessionGeneration()} /> : null}
-              {selected.energy?.evidence?.method ? (
-                <View style={{ marginTop: '16rpx' }}>
-                  <Text className="history-source">计算依据：{energyMethodLabel(selected.energy.evidence.method)}</Text>
-                </View>
-              ) : selected.energy?.quality === 'estimated' ? (
-                <View style={{ marginTop: '16rpx' }}>
-                  <Text className="history-source">估算能耗</Text>
-                </View>
-              ) : null}
-            </View>
-          })()}
-
-          {/* 7. 海拔 */}
-          {(() => {
-            const stats = elevationStats(selectedEvidence?.points ?? [])
-            if (!stats) return null
-            return <View className="section-card">
-              <View className="section-card-header"><View className="section-card-title"><VisualIcon name="route" /><Text>海拔</Text></View></View>
-              <View className="telemetry-metric-strip">
-                <MetricValue label="样本最高" value={stats.max} unit="m" digits={0} />
-                <MetricValue label="样本最低" value={stats.min} unit="m" digits={0} />
-                <MetricValue label="累计爬升" value={stats.gain != null ? `+${stats.gain}` : null} unit="m" />
-                <MetricValue label="累计下降" value={stats.loss != null ? `-${stats.loss}` : null} unit="m" />
-              </View>
-            </View>
-          })()}
-          {selected.outsideTempC != null ? <View className="section-card">
-            <View className="section-card-header"><View className="section-card-title"><VisualIcon name="cloud" /><Text>环境温度</Text></View></View>
-            <View className="telemetry-metric-strip"><MetricValue label="车外温度" value={selected.outsideTempC} unit="°C" digits={1} /></View>
-          </View> : null}
-          {cacheWarning ? <Text className="error">当前详情尚未保存到本机。</Text> : null}
+{cacheWarning ? <Text className="error">当前详情尚未保存到本机。</Text> : null}
           {error ? <Text className="error">{error}</Text> : null}
         </View>
         </ScrollView>
