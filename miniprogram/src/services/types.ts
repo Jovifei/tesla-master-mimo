@@ -263,6 +263,9 @@ export type TelemetryPairing = {
   config_synced: boolean | null
   updated_at: string | null
   error_class: string | null
+  failure_stage?: string | null
+  upstream_status?: string | null
+  correlation_id?: string | null
 }
 
 export type AuthUser = {

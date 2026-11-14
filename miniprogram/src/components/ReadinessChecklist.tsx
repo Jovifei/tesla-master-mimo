@@ -1,6 +1,6 @@
 import { Button, Text, View } from '@tarojs/components'
 import { useState } from 'react'
-import { diagnosticSteps, type DiagnosticInput } from '../domain/diagnostic'
+import { diagnosticSteps, type DiagnosticInput , pairingPhaseDetail, pairingPhase as resolvePairingPhase } from '../domain/diagnostic'
 import { readinessViewFor, toReadinessView } from '../domain/readiness'
 import { sourceLabel } from '../domain/data_labels'
 import type { ReadinessItem, TelemetryPairing } from '../services/types'
@@ -28,7 +28,9 @@ export default function ReadinessChecklist({ items = [], pairing, sessionReady =
   const steps = diagnosticSteps({ ...diagnostics, items, pairing, sessionReady })
   const icons: VisualIconName[] = ['account', 'vehicle', 'cloud', 'shield', 'clock', 'chart']
   const readiness = readinessViewFor(items, 'telemetry')
+  const pairingPhase = pairing?.phase ?? null
   const pairingLabel = pairing?.status === 'available' ? '服务端报告就绪' : pairing?.status === 'pairing_required' ? '需要确认' : '待服务端确认'
+  const phaseHint = pairingPhaseDetail(resolvePairingPhase(pairing))
   return (
     <View className="card readiness-compact">
       <View className="visual-heading"><VisualIcon name="cloud" /><Text className="section-title">数据状态</Text></View>

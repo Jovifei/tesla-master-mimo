@@ -374,7 +374,7 @@ export default function VehicleRemoteSections({
         ) : (
           <View className="nearby-list">
             {nearbySites && nearbySites.length > 0 ? (
-              nearbySites.slice(0, 5).map(site => (
+              nearbySites.map(site => (
                 <View
                   key={`${site.latitude}-${site.longitude}-${site.name}`}
                   className="nearby-site-row"

@@ -880,6 +880,11 @@ export default function DrivesPage() {
             const duration = parkedOpen.minutes >= 60 ? `${Math.floor(parkedOpen.minutes / 60)}h ${parkedOpen.minutes % 60}m` : `${parkedOpen.minutes}m`
             const standbyWatts = parkedCloud?.averagePowerW ?? null
             const socPointsPerHour = delta != null && parkedOpen.minutes > 0 ? delta / (parkedOpen.minutes / 60) : null
+            // App ParkedDetailScreen: flat-rate drain estimate applies ONLY to discharge
+            // (a positive delta while parked is charging, not consumption); gains stay unknown.
+            const estEnergy = parkedCloud?.energyKwh
+              ?? (delta != null && delta <= 0 ? Math.abs(delta) * 0.60 : null)
+            const estEnergyStr = estEnergy == null ? null : estEnergy.toFixed(2)
             const heroMetrics = [
               parkedCloud?.energyKwh != null ? `已记录 ${parkedCloud.energyKwh.toFixed(2)} kWh` : null,
               standbyWatts != null ? `平均功率 ${Math.round(standbyWatts)} W` : null,
@@ -905,6 +910,7 @@ export default function DrivesPage() {
                   <MetricValue label="起始电量" value={startSoc} unit="%" icon="battery" digits={0} />
                   <MetricValue label="结束电量" value={endSoc} unit="%" icon="battery" digits={0} />
                   <MetricValue label="电量变化" value={delta} unit="%" icon="battery" digits={0} />
+                  <MetricValue label="估算能耗" value={estEnergyStr} unit="kWh" icon="energy" digits={2} />
                   <MetricValue label="平均功率" value={standbyWatts} unit="W" icon="energy" digits={0} />
                 </View>
                 {socPointsPerHour != null ? (
@@ -927,7 +933,7 @@ export default function DrivesPage() {
               </View>
               <View className="section-card parked-standby-analysis">
                 <View className="section-card-header"><View className="section-card-title"><VisualIcon name="energy" /><Text>驻车数据说明</Text></View></View>
-                <Text className="muted parked-analysis-note">电量变化包含驻车期间可能的充电；休眠、哨兵状态与续航损失需要各自的记录。缺少能量或功率证据时保持未知，不使用猜测的电池容量换算。</Text>
+                <Text className="muted parked-analysis-note">电量变化包含驻车期间可能的充电；休眠、哨兵状态与续航损失需要各自的记录。放电段按 Tesla 标准续航版约 60 kWh 电池容量基准测算估算能耗，充电段不适用。</Text>
               </View>
             </>
           })()}

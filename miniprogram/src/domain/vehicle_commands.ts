@@ -29,13 +29,11 @@ export const VEHICLE_COMMAND_CATALOG: CommandUi[] = [
 
 export function offeredCommands(status: CarStatus | null | undefined): CommandUi[] {
   if (!status) return []
-  // If authorization not evaluated (null/undefined), default offer full catalog
-  if (status.commandAuthorization === undefined || status.commandAuthorization === null) {
-    return VEHICLE_COMMAND_CATALOG
-  }
-  if (status.commandAuthorization.ready !== true) {
-    return []
-  }
+  // App VehicleCommandCatalog.offeredCommands: commands are offered ONLY when the
+  // server's commandAuthorization is evaluated and ready. Not-yet-evaluated and
+  // not-ready both return an empty catalog — showing controls before the server
+  // confirms authorization invites taps that the car will reject.
+  if (status.commandAuthorization?.ready !== true) return []
   return VEHICLE_COMMAND_CATALOG
 }
 
