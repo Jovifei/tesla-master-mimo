@@ -123,7 +123,7 @@ export default function ToolsPage() {
     } finally { if (isCurrentOwner()) setLoading(false) }
   }
   useSessionRecoveryReload(() => { if (pageVisible.current) void load() })
-  useDidShow(() => { pageVisible.current = true; void load() })
+  useDidShow(() => { pageVisible.current = true; void load(); if (kind === 'settings') void loadWechatBinding() })
   useDidHide(() => { pageVisible.current = false; invalidate() })
   useUnload(() => { pageVisible.current = false; invalidate() })
   const session = readAppSession(Taro)
@@ -212,6 +212,57 @@ export default function ToolsPage() {
     } catch (reason) { if (valid()) setError(reason instanceof ApiError ? reason.message : '历史位置暂时无法读取') }
     finally { if (valid()) setLoading(false) }
   }
+  const [wechatBound, setWechatBound] = useState<boolean | null>(null)
+  const loadWechatBinding = async () => {
+    if (!session?.userId || MOCK_FIXTURE_ENABLED) { setWechatBound(null); return }
+    const operation = epoch.current
+    try {
+      const binding = await matelinkApi.getWechatBinding()
+      if (pageVisible.current && operation === epoch.current) setWechatBound(binding.bound)
+    } catch { if (pageVisible.current && operation === epoch.current) setWechatBound(null) }
+  }
+  const bindWechat = async () => {
+    if (loading) return
+    const confirmed = await Taro.showModal({ title: '绑定当前微信？', content: '绑定后可用当前微信快捷进入此账号，随时可在设置中解绑。', confirmText: '确认绑定' })
+    if (!confirmed.confirm) return
+    setLoading(true); setError(null)
+    try {
+      const prepared = await matelinkApi.prepareWechatBinding()
+      await matelinkApi.bindWechat(prepared.bindingVersion)
+      setWechatBound(true)
+      if (pageVisible.current) Taro.showToast({ title: '微信已绑定', icon: 'success' })
+    } catch (reason) { if (pageVisible.current) setError(reason instanceof ApiError ? reason.message : '绑定未完成，请重试') }
+    finally { if (pageVisible.current) setLoading(false) }
+  }
+  const unbindWechat = async () => {
+    if (loading) return
+    const confirmed = await Taro.showModal({ title: '解绑微信？', content: '解绑后不能再用微信快捷进入；微信进入的会话会退出。', confirmText: '确认解绑' })
+    if (!confirmed.confirm) return
+    setLoading(true); setError(null)
+    try {
+      await matelinkApi.unbindWechat()
+      setWechatBound(false)
+      if (pageVisible.current) Taro.showToast({ title: '微信已解绑', icon: 'none' })
+    } catch (reason) { if (pageVisible.current) setError(reason instanceof ApiError ? reason.message : '解绑未完成，请重试') }
+    finally { if (pageVisible.current) setLoading(false) }
+  }
+  const deleteAccount = async () => {
+    if (loading) return
+    const confirmed = await Taro.showModal({ title: '注销账号', content: '服务端账号、会话和关联车辆数据将被删除。此操作不可撤销；Tesla 官方授权需要随后单独撤销。', confirmText: '注销账号' })
+    if (!confirmed.confirm) return
+    setLoading(true); setError(null)
+    try {
+      const result = await matelinkApi.deleteAccount()
+      if (pageVisible.current && result.recoveryStorageWarning) setError('账号已注销，但本机快捷进入设置无法保存，请检查微信存储。')
+      if (pageVisible.current) Taro.showToast({ title: '已注销账号', icon: 'none' })
+      if (pageVisible.current) void load()
+      if (result.teslaConsentRevokeUrl) {
+        const followUp = await Taro.showModal({ title: '撤销 Tesla 授权', content: 'MateLink 账号已删除。建议继续前往 Tesla 官方页面撤销第三方授权。', confirmText: '复制撤销链接' })
+        if (followUp.confirm && pageVisible.current) void Taro.setClipboardData({ data: result.teslaConsentRevokeUrl })
+      }
+    } catch (reason) { if (pageVisible.current) setError(reason instanceof ApiError ? reason.message : '注销未完成，请重试') }
+    finally { if (pageVisible.current) setLoading(false) }
+  }
   const logout = async () => {
     if (loading) return
     const scope = scopeKey(), operation = epoch.current
@@ -235,7 +286,13 @@ export default function ToolsPage() {
         <SectionHeading icon="account" title="账号与连接" />
         <Text className="muted">{session ? MOCK_FIXTURE_ENABLED ? '合成会话' : '当前微信会话可用' : '尚未登录'} · Tesla 关联与车辆权限独立确认</Text>
         <Button className="button" onClick={() => Taro.switchTab({ url: '/pages/me/index' })}>{session ? '账号与官方授权' : '登录 MateLink'}</Button>
+        {session && !MOCK_FIXTURE_ENABLED ? <>
+          <Text className="muted">{wechatBound === null ? '微信绑定状态暂未确认' : wechatBound ? '此账号已绑定微信' : '此账号尚未绑定微信'}</Text>
+          <Button className="button button-secondary" disabled={loading} onClick={() => { void bindWechat() }}>{wechatBound ? '启用当前微信快捷进入' : '绑定当前微信'}</Button>
+          {wechatBound ? <Button className="button button-secondary" disabled={loading} onClick={() => { void unbindWechat() }}>解绑微信</Button> : null}
+        </> : null}
         {session ? <Button className="button button-secondary" loading={loading} onClick={logout}>退出登录</Button> : null}
+        {session && !MOCK_FIXTURE_ENABLED ? <Button className="button button-danger" disabled={loading} onClick={() => { void deleteAccount() }}>注销账号</Button> : null}
       </View>
       <PresentationPreferences />
       <View className="card settings-directory">

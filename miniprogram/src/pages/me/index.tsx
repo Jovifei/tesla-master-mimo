@@ -402,7 +402,6 @@ export default function MePage() {
         {restoring ? <LoadingIndicator label="正在恢复会话…" compact /> : null}
         {!session ? <Button className="button" loading={loading} disabled={loading || restoring || !termsAccepted || !privacyAccepted} onClick={startTeslaAuthorization}>特斯拉账号登录</Button> : null}
         {!session && !MOCK_FIXTURE_ENABLED ? <Button className="button button-secondary" disabled={loading || restoring || authorizationPending || !termsAccepted || !privacyAccepted} onClick={() => { void enterWithWechat() }}>使用已绑定微信进入</Button> : null}
-        {session ? <Text className="muted">MateLink 会话已建立{session.expiresAt ? `，有效期至 ${session.expiresAt}` : ''}。</Text> : null}
       </View> : null}
 
       {!MOCK_FIXTURE_ENABLED && authorizationPending ? (
@@ -422,7 +421,7 @@ export default function MePage() {
         </View>
       </View>
       <Text className="more-section-heading">数据分析</Text>
-      <View className="more-grid">{[
+      <View className="more-system">{[
         { label: '统计概览', icon: 'speed' as const, route: '/pages/analysis/index?kind=stats' },
         { label: '电池健康', icon: 'battery' as const, route: '/pages/insights/index?kind=battery' },
         { label: '里程统计', icon: 'distance' as const, route: '/pages/analysis/index?kind=mileage' },
@@ -433,11 +432,11 @@ export default function MePage() {
         { label: '续航分析', icon: 'route' as const, route: '/pages/insights/index?kind=range' },
         { label: '待机能耗', icon: 'energy' as const, route: '/pages/analysis/index?kind=vampire' },
         { label: '时间线', icon: 'timeline' as const, route: '/pages/analysis/index?kind=timeline' },
-      ].map(item => <Button className="more-action more-tile" key={item.label} onClick={() => item.route === '/pages/drives/index' ? Taro.switchTab({ url: item.route }) : Taro.navigateTo({ url: item.route })}>
-        <VisualIcon name={item.icon} /><Text className="more-tile-label">{item.label}</Text>
+      ].map(item => <Button className="more-action more-system-action" key={item.label} onClick={() => item.route === '/pages/drives/index' ? Taro.switchTab({ url: item.route }) : Taro.navigateTo({ url: item.route })}>
+        <VisualIcon name={item.icon} /><Text className="more-system-label">{item.label}</Text><Text className="more-system-chevron">›</Text>
       </Button>)}</View>
       <Text className="more-section-heading">报告与导出</Text>
-      <View className="more-grid">{[{ label: '年度报告', kind: 'report', icon: 'chart' as const }, { label: '导出数据', kind: 'export', icon: 'update' as const }].map(item => <Button className="more-action more-tile" key={item.kind} onClick={() => Taro.navigateTo({ url: `/pages/tools/index?kind=${item.kind}` })}><VisualIcon name={item.icon} /><Text className="more-tile-label">{item.label}</Text></Button>)}</View>
+      <View className="more-system">{[{ label: '年度报告', kind: 'report', icon: 'chart' as const }, { label: '导出数据', kind: 'export', icon: 'update' as const }].map(item => <Button className="more-action more-system-action" key={item.kind} onClick={() => Taro.navigateTo({ url: `/pages/tools/index?kind=${item.kind}` })}><VisualIcon name={item.icon} /><Text className="more-system-label">{item.label}</Text><Text className="more-system-chevron">›</Text></Button>)}</View>
       <Text className="more-section-heading">系统</Text>
       <View className="more-system">{[
         { label: '数据状态', kind: 'dataStatus', icon: 'shield' as const },
