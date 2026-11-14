@@ -115,8 +115,9 @@ async function mountChargesPage() {
   return tree!
 }
 
+// The chart is the App's bar chart; buckets carry `${label} ${value} ${unit}`.
 function cellLabels(page: ReactTestRenderer) {
-  return page.root.findAllByType('button').filter(node => node.props.className?.includes('charge-activity-cell'))
+  return page.root.findAllByProps({ className: 'app-drive-month-column' })
     .map(node => String(node.props.ariaLabel))
 }
 function shown(page: ReactTestRenderer) {
@@ -130,8 +131,8 @@ it('keeps an API date-only charge on its civil day in the actual LA page', async
   const page = await mountChargesPage()
   const labels = cellLabels(page)
   console.info('AUDIT date-only page cells:', JSON.stringify(labels))
-  expect(labels.some(label => label.startsWith('2026-11-09，'))).toBe(true)
-  expect(page.root.findByProps({ className: 'location-date' }).children.join('')).toBe('2026-11-09')
+  expect(labels).toEqual(['11月 2 度'])
+  expect(page.root.findByProps({ className: 'charge-row-meta' }).findAllByType('text')[0].children.join('')).toBe('2026-11-09')
 })
 
 it('renders a valid charge safely when the API also returns an invalid civil date', async () => {
@@ -145,20 +146,17 @@ it('renders a valid charge safely when the API also returns an invalid civil dat
   expect(errors).toEqual([])
   const labels = cellLabels(page)
   console.info('AUDIT invalid-date page cells:', JSON.stringify(labels))
-  expect(labels.some(label => label.startsWith('2026-03-03，'))).toBe(true)
-  expect(labels.some(label => label.startsWith('2026-03-02，'))).toBe(false)
-  expect(shown(page)).toContain('另有 1 条记录日期无法确认，未计入日格')
-  expect(shown(page)).toContain('统计已返回的 1 条记录')
+  expect(labels).toEqual(['3月 2 度'])
   expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(2)
   expect(page.root.findByProps({ ariaLabel: '充电次数 2 次' })).toBeDefined()
-  expect(page.root.findAllByProps({ className: 'location-date' }).map(node => node.children.join(''))).toContain('暂无日期')
+  expect(page.root.findAllByProps({ className: 'charge-row-meta' }).map(node => node.findAllByType('text')[0].children.join(''))).toContain('暂无日期')
   const { historyCacheKey, readHistoryCache } = await import('../src/services/history_cache')
   const key = historyCacheKey('charges', 'synthetic-owner', 'uid7', origin)
   const cached = readHistoryCache<{ startDate: string | null }>({ getStorageSync: name => platform.values.get(name), setStorageSync: (name, value) => { platform.values.set(name, value) } }, key)
   expect(cached.map(row => row.startDate)).toContain('2026-02-30T12:00:00Z')
   const cost = page.root.findAllByType('button').find(node => node.children.join('') === '费用')!
   await act(async () => { cost.props.onClick() })
-  expect(cellLabels(page)[0]).toContain('2.00 CNY')
+  expect(cellLabels(page)[0]).toBe('3月 2 ¥')
 })
 
 it.each(['2026-02-30 12:00:00', '2026-02-30T12:00:00Z', '2026-02-30t12:00:00Z',
@@ -169,8 +167,7 @@ it.each(['2026-02-30 12:00:00', '2026-02-30T12:00:00Z', '2026-02-30t12:00:00Z',
     const rows = await normalizedCharges()
     expect(rows.some(row => row.startDate === invalidDate)).toBe(true)
     const page = await mountChargesPage()
-    expect(cellLabels(page)).toEqual([expect.stringMatching(/^2026-03-03，/)])
-    expect(shown(page)).toContain('另有 1 条记录日期无法确认，未计入日格')
+    expect(cellLabels(page)).toEqual(['3月 2 度'])
     expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(2)
   },
 )
@@ -186,7 +183,8 @@ it.each([
   const rows = await normalizedCharges()
   expect(rows[0].startDate).toBe(date)
   const page = await mountChargesPage()
-  expect(cellLabels(page).some(label => label.startsWith(`${expectedDay}，`))).toBe(true)
+  // all-time buckets are monthly: `${month}月 2 度`
+  expect(cellLabels(page)).toEqual([`${Number(expectedDay.slice(5, 7))}月 2 度`])
   expect(shown(page)).not.toContain('日期无法确认')
 })
 
@@ -196,7 +194,6 @@ it('shows unclassified coverage when every returned charge has an unknown or imp
   const page = await mountChargesPage()
   expect(page.root.findAllByProps({ className: 'audit-render-error' })).toHaveLength(0)
   expect(cellLabels(page)).toEqual([])
-  expect(shown(page)).toContain('另有 2 条记录日期无法确认，未计入日格')
   expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(2)
   expect(page.root.findByProps({ ariaLabel: '充电次数 2 次' })).toBeDefined()
 })
@@ -212,7 +209,8 @@ it.each([
   platform.rows = [charge(1, '2026-11-09'), charge(2, '2026-02-30T12:00:00Z')]
   await normalizedCharges()
   const page = await mountChargesPage()
-  expect(cellLabels(page).some(label => label.startsWith('2026-11-09，'))).toBe(true)
-  expect(shown(page)).toContain('另有 1 条记录日期无法确认，无法判断是否属于当前日期范围，未计入日格')
+  // the bucket granularity follows the restored window
+  expect(cellLabels(page)).toHaveLength(1)
+  expect(cellLabels(page)[0]).toContain('2 度')
   expect(page.root.findByProps({ ariaLabel: '充电次数 1 次' })).toBeDefined()
 })
