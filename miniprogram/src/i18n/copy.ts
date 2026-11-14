@@ -63,7 +63,7 @@ const zhCN: Catalogue = {
   'history.totalDistance': '总距离',
   'history.duration': '时长',
   'history.totalTime': '总时间',
-  'history.energy': '能量',
+  'history.energy': '充电量',
   'history.speed': '最高速度',
   'history.cost': '费用',
   'history.soc': '电量',

@@ -345,7 +345,7 @@ it('shows an App-style short address, marked default-price estimate and only ret
   const row = tree!.root.findByProps({ className: 'history-record' })
   expect(row.findByProps({ className: 'history-charge-location' }).findAllByType('text')[0].children.join('')).toBe('合成路')
   expect(row.findByProps({ ariaLabel: '充电费用 ≈¥27.38' })).toBeDefined()
-  expect(row.findByProps({ ariaLabel: '能量 24.0 kWh' })).toBeDefined()
+  expect(row.findByProps({ ariaLabel: '充电量 24.0 kWh' })).toBeDefined()
   const summary = tree!.root.findByProps({ className: 'card history-interval' })
   expect(summary.findByProps({ ariaLabel: '费用 ≈27.38 CNY' })).toBeDefined()
   expect(summary.findByProps({ ariaLabel: '单次均价 ≈27.38 CNY' })).toBeDefined()
