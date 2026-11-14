@@ -541,3 +541,26 @@
   font-size: 26rpx;
   font-weight: 600;
 }
+
+/* --- v2.1.87 parity: App ChargeRow layout --- */
+.charge-row { display: flex; align-items: center; gap: 20rpx; padding: 20rpx 0; }
+.charge-row-icon {
+  width: 64rpx; height: 64rpx; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.charge-row-icon-ac { background: rgba(15, 122, 134, 0.14); }
+.charge-row-icon-dc { background: rgba(234, 88, 12, 0.14); }
+.charge-row-icon-unknown { background: rgba(100, 116, 139, 0.14); }
+.charge-row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4rpx; }
+.charge-row-address { font-size: 28rpx; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.charge-row-meta { font-size: 24rpx; color: var(--dashboard-muted, #6b7280); display: flex; }
+.charge-row-type { font-size: 24rpx; display: flex; }
+.charge-row-mode { font-weight: 600; color: var(--dashboard-primary, #0f766e); }
+.charge-row-mode-dc { color: #ea580c; }
+.charge-row-mode-ac { color: #0f766e; }
+.charge-row-side { display: flex; flex-direction: column; align-items: flex-end; gap: 4rpx; flex-shrink: 0; }
+.charge-row-energy { font-size: 30rpx; font-weight: 700; }
+.charge-row-soc { font-size: 22rpx; color: var(--dashboard-primary, #0f766e); }
+.charge-row-cost { font-size: 22rpx; font-weight: 600; padding: 4rpx 12rpx; border-radius: 8rpx; background: rgba(34, 197, 94, 0.12); color: #16a34a; }
+.charge-row-cost-estimate { background: rgba(245, 158, 11, 0.12); color: #d97706; }
+.charge-row-cost-free { background: rgba(15, 122, 134, 0.12); color: #0f766e; }

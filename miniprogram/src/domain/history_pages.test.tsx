@@ -341,7 +341,6 @@ describe('history pages consume canonical data across layers', () => {
       return respond({ [kind]: page === 1 && changed ? [raw(1), raw(99)] : [raw(page)], meta: { page, show: 20, total_pages: 3 } })
     })
     const page = await mount(kind)
-    if (kind === 'charges') await click(page, '显示短充')
     await click(page, '加载更多')
     const date = page.root.findAllByType('picker' as React.ElementType).find(node => node.props.mode === 'date')!
     await act(async () => { date.props.onChange({ detail: { value: fixtureDay() } }); platform.scroll({ scrollTop: 640 }) })
@@ -382,7 +381,12 @@ describe('history pages consume canonical data across layers', () => {
     expect(page.root.findAllByType('picker' as React.ElementType).some(node => node.props.mode === 'date' && node.props.value === fixtureDay())).toBe(true)
     const statistics = page.root.findByProps({ className: 'card history-interval' })
     if (kind === 'drives') expect(statistics.findByProps({ ariaLabel: `总行程数 ${change === 'quarantine' ? 2 : 3} 次` })).toBeDefined()
-    else expect(statistics.findByProps({ ariaLabel: `充电量 ${change === 'unknown' || change === 'aliasUnknown' || change === 'quarantine' ? 0 : change === 'correction' ? 3 : 2} kWh` })).toBeDefined()
+    else {
+      // the summary shows 度 with a ≈ prefix whenever coverage is partial
+      // probe-verified: quarantine coverage stays full, aliasUnknown loses it
+      const energy = change === 'correction' ? '3.0 度' : change === 'quarantine' ? '0.0 度' : change === 'unknown' || change === 'aliasUnknown' ? '≈0.0 度' : '2.0 度'
+      expect(statistics.findByProps({ ariaLabel: `充电量 ${energy}` })).toBeDefined()
+    }
     await click(page, '加载更多')
     expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(change === 'quarantine' ? 2 : 3)
   })
@@ -526,9 +530,9 @@ describe('history pages consume canonical data across layers', () => {
       kind === 'drives' ? ['总行程数', '总距离', '总时间', '最高速度'] : ['充电次数', '充电量', '费用', '单次均价'])
     const record = page.root.findByProps({ className: 'history-record' })
     const sections = record.children.filter(child => typeof child !== 'string').map(child => child.props.className)
-    expect(sections.slice(0, 2)).toEqual(kind === 'drives'
+    expect(sections.slice(0, kind === 'drives' ? 2 : 1)).toEqual(kind === 'drives'
       ? ['history-record-header', 'history-record-metrics']
-      : ['history-charge-heading', 'history-record-metrics'])
+      : ['charge-row'])
     if (kind === 'drives') {
       const header = record.findByProps({ className: 'history-record-header' })
       expect(header.children.filter(child => typeof child !== 'string').map(child => child.props.className))
@@ -541,8 +545,13 @@ describe('history pages consume canonical data across layers', () => {
       expect(evidence.findByProps({ className: 'history-record-distance' }).children.join('')).toBe('2 km')
       expect(evidence.findByProps({ className: 'history-soc' }).children.join('')).toBe('80% → 79%')
     }
-    expect(record.findByProps({ className: 'history-record-metrics' }).findAllByProps({ className: 'metric-label' }).map(node => node.children.join('')))
-      .toEqual(kind === 'drives' ? ['能耗', '里程', '时长', '最高速度'] : ['时长', '充电量', '充电费用', '电量'])
+    if (kind === 'drives') {
+      expect(record.findByProps({ className: 'history-record-metrics' }).findAllByProps({ className: 'metric-label' }).map(node => node.children.join('')))
+        .toEqual(['能耗', '里程', '时长', '最高速度'])
+    } else {
+      // App ChargeRow: energy on the right column in 度
+      expect(record.findByProps({ className: 'charge-row-energy' }).children.join('')).toContain('度')
+    }
     const body = page.root.findByProps({ className: kind === 'drives' ? 'page history-page drives-page appearance-neutral' : 'page history-page charges-page appearance-neutral' })
     const headerClasses = body.findAllByType('view').map(child => child.props.className).filter(Boolean)
     expect(headerClasses.indexOf('history-controls')).toBeLessThan(headerClasses.indexOf('card history-interval'))
@@ -577,12 +586,12 @@ describe('history pages consume canonical data across layers', () => {
       return respond({ charges: rows, meta: { page: 1, show: 20, total_pages: 1 } })
     })
     const page = await mount('charges')
-    expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(3)
+    // every returned non-quarantined charge renders, as in the App
+    expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(6)
     const interval = page.root.findByProps({ className: 'card history-interval' })
-    expect(interval.findByProps({ ariaLabel: '充电次数 2 次' })).toBeDefined()
-    expect(interval.findByProps({ ariaLabel: '充电量 2 kWh' })).toBeDefined()
+    expect(interval.findByProps({ ariaLabel: '充电次数 5 次' })).toBeDefined()
     expect(page.root.findAllByProps({ className: 'charge-chart-tabs' })).toHaveLength(1)
-    expect(page.root.findAllByType('button').some(node => node.props.ariaLabel?.includes('2.00 kWh'))).toBe(true)
+    expect(page.root.findAllByProps({ className: 'app-drive-month-column' }).some(node => String(node.props.ariaLabel).includes('度'))).toBe(true)
     const { historyCacheKey, readHistoryCache } = await import('../services/history_cache')
     const key = historyCacheKey('charges', 'user-a', 'uid7', 'https://api.example.test')
     const stored = readHistoryCache<Charge>({ getStorageSync: (name: string) => platform.values.get(name), setStorageSync: (name: string, value: unknown) => { platform.values.set(name, value) } }, key)
@@ -590,11 +599,8 @@ describe('history pages consume canonical data across layers', () => {
     expect(stored.find(row => row.id === '2')).toMatchObject({ energyAddedKwh: 0, cost: 0 })
     const list = page.root.findByProps({ className: 'history-list charge-history-list' })
     expect(list.findByProps({ className: 'section-title charge-history-heading' }).children.join('')).toBe('充电历史')
-    expect(list.findAllByProps({ className: 'history-record' })).toHaveLength(3)
+    expect(list.findAllByProps({ className: 'history-record' })).toHaveLength(6)
     expect(list.props.className).not.toContain('card')
-    await click(page, '显示短充')
-    expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(6)
-    expect(interval.findByProps({ ariaLabel: '充电次数 5 次' })).toBeDefined()
   })
 
   it('keeps each newly detected event available when one poll contains multiple completed drives', async () => {
@@ -782,7 +788,6 @@ describe('history pages consume canonical data across layers', () => {
     const storage = { getStorageSync: (key: string) => platform.values.get(key), setStorageSync: (key: string, data: unknown) => { platform.values.set(key, data) } }
     const key = historyCacheKey(kind, 'user-a', 'uid7', 'https://api.example.test')
     let page = await mount(kind)
-    if (kind === 'charges' && value === 0) await click(page, '显示短充')
     const assertWinner = () => {
       const winner = readHistoryCache<Drive | Charge>(storage, key)[0]
       expect(winner.qualityState).toBe('observed')
@@ -792,7 +797,7 @@ describe('history pages consume canonical data across layers', () => {
         expect((winner as Charge).cost).toBe(value)
         expect((winner as Charge).currency).toBe('EUR')
       }
-      expect(JSON.stringify(page.toJSON())).toContain(kind === 'drives' ? `${value * 50} kWh/100km` : `${value} kWh`)
+      expect(JSON.stringify(page.toJSON())).toContain(kind === 'drives' ? `${value * 50} kWh/100km` : `${value}.0 度`)
       expect(JSON.stringify(page.toJSON())).not.toContain(kind === 'drives' ? '4950 kWh/100km' : '99 kWh')
       expect(JSON.stringify(page.toJSON())).not.toContain('99 USD')
     }
@@ -805,7 +810,7 @@ describe('history pages consume canonical data across layers', () => {
     assertWinner()
     await act(async () => { platform.unload(); page.unmount() }); renderer = null
     page = await mount(kind)
-    if (kind === 'charges' && value === 0) await click(page, '显示短充')
+
     assertWinner()
   })
 
@@ -829,7 +834,7 @@ describe('history pages consume canonical data across layers', () => {
     const storage = { getStorageSync: (key: string) => platform.values.get(key), setStorageSync: (key: string, data: unknown) => { platform.values.set(key, data) } }
     const key = historyCacheKey(kind, 'user-a', 'uid7', 'https://api.example.test')
     let page = await mount(kind)
-    expect(JSON.stringify(page.toJSON())).toContain(kind === 'drives' ? '100 kWh/100km' : '2 kWh')
+    expect(JSON.stringify(page.toJSON())).toContain(kind === 'drives' ? '100 kWh/100km' : '2.0 度')
     upgraded = true
     await click(page, '刷新')
     const assertNoGraft = () => {
@@ -868,12 +873,11 @@ describe('history pages consume canonical data across layers', () => {
     weak = true; await click(page, '刷新')
     await act(async () => { platform.unload(); page.unmount() }); renderer = null
     page = await mount('charges')
-    await click(page, '显示短充')
     expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(0)
     expect(JSON.stringify(page.toJSON())).not.toContain('6 kWh')
     await click(page, '加载更多')
     expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(1)
-    expect(JSON.stringify(page.toJSON())).toContain('0 kWh')
+    expect(JSON.stringify(page.toJSON())).toContain('0.0 度')
   })
   it('stores actual normalized drive details without precise coordinates and preserves energy/address after reopen', async () => {
     const raw = { ...reported, start_address: 'Genuine start site', end_address: 'Genuine end site',
@@ -1182,7 +1186,7 @@ describe('history pages consume canonical data across layers', () => {
     expect(JSON.stringify(page.toJSON())).toContain('TeslaMate 原始0表示未填，当前无合格估算')
     expect(JSON.stringify(page.toJSON())).toContain('未保存到本机')
     await click(page, '‹ 返回')
-    await click(page, '显示短充')
+
     expect(JSON.stringify(page.toJSON())).toContain('Genuine detail site')
   })
 
@@ -1203,22 +1207,21 @@ describe('history pages consume canonical data across layers', () => {
     const key = historyCacheKey('charges', 'user-a', 'uid7', 'https://api.example.test')
     let page = await mount('charges')
     await act(async () => { page.root.findByProps({ className: 'history-record' }).props.onClick() }); await flush()
-    expect(JSON.stringify(page.toJSON())).toContain(`${batteryKwh} kWh`)
+    expect(JSON.stringify(page.toJSON())).toContain(`${batteryKwh}.0 度`)
     expect(JSON.stringify(page.toJSON())).toContain('2 EUR')
     expect(readHistoryCache<Charge>(storage, key)[0].energyAddedKwh).toBe(batteryKwh)
     await click(page, '‹ 返回')
-    if (batteryKwh === 0) await click(page, '显示短充')
+
     await click(page, '刷新')
-    expect(JSON.stringify(page.toJSON())).toContain(`${batteryKwh} kWh`)
+    expect(JSON.stringify(page.toJSON())).toContain(`${batteryKwh}.0 度`)
     expect(readHistoryCache<Charge>(storage, key)[0].energyAddedKwh).toBe(batteryKwh)
     summaryMode = 'null'
     await click(page, '刷新')
-    expect(JSON.stringify(page.toJSON())).toContain(`${batteryKwh} kWh`)
+    expect(JSON.stringify(page.toJSON())).toContain(`${batteryKwh}.0 度`)
     expect(readHistoryCache<Charge>(storage, key)[0].energyAddedKwh).toBe(batteryKwh)
     await act(async () => { platform.unload(); page.unmount() }); renderer = null
     page = await mount('charges')
-    if (batteryKwh === 0) await click(page, '显示短充')
-    expect(JSON.stringify(page.toJSON())).toContain(`${batteryKwh} kWh`)
+    expect(JSON.stringify(page.toJSON())).toContain(`${batteryKwh}.0 度`)
     expect(readHistoryCache<Charge>(storage, key)[0].energyAddedKwh).toBe(batteryKwh)
     detail = { ...charge, address: 'Genuine archived charge site', cost: 2, currency: 'EUR', energy_contract: { version: 1,
       battery_input: { value_kwh: null, unit: 'kWh', source: 'teslamate_archive', quality: 'unknown',
@@ -1251,8 +1254,8 @@ describe('history pages consume canonical data across layers', () => {
     let page = await mount('charges')
     expect(readHistoryCache<Charge>(storage, key)[0].energy?.inputEnergyKwh).toBe(6)
     expect(readHistoryCache<Charge>(storage, key)[0].energy?.acInputKwh).toBeNull()
-    expect(JSON.stringify(page.toJSON())).toContain('输入电量（历史报告）')
-    expect(JSON.stringify(page.toJSON())).toContain('6 kWh')
+    // the App row keeps energy/type on the card; input provenance stays in the detail
+    expect(JSON.stringify(page.toJSON())).toContain('5.0 度')
     expect(JSON.stringify(page.toJSON())).not.toContain('AC 输入')
     await act(async () => { page.root.findByProps({ className: 'history-record' }).props.onClick() }); await flush()
     expect(JSON.stringify(page.toJSON())).toContain('输入电量（历史报告）')
@@ -1263,7 +1266,7 @@ describe('history pages consume canonical data across layers', () => {
     page = await mount('charges')
     expect(readHistoryCache<Charge>(storage, key)[0].energy?.inputEnergyKwh).toBe(6)
     expect(readHistoryCache<Charge>(storage, key)[0].energy?.acInputKwh).toBeNull()
-    expect(JSON.stringify(page.toJSON())).toContain('6 kWh')
+    expect(JSON.stringify(page.toJSON())).toContain('5.0 度')
     expect(JSON.stringify(page.toJSON())).not.toContain('AC 输入')
     detail = { ...raw, energy_contract: { version: 1, battery_input: { quality: 'unknown', value_kwh: null },
       ac_input: { quality: 'unknown', value_kwh: null } } }
@@ -1288,16 +1291,16 @@ describe('history pages consume canonical data across layers', () => {
       return respond({ charges: [raw], meta: { page: 1, show: 20, total_pages: 1 } })
     })
     let page = await mount('charges')
-    expect(JSON.stringify(page.toJSON())).toContain('AC 输入')
-    expect(JSON.stringify(page.toJSON())).toContain('AC 充电')
-    expect(JSON.stringify(page.toJSON())).toContain('6 kWh')
+    expect(JSON.stringify(page.toJSON())).toContain('交流')
+    expect(JSON.stringify(page.toJSON())).toContain('5.0 度')
     expect(JSON.stringify(page.toJSON())).not.toContain('输入电量（历史报告）')
     await act(async () => { page.root.findByProps({ className: 'history-record' }).props.onClick() }); await flush()
     expect(JSON.stringify(page.toJSON())).toContain('AC 输入')
     await act(async () => { platform.unload(); page.unmount() }); renderer = null
     page = await mount('charges')
+    await act(async () => { page.root.findByProps({ className: 'history-record' }).props.onClick() }); await flush()
     expect(JSON.stringify(page.toJSON())).toContain('AC 输入')
-    expect(JSON.stringify(page.toJSON())).toContain('AC 充电')
+    expect(JSON.stringify(page.toJSON())).toContain('交流')
     const { historyCacheKey, readHistoryCache } = await import('../services/history_cache')
     const storage = { getStorageSync: (key: string) => platform.values.get(key), setStorageSync: (key: string, value: unknown) => { platform.values.set(key, value) } }
     expect(readHistoryCache<Charge>(storage, historyCacheKey('charges', 'user-a', 'uid7', 'https://api.example.test'))[0].energy?.acInputKwh).toBe(6)

@@ -49,10 +49,12 @@ export default function HistoryIntervalSummary({ interval, query, kind }: {
           </>
         ) : (
           <>
+            {/* App ChargesScreen SummaryCard: 度 units (MWh past 999), a ≈ prefix
+                whenever coverage is partial or estimates are included. */}
             <MetricValue label="充电次数" value={rows.length} unit="次" icon="energy" digits={0} />
-            <MetricValue label={copy('history.energy')} value={battery?.value} unit="kWh" icon="energy" />
-            <MetricValue label={copy('history.cost')} value={hasEstimateInTotal ? `≈${cost.value!.toFixed(2)}` : cost.value} unit={currency} icon="account" />
-            <MetricValue label="单次均价" value={cost.value != null && cost.known > 0 ? hasEstimateInTotal ? `≈${(cost.value / cost.known).toFixed(2)}` : cost.value / cost.known : null} unit={currency} icon="account" />
+            <MetricValue label={copy('history.energy')} value={battery?.value == null ? null : `${battery.known < charges.length ? '≈' : ''}${battery.value > 999 ? (battery.value / 1000).toFixed(2) : battery.value.toFixed(1)}`} unit={battery?.value != null && battery.value > 999 ? 'MWh' : '度'} icon="energy" />
+            <MetricValue label={copy('history.cost')} value={cost.value == null ? null : `${hasEstimateInTotal || cost.known < charges.length ? '≈' : ''}${cost.value.toFixed(2)}`} unit={currency} icon="account" />
+            <MetricValue label="单次均价" value={cost.value != null && cost.known > 0 ? `${hasEstimateInTotal || cost.known < charges.length ? '≈' : ''}${(cost.value / cost.known).toFixed(2)}` : null} unit={currency} icon="account" />
           </>
         )}
       </View>
@@ -64,11 +66,11 @@ export default function HistoryIntervalSummary({ interval, query, kind }: {
           ? battery.value / charges.length
           : null
         const subMetrics = [
-          avgPricePerKwh != null ? `平均电价 ≈ ${currency === 'CNY' ? '¥' : currency}${avgPricePerKwh.toFixed(2)}/kWh` : null,
-          avgEnergyPerCharge != null ? `单次平均 ≈ ${avgEnergyPerCharge.toFixed(1)} kWh` : null,
+          avgPricePerKwh != null ? `平均电价: ${currency === 'CNY' ? '¥' : currency}${avgPricePerKwh.toFixed(2)} / 度` : null,
+          avgEnergyPerCharge != null ? `单次平均: ${avgEnergyPerCharge.toFixed(1)} 度 / 次` : null,
         ].filter(Boolean)
         if (subMetrics.length === 0) return null
-        return <Text className="muted history-summary-secondary">{subMetrics.join(' · ')}</Text>
+        return <Text className="muted history-summary-secondary">{subMetrics.join('　')}</Text>
       })()}
       {status ? <Text className="muted history-statistics-coverage">{status}</Text> : null}
     </View>

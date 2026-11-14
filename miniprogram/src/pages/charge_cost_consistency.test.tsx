@@ -49,7 +49,7 @@ async function unmount() { await act(async () => { platform.unload(); tree!.unmo
 
 it('keeps one labelled estimate but separates it from confirmed cost-page bill denominators', async () => {
   let page = await mount('charges')
-  expect(page.root.findByProps({ ariaLabel: '充电费用 ≈¥11.40' })).toBeDefined()
+  expect(page.root.findAllByType('text').some(node => String(node.props.className ?? '').includes('charge-row-cost') && node.children.join('') === '≈¥11.40')).toBe(true)
   await unmount()
   page = await mount('stats')
   expect(page.root.findByProps({ ariaLabel: '已知费用 1/1 条 ≈11.40 CNY' })).toBeDefined()
@@ -97,7 +97,7 @@ it('shows qualified partial charge estimates separately across list, cost and co
     throw Error('unexpected synthetic route')
   })
   let page = await mount('charges')
-  expect(page.root.findByProps({ ariaLabel: '充电费用 ≈¥11.40' })).toBeDefined()
+  expect(page.root.findAllByType('text').some(node => String(node.props.className ?? '').includes('charge-row-cost') && node.children.join('') === '≈¥11.40')).toBe(true)
   await unmount()
   page = await mount('cost')
   expect(page.root.findByProps({ ariaLabel: '已采集部分估算 ≈11.4 CNY' })).toBeDefined()

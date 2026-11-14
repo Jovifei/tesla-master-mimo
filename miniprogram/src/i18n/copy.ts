@@ -71,9 +71,9 @@ const zhCN: Catalogue = {
   'charges.title': '充电历史',
   'charges.showShort': '显示短充',
   'charges.hideShort': '隐藏短充',
-  'charges.modeUnknown': '模式未确认',
-  'charges.ac': 'AC 充电',
-  'charges.dc': 'DC 充电',
+  'charges.modeUnknown': '交流',
+  'charges.ac': '交流',
+  'charges.dc': '直流',
   'charges.cost': '充电费用',
 }
 
