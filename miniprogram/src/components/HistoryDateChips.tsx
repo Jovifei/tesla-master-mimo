@@ -29,7 +29,8 @@ export default function HistoryDateChips({ query, onChange }: {
       const startDate = days == null ? '' : civil(start)
       const selected = query.startDate === startDate && query.endDate === (days == null ? '' : endDate)
       return <Button key={String(days)} className={`history-chip ${selected ? 'history-chip-selected' : ''}`} onClick={() => onChange({ startDate, endDate: days == null ? '' : endDate, relativeDays: days == null ? undefined : days === 0 ? 1 : days })}>
-        {days == null ? copy('history.all') : days === 0 ? copy('history.today') : days === 365 ? copy('history.lastYear') : copy('history.lastDays', { days })}
+        {/* App DateFilterDropdown labels: 近 1 周 / 近 1 个月 / 近 3 个月 / 近 1 年 */}
+      {days == null ? copy('history.all') : days === 0 ? copy('history.today') : days === 7 ? '近 1 周' : days === 30 ? '近 1 个月' : days === 90 ? '近 3 个月' : copy('history.lastYear')}
       </Button>
     })}
     <Picker mode="date" value={query.startDate || endDate} onChange={event => onChange(selectHistoryDate({ ...query, endDate: query.endDate || event.detail.value }, 'startDate', event.detail.value))}>

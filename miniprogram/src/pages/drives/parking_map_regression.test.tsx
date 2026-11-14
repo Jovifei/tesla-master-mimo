@@ -85,7 +85,7 @@ it('reports retained ambiguous legacy history without showing or counting it', a
   expect(view.root.findAllByProps({ className: 'history-record' })).toHaveLength(1)
   expect(view.root.findByProps({ ariaLabel: '总行程数 1 次' })).toBeDefined()
   expect(readHistoryCache<{ identityAmbiguous?: boolean }>(storage, key).some(row => row.identityAmbiguous === true)).toBe(true)
-  const longTrips = view.root.findAllByType('button').find(item => item.children.join('') === '长途 (200km+)')!
+  const longTrips = view.root.findAllByType('button').find(item => item.children.join('') === '长途 (100 km+)')!
   await act(async () => { longTrips.props.onClick() }); await flush()
   expect(JSON.stringify(view.toJSON())).toContain('来源身份未确认的历史记录已保留，但未计入当前展示或统计')
 })
@@ -122,9 +122,9 @@ it('reuses a confirmed proof after filtering the candidate out and back into vie
     await act(async () => { button!.props.onClick() }); await flush()
   }
   expect(view.root.findAllByProps({ className: 'history-record history-parked' })).toHaveLength(1)
-  await click('长途 (200km+)')
+  await click('长途 (100 km+)')
   expect(view.root.findAllByProps({ className: 'history-record history-parked' })).toHaveLength(0)
-  await click('通勤 (< 50km)')
+  await click('通勤 (< 10 km)')
   await selectFixtureDay(view)
   expect(view.root.findAllByProps({ className: 'history-record history-parked' })).toHaveLength(1)
   expect(platform.request.mock.calls.filter(([request]) => request.url.endsWith('/parked/1/3'))).toHaveLength(1)
@@ -231,15 +231,16 @@ it('does not show a late old-vehicle parked proof after changing vehicles', asyn
     if (url.includes('/cars/8/drives')) return Promise.resolve(response({ drives: [], meta: { page: 1, show: 20, total_pages: 1 } }))
     return Promise.resolve(response({ drives: records, meta: { page: 1, show: 20, total_pages: 1 } }))
   })
-  const view = await mount()
+  let view = await mount()
   expect(release).toBeTypeOf('function')
-  const picker = view.root.findAllByType('picker' as React.ElementType).find(item => item.props.mode === 'selector' && item.props.range?.length === 2)
-  expect(picker).toBeDefined()
-  await act(async () => { picker!.props.onChange({ detail: { value: 1 } }) }); await flush()
+  // App has no car switcher; reseed the persisted selection and remount.
+  platform.values.set('matelink.selected.car.v1.test-owner', 'drive-other')
+  await act(async () => { platform.unload(); view.unmount() })
+  view = await mount()
   await act(async () => { release(response({ older_drive_id: 1, newer_drive_id: 3,
     start_date: records[1].end_date, end_date: records[0].start_date, source: 'teslamate_archive' })) }); await flush()
   expect(view.root.findAllByProps({ className: 'history-record history-parked' })).toHaveLength(0)
-  expect(JSON.stringify(view.toJSON())).toContain('暂无可展示的行程')
+  expect(JSON.stringify(view.toJSON())).toContain('未找到行程')
 })
 
 it('withholds parked inference while later history pages have not yet been received', async () => {

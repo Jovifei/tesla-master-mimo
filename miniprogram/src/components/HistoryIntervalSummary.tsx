@@ -33,9 +33,9 @@ export default function HistoryIntervalSummary({ interval, query, kind }: {
   const currency = currencies.length === 1 ? currencies[0]! : currencies.length > 1 ? '多币种' : '币种未知'
   const cost = coveredTotal(charges, row => kind === 'charges' && currencies.length === 1 && (row.currencyCode ?? row.currency) === currency ? chargeCost(row) : null)
   const hasEstimateInTotal = cost.value != null && estimateCount > 0 && currencies.length === 1
-  const status = interval.complete ? null : drives
-    ? `数据覆盖 · 距离 ${drives.distance.known}/${drives.distance.total} · 时长 ${drives.duration.known}/${drives.duration.total}`
-    : `数据覆盖 · 费用 ${cost.known}/${charges.length} · 电量 ${battery!.known}/${battery!.total}`
+  // App shows a single partial-data note (history_chart_partial_data); the
+  // per-field coverage counts stay internal.
+  const status = interval.complete ? null : '部分记录缺少数据'
   return (
     <View className="card history-interval">
       <Text className="section-title">{copy('common.summary')}</Text>

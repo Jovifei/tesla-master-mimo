@@ -20,7 +20,7 @@ describe('monthly drive chart coverage', () => {
     const chart = renderChart(false)
     const values = chart.root.findAllByProps({ className: 'app-drive-month-value' })
     expect(values.map(value => value.children.join(''))).toEqual(['1', '0', '1'])
-    expect(JSON.stringify(chart.toJSON())).not.toContain('数据未完整加载')
+    expect(JSON.stringify(chart.toJSON())).not.toContain('部分记录缺少数据')
   })
 
   it('distinguishes unknown months and lower-bound counts for partial history', () => {
@@ -30,6 +30,6 @@ describe('monthly drive chart coverage', () => {
     const columns = chart.root.findAllByProps({ className: 'app-drive-month-column' })
     expect(columns[0].props.ariaLabel).toContain('至少 1 次')
     expect(columns[1].props.ariaLabel).toContain('未知')
-    expect(JSON.stringify(chart.toJSON())).toContain('数据未完整加载')
+    expect(JSON.stringify(chart.toJSON())).toContain('部分记录缺少数据')
   })
 })
