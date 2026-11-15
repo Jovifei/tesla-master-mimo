@@ -116,7 +116,18 @@ function ChargeGridState({ cells, unit }: { cells: ActivityCell[]; unit: string 
   const leading = daily && visible.length ? (new Date(`${visible[0].key}T12:00:00Z`).getUTCDay() + 6) % 7 : 0
   const chosen = cells.find(cell => cell.key === selected)
   return <View className="charge-activity">
-    <Text className="muted">{daily ? '一格一天 · 60 度电（kWh）及以上为最深色' : '按已记录日期展示'} · {unit} · — 为尚未读到，不代表未充电。</Text>
+    <View className="charge-activity-top-bar">
+      <Text className="charge-activity-caption">{daily ? '日历热力分布' : '已记录日期'} · {unit}</Text>
+      <View className="charge-heatmap-scale">
+        <Text className="scale-label">0</Text>
+        <View className="scale-dot level-0" />
+        <View className="scale-dot level-1" />
+        <View className="scale-dot level-2" />
+        <View className="scale-dot level-3" />
+        <View className="scale-dot level-4" />
+        <Text className="scale-label">{daily ? '60+' : '高'}</Text>
+      </View>
+    </View>
     {daily ? <View className="charge-activity-weekdays">{['一','二','三','四','五','六','日'].map(day => <Text key={day}>{day}</Text>)}</View> : null}
     <View className="charge-activity-grid">
       {Array.from({ length: leading }, (_, i) => <View key={`pad-${i}`} />)}
@@ -127,7 +138,9 @@ function ChargeGridState({ cells, unit }: { cells: ActivityCell[]; unit: string 
         <Text>{daily ? cell.key.slice(8) : cell.label}</Text><Text className="activity-number">{activityNumber(cell, unit)}</Text>
       </Button>)}
     </View>
-    <Text className="charge-activity-selection">{chosen ? `${chosen.key} · ${chosen.display}` : '点选小格查看数值与覆盖情况'}</Text>
+    <View className={`charge-activity-selection-box ${chosen ? 'has-selection' : ''}`}>
+      <Text className="charge-activity-selection">{chosen ? `${chosen.key} · ${chosen.display}` : ''}</Text>
+    </View>
     {maxPage > 0 ? <View className="day-stack-navigation"><Button disabled={page === 0} onClick={() => setPage(page - 1)}>较早日期</Button>
       <Text>{page + 1} / {maxPage + 1}</Text><Button disabled={page === maxPage} onClick={() => setPage(page + 1)}>较近日期</Button></View> : null}
   </View>

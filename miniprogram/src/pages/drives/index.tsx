@@ -601,7 +601,23 @@ export default function DrivesPage() {
         </View>
         {offline ? <Text className="muted">{copy('history.localCache')}</Text> : null}
       </View> : null}
-      {items.some(isHistoryIdentityAmbiguous) ? <Text className="muted history-identity-note">来源身份未确认的历史记录已保留，但未计入当前展示或统计</Text> : null}
+      {items.some(isHistoryIdentityAmbiguous) ? (
+        <View
+          className="history-identity-badge"
+          onClick={() => {
+            void Taro.showModal({
+              title: '历史记录提示',
+              content: '来源身份未确认的历史记录已保留，但未计入当前展示或统计。',
+              showCancel: false,
+              confirmText: '我知道了',
+            })
+          }}
+          ariaLabel="来源身份未确认的历史记录已保留，但未计入当前展示或统计"
+        >
+          <Text className="identity-badge-icon">ℹ</Text>
+          <Text className="history-identity-note">来源身份未确认的历史记录已保留，但未计入当前展示或统计</Text>
+        </View>
+      ) : null}
       {notice ? <View className="card history-notice">
         <Text className="muted">前台发现一条新的已完成行程，仅本次打开时检查。</Text>
         <Button className="button" onClick={() => {

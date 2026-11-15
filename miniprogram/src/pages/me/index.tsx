@@ -378,12 +378,19 @@ export default function MePage() {
       <View className="app-toolbar" style={{ paddingTop: `${navGeo.navBarTop}px`, paddingRight: `${navGeo.capsuleRightPadding}px` }}><Text className="title">更多</Text></View>
       {MOCK_FIXTURE_ENABLED ? <Text className="muted">合成数据模式——账号状态为模拟，授权流程不可用；全部记录为 source=mock_fixture 的测试数据。</Text> : null}
       {!session ? <View className="login-welcome"><Text className="title">每一程，都有记录。</Text><Text className="muted">连接你的 Tesla，查看车辆状态、行程与充电。账号登录、官方授权和车辆确认各自独立。</Text></View> : null}
-      <View className="card account-hero">
+      <View className="card account-hero" onClick={() => {
+        if (!MOCK_FIXTURE_ENABLED && session) {
+          void Taro.navigateTo({ url: '/pages/tools/index?kind=account' })
+        }
+      }}>
         <View className="account-heading">
           <View>
             <View className="visual-heading"><VisualIcon name="account" /><Text className="section-title">账号与授权</Text></View>
           </View>
-          <Text className={`state-pill ${session && !MOCK_FIXTURE_ENABLED ? 'state-pill-ready' : ''}`}>{session ? MOCK_FIXTURE_ENABLED ? '合成会话' : '会话已建立' : '尚未登录'}</Text>
+          <View className="account-heading-right">
+            <Text className={`state-pill ${session && !MOCK_FIXTURE_ENABLED ? 'state-pill-ready' : ''}`}>{session ? MOCK_FIXTURE_ENABLED ? '合成会话' : '会话已建立' : '尚未登录'}</Text>
+            {session && !MOCK_FIXTURE_ENABLED ? <Text className="account-hero-chevron">›</Text> : null}
+          </View>
         </View>
         <Text className="muted">{MOCK_FIXTURE_ENABLED ? '合成会话，未连接真实账号或车辆。' : '使用特斯拉账号登录，授权在 Tesla 官方页面完成。与 App 使用同一特斯拉账号，可查看该账号已有的车辆和历史数据。'}</Text>
       </View>
@@ -415,13 +422,7 @@ export default function MePage() {
         </View>
       ) : null}
 
-      {session ? <>      <View className="more-status">
-        <VisualIcon name="shield" />
-        <View className="more-status-copy">
-          <Text className="more-status-title">数据状态</Text>
-          <Text className="more-status-description">连接成功后可查看实时车辆数据；统计分析页面需要积累足够的历史记录后才会完整。</Text>
-        </View>
-      </View>
+      {session ? <>
       <Text className="more-section-heading">数据分析</Text>
       <View className="more-grid">{[
         { label: '统计概览', icon: 'speed' as const, route: '/pages/analysis/index?kind=stats' },

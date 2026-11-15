@@ -327,7 +327,23 @@ export default function AnalysisPage() {
     </View></View> : null}
     {loading ? <LoadingIndicator label="正在读取当前车辆分析…" compact /> : null}
     {car ? <View className="analysis-coverage"><Text>{status.offline ? '本机缓存' : status.cached ? '在线验证 · 缓存部分覆盖' : status.drivesComplete && status.chargesComplete ? '数据读取完成' : status.reason === 'request_failed' ? '部分数据读取失败' : '数据正在补全'} · 行程 {drives.length} 条 · 充电 {charges.length} 条</Text></View> : null}
-    {[...drives, ...charges].some(isHistoryIdentityAmbiguous) ? <Text className="muted">来源身份未确认的历史记录已保留，但未计入当前展示或统计。</Text> : null}
+    {[...drives, ...charges].some(isHistoryIdentityAmbiguous) ? (
+      <View
+        className="history-identity-badge"
+        onClick={() => {
+          void Taro.showModal({
+            title: '历史记录提示',
+            content: '来源身份未确认的历史记录已保留，但未计入当前展示或统计。',
+            showCancel: false,
+            confirmText: '我知道了',
+          })
+        }}
+        ariaLabel="来源身份未确认的历史记录已保留，但未计入当前展示或统计"
+      >
+        <Text className="identity-badge-icon">ℹ</Text>
+        <Text className="history-identity-note">来源身份未确认的历史记录已保留，但未计入当前展示或统计。</Text>
+      </View>
+    ) : null}
     {error ? <Text className="error">{error}</Text> : null}
     {car && ['timeline', 'vampire', 'parked'].includes(kind) && parkingCandidates.length ? <View className="card">
       <Text className="muted">{checkingParking ? '正在核验驻车窗口…' : `已核验 ${windows.length}/${Math.min(parkingLimit, parkingCandidates.length)} 个驻车窗口；未确认的窗口不显示。`}</Text>

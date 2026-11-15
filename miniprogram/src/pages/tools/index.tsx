@@ -31,10 +31,10 @@ import { createParkedProofVerifier, parkedProofKey } from '../../services/parked
 import TpmsSettingsPanel from '../../components/TpmsSettingsPanel'
 import './index.scss'
 
-const titles: Record<string, string> = { settings: '设置', language: '语言与单位', maps: '地图与导航', localData: '本机数据', permissions: '提醒与权限', tariff: '分时电价配置', location: '车辆位置', temperature: '温度趋势', tpms: '胎压趋势', tpmsSettings: '每辆车的冷态胎压设置',
+const titles: Record<string, string> = { account: '账号与授权', settings: '设置', language: '语言与单位', maps: '地图与导航', localData: '本机数据', permissions: '提醒与权限', tariff: '分时电价配置', location: '车辆位置', temperature: '温度趋势', tpms: '胎压趋势', tpmsSettings: '每辆车的冷态胎压设置',
   sentry: '哨兵历史', updates: '软件', export: '导出数据', report: '年度报告', countries: '已到访国家', regions: '已到访地区', whereWasI: '我曾在哪里', about: '关于', vehiclePreview: '3D 车辆' }
 const blankTariff = () => ({ currency: '', peak: '', flat: '', valley: '', enabled: true, defaultPrice: '', peakRanges: DEFAULT_TARIFF_PERIODS.peak, flatRanges: DEFAULT_TARIFF_PERIODS.flat, valleyRanges: DEFAULT_TARIFF_PERIODS.valley })
-const noFetch = new Set(['settings', 'language', 'maps', 'localData', 'permissions', 'tariff', 'about', 'vehiclePreview'])
+const noFetch = new Set(['account', 'settings', 'language', 'maps', 'localData', 'permissions', 'tariff', 'about', 'vehiclePreview'])
 function previewTouches(event: unknown): Array<{ clientX: number; clientY: number }> {
   const value = event as { touches?: Array<{ clientX: number; clientY: number }>; detail?: { touches?: Array<{ clientX: number; clientY: number }> } }
   return (value.touches || value.detail?.touches || []).slice(0, 2).filter(touch => Number.isFinite(touch.clientX) && Number.isFinite(touch.clientY))
@@ -223,18 +223,48 @@ export default function ToolsPage() {
     <SubpageHeader title={titles[kind]} subtitle={car?.displayName || car?.name || (noFetch.has(kind) ? null : '所选车辆')} />
     {!noFetch.has(kind) ? <Button className="button button-secondary" loading={loading} onClick={() => { void load() }}>刷新数据</Button> : null}
     {error ? <Text className="error">{error}</Text> : null}
-    {kind === 'settings' ? <>
-      <View className="card settings-account">
-        <SectionHeading icon="account" title="账号与连接" />
-        <Text className="muted">{session ? '当前会话可用' : '尚未登录'} · Tesla 关联与车辆权限独立确认</Text>
-        <Button className="button" onClick={() => Taro.switchTab({ url: '/pages/me/index' })}>{session ? '账号与官方授权' : '登录 MateLink'}</Button>
-        {session ? <Button className="button button-secondary" loading={loading} onClick={logout}>退出登录</Button> : null}
+    {kind === 'account' ? <>
+      <View className="card account-detail-card">
+        <SectionHeading icon="account" title="特斯拉账号" />
+        <View className="status">
+          <Text className="status-label">会话状态</Text>
+          <Text className={`state-pill ${session ? 'state-pill-ready' : ''}`}>{session ? '已建立会话' : '尚未登录'}</Text>
+        </View>
+        <Text className="muted">使用特斯拉账号官方授权连接。与 App 使用同一特斯拉账号，可同步已有车辆与历史数据。</Text>
+        <View className="tools-actions" style={{ marginTop: '20rpx' }}>
+          <Button className="button" onClick={() => Taro.switchTab({ url: '/pages/me/index' })}>{session ? '重新授权 / 切换账号' : '登录特斯拉账号'}</Button>
+        </View>
       </View>
+      <View className="card account-legal-card">
+        <SectionHeading icon="shield" title="服务条款与隐私" />
+        <Text className="muted">使用 MateLink 即代表你确认并同意以下法律文件。</Text>
+        <View className="tools-actions" style={{ marginTop: '20rpx' }}>
+          <Button className="button button-secondary" onClick={() => Taro.navigateTo({ url: '/pages/legal/index?kind=terms' })}>服务条款</Button>
+          <Button className="button button-secondary" onClick={() => Taro.navigateTo({ url: '/pages/legal/index?kind=privacy' })}>隐私指引</Button>
+        </View>
+      </View>
+      {session ? (
+        <View className="card account-danger-card">
+          <SectionHeading icon="shield" title="安全与退出" />
+          <Text className="muted">退出只结束当前设备会话；注销会清空服务端绑定的所有数据与车辆映射。</Text>
+          <View className="tools-actions" style={{ marginTop: '20rpx' }}>
+            <Button className="button button-secondary" loading={loading} onClick={logout}>退出登录</Button>
+            <Button className="button button-danger" onClick={() => Taro.switchTab({ url: '/pages/me/index' })}>前往注销账号</Button>
+          </View>
+        </View>
+      ) : null}
+    </> : null}
+    {kind === 'settings' ? <>
       <PresentationPreferences />
       <View className="card settings-directory">
-        {([['language', '语言与单位'], ['tpmsSettings', '胎压提醒设置'], ['maps', '地图与导航'], ['tariff', '分时电价设置'], ['permissions', '提醒与权限'], ['localData', '本机数据与升级'], ['about', '关于 MateLink']] as const).map(([target, label]) =>
+        {([['account', '账号与授权管理'], ['language', '语言与单位'], ['tpmsSettings', '胎压提醒设置'], ['maps', '地图与导航'], ['tariff', '分时电价设置'], ['permissions', '提醒与权限'], ['localData', '本机数据与升级'], ['about', '关于 MateLink']] as const).map(([target, label]) =>
           <Button key={target} className="settings-nav-row" onClick={() => Taro.navigateTo({ url: `/pages/tools/index?kind=${target}` })}><Text>{label}</Text><Text>›</Text></Button>)}
       </View>
+      {session ? (
+        <View className="card settings-logout-card">
+          <Button className="button button-secondary" loading={loading} onClick={logout}>退出当前登录</Button>
+        </View>
+      ) : null}
     </> : null}
     {kind === 'localData' ? <>
       <View className="card local-data-status">

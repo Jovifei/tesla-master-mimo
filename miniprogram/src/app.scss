@@ -193,13 +193,32 @@ button {
 .account-hero {
   overflow: hidden;
   background: linear-gradient(145deg, #ffffff 0%, #f4f7f9 100%);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  &:active {
+    opacity: 0.88;
+    transform: scale(0.99);
+  }
 }
 
 .account-heading {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 20px;
+}
+
+.account-heading-right {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  flex-shrink: 0;
+}
+
+.account-hero-chevron {
+  font-size: 34rpx;
+  color: var(--apple-label-tertiary);
+  font-weight: 300;
+  margin-left: 2rpx;
 }
 
 .state-pill {
@@ -1003,6 +1022,151 @@ button {
         color: var(--apple-label-tertiary) !important;
         font-weight: 400 !important;
       }
+    }
+  }
+}
+
+/* Unobtrusive Identity Badge */
+.history-identity-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 10rpx;
+  padding: 8rpx 20rpx;
+  margin: 10rpx 0 16rpx;
+  border-radius: 999rpx;
+  background: var(--apple-surface-secondary);
+  border: 0.5px solid var(--apple-separator);
+  color: var(--apple-label-secondary);
+  font-size: 24rpx;
+  line-height: 1.3;
+  max-width: 100%;
+  box-sizing: border-box;
+  transition: background-color 0.15s ease;
+
+  &:active {
+    background: var(--apple-fill-quaternary);
+  }
+
+  .identity-badge-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28rpx;
+    height: 28rpx;
+    border-radius: 50%;
+    background: var(--apple-teal);
+    color: var(--apple-action-on);
+    font-size: 20rpx;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+
+  .history-identity-note {
+    font-size: 24rpx;
+    color: var(--apple-label-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin: 0;
+  }
+}
+
+/* Charging Heatmap & Section Trigger */
+.charge-heatmap-heading, .section-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16rpx;
+
+  .section-title {
+    margin-bottom: 0;
+  }
+}
+
+.info-dot-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40rpx;
+  height: 40rpx;
+  border-radius: 50%;
+  background: var(--apple-surface-secondary);
+  border: 0.5px solid var(--apple-separator);
+  color: var(--apple-label-secondary);
+  font-size: 24rpx;
+  font-weight: 700;
+  transition: all 0.15s ease;
+
+  &:active {
+    background: var(--apple-teal);
+    color: var(--apple-action-on);
+  }
+}
+
+.charge-activity-top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12rpx;
+}
+
+.charge-activity-caption {
+  font-size: 24rpx;
+  color: var(--apple-label-secondary);
+}
+
+.charge-heatmap-scale {
+  display: flex;
+  align-items: center;
+  gap: 6rpx;
+
+  .scale-label {
+    font-size: 20rpx;
+    color: var(--apple-label-tertiary);
+  }
+
+  .scale-dot {
+    width: 18rpx;
+    height: 18rpx;
+    border-radius: 4rpx;
+
+    &.level-0 { background: var(--apple-surface-secondary); border: 0.5px solid var(--apple-separator); }
+    &.level-1 { background: rgba(var(--activity-ink), .10); }
+    &.level-2 { background: rgba(var(--activity-ink), .20); }
+    &.level-3 { background: rgba(var(--activity-ink), .35); }
+    &.level-4 { background: rgba(var(--activity-ink), .60); }
+  }
+}
+
+.charge-activity-selection-box {
+  min-height: 40rpx;
+  margin-top: 12rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  &.has-selection {
+    padding: 6rpx 16rpx;
+    border-radius: 999rpx;
+    background: var(--apple-fill-quaternary);
+  }
+
+  .charge-activity-selection {
+    font-size: 24rpx;
+    color: var(--apple-label-primary);
+    font-weight: 500;
+  }
+}
+
+/* Secondary Account Details in Tools */
+.account-detail-card, .account-legal-card, .account-danger-card {
+  .tools-actions {
+    display: flex;
+    gap: 16rpx;
+    margin-top: 20rpx;
+    .button {
+      flex: 1;
+      margin: 0;
     }
   }
 }

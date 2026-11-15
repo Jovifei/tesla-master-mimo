@@ -747,7 +747,23 @@ export default function ChargesPage() {
         </View>
         {offline ? <Text className="muted">{copy('history.localCache')}</Text> : null}
       </View> : null}
-      {items.some(isHistoryIdentityAmbiguous) ? <Text className="muted history-identity-note">来源身份未确认的历史记录已保留，但未计入当前展示或统计</Text> : null}
+      {items.some(isHistoryIdentityAmbiguous) ? (
+        <View
+          className="history-identity-badge"
+          onClick={() => {
+            void Taro.showModal({
+              title: '历史记录提示',
+              content: '来源身份未确认的历史记录已保留，但未计入当前展示或统计。',
+              showCancel: false,
+              confirmText: '我知道了',
+            })
+          }}
+          ariaLabel="来源身份未确认的历史记录已保留，但未计入当前展示或统计"
+        >
+          <Text className="identity-badge-icon">ℹ</Text>
+          <Text className="history-identity-note">来源身份未确认的历史记录已保留，但未计入当前展示或统计</Text>
+        </View>
+      ) : null}
       {notice ? <View className="card history-notice">
         <Text className="muted">前台发现一条新的已完成充电，仅本次打开时检查。</Text>
         <Button className="button" onClick={() => {
@@ -759,13 +775,30 @@ export default function ChargesPage() {
       </View> : null}
       {car && !loading ? <HistoryIntervalSummary interval={intervalView} query={query} kind="charges" /> : null}
       {car && dailyCells.length ? <View className="card charge-month-chart">
-        <Text className="section-title">按日充入电量</Text>
+        <View className="charge-heatmap-heading">
+          <View className="visual-heading">
+            <VisualIcon name="energy" />
+            <Text className="section-title">充电日历热力图</Text>
+          </View>
+          <Text
+            className="info-dot-trigger"
+            onClick={() => {
+              void Taro.showModal({
+                title: '充电日历热力图',
+                content: '一格代表一天，颜色越深代表当日充入电量越多；点击小格可查看对应日期的充入电量与已知记录覆盖。',
+                showCancel: false,
+                confirmText: '我知道了',
+              })
+            }}
+          >ℹ</Text>
+        </View>
         <ChargeActivityGrid unit="kWh" cells={dailyCells} />
       </View> : null}
-      {car && !loading ? <View className="history-coverage-note">
-        {unknownDates > 0 ? <Text className="muted">{unknownDates} 条记录的日期无法确认，未纳入日格。</Text> : null}
-        <Text className="muted">{offline ? '当前为本机缓存' : '当前已返回记录'} · 最近日期 {visibleItems[0]?.startDate ? historyDetailDateTime(visibleItems[0].startDate) : '尚未读到'}</Text>
-      </View> : null}
+      {car && !loading && unknownDates > 0 ? (
+        <View className="history-coverage-note">
+          <Text className="muted">{unknownDates} 条记录的日期无法确认，未纳入日格。</Text>
+        </View>
+      ) : null}
       {noticeLimited ? <Text className="muted history-notice-limit">本机前台提示记录不可写或已达上限，后续提示暂停；历史仍可查看</Text> : null}
 
       {chargeStarting && !current ? (
@@ -873,19 +906,35 @@ export default function ChargesPage() {
             <MetricValue label="起始SOC" value={selected.startBatteryLevel} unit="%" /><MetricValue label="结束SOC" value={selected.endBatteryLevel} unit="%" />
             <MetricValue label="SOC变化" value={selected.startBatteryLevel != null && selected.endBatteryLevel != null ? selected.endBatteryLevel - selected.startBatteryLevel : null} unit="%" /><MetricValue label="充电时长" value={selected.durationMinutes} unit="分钟" />
           </View>
-          <Text className="section-title">功率</Text>
+          <View className="section-header-row">
+            <Text className="section-title">功率</Text>
+            <Text
+              className="info-dot-trigger"
+              onClick={() => {
+                void Taro.showModal({
+                  title: '电气采样说明',
+                  content: `本次充电有效采样：功率 ${powerStats.count} 点、电压 ${voltageStats.count} 点、电流 ${currentStats.count} 点、温度 ${temperatureStats.count} 点。均值为有效样本加权平均值，缺失不补0。`,
+                  showCancel: false,
+                  confirmText: '我知道了',
+                })
+              }}
+            >ℹ</Text>
+          </View>
           <View className="telemetry-metric-strip metric-grid">
             <MetricValue label="报告功率" value={selectedEvidence?.summary.chargerPowerKw ?? selected.chargerPowerKw} unit="kW" icon="energy" />
-            <MetricValue label="样本最高功率" value={powerStats.max} unit="kW" /><MetricValue label="样本最低功率" value={powerStats.min} unit="kW" /><MetricValue label="样本平均功率" value={powerStats.average} unit="kW" />
+            <MetricValue label="样本平均功率" value={powerStats.average} unit="kW" />
+            <MetricValue label="样本最高功率" value={powerStats.max} unit="kW" />
+            <MetricValue label="样本最低功率" value={powerStats.min} unit="kW" />
           </View>
           {selected.energy?.chargeMode === 'ac' && qualifiedAcEnergyBalance(selected) ? <><Text className="section-title">电压与电流</Text><View className="telemetry-metric-strip metric-grid">
             <MetricValue label="报告电压" value={selectedEvidence?.summary.chargerVoltageV ?? null} unit="V" /><MetricValue label="报告电流" value={selectedEvidence?.summary.currentA ?? null} unit="A" />
-            <MetricValue label="样本最高电压" value={voltageStats.max} unit="V" /><MetricValue label="样本最低电压" value={voltageStats.min} unit="V" /><MetricValue label="样本平均电压" value={voltageStats.average} unit="V" />
-            <MetricValue label="样本最高电流" value={currentStats.max} unit="A" /><MetricValue label="样本最低电流" value={currentStats.min} unit="A" /><MetricValue label="样本平均电流" value={currentStats.average} unit="A" />
+            <MetricValue label="样本平均电压" value={voltageStats.average} unit="V" /><MetricValue label="样本平均电流" value={currentStats.average} unit="A" />
+            <MetricValue label="样本最高电压" value={voltageStats.max} unit="V" /><MetricValue label="样本最低电压" value={voltageStats.min} unit="V" />
+            <MetricValue label="样本最高电流" value={currentStats.max} unit="A" /><MetricValue label="样本最低电流" value={currentStats.min} unit="A" />
           </View></> : null}
           <Text className="section-title">温度</Text>
-          <View className="telemetry-metric-strip metric-grid"><MetricValue label="报告环境温度" value={selectedEvidence?.summary.outsideTempC ?? null} unit="°C" /><MetricValue label="样本最高温度" value={temperatureStats.max} unit="°C" /><MetricValue label="样本最低温度" value={temperatureStats.min} unit="°C" /><MetricValue label="样本平均温度" value={temperatureStats.average} unit="°C" /></View>
-          <Text className="muted">仅基于本次响应的有效采样：功率 {powerStats.count} / 电压 {voltageStats.count} / 电流 {currentStats.count} / 温度 {temperatureStats.count} 点；缺失不补0，均值为样本均值。</Text>
+          <View className="telemetry-metric-strip metric-grid"><MetricValue label="报告环境温度" value={selectedEvidence?.summary.outsideTempC ?? null} unit="°C" /><MetricValue label="样本平均温度" value={temperatureStats.average} unit="°C" /><MetricValue label="样本最高温度" value={temperatureStats.max} unit="°C" /><MetricValue label="样本最低温度" value={temperatureStats.min} unit="°C" /></View>
+          <Text className="muted history-sampling-note">仅基于本次响应的有效采样：功率 {powerStats.count} / 电压 {voltageStats.count} / 电流 {currentStats.count} / 温度 {temperatureStats.count} 点；缺失不补0，均值为样本均值。</Text>
           {selectedEvidence ? <>
             <EvidenceCurve id="charge-detail-soc" title="充电电量变化" unit="%" points={selectedEvidence.points} valueOf={point => point.batteryLevel} provenanceOf={point => chargeCurveProvenance(point, 'batteryLevel')} forceDisconnected={selectedEvidence.hasUnplaceableSamples} selected={curveSampleIndex} onSelect={setCurveSampleIndex} isCurrent={() => detailContext.current?.row === selected} />
             <EvidenceCurve id="charge-detail-power" title="充电功率" unit="kW" points={selectedEvidence.points} valueOf={point => point.powerKw} provenanceOf={point => chargeCurveProvenance(point, 'powerKw')} forceDisconnected={selectedEvidence.hasUnplaceableSamples} selected={curveSampleIndex} onSelect={setCurveSampleIndex} isCurrent={() => detailContext.current?.row === selected} />
