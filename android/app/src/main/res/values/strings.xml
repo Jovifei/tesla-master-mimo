@@ -29,6 +29,7 @@
     <string name="energy_nominal_estimate">Remaining-energy estimate</string>
     <string name="history_energy_cache_failed">Energy could not be saved. Pull to refresh to retry.</string>
     <string name="history_detail_waiting_for_summary">This detail cannot be matched to a saved session yet. Refresh the history list and try again.</string>
+    <string name="history_detail_legacy_unverified">This charge comes from a legacy self-hosted archive without a source identity, so its full detail cannot be verified or saved for offline use. List figures remain available.</string>
     <string name="history_detail_points_missing">Detail points could not be saved. The chart may be unavailable offline.</string>
     <string name="history_detail_cache_corrupt">Saved detail points failed the integrity check. Showing the summary without a chart.</string>
     <string name="history_detail_source_unverified">Details need verification</string>
@@ -606,7 +607,7 @@
     <string name="software_longest_installed">Longest Installed</string>
     <string name="software_longest">Longest</string>
     <string name="software_installed">Installed</string>
-    <string name="software_days">%1$d days</string>
+    <string name="software_days">Days</string>
     <string name="software_duration">Duration</string>
 
     <!-- Where Was I extra -->

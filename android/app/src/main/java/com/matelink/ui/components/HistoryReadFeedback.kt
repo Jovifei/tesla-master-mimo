@@ -38,6 +38,7 @@ internal fun historyReadWarningMessageRes(warning: String): Int = when (warning)
     "history_sync_timeout" -> R.string.history_sync_timeout
     "history_energy_cache_failed" -> R.string.history_energy_cache_failed
     "history_detail_waiting_for_summary" -> R.string.history_detail_waiting_for_summary
+    "history_detail_legacy_unverified" -> R.string.history_detail_legacy_unverified
     "history_detail_points_missing" -> R.string.history_detail_points_missing
     "history_detail_cache_corrupt" -> R.string.history_detail_cache_corrupt
     "history_detail_source_unverified" -> R.string.history_detail_source_unverified

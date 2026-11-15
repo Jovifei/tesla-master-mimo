@@ -120,6 +120,18 @@ fun ChargeSummary.verifiedDetailIdentity(context: VehicleContext): HistoryDetail
         chargeId, raw.source, raw.sourceInstanceId, startDate, endDate, raw.sourceId, raw.sourceRecordId) }.getOrNull()
 }
 
+/**
+ * A legacy self-hosted charge detail has no provider identity to verify against,
+ * so it can never be cached or matched to its list row. The list figures stay
+ * usable; only the detail drill-down is affected, and the UI must say so plainly.
+ */
+internal fun ChargeDetail.isLegacySourceUnverified(context: VehicleContext): Boolean {
+    if (context.connectionSource != HistoryConnectionSource.SELF_HOSTED) return false
+    if (context.localHistoryCarId !in (Int.MIN_VALUE + 1)..-1) return false
+    if (source != null || sourceInstanceId != null || sourceId != null || sourceRecordId != null) return false
+    return parseIsoInstant(startDate) != null && parseIsoInstant(endDate) != null
+}
+
 fun DriveSummary.verifiedDetailIdentity(context: VehicleContext): HistoryDetailIdentity? {
     if (carId != context.localHistoryCarId) return null
     val raw = toRawAnalysisDriveData()

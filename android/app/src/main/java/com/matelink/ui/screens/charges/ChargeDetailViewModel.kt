@@ -17,6 +17,7 @@ import com.matelink.data.repository.HistoryDetailRepository
 import com.matelink.data.repository.HistoryDetailPointSaveRejected
 import com.matelink.data.repository.persistVerifiedChargeDetail
 import com.matelink.data.repository.verifiedDetailIdentity
+import com.matelink.data.repository.isLegacySourceUnverified
 import com.matelink.data.repository.VerifiedHistoryReadContext
 import com.matelink.data.repository.historyIdentityUnavailableError
 import com.matelink.domain.history.LatestHistoryLoad
@@ -406,7 +407,9 @@ class ChargeDetailViewModel @Inject constructor(
                     }
                     checkContext()
                     val receipt = persisted?.receipt
+                    val legacySourceUnverified = rawDetail.isLegacySourceUnverified(resolved.context)
                     val detailWarning = when {
+                        legacySourceUnverified -> "history_detail_legacy_unverified"
                         pointWriteFailed -> "history_detail_points_missing"
                         persisted == null -> "history_detail_waiting_for_summary"
                         receipt == null -> "history_detail_points_missing"
