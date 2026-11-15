@@ -95,6 +95,35 @@ describe('history cache', () => {
     expect(store.values.has(legacyKey)).toBe(true)
   })
 
+  it('keeps same-ID legacy records from distinct sources and leaves original archives intact', () => {
+    const store = storage(), origin = 'https://api.example.test'
+    const key = historyCacheKey('drives', 'user-a', 'vehicle-a', origin)
+    const legacyKey = key.replace('.v3.', '.v2.') + '.7'
+    const rows = [
+      { id: '1', sessionId: 'shared', source: 'telemetry_mqtt', sourceInstanceId: 'first', energyConsumedKwh: 0 },
+      { id: '1', sessionId: 'shared', source: 'telemetry_mqtt', sourceInstanceId: 'second', energyConsumedKwh: 2 },
+      { id: '1', sessionId: 'shared', source: 'teslamate_archive', sourceInstanceId: 'first', energyConsumedKwh: 3 },
+    ]
+    const original = { schema: 2, scope: legacyKey, items: rows, savedAt: 'now' }
+    store.setStorageSync(legacyKey, original)
+    const other = historyCacheKey('drives', 'user-b', 'vehicle-a', origin).replace('.v3.', '.v2.') + '.7'
+    store.setStorageSync(other, { schema: 2, scope: other, items: [{ id: 'private' }] })
+    expect(readHistoryCache(store, key)).toEqual(rows)
+    expect(readHistoryCache(store, key)).toEqual(rows)
+    expect(store.values.get(legacyKey)).toBe(original)
+  })
+
+  it('leaves legacy archives intact when migration cannot write', () => {
+    const store = storage(), key = historyCacheKey('drives', 'a', 'uid', 'https://api.example.test')
+    const legacyKey = key.replace('.v3.', '.v2.') + '.1'
+    const original = { schema: 2, scope: legacyKey, items: [{ id: 'one', source: 'teslamate_archive' }], savedAt: 'now' }
+    store.setStorageSync(legacyKey, original)
+    const unavailable = { ...store, setStorageSync: () => { throw new Error('quota') } }
+    expect(readHistoryCache(unavailable, key)).toEqual(original.items)
+    expect(store.values.get(legacyKey)).toBe(original)
+    expect(store.values.has(key)).toBe(false)
+  })
+
   it('does not guess a generation from a malformed legacy suffix', () => {
     const store = storage(), key = historyCacheKey('drives', 'a', 'uid', 'https://api.example.test')
     const legacyKey = key.replace('.v3.', '.v2.') + '.7.other'

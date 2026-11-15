@@ -1,0 +1,106 @@
+name: Mini alignment strict verification
+on:
+  push:
+    branches: [codex/ui-product-mini-20261109]
+    paths: ['.github/workflows/ui-mini-corrections-20261113.yml']
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: bash
+jobs:
+  source:
+    if: github.repository == 'Jovifei/tesla-master-mimo'
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    outputs:
+      sha: ${{ steps.commit.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 3
+      - name: Repair verified compatibility and fixed-fixture assumptions
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = 142920b1337dad57d7ed0843d3e82dcdb2028d9f
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('miniprogram/src/components/PresentationControls.tsx')
+          s=p.read_text();assert ' ariaHidden />' in s
+          p.write_text(s.replace(' ariaHidden />',' />'))
+          p=Path('miniprogram/src/domain/history_pages.test.tsx')
+          s=p.read_text();assert "click(page, '行程曲线')" in s
+          s=s.replace("click(page, '行程曲线')", "click(page, '详细曲线')")
+          old="for (const uid of ['uid7', 'uid8', 'fixture-vehicle']) platform.values.set(`${historyCacheKey('drives', 'user-a', uid, 'https://api.example.test')}.query`, { startDate: '', endDate: '', minDistanceKm: 0 })"
+          assert old in s
+          s=s.replace(old,"for (const kind of ['drives', 'charges'] as const) for (const uid of ['uid7', 'uid8', 'fixture-vehicle']) platform.values.set(`${historyCacheKey(kind, 'user-a', uid, 'https://api.example.test')}.query`, { startDate: '', endDate: '', minDistanceKm: 0 })")
+          p.write_text(s)
+          p=Path('miniprogram/src/pages/charges/charge_detail.test.tsx')
+          s=p.read_text();anchor="  vi.stubEnv('TARO_APP_API_BASE_URL', origin); platform.values.set('matelink.wechat.session.v1', session('owner'))"
+          assert anchor in s
+          s="import { historyCacheKey } from '../../services/history_cache'\n"+s
+          s=s.replace(anchor,anchor+"\n  // Fixed October fixtures explicitly request all-time history; they must not age out of a rolling 30-day product default.\n  platform.values.set(`${historyCacheKey('charges', 'owner', 'uid7', origin)}.query`, { startDate: '', endDate: '', minDistanceKm: 0 })")
+          p.write_text(s)
+          PY
+      - id: commit
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add miniprogram/src/components/PresentationControls.tsx miniprogram/src/domain/history_pages.test.tsx miniprogram/src/pages/charges/charge_detail.test.tsx
+          git diff --cached --check
+          git commit -m 'fix(mini): use supported native spacer and preserve historical safety fixture scope'
+          git push origin HEAD:refs/heads/codex/ui-product-mini-20261109
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+  verify:
+    needs: source
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+        working-directory: miniprogram
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.source.outputs.sha }}
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm ci --prefix test-tooling --ignore-scripts --no-audit --no-fund
+          mkdir -p evidence/ui-alignment
+          git rev-parse HEAD HEAD^{tree} HEAD^ > evidence/ui-alignment/SOURCE_HEAD.txt
+      - name: Strict types
+        run: npm run typecheck 2>&1 | tee evidence/ui-alignment/typecheck.log
+      - name: Full tests with real pipeline failure propagation
+        if: success() || failure()
+        env:
+          TZ: Asia/Shanghai
+        run: npm test -- --reporter=default --reporter=junit --outputFile.junit=evidence/ui-alignment/tests.xml 2>&1 | tee evidence/ui-alignment/tests.log
+      - name: WeChat build and unchanged original asset budgets
+        if: success() || failure()
+        run: npm run build:weapp 2>&1 | tee evidence/ui-alignment/build.log
+      - name: Independently require zero XML failures
+        if: success() || failure()
+        run: |
+          python3 - <<'PY'
+          import xml.etree.ElementTree as E
+          root=E.parse('evidence/ui-alignment/tests.xml').getroot()
+          cases=list(root.iter('testcase'))
+          assert len(cases)>=1031,len(cases)
+          assert not any(x.find('failure') is not None or x.find('error') is not None or x.find('skipped') is not None for x in cases)
+          print('Verified',len(cases),'tests, zero failures/errors/skips')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mini-alignment-strict-${{ needs.source.outputs.sha }}
+          path: |
+            miniprogram/evidence/ui-alignment/
+            miniprogram/dist/
+          retention-days: 7
+          if-no-files-found: error

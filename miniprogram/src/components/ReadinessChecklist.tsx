@@ -1,4 +1,4 @@
-import { Text, View } from '@tarojs/components'
+import { Button, Text, View } from '@tarojs/components'
 import { useState } from 'react'
 import { diagnosticSteps, type DiagnosticInput } from '../domain/diagnostic'
 import { readinessViewFor, toReadinessView } from '../domain/readiness'
@@ -24,24 +24,30 @@ type Props = {
 
 export default function ReadinessChecklist({ items = [], pairing, sessionReady = false, diagnostics }: Props) {
   const [expanded, setExpanded] = useState<string | null>(null)
+  const [showSetup, setShowSetup] = useState(false), [showItems, setShowItems] = useState(false)
   const steps = diagnosticSteps({ ...diagnostics, items, pairing, sessionReady })
   const icons: VisualIconName[] = ['account', 'vehicle', 'cloud', 'shield', 'clock', 'chart']
   const readiness = readinessViewFor(items, 'telemetry')
   const pairingLabel = pairing?.status === 'available' ? '服务端报告就绪' : pairing?.status === 'pairing_required' ? '需要确认' : '待服务端确认'
   return (
-    <View className="card">
-      <View className="visual-heading"><VisualIcon name="cloud" /><Text className="section-title">数据准备</Text></View>
-      <Text className="muted">逐项查看服务端状态，实时可用不代表历史已保存。</Text>
+    <View className="card readiness-compact">
+      <View className="visual-heading"><VisualIcon name="cloud" /><Text className="section-title">数据状态</Text></View>
+      <Text className="muted">先看本次收到的数据，点开条目查看原因。未核验不等于故障，也不代表没有记录。</Text>
       <Text className="muted">只读诊断 · 各项证据独立，不计算整链通过率。</Text>
       {steps.map((step, index) => <View className="readiness-item" key={step.key}>
-        <View className="status"><View className="visual-heading"><VisualIcon name={icons[index]} /><Text className="status-label">{step.label}</Text></View><Text className={`state-pill ${step.state === 'PASS' && step.freshness !== 'stale_or_skewed' ? 'state-pill-ready' : ''}`}>{step.freshness === 'stale_or_skewed' ? '已见旧报告' : step.state === 'PASS' ? '局部证据已见' : step.state === 'WAITING' ? '等待车辆' : step.state === 'WARNING' ? '待核对' : '证据未知'} · {step.state}</Text></View>
+        <Button className="readiness-toggle" ariaLabel={`${expanded === step.key ? '收起' : '展开'} ${step.label}`} onClick={() => setExpanded(expanded === step.key ? null : step.key)}>
+          <View className="visual-heading"><VisualIcon name={icons[index]} /><Text className="status-label">{step.label}</Text></View>
+          <Text className={`state-pill ${step.state === 'PASS' && step.freshness !== 'stale_or_skewed' ? 'state-pill-ready' : ''}`}>{step.freshness === 'stale_or_skewed' ? '旧报告' : step.state === 'PASS' ? '已有证据' : step.state === 'WAITING' ? '等待车辆' : step.state === 'WARNING' ? '待核对' : '尚未核验'} {expanded === step.key ? '−' : '+'}</Text>
+        </Button>
         <Text className="muted">{step.summary}</Text>
-        <Text className="metric-source">来源：{step.source}</Text>
-        <Text className="metric-source">证据时间：{reportTime(step.time)}</Text>
-        <Text className="metric-source">建议：{step.action}</Text>
-        <View onClick={() => setExpanded(expanded === step.key ? null : step.key)}><Text className="readiness-count">{expanded === step.key ? '收起详情' : '查看详情'} · {step.label}</Text></View>
-        {expanded === step.key ? <Text className="muted">{step.detail}</Text> : null}
+        {expanded === step.key ? <View className="readiness-detail">
+          <Text className="metric-source">来源：{step.source}</Text>
+          <Text className="metric-source">证据时间：{reportTime(step.time)}</Text>
+          <Text className="metric-source">建议：{step.action}</Text><Text className="muted">{step.detail}</Text>
+        </View> : null}
       </View>)}
+      <Button className="readiness-toggle" onClick={() => setShowSetup(!showSetup)} ariaLabel="连接与授权详情">连接与授权详情 {showSetup ? '−' : '+'}</Button>
+      <View hidden={!showSetup} className="readiness-setup-details">
       <Text className="muted">胎压为有界本机前台观测历史；行程与充电提示仅在前台。订阅通知尚未接入（UNSUPPORTED）。</Text>
       <View className="status">
         <View className="visual-heading"><VisualIcon name="account" /><Text className="status-label">微信会话</Text></View>
@@ -62,6 +68,9 @@ export default function ReadinessChecklist({ items = [], pairing, sessionReady =
       <Text className="muted">{readiness.detail}</Text>
       {readiness.source ? <Text className="muted">来源：{sourceLabel(readiness.source)}</Text> : null}
       {readiness.lastObservedAt ? <Text className="muted">最近观测：{reportTime(readiness.lastObservedAt)}</Text> : null}
+      </View>
+      <Button className="readiness-toggle" onClick={() => setShowItems(!showItems)} ariaLabel="服务端能力报告">服务端能力报告 {showItems ? '−' : '+'}</Button>
+      <View hidden={!showItems} className="readiness-capability-details">
       {items.length ? <Text className="readiness-count">服务端返回 {items.length} 项 · 数据可用 {items.filter(item => toReadinessView(item.status).ready).length} 项</Text> : null}
       {items.filter(item => item.key !== 'telemetry').map((item, index) => {
         const state = toReadinessView(item.status, item)
@@ -74,6 +83,8 @@ export default function ReadinessChecklist({ items = [], pairing, sessionReady =
           {item.key === 'tpms' ? <Text className="muted">此项仅反映服务端实时状态；本机逐轮历史的独立时间与保存范围请查看胎压卡片。</Text> : null}
         </View>
       })}
+      {!items.length ? <Text className="muted">本次尚未返回独立能力报告；不能据此判断授权失败。</Text> : null}
+      </View>
     </View>
   )
 }

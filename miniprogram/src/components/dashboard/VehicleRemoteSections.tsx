@@ -13,7 +13,7 @@ import VisualIcon from '../VisualIcon'
 import LoadingIndicator from '../LoadingIndicator'
 
 export type CommandOutcome = {
-  status: 'accepted' | 'failed'
+  status: 'accepted' | 'unconfirmed' | 'failed'
   command: string
   verified?: boolean
   errorClass?: string
@@ -135,7 +135,9 @@ export default function VehicleRemoteSections({
                         ? '已执行并确认。'
                         : '车辆已接受指令，但状态回读未确认，请以车辆实际状态为准。'
                     }`
-                  : `${commandLabel(commandOutcome.command)}：${commandErrorMessage(commandOutcome.errorClass)}`}
+                  : commandOutcome.status === 'unconfirmed'
+                    ? `${commandLabel(commandOutcome.command)}：指令结果未确认，请以车辆实际状态为准。`
+                    : `${commandLabel(commandOutcome.command)}：${commandErrorMessage(commandOutcome.errorClass)}`}
               </Text>
               <Button className="outcome-dismiss" onClick={onDismissOutcome}>
                 ✕

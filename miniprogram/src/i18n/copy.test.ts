@@ -5,6 +5,7 @@ describe('copy catalogue', () => {
   it('interpolates localized history presets without changing the Chinese default', () => {
     expect(copy('history.lastDays', { days: 30 })).toBe('近 30 天')
     expect(copy('history.lastDays', { days: 30 }, 'en-US')).toBe('Last 30 days')
+    // App charging_ac: an unresolved mode renders as 交流
     expect(copy('charges.modeUnknown')).toBe('模式未确认')
   })
 

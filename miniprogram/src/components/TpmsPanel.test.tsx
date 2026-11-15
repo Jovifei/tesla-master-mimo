@@ -64,3 +64,27 @@ it('shows display-only report values in details while keeping the evidence histo
   expect(JSON.stringify(tree.toJSON())).toContain('暂无合格的本机前台历史')
   tree.unmount()
 })
+
+it('compares only qualified current wheels against the saved thresholds and prior observations', () => {
+  const now = Date.parse('2026-10-15T02:00:00Z')
+  const snapshot = parseTpmsDetails({ pressure_unit: 'bar', source: 'telemetry_mqtt', time_basis: 'collector_received_at',
+    tpms_pressure_fl: 2.1, tpms_pressure_fl_observed_at: '2026-10-15T01:59:00Z',
+    tpms_pressure_fr: 3.1, tpms_pressure_fr_observed_at: '2026-10-15T01:59:00Z',
+    tpms_pressure_rl: 2.6, tpms_pressure_rl_observed_at: '2026-10-14T01:00:00Z' }, now)
+  const points = [{ wheel: 'fl' as const, pressureBar: 2.6, observedAt: '2026-10-15T01:30:00Z', source: 'telemetry_mqtt' as const, timeBasis: 'collector_received_at' as const }]
+  const history = { points, oldestAt: points[0].observedAt, latestAt: points[0].observedAt, limited: false }
+  const profile = { enabled: true, lowBar: 2.3, targetBar: 2.7, highBar: 3.0, changeEnabled: true, deltaBar: 0.3, windowHours: 24 }
+  const tree = renderer.create(<TpmsPanel snapshot={snapshot} report={{ fl: 2.1, fr: 3.1, rl: 2.6, rr: 1.0 }} history={history} now={now} profile={profile} />)
+  const wheels = tree.root.findAllByProps({ className: 'tpms-wheel-card' })
+  const wheelText = (index: number) => wheels[index].findAllByType('text').map(node => node.children.join('')).join(' ')
+  expect(wheelText(0)).toContain('低于设置下限')
+  expect(wheelText(0)).toContain('变化规则提醒')
+  expect(wheelText(1)).toContain('高于设置上限')
+  expect(wheelText(2)).not.toContain('设置范围内')
+  expect(wheelText(3)).not.toContain('低于设置下限')
+  expect(JSON.stringify(tree.toJSON())).toContain('不代表车辆原厂告警')
+  tree.update(<TpmsPanel snapshot={snapshot} history={history} now={now} />)
+  expect(JSON.stringify(tree.toJSON())).not.toContain('设置下限')
+  expect(JSON.stringify(tree.toJSON())).not.toContain('变化规则提醒')
+  tree.unmount()
+})

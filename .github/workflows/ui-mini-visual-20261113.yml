@@ -1,0 +1,95 @@
+name: Mini visual parity final gates
+on:
+  push:
+    branches: [codex/ui-product-mini-20261109]
+    paths: ['.github/workflows/ui-mini-visual-20261113.yml']
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: bash
+jobs:
+  source:
+    if: github.repository == 'Jovifei/tesla-master-mimo'
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    outputs:
+      sha: ${{ steps.commit.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 5
+      - name: Wire reviewed visual parity changes
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = 8ec4aef23c2e87c8e45255bba255ad6be45cce58
+          python3 tools/ui-alignment-20261113/mini-visual-parity.py
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('miniprogram/src/domain/ui_presentation.ts');s=p.read_text();old='const rgb = from.map((v,i) => Math.round(v+(to[i]-v)*ratio))';assert old in s
+          p.write_text("import { mixSrgbInOklab } from './charge_palette'\n"+s.replace(old,'const rgb = mixSrgbInOklab(from, to, ratio)'))
+          p=Path('miniprogram/src/components/PresentationControls.test.tsx');s=p.read_text();s=s.replace('#48484a','#424244').replace('#818183','#78787a').replace('#c2c4c7','#bec0c3');p.write_text(s)
+          PY
+          git diff --exit-code cb32d0bd1c8c17865c73c25374662700bbd962f3 -- miniprogram/src/domain/drive_energy.ts miniprogram/src/domain/address_display.ts miniprogram/src/services/charge_cost.ts miniprogram/src/services/parked_proof.ts miniprogram/src/services/api.ts
+      - id: commit
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add miniprogram/src/
+          git rm tools/ui-alignment-20261113/mini-visual-parity.py
+          git diff --cached --check
+          git commit -m 'feat(mini): align App date header, semantic surfaces and 60kWh perceptual shading'
+          git push origin HEAD:refs/heads/codex/ui-product-mini-20261109
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+  verify:
+    needs: source
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+        working-directory: miniprogram
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.source.outputs.sha }}
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm ci --prefix test-tooling --ignore-scripts --no-audit --no-fund
+          mkdir -p evidence/ui-alignment
+          git rev-parse HEAD HEAD^{tree} HEAD^ > evidence/ui-alignment/SOURCE_HEAD.txt
+      - name: Typecheck
+        run: npm run typecheck 2>&1 | tee evidence/ui-alignment/typecheck.log
+      - name: Full data safety and component tests
+        if: success() || failure()
+        env:
+          TZ: Asia/Shanghai
+        run: npm test -- --reporter=default --reporter=junit --outputFile.junit=evidence/ui-alignment/tests.xml 2>&1 | tee evidence/ui-alignment/tests.log
+      - name: WeChat build and unchanged asset budgets
+        if: success() || failure()
+        run: npm run build:weapp 2>&1 | tee evidence/ui-alignment/build.log
+      - name: Verify report independently
+        if: success() || failure()
+        run: |
+          python3 - <<'PY'
+          import xml.etree.ElementTree as E
+          cases=list(E.parse('evidence/ui-alignment/tests.xml').getroot().iter('testcase'))
+          assert len(cases)>=1033,len(cases)
+          assert not any(x.find('failure') is not None or x.find('error') is not None or x.find('skipped') is not None for x in cases)
+          print(len(cases),'cases, zero failures/errors/skips')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mini-visual-parity-${{ needs.source.outputs.sha }}
+          path: |
+            miniprogram/evidence/ui-alignment/
+            miniprogram/dist/
+          retention-days: 7
+          if-no-files-found: error

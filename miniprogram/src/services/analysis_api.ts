@@ -2,9 +2,9 @@ import Taro from '@tarojs/taro'
 import { ApiError, assertVehicle, getApiOrigin, getApiSessionGeneration, matelinkApi, normalizeCharge, normalizeDrive, requestJson } from './api'
 import { readAppSession } from './session'
 import { collectHistoryInterval } from '../domain/history_controller'
-import { sameEnergyInstant } from '../domain/drive_energy'
+import { compareEnergyInstants, sameEnergyInstant } from '../domain/drive_energy'
 import type { Car, Charge, Drive, RawCharge, RawDrive } from './types'
-import type { AnalysisHistory, AnalysisMeta, AnalysisOptions, BatteryHealth, ChargeEvidence, ChargeEvidenceSummary, DriveEvidence, ParkedDetail, SoftwareUpdate } from './analysis_types'
+import type { AnalysisHistory, AnalysisMeta, AnalysisOptions, BatteryHealth, ChargeEvidence, ChargeEvidenceSummary, ChargeFieldState, DriveEvidence, ParkedDetail, SoftwareUpdate } from './analysis_types'
 
 type Row = Record<string, unknown>
 const row = (value: unknown): Row => value && typeof value === 'object' && !Array.isArray(value) ? value as Row : {}
@@ -25,6 +25,23 @@ function length(value: unknown, lengthUnit: string | null | undefined): number |
 function temperature(value: unknown, temperatureUnit: string | null | undefined): number | null {
   const n = num(value), u = temperatureUnit === undefined ? 'C' : temperatureUnit
   return n !== null && (u === 'C' || u === 'F') ? num(u === 'F' ? (n - 32) * 5 / 9 : n, -100, 100) : null
+}
+
+const owns = (input: Row, key: string) => Object.prototype.hasOwnProperty.call(input, key)
+function fieldState(input: Row, key: string, normalized: number | null): ChargeFieldState {
+  return !owns(input, key) ? 'absent' : normalized === null ? 'invalid' : 'reported'
+}
+/** A sample may omit source metadata, but explicit source identity must match the enclosing charge. */
+function chargeSampleSourceConflict(sample: Row, charge: Charge, car: Car): boolean {
+  return [sample, row(sample.charger_details)].some(part => {
+    if (['user_id', 'account_id', 'owner_id', 'userId', 'accountId', 'ownerId', 'vin', 'vehicle_vin'].some(key => owns(part, key))) return true
+    if (owns(part, 'car_id') && (car.remoteVerified !== true || part.car_id !== car.id)) return true
+    if (['vehicle_uid', 'provider_vehicle_id'].some(key => owns(part, key) &&
+      (car.remoteVerified !== true || text(part[key]) !== car.stableId))) return true
+    return ([['source', charge.source], ['session_id', charge.sessionId], ['source_instance_id', charge.sourceInstanceId],
+      ['source_vehicle_id', charge.sourceVehicleId], ['source_id', charge.sourceRecordId], ['source_record_id', charge.sourceRecordId]] as const)
+      .some(([key, expected]) => owns(part, key) && (text(part[key]) === null || text(part[key]) !== expected))
+  })
 }
 
 function chargeSummary(raw: Row, data: Row): ChargeEvidenceSummary {
@@ -147,24 +164,37 @@ export const analysisApi = {
     if (!chargeId || chargeId.length > 256 || /[\s\u0000-\u001f\u007f]/.test(chargeId) || chargeId === '.' || chargeId === '..') failed()
     const data = await read(car, `/api/v1/cars/${car.id}/charges/${encodeURIComponent(chargeId)}`, options), raw = row(data.charge)
     assertVehicle(data.car, car.id, car); assertVehicle(raw, car.id, car)
-    if (data.charge == null) return { charge: null, points: [], summary: chargeSummary({}, data), source: null, qualityState: null, pointsComplete: false, reason: 'detail_unavailable' }
+    if (data.charge == null) return { charge: null, points: [], summary: chargeSummary({}, data), source: null, qualityState: null, pointsComplete: false, hasUnplaceableSamples: false, reason: 'detail_unavailable' }
     // Reuse the exact detail energy/currency parser; samples never confer kWh qualification.
     const charge = normalizeCharge(raw as RawCharge)
     if (!charge || charge.id !== chargeId) failed()
-    if (charge.qualityState === 'quarantined') return { charge, points: [], summary: chargeSummary({}, data), source: charge.source, qualityState: charge.qualityState, pointsComplete: false, reason: 'quarantined_history' }
+    if (charge.qualityState === 'quarantined') return { charge, points: [], summary: chargeSummary({}, data), source: charge.source, qualityState: charge.qualityState, pointsComplete: false, hasUnplaceableSamples: false, reason: 'quarantined_history' }
     const summary = chargeSummary(raw, data), samples = raw.charge_details
-    const start = Date.parse(charge.startDate ?? ''), ongoing = raw.end_date == null && raw.is_charging === true
-    const end = ongoing ? Date.now() : Date.parse(charge.endDate ?? '')
-    if (!Number.isFinite(start) || !Number.isFinite(end) || end < start || !sameEnergyInstant(charge.startDate, charge.startDate) ||
-      (!ongoing && !sameEnergyInstant(charge.endDate, charge.endDate))) return { charge, points: [], summary, source: charge.source, qualityState: charge.qualityState, pointsComplete: false, reason: 'charge_window_unavailable' }
-    if (!Array.isArray(samples)) return { charge, points: [], summary, source: charge.source, qualityState: charge.qualityState, pointsComplete: false, reason: 'charge_samples_unavailable' }
+    const ongoing = raw.end_date == null && raw.is_charging === true
+    const end = ongoing ? new Date().toISOString() : charge.endDate
+    const windowOrder = compareEnergyInstants(charge.startDate, end)
+    if (windowOrder === null || windowOrder > 0) return { charge, points: [], summary, source: charge.source, qualityState: charge.qualityState, pointsComplete: false, hasUnplaceableSamples: false, reason: 'charge_window_unavailable' }
+    if (!Array.isArray(samples)) return { charge, points: [], summary, source: charge.source, qualityState: charge.qualityState, pointsComplete: false, hasUnplaceableSamples: false, reason: 'charge_samples_unavailable' }
+    // Discarded invalid timestamps and truncated rows cannot be placed safely in the sorted timeline.
+    let hasUnplaceableSamples = samples.length > 20_000
     const points = samples.slice(0, 20_000).flatMap(value => {
-      const sample = row(value), date = text(sample.date), at = date ? Date.parse(date) : NaN, charger = row(sample.charger_details)
-      if (!date || !sameEnergyInstant(date, date) || !Number.isFinite(at) || at < start || at > end) return []
-      return [{ date, batteryLevel: num(sample.battery_level, 0, 100), powerKw: num(charger.charger_power), voltageV: num(charger.charger_voltage, 0),
-        currentA: num(charger.charger_actual_current), temperatureC: temperature(sample.outside_temp, unit(data, 'unit_of_temperature')) }]
-    }).sort((a, b) => Date.parse(a.date) - Date.parse(b.date))
-    return { charge, points, summary, source: charge.source, qualityState: charge.qualityState, pointsComplete: false,
+      const sample = row(value), date = text(sample.date), charger = row(sample.charger_details)
+      const afterStart = compareEnergyInstants(date, charge.startDate), beforeEnd = compareEnergyInstants(date, end)
+      if (!date || afterStart === null || beforeEnd === null) { hasUnplaceableSamples = true; return [] }
+      if (afterStart < 0 || beforeEnd > 0) return []
+      // Keep the timeline break, but do not expose any values from a conflicting source to other consumers.
+      const sourceConflict = chargeSampleSourceConflict(sample, charge, car)
+      const batteryLevel = sourceConflict ? null : num(sample.battery_level, 0, 100), powerKw = sourceConflict ? null : num(charger.charger_power),
+        voltageV = sourceConflict ? null : num(charger.charger_voltage, 0), currentA = sourceConflict ? null : num(charger.charger_actual_current),
+        temperatureC = sourceConflict ? null : temperature(sample.outside_temp, unit(data, 'unit_of_temperature'))
+      const badCharger = owns(sample, 'charger_details') && (sample.charger_details === null || typeof sample.charger_details !== 'object' || Array.isArray(sample.charger_details))
+      const chargerState = (key: string, value: number | null): ChargeFieldState => badCharger ? 'invalid' : fieldState(charger, key, value)
+      return [{ date, batteryLevel, powerKw, voltageV, currentA, temperatureC,
+        fieldState: { batteryLevel: fieldState(sample, 'battery_level', batteryLevel), powerKw: chargerState('charger_power', powerKw),
+          voltageV: chargerState('charger_voltage', voltageV), currentA: chargerState('charger_actual_current', currentA),
+          temperatureC: fieldState(sample, 'outside_temp', temperatureC) }, sourceConflict }]
+    }).sort((a, b) => compareEnergyInstants(a.date, b.date) ?? 0)
+    return { charge, points, summary, source: charge.source, qualityState: charge.qualityState, pointsComplete: false, hasUnplaceableSamples,
       reason: samples.length > 20_000 ? 'charge_sample_limit' : ongoing ? 'ongoing_response_samples_only' : 'response_samples_only' }
   },
 

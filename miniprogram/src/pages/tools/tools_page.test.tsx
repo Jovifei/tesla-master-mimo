@@ -34,6 +34,27 @@ async function mount(kind: string, extra: Record<string, string> = {}) {
 }
 const text = () => JSON.stringify(renderer?.toJSON())
 async function click(label: string) { const button = renderer!.root.findAllByType('button').find(node => node.children.join('') === label)!; expect(button).toBeDefined(); await act(async () => { await button.props.onClick(); await new Promise(resolve => setTimeout(resolve, 0)) }) }
+it('applies TPMS rules only to the current account and stable vehicle', async () => {
+  const { tpmsProfileKey } = await import('../../services/tpms_profile')
+  const key = tpmsProfileKey({ origin: 'https://api.example.test', userId: 'a', stableId: 'tools-car' })!
+  platform.values.set(key, { schema: 1, scope: key, source: 'user_configured', profile: { enabled: true, lowBar: 2.3, targetBar: 2.7, highBar: 3.0, changeEnabled: false, deltaBar: 0.3, windowHours: 24 } })
+  let stableId = 'tools-car'
+  platform.request.mockImplementation(async ({ url }: { url: string }) => {
+    if (url.endsWith('/cars')) return response({ cars: [{ car_id: 7, vehicle_uid: stableId }] })
+    if (url.endsWith('/status')) return response({ status: { tpms_details: { pressure_unit: 'bar', source: 'telemetry_mqtt', time_basis: 'collector_received_at', tpms_pressure_fl: 2.1, tpms_pressure_fl_observed_at: new Date(Date.now() - 1000).toISOString() } } })
+    if (url.includes('/drives')) return response({ drives: [], meta: { page: 1, show: 20, total_pages: 1 } })
+    throw new Error('unexpected route')
+  })
+  await mount('tpms')
+  expect(text()).toContain('低于设置下限')
+  stableId = 'other-car'
+  await act(async () => { platform.show(); await new Promise(resolve => setTimeout(resolve, 0)) })
+  expect(text()).not.toContain('低于设置下限')
+  stableId = 'tools-car'
+  platform.values.set('matelink.wechat.session.v1', { apiOrigin: 'https://api.example.test', accessToken: 'synthetic-b', userId: 'b', refreshToken: null, expiresAt: null, linkRequired: false })
+  await act(async () => { platform.show(); await new Promise(resolve => setTimeout(resolve, 0)) })
+  expect(text()).not.toContain('低于设置下限')
+})
 it('uses update pagination metadata even if a raw page includes an invalid item', async () => {
   platform.request.mockImplementation(async ({ url }: { url: string }) => {
     if (url.endsWith('/cars')) return response({ cars: [{ car_id: 7, vehicle_uid: 'tools-car' }] })

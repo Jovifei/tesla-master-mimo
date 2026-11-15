@@ -483,3 +483,79 @@ it('never calls real identity APIs in fixture mode', async () => {
   expect(platform.login).not.toHaveBeenCalled()
   expect(platform.request).not.toHaveBeenCalled()
 })
+
+it('fixture mode serves only known reads and rejects network and authorization without changing stored state', async () => {
+  vi.stubEnv('TARO_APP_MOCK_FIXTURE', 'true')
+  const { api, session: storage } = await modules()
+  storage.writeAppSession(store, session())
+  storage.writePendingTeslaAuthorization(store, { transactionId: 'existing', clientProof: 'proof', apiOrigin: origin, expiresAt: null })
+  const before = [...platform.values.entries()]
+  const generation = api.getApiSessionGeneration()
+
+  const cars = await api.requestJson<{ data: { cars: unknown[] } }>('/api/v1/cars')
+  expect(cars.data.cars).toHaveLength(1)
+  await expect(api.requestJson('/not-a-fixture')).rejects.toMatchObject({ code: 'mock_fixture_unavailable' })
+  await expect(api.requestJson('/api/v1/tesla/authorization/unknown')).rejects.toMatchObject({ code: 'mock_fixture_unavailable' })
+  await expect(api.requestJson('/unknown/authorization/status')).rejects.toMatchObject({ code: 'mock_fixture_unavailable' })
+  await expect(api.requestJson('/api/v1/cars/999/drives?page=1&show=20')).rejects.toMatchObject({ code: 'mock_fixture_unavailable' })
+  await expect(api.requestJson('/api/v1/cars', { method: 'POST' })).rejects.toMatchObject({ code: 'mock_fixture_unavailable' })
+  await expect(api.matelinkApi.startTeslaAuthorization({ termsVersion: api.JOURVOLT_TERMS_VERSION, privacyVersion: api.JOURVOLT_PRIVACY_VERSION })).rejects.toMatchObject({ code: 'mock_fixture_unavailable' })
+  await expect(api.matelinkApi.getTeslaAuthorizationStatus()).rejects.toMatchObject({ code: 'mock_fixture_unavailable' })
+  await expect(api.matelinkApi.claimTeslaAuthorization()).rejects.toMatchObject({ code: 'mock_fixture_unavailable' })
+  await expect(api.matelinkApi.cancelTeslaAuthorization()).rejects.toMatchObject({ code: 'mock_fixture_unavailable' })
+  await expect(api.matelinkApi.exchangeTeslaTicket('synthetic-ticket')).rejects.toMatchObject({ code: 'mock_fixture_unavailable' })
+  await expect(api.matelinkApi.logout()).rejects.toMatchObject({ code: 'mock_fixture_unavailable' })
+  await expect(api.matelinkApi.deleteAccount()).rejects.toMatchObject({ code: 'mock_fixture_unavailable' })
+  await expect(api.refreshSession()).rejects.toBeDefined()
+  expect(api.getApiSessionGeneration()).toBe(generation)
+  expect([...platform.values.entries()]).toEqual(before)
+  expect(platform.request).not.toHaveBeenCalled()
+  expect(platform.login).not.toHaveBeenCalled()
+})
+
+it('fixture mode blocks a direct refresh transport before any request', async () => {
+  vi.stubEnv('TARO_APP_MOCK_FIXTURE', 'true')
+  const { api, session: storage } = await modules()
+  vi.spyOn(storage, 'readAppSession').mockReturnValue(session('synthetic'))
+  await expect(api.refreshSession()).rejects.toMatchObject({ code: 'mock_fixture_unavailable' })
+  expect(platform.request).not.toHaveBeenCalled()
+  expect(platform.login).not.toHaveBeenCalled()
+})
+
+it('fixture mode normalizes synthetic car and status through the real read pipeline', async () => {
+  vi.stubEnv('TARO_APP_MOCK_FIXTURE', 'true')
+  const { api } = await modules()
+  const cars = await api.matelinkApi.getCars()
+  expect(cars).toHaveLength(1)
+  expect(cars[0]).toMatchObject({ id: 7, stableId: 'mock-vehicle-uid-7' })
+  const status = await api.matelinkApi.getCarStatus(7, cars[0])
+  expect(status.source).toBe('mock_fixture')
+  expect(platform.request).not.toHaveBeenCalled()
+  expect(platform.login).not.toHaveBeenCalled()
+})
+
+it('fixture mode serves the actual homepage snapshot and enforces vehicle identity offline', async () => {
+  vi.stubEnv('TARO_APP_MOCK_FIXTURE', 'true')
+  const { api } = await modules()
+  const [car] = await api.matelinkApi.getCars()
+  const snapshot = await api.matelinkApi.getCarSnapshot(car.id, car)
+  expect(snapshot).toMatchObject({
+    source: 'mock_fixture', state: 'online', batteryLevel: 72, ratedRange: 297,
+    location: { latitude: 30.2901, longitude: 120.0021 },
+    locked: true, sentryMode: true, isClimateOn: false,
+  })
+
+  const fixture = await import('./mock_fixture')
+  const original = fixture.mockRequest
+  const mockRouter = vi.spyOn(fixture, 'mockRequest')
+  mockRouter.mockImplementation((path, enabled) => {
+    const result = original(path, enabled)
+    if (!result || path !== '/api/matelink/v1/cars/7/snapshot') return result
+    return { ...result, data: { ...(result.data as Record<string, unknown>), vehicle_uid: 'wrong-vehicle' } }
+  })
+  await expect(api.matelinkApi.getCarSnapshot(car.id, car)).rejects.toMatchObject({ code: 'vehicle_not_found' })
+  mockRouter.mockRestore()
+  await expect(api.requestJson('/api/matelink/v1/cars/999/snapshot')).rejects.toMatchObject({ code: 'mock_fixture_unavailable' })
+  expect(platform.request).not.toHaveBeenCalled()
+  expect(platform.login).not.toHaveBeenCalled()
+})

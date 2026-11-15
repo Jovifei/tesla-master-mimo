@@ -43,7 +43,7 @@ beforeEach(() => {
   platform.values.set('matelink.wechat.session.v1', { apiOrigin: 'https://api.example.test', accessToken: 'synthetic-access', refreshToken: null, expiresAt: null, userId: 'user-a', linkRequired: false })
   // These fixtures describe fixed October 14 history; keep the historical tests
   // on an explicit all-time selection instead of depending on the wall clock.
-  for (const uid of ['uid7', 'uid8', 'fixture-vehicle']) platform.values.set(`${historyCacheKey('drives', 'user-a', uid, 'https://api.example.test')}.query`, { startDate: '', endDate: '', minDistanceKm: 0 })
+  for (const kind of ['drives', 'charges'] as const) for (const uid of ['uid7', 'uid8', 'fixture-vehicle']) platform.values.set(`${historyCacheKey(kind, 'user-a', uid, 'https://api.example.test')}.query`, { startDate: '', endDate: '', minDistanceKm: 0 })
 })
 afterEach(async () => {
   if (renderer) { await act(async () => { platform.unload(); renderer!.unmount() }); renderer = null }
@@ -59,12 +59,23 @@ const unknown = { ...reported, energy_contract: { version: 1, net_energy: { ...r
 const cars = [{ car_id: 7, vehicle_uid: 'uid7', name: 'Car A' }, { car_id: 8, vehicle_uid: 'uid8', name: 'Car B' }]
 function respond(data: unknown) { return { statusCode: 200, data: { data }, header: {} } }
 async function flush() { await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) }) }
+function fixtureDay() {
+  const date = new Date(start)
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+async function selectFixtureDay(page: ReactTestRenderer) {
+  const key = fixtureDay()
+  const button = page.root.findAllByProps({ className: 'day-stack-date' }).find(node => node.children.join('').includes(key))
+  if (button) { await act(async () => { button.props.onClick() }); await flush() }
+}
 async function mount(kind: 'drives' | 'charges') {
   const Page = (kind === 'drives' ? await import('../pages/drives/index') : await import('../pages/charges/index')).default
   await act(async () => { renderer = TestRenderer.create(React.createElement(Page)) })
   await act(async () => { platform.show() }); await flush()
+  if (kind === 'drives') await selectFixtureDay(renderer!)
   return renderer!
 }
+
 async function click(record: ReactTestRenderer, text: string) {
   const button = record.root.findAllByType('button').find(node => node.children.join('') === text)
   expect(button, text).toBeDefined()
@@ -128,7 +139,7 @@ describe('history pages consume canonical data across layers', () => {
     await act(async () => { platform.show() }); await flush()
     expect(page.root.findByProps({ className: 'history-detail-overlay' }).findByProps({ ariaLabel: `${kind === 'drives' ? '总电耗' : '电池充入'} 2 kWh` })).toBeDefined()
     if (kind === 'drives') {
-      await click(page, '行程曲线')
+      await click(page, '详细曲线')
       expect(platform.navigateTo).toHaveBeenLastCalledWith({ url: '/pages/analysis/index?kind=curves&id=2' })
     } else {
       // Charge curves render inline in the detail now (App parity); the
@@ -165,7 +176,7 @@ describe('history pages consume canonical data across layers', () => {
     if (kind === 'charges') await click(page, '显示短充')
     await click(page, '加载更多')
     const date = page.root.findAllByType('picker' as React.ElementType).find(node => node.props.mode === 'date')!
-    await act(async () => { date.props.onChange({ detail: { value: '2026-10-14' } }); platform.scroll({ scrollTop: 640 }) })
+    await act(async () => { date.props.onChange({ detail: { value: fixtureDay() } }); platform.scroll({ scrollTop: 640 }) })
     await act(async () => { page.root.findAllByProps({ className: 'history-record' })[0].props.onClick() }); await flush()
     expect(page.root.findByProps({ className: 'history-detail-overlay' }).findByProps({ ariaLabel: `${kind === 'drives' ? '总电耗' : '电池充入'} 2 kWh` })).toBeDefined()
     await act(async () => { page.root.findByProps({ className: 'history-detail-overlay' }).props.onScroll({ detail: { scrollTop: 180 } }); platform.hide() })
@@ -190,7 +201,7 @@ describe('history pages consume canonical data across layers', () => {
       expect(panel.props.scrollTop).toBe(180)
       if (change === 'aliasUnknown') {
         if (kind === 'drives') {
-          await click(page, '行程曲线')
+          await click(page, '详细曲线')
           expect(platform.navigateTo).toHaveBeenLastCalledWith({ url: '/pages/analysis/index?kind=curves&id=11' })
         } else {
           expect(page.root.findAllByType('button' as React.ElementType).some(node => node.children.join('') === '查看SOC、功率、电压、电流、温度曲线')).toBe(false)
@@ -200,10 +211,10 @@ describe('history pages consume canonical data across layers', () => {
       expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(2)
       expect(platform.pageScrollTo).toHaveBeenCalledWith({ scrollTop: 640, duration: 0 })
     }
-    expect(page.root.findAllByType('picker' as React.ElementType).some(node => node.props.mode === 'date' && node.props.value === '2026-10-14')).toBe(true)
+    expect(page.root.findAllByType('picker' as React.ElementType).some(node => node.props.mode === 'date' && node.props.value === fixtureDay())).toBe(true)
     const statistics = page.root.findByProps({ className: 'card history-interval' })
     if (kind === 'drives') expect(statistics.findByProps({ ariaLabel: `总行程数 ${change === 'quarantine' ? 2 : 3} 次` })).toBeDefined()
-    else expect(statistics.findByProps({ ariaLabel: `能量 ${change === 'unknown' || change === 'aliasUnknown' || change === 'quarantine' ? 0 : change === 'correction' ? 3 : 2} kWh` })).toBeDefined()
+    else expect(statistics.findByProps({ ariaLabel: `充电量 ${change === 'unknown' || change === 'aliasUnknown' || change === 'quarantine' ? 0 : change === 'correction' ? 3 : 2} kWh` })).toBeDefined()
     await click(page, '加载更多')
     expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(change === 'quarantine' ? 2 : 3)
   })
@@ -220,7 +231,7 @@ describe('history pages consume canonical data across layers', () => {
     const page = await mount(kind)
     await click(page, '加载更多')
     const filter = page.root.findAllByType('picker' as React.ElementType).find(node => node.props.mode === 'date')!
-    await act(async () => { filter.props.onChange({ detail: { value: '2026-10-14' } }); platform.scroll({ scrollTop: 640 }) })
+    await act(async () => { filter.props.onChange({ detail: { value: fixtureDay() } }); platform.scroll({ scrollTop: 640 }) })
     await act(async () => { page.root.findAllByProps({ className: 'history-record' })[0].props.onClick() }); await flush()
     const panel = page.root.findByProps({ className: 'history-detail-overlay' })
     expect(panel.props.scrollY).toBe(true)
@@ -235,7 +246,7 @@ describe('history pages consume canonical data across layers', () => {
     await click(page, '‹ 返回')
     expect(page.root.findAllByProps({ className: 'history-detail-overlay' })).toHaveLength(0)
     expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(2)
-    expect(page.root.findAllByType('picker' as React.ElementType).some(node => node.props.mode === 'date' && node.props.value === '2026-10-14')).toBe(true)
+    expect(page.root.findAllByType('picker' as React.ElementType).some(node => node.props.mode === 'date' && node.props.value === fixtureDay())).toBe(true)
     expect(platform.pageScrollTo).toHaveBeenCalledWith({ scrollTop: 640, duration: 0 })
     expect(platform.showTabBar).toHaveBeenCalled()
     await click(page, '加载更多')
@@ -259,6 +270,7 @@ describe('history pages consume canonical data across layers', () => {
     await act(async () => { platform.show() }); await flush()
     expect(page.root.findAllByProps({ className: 'history-detail-overlay' })).toHaveLength(0)
     expect(JSON.stringify(page.toJSON())).not.toContain('Original vehicle')
+    if (kind === 'drives') await selectFixtureDay(page)
     await act(async () => { page.root.findByProps({ className: 'history-record' }).props.onClick() }); await flush()
     await act(async () => { platform.hide() })
     const { matelinkApi } = await import('../services/api')
@@ -302,7 +314,7 @@ describe('history pages consume canonical data across layers', () => {
       expect(saved.energy?.quality).toBe(fixture.expected.quality)
       const card = page.root.findByProps({ className: 'history-record' })
       const avg = fixture.expected.averageKwh100km
-      expect(card.findByProps({ ariaLabel: `能量 ${avg == null ? '暂无数据' : `${Number(avg.toFixed(1))} kWh/100km`}` })).toBeDefined()
+      expect(card.findByProps({ ariaLabel: `能耗 ${avg == null ? '暂无数据' : `${Number(avg.toFixed(1))} kWh/100km`}` })).toBeDefined()
     }
     assertConsumer()
     await act(async () => { platform.unload(); page.unmount() }); renderer = null
@@ -323,8 +335,8 @@ describe('history pages consume canonical data across layers', () => {
     })
     const page = await mount('drives')
     const cards = page.root.findAllByProps({ className: 'history-record' })
-    expect(cards[0].findByProps({ ariaLabel: '能量 12.4 kWh/100km' })).toBeDefined()
-    expect(cards[1].findByProps({ ariaLabel: '能量 -5 kWh/100km' })).toBeDefined()
+    expect(cards[0].findByProps({ ariaLabel: '能耗 12.4 kWh/100km' })).toBeDefined()
+    expect(cards[1].findByProps({ ariaLabel: '能耗 -5 kWh/100km' })).toBeDefined()
     expect(cards).toHaveLength(3) // The App hides the zero-distance parking manoeuvre.
     expect(cards.some(card => card.findAllByProps({ ariaLabel: '距离 0 km' }).length > 0)).toBe(false)
     const interval = page.root.findByProps({ className: 'card history-interval' })
@@ -343,14 +355,14 @@ describe('history pages consume canonical data across layers', () => {
     const page = await mount(kind)
     const summary = page.root.findByProps({ className: 'history-summary-primary metric-grid' })
     expect(summary.findAllByProps({ className: 'metric-label' }).map(node => node.children.join(''))).toEqual(
-      kind === 'drives' ? ['总行程数', '总距离', '总时间', '最高速度'] : ['充电次数', '能量', '费用', '单次均价'])
+      kind === 'drives' ? ['总行程数', '总距离', '总时间', '最高速度'] : ['充电次数', '充电量', '费用', '单次均价'])
     const record = page.root.findByProps({ className: 'history-record' })
     const sections = record.children.filter(child => typeof child !== 'string').map(child => child.props.className)
     expect(sections.slice(0, kind === 'drives' ? 4 : 2)).toEqual(kind === 'drives'
       ? ['history-record-date', 'history-record-evidence', 'history-route', 'history-record-metrics']
       : ['history-charge-heading', 'history-record-metrics'])
     expect(record.findByProps({ className: 'history-record-metrics' }).findAllByProps({ className: 'metric-label' }).map(node => node.children.join('')))
-      .toEqual(kind === 'drives' ? ['能量', '距离', '最高速度', '时长'] : ['时长', '能量', '充电费用', '电量'])
+      .toEqual(kind === 'drives' ? ['能耗', '距离', '最高速度', '时长'] : ['时长', '充电量', '充电费用', '电量'])
     const body = page.root.findByProps({ className: kind === 'drives' ? 'page history-page drives-page appearance-neutral' : 'page history-page charges-page appearance-neutral' })
     const headerClasses = body.findAllByType('view').map(child => child.props.className).filter(Boolean)
     expect(headerClasses.indexOf('history-controls')).toBeLessThan(headerClasses.indexOf('card history-interval'))
@@ -374,9 +386,9 @@ describe('history pages consume canonical data across layers', () => {
     expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(3)
     const interval = page.root.findByProps({ className: 'card history-interval' })
     expect(interval.findByProps({ ariaLabel: '充电次数 2 次' })).toBeDefined()
-    expect(interval.findByProps({ ariaLabel: '能量 2 kWh' })).toBeDefined()
-    await click(page, '次数')
-    expect(page.root.findAllByProps({ className: 'activity-number' }).map(node => node.children.join(''))).toContain('2')
+    expect(interval.findByProps({ ariaLabel: '充电量 2 kWh' })).toBeDefined()
+    expect(page.root.findAllByProps({ className: 'charge-chart-tabs' })).toHaveLength(0)
+    expect(page.root.findAllByType('button').some(node => node.props.ariaLabel?.includes('2.00 kWh'))).toBe(true)
     const { historyCacheKey, readHistoryCache } = await import('../services/history_cache')
     const key = historyCacheKey('charges', 'user-a', 'uid7', 'https://api.example.test')
     const stored = readHistoryCache<Charge>({ getStorageSync: (name: string) => platform.values.get(name), setStorageSync: (name: string, value: unknown) => { platform.values.set(name, value) } }, key)
@@ -511,7 +523,7 @@ describe('history pages consume canonical data across layers', () => {
     await act(async () => { page.root.findByProps({ className: 'history-record' }).props.onClick() }); await flush()
     expect(page.root.findAllByProps({ ariaLabel: '时长 130 分钟' })).toHaveLength(2)
     expect(JSON.stringify(page.toJSON())).toContain('总电耗 -0.25 kWh')
-    await click(page, '行程曲线')
+    await click(page, '详细曲线')
     expect(platform.navigateTo).toHaveBeenCalledWith({ url: '/pages/analysis/index?kind=curves&id=1' })
   })
   it('renders the four qualified trip metrics and actual partial chart, retains proof on weak refresh and rejects incompatible peak units', async () => {
@@ -528,11 +540,11 @@ describe('history pages consume canonical data across layers', () => {
     const card = () => page.root.findAllByProps({ className: 'history-record' })[0]
     const assertCard = (speed: string) => {
       const labels = card().findAllByProps({ className: 'metric-label' }).map(node => node.children.join(''))
-      expect(labels).toEqual(['能量', '距离', '最高速度', '时长'])
+      expect(labels).toEqual(['能耗', '距离', '最高速度', '时长'])
       const semantics = card().findAllByProps({ className: 'metric' }).map(node => node.props.ariaLabel)
       expect(semantics).toContain('时长 1 分钟')
        expect(semantics).toContain(`最高速度 ${speed === '暂无数据' ? speed : `${speed} km/h`}`)
-      expect(semantics).toContain('能量 -12.5 kWh/100km')
+      expect(semantics).toContain('能耗 -12.5 kWh/100km')
       expect(semantics).not.toContain('总电耗 -0.25 kWh')
     }
     assertCard('82')
@@ -726,6 +738,7 @@ describe('history pages consume canonical data across layers', () => {
     expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(0)
     expect(JSON.stringify(page.toJSON())).not.toContain('-12.5 kWh/100km')
     await click(page, '加载更多')
+    await selectFixtureDay(page)
     expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(1)
     expect(JSON.stringify(page.toJSON())).toContain('行程历史')
     expect(JSON.stringify(page.toJSON())).toContain('0 kWh')
@@ -933,9 +946,10 @@ describe('history pages consume canonical data across layers', () => {
     offline = true
     page = await mount('drives')
     expect(JSON.stringify(page.toJSON())).toContain('至少 5 km')
-    expect(JSON.stringify(page.toJSON())).toContain('未验证在线车辆')
+    expect(JSON.stringify(page.toJSON())).toContain('未在线验证')
     expect(JSON.stringify(page.toJSON())).not.toContain('private upstream diagnostic')
     await click(page, '清除筛选')
+    await selectFixtureDay(page)
     const before = platform.request.mock.calls.length
     await act(async () => { page.root.findByProps({ className: 'history-record' }).props.onClick() }); await flush()
     expect(platform.request.mock.calls).toHaveLength(before)
@@ -1114,6 +1128,7 @@ describe('history pages consume canonical data across layers', () => {
     await act(async () => { first.props.onClick() }); await flush()
     const selector = page.root.findAllByType('picker' as React.ElementType).find(node => node.props.range?.includes('Car A'))!
     await act(async () => { selector.props.onChange({ detail: { value: 1 } }) }); await flush()
+    await selectFixtureDay(page)
     expect(JSON.stringify(page.toJSON())).toContain('Car B history')
     await act(async () => { release!(respond({ car_id: 7, vehicle_uid: 'uid7', drive: reported })) }); await flush()
     expect(JSON.stringify(page.toJSON())).toContain('Car B history')

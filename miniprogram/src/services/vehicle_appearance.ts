@@ -1,5 +1,6 @@
 import { resolveVehicleVisual, type VehicleVisualConfig } from '../domain/vehicle_visual'
 import { cacheBytes, canStoreCache } from './cache_budget'
+import { MOCK_FIXTURE_ENABLED } from './mock_fixture'
 import type { WechatStorage } from './session'
 
 export type VehicleAppearanceScope = { origin: string; userId: string | null; stableId: string | null }
@@ -14,7 +15,7 @@ export function vehicleAppearanceKey(scope: VehicleAppearanceScope): string | nu
   if (!scope || typeof scope.origin !== 'string' || !scope.origin.startsWith('https://')) return null
   const authority = scope.origin.slice(8), hostname = authority.replace(/:443$/, '')
   if (!authority || hostname.length > 253 || !hostname.split('.').every(label => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i.test(label))) return null
-  if (scope.userId === null && scope.stableId === null) return `matelink.vehicle-appearance.preview.v1.${encode(scope.origin)}`
+  if (scope.userId === null && scope.stableId === null) return `matelink.vehicle-appearance.${MOCK_FIXTURE_ENABLED ? 'mock-preview' : 'preview'}.v1.${encode(scope.origin)}`
   if (!identity(scope.userId) || !identity(scope.stableId)) return null
   return `matelink.vehicle-appearance.v1.${[scope.origin, scope.userId, scope.stableId].map(encode).join('.')}`
 }

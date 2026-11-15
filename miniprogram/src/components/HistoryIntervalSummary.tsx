@@ -50,7 +50,7 @@ export default function HistoryIntervalSummary({ interval, query, kind }: {
         ) : (
           <>
             <MetricValue label="充电次数" value={rows.length} unit="次" icon="energy" digits={0} />
-            <MetricValue label={copy('history.energy')} value={battery?.value} unit="kWh" icon="energy" />
+            <MetricValue label={copy('charges.energyAdded')} value={battery?.value} unit="kWh" icon="energy" />
             <MetricValue label={copy('history.cost')} value={hasEstimateInTotal ? `≈${cost.value!.toFixed(2)}` : cost.value} unit={currency} icon="account" />
             <MetricValue label="单次均价" value={cost.value != null && cost.known > 0 ? hasEstimateInTotal ? `≈${(cost.value / cost.known).toFixed(2)}` : cost.value / cost.known : null} unit={currency} icon="account" />
           </>

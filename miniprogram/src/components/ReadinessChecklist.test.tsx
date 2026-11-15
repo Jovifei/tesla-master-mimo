@@ -1,16 +1,16 @@
 import React from 'react'
 import renderer, { act } from 'react-test-renderer'
 import { expect, it, vi } from 'vitest'
-vi.mock('@tarojs/components', () => ({ Text: 'text', View: 'view', Image: 'image' }))
+vi.mock('@tarojs/components', () => ({ Text: 'text', View: 'view', Image: 'image', Button: 'button' }))
 import ReadinessChecklist from './ReadinessChecklist'
 it('renders six independent evidence steps with read-only collapsible details and explicit unsupported capabilities', () => {
   const tree = renderer.create(<ReadinessChecklist />)
   const visible = () => JSON.stringify(tree.toJSON())
-  expect(visible()).toContain('证据未知')
+  expect(visible()).toContain('尚未核验')
   expect(visible()).toContain('6 · 展示与通知')
   expect(visible()).toContain('UNSUPPORTED')
   expect(visible()).not.toContain('Android 通知权限')
-  const detail = tree.root.findAll(node => node.type === 'view' && typeof node.props.onClick === 'function')[5]
+  const detail = tree.root.findByProps({ ariaLabel: '展开 6 · 展示与通知' })
   act(() => detail.props.onClick())
   expect(visible()).toContain('Android 通知权限')
   act(() => detail.props.onClick())
@@ -37,5 +37,15 @@ it('shows actual readiness rows without confusing live TPMS with stored history 
   expect(text).toContain('状态未知')
   expect(text).not.toContain('SERVER_PRIVATE_DETAIL')
   expect(text).not.toContain('100%')
+  tree.unmount()
+})
+
+it('keeps setup and capability details collapsed until requested instead of presenting a long unknown checklist', () => {
+  const tree = renderer.create(<ReadinessChecklist />)
+  const setup = () => tree.root.findByProps({ className: 'readiness-setup-details' })
+  expect(setup().props.hidden).toBe(true)
+  expect(tree.root.findByProps({ className: 'readiness-capability-details' }).props.hidden).toBe(true)
+  act(() => tree.root.findByProps({ ariaLabel: '连接与授权详情' }).props.onClick())
+  expect(setup().props.hidden).toBe(false)
   tree.unmount()
 })

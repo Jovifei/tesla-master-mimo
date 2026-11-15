@@ -16,7 +16,7 @@ const platform = vi.hoisted(() => ({ request: vi.fn(), login: vi.fn(), values: n
   navigateTo: vi.fn(), switchTab: vi.fn(), showModal: vi.fn(), pageScrollTo: vi.fn(() => Promise.resolve()),
   show: (() => {}) as () => void, hide: (() => {}) as () => void, unload: (() => {}) as () => void,
   scroll: ((_event: { scrollTop: number }) => {}) as (event: { scrollTop: number }) => void }))
-vi.mock('@tarojs/components', () => ({ View: 'view', Text: 'text', Button: 'button', Picker: 'picker', Image: 'image', Map: 'map', ScrollView: 'scroll-view' }))
+vi.mock('@tarojs/components', () => ({ View: 'view', Text: 'text', Button: 'button', Picker: 'picker', Image: 'image', Map: 'map', ScrollView: 'scroll-view', Input: 'input', Slider: 'slider' }))
 vi.mock('@tarojs/taro', () => ({ default: {
   request: platform.request, login: platform.login, getStorageSync: (key: string) => platform.values.get(key),
   setStorageSync: (key: string, value: unknown) => { if (platform.quota) throw Error('fixture quota'); platform.values.set(key, value) },
@@ -270,6 +270,215 @@ function online(url: string) {
   if (url.endsWith('/data-readiness')) return respond({ items: [] })
   return respond({ status: 'available' })
 }
+
+function commandReady(url: string) {
+  if (url.endsWith('/snapshot')) return respond({ status: { ...report(-11).status, command_authorization: { ready: true } } })
+  return online(url)
+}
+
+it.each([
+  { result: null, verified: null, expected: '指令结果未确认' },
+  { result: 'other', verified: true, expected: '指令结果未确认' },
+  { result: 'accepted', verified: false, expected: '车辆已接受指令，但状态回读未确认' },
+  { result: 'accepted', verified: true, expected: '已执行并确认' },
+])('shows only qualified command feedback for $result / $verified', async ({ result, verified, expected }) => {
+  platform.request.mockImplementation(async ({ url }: { url: string }) => commandReady(url))
+  const { matelinkApi } = await import('../../services/api')
+  vi.spyOn(matelinkApi, 'executeVehicleCommand').mockResolvedValue({ command: 'flash', result, verified })
+  await mount(false)
+  const Remote = (await import('../../components/dashboard/VehicleRemoteSections')).default
+  await act(async () => { await renderer!.root.findByType(Remote).props.onExecuteCommand('flash') }); await flush()
+  expect(visible()).toContain(expected)
+  if (result !== 'accepted') expect(visible()).not.toContain('车辆已接受指令')
+})
+
+it.each(['car', 'account', 'hide'])('ignores a command result after $change changes the page scope', async change => {
+  platform.request.mockImplementation(async ({ url }: { url: string }) => commandReady(url))
+  const { matelinkApi } = await import('../../services/api')
+  let release!: (value: { command: string; result: string; verified: boolean }) => void
+  vi.spyOn(matelinkApi, 'executeVehicleCommand').mockImplementation(() => new Promise(resolve => { release = resolve }))
+  await mount(false)
+  const Remote = (await import('../../components/dashboard/VehicleRemoteSections')).default
+  await act(async () => { void renderer!.root.findByType(Remote).props.onExecuteCommand('flash') })
+  if (change === 'car') await choose(1)
+  if (change === 'account') {
+    platform.values.set('matelink.wechat.session.v1', session('b'))
+    await act(async () => { platform.show() }); await flush()
+  }
+  if (change === 'hide') await act(async () => { platform.hide() })
+  await act(async () => { release({ command: 'flash', result: 'accepted', verified: true }) }); await flush()
+  expect(visible()).not.toContain('已执行并确认')
+  expect(visible()).not.toContain('车辆已接受指令')
+  if (change !== 'hide') expect(renderer!.root.findByType(Remote).props.busyCommand).toBeNull()
+})
+
+it('clears a completed command result on account switch', async () => {
+  platform.request.mockImplementation(async ({ url }: { url: string }) => commandReady(url))
+  const { matelinkApi } = await import('../../services/api')
+  vi.spyOn(matelinkApi, 'executeVehicleCommand').mockResolvedValue({ command: 'flash', result: 'accepted', verified: true })
+  await mount(false)
+  const Remote = (await import('../../components/dashboard/VehicleRemoteSections')).default
+  await act(async () => { await renderer!.root.findByType(Remote).props.onExecuteCommand('flash') }); await flush()
+  expect(visible()).toContain('已执行并确认')
+  platform.values.set('matelink.wechat.session.v1', session('b'))
+  await act(async () => { platform.show() }); await flush()
+  expect(visible()).not.toContain('已执行并确认')
+})
+
+const optionalLanes = [
+  { kind: 'recent drive', path: '/drives?' },
+  { kind: 'readiness', path: '/data-readiness' },
+  { kind: 'pairing', path: '/telemetry/pairing' },
+] as const
+type OptionalKind = typeof optionalLanes[number]['kind']
+function optionalResponse(kind: OptionalKind, label: string) {
+  if (kind === 'recent drive') return respond({ drives: [{ drive_id: 1, start_address: label, end_address: label }] })
+  if (kind === 'readiness') return respond({ items: [{ key: label, status: 'ready', message: null, action: null }] })
+  return respond({ status: label, virtual_key_url: null, config_synced: null, updated_at: null, error_class: null })
+}
+async function optionalValue(kind: OptionalKind): Promise<string | null> {
+  if (kind === 'recent drive') {
+    const Recent = (await import('../../components/dashboard/DashboardParts')).DashboardRecentDrive
+    return renderer!.root.findAllByType(Recent)[0]?.props.drive.startAddress ?? null
+  }
+  const Checklist = (await import('../../components/ReadinessChecklist')).default
+  const props = renderer!.root.findByType(Checklist).props
+  return kind === 'readiness' ? props.items[0]?.key ?? null : props.pairing?.status ?? null
+}
+
+it.each(optionalLanes)('shows the snapshot and finishes loading while $kind is pending', async ({ path }) => {
+  platform.request.mockImplementation(({ url }: { url: string }) => url.includes(path) ? new Promise(() => {}) : Promise.resolve(online(url)))
+  const page = await mount()
+  expect(platform.request.mock.calls.some(([request]) => request.url.includes(path))).toBe(true)
+  expect(page.root.findByProps({ className: 'dashboard-soc-value' }).children.join('')).toBe('0%')
+  expect(page.root.findByProps({ ariaLabel: '刷新车辆' }).props.loading).toBe(false)
+})
+
+it.each(optionalLanes)('applies a late $kind result to the current dashboard', async ({ kind, path }) => {
+  let release!: (value: unknown) => void
+  platform.request.mockImplementation(({ url }: { url: string }) => url.includes(path)
+    ? new Promise(resolve => { release = resolve }) : Promise.resolve(online(url)))
+  await mount()
+  expect(visible()).toContain('0%')
+  expect(await optionalValue(kind)).toBeNull()
+  await act(async () => { release(optionalResponse(kind, '当前合成数据')) }); await flush()
+  expect(await optionalValue(kind)).toBe('当前合成数据')
+})
+
+it.each(optionalLanes)('retains an early $kind result when the snapshot finishes later', async ({ kind, path }) => {
+  let release!: (value: unknown) => void
+  platform.request.mockImplementation(({ url }: { url: string }) => {
+    if (url.endsWith('/snapshot')) return new Promise(resolve => { release = resolve })
+    return Promise.resolve(url.includes(path) ? optionalResponse(kind, '先到合成数据') : online(url))
+  })
+  const page = await mount()
+  expect(page.root.findByProps({ ariaLabel: '刷新车辆' }).props.loading).toBe(true)
+  if (kind !== 'recent drive') expect(await optionalValue(kind)).toBe('先到合成数据')
+  await act(async () => { release(respond(report(-11))) }); await flush()
+  expect(page.root.findByProps({ ariaLabel: '刷新车辆' }).props.loading).toBe(false)
+  expect(await optionalValue(kind)).toBe('先到合成数据')
+})
+
+it.each(optionalLanes.flatMap(lane => ['car', 'account', 'hide', 'unload', 'origin', 'generation'].map(change => ({ ...lane, change }))))(
+  'discards late $kind after $change changes the request scope', async ({ kind, path, change }) => {
+    let release!: (value: unknown) => void
+    platform.request.mockImplementation(({ url, header }: { url: string; header: { Authorization?: string } }) => {
+      if (url.endsWith('/cars') && header.Authorization === 'Bearer fixture-b') return Promise.resolve(respond({ cars: [cars[1]] }))
+      if (url.includes('/cars/7/') && url.includes(path)) return new Promise(resolve => { release = resolve })
+      if (url.includes('/cars/8/') && url.includes(path)) return Promise.resolve(optionalResponse(kind, '新合成数据'))
+      return Promise.resolve(online(url))
+    })
+    await mount()
+    expect(visible()).toContain('0%')
+    const api = await import('../../services/api')
+    let origin: ReturnType<typeof vi.spyOn> | undefined
+    try {
+      if (change === 'car') await choose(1)
+      if (change === 'account') {
+        platform.values.set('matelink.wechat.session.v1', session('b'))
+        await act(async () => { platform.show() }); await flush()
+      }
+      if (change === 'hide') await act(async () => { platform.hide() })
+      if (change === 'unload') await act(async () => { platform.unload() })
+      if (change === 'origin') origin = vi.spyOn(api, 'getApiOrigin').mockReturnValue('https://other.example.test')
+      if (change === 'generation') {
+        await api.matelinkApi.logout()
+        platform.values.set('matelink.wechat.session.v1', session('a'))
+      }
+      const expected = change === 'car' || change === 'account' ? '新合成数据' : null
+      expect(await optionalValue(kind)).toBe(expected)
+      await act(async () => { release(optionalResponse(kind, '旧合成数据')) }); await flush()
+      expect(await optionalValue(kind)).toBe(expected)
+      expect(visible()).not.toContain('旧合成数据')
+    } finally {
+      origin?.mockRestore()
+    }
+  },
+)
+
+it.each(optionalLanes)('preserves snapshot and existing error behavior when $kind fails', async ({ kind, path }) => {
+  platform.request.mockImplementation(({ url }: { url: string }) => url.includes(path)
+    ? Promise.reject(Error('private synthetic upstream detail')) : Promise.resolve(online(url)))
+  const page = await mount()
+  expect(page.root.findByProps({ className: 'dashboard-soc-value' }).children.join('')).toBe('0%')
+  expect(page.root.findByProps({ ariaLabel: '刷新车辆' }).props.loading).toBe(false)
+  expect(await optionalValue(kind)).toBeNull()
+  expect(visible()).not.toContain('private synthetic upstream detail')
+  expect(visible().includes('网络暂时不可用，请稍后重试')).toBe(kind !== 'recent drive')
+})
+
+it.each(optionalLanes.filter(lane => lane.kind !== 'recent drive'))('ignores a late $kind failure after switching cars', async ({ path }) => {
+  let reject!: (reason: unknown) => void
+  platform.request.mockImplementation(({ url }: { url: string }) => url.includes('/cars/7/') && url.includes(path)
+    ? new Promise((_resolve, fail) => { reject = fail }) : Promise.resolve(online(url)))
+  await mount()
+  await choose(1)
+  expect(visible()).toContain('Car B')
+  await act(async () => { reject(Error('old failure')) }); await flush()
+  expect(visible()).not.toContain('网络暂时不可用，请稍后重试')
+})
+
+it.each(optionalLanes)('restores the scoped snapshot cache when snapshot fails and $kind hangs', async ({ path }) => {
+  platform.request.mockImplementation(async ({ url }: { url: string }) => online(url))
+  await mount()
+  expect(visible()).toContain('-11 kW')
+  platform.request.mockImplementation(({ url }: { url: string }) => url.includes(path) ? new Promise(() => {})
+    : url.endsWith('/snapshot') ? Promise.reject(Error('offline')) : Promise.resolve(online(url)))
+  await act(async () => { platform.show() }); await flush()
+  expect(visible()).toContain('-11 kW')
+  expect(snapshotBadge().children.join('')).toBe('缓存快照')
+  expect(renderer!.root.findByProps({ ariaLabel: '刷新车辆' }).props.loading).toBe(false)
+  expect(visible()).toContain('网络暂时不可用，请稍后重试')
+})
+
+it('preserves snapshot error priority when optional failures arrive out of order', async () => {
+  let release!: (value: unknown) => void
+  platform.request.mockImplementation(({ url }: { url: string }) => {
+    if (url.endsWith('/snapshot')) return new Promise(resolve => { release = resolve })
+    if (url.endsWith('/data-readiness')) return Promise.resolve({ statusCode: 403, data: { error: 'telemetry_not_configured' }, header: {} })
+    if (url.endsWith('/telemetry/pairing')) return Promise.resolve({ statusCode: 403, data: { error: 'permission_required' }, header: {} })
+    return Promise.resolve(online(url))
+  })
+  await mount()
+  expect(visible()).toContain('持续采集尚未配置')
+  await act(async () => { release({ statusCode: 403, data: { error: 'vehicle_not_found' }, header: {} }) }); await flush()
+  expect(visible()).toContain('当前账号没有这辆车的访问权限')
+  expect(visible()).not.toContain('持续采集尚未配置')
+})
+
+it('does not replace a snapshot failure when readiness fails later', async () => {
+  let release!: (value: unknown) => void
+  platform.request.mockImplementation(({ url }: { url: string }) => {
+    if (url.endsWith('/data-readiness')) return new Promise(resolve => { release = resolve })
+    if (url.endsWith('/snapshot')) return Promise.resolve({ statusCode: 403, data: { error: 'vehicle_not_found' }, header: {} })
+    return Promise.resolve(online(url))
+  })
+  await mount()
+  expect(visible()).toContain('当前账号没有这辆车的访问权限')
+  await act(async () => { release({ statusCode: 403, data: { error: 'telemetry_not_configured' }, header: {} }) }); await flush()
+  expect(visible()).toContain('当前账号没有这辆车的访问权限')
+  expect(visible()).not.toContain('持续采集尚未配置')
+})
 
 it('loads the dashboard after a delayed launch restore, even after a hide and show', async () => {
   platform.values.delete('matelink.wechat.session.v1')

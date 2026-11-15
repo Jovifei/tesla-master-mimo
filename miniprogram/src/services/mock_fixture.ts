@@ -3,11 +3,10 @@ import type { RawCar, RawCharge, RawDrive } from './types'
 /** Synthetic review fixture. Every row carries source `mock_fixture` so the UI
  * labels it 本地模拟/合成测试数据 — nothing here may pass as a real Tesla record. */
 
-declare const process: { env?: Record<string, string | undefined> } | undefined
-/** Compile-time defineConstants substitution is the normal path; the typeof guard keeps
- * a bare mini-program runtime (no process global) from throwing at module load. */
+declare const process: { env: { TARO_APP_MOCK_FIXTURE?: string } }
+/** This exact member expression is replaced by Taro's webpack defineConstants. */
 export const MOCK_FIXTURE_ENABLED: boolean =
-  typeof process !== 'undefined' && process?.env?.TARO_APP_MOCK_FIXTURE === 'true'
+  process.env.TARO_APP_MOCK_FIXTURE === 'true'
 export const MOCK_USER_ID = 'mock-fixture-user'
 export const MOCK_CAR_ID = 7
 
@@ -156,13 +155,14 @@ function rawDrive(row: PlannedDrive, withRoute: boolean): RawDrive {
     battery_details: { start_battery_level: Math.round(100 - (row.kwh / 0.6)), end_battery_level: Math.round(100 - (row.kwh / 0.6) - row.kwh / 0.6) },
     energy_consumed_net: row.netKwh ?? row.kwh, consumption_net: Math.round((row.netKwh ?? row.kwh) * 1000 / row.km),
     outside_temp_avg: row.outsideTempAvg ?? null,
-    source: 'mock_fixture', quality_state: row.quarantined ? 'quarantined' : 'observed',
+    source: 'mock_fixture', source_instance_id: 'mock-fixture-instance', source_vehicle_id: 'mock-vehicle-uid-7',
+    quality_state: row.quarantined ? 'quarantined' : 'observed',
     quality_reason: row.quarantined ? 'mock_fixture_quarantine_scenario' : 'mock_fixture_observed',
     ...(withRoute ? { drive_details: routePoints(row) } : {}),
   }
 }
 
-function rawCharge(row: PlannedCharge): RawCharge {
+function rawCharge(row: PlannedCharge, withSamples = false): RawCharge {
   return {
     charge_id: row.id, session_id: `mock-charge-${row.id}`,
     start_date: iso(row.start), end_date: iso(row.end),
@@ -177,7 +177,12 @@ function rawCharge(row: PlannedCharge): RawCharge {
     source: 'mock_fixture', quality_state: 'observed', quality_reason: 'mock_fixture_observed',
     battery_details: { start_battery_level: row.socStart, end_battery_level: row.socEnd },
     energy_contract: { version: 1, charge_mode: row.dc ? 'dc' : 'ac', charge_mode_evidence: 'mock_fixture_boundary_modes',
-      battery_input: { value_kwh: row.kwhAdded, source: 'mock_fixture', quality: 'reported', coverage_ratio: 1, coverage_seconds: Math.round((row.end - row.start) / 1000) } },
+      battery_input: { value_kwh: row.kwhAdded, unit: 'kWh', method: 'session_counter_delta', measurement_point: 'battery_input', source: 'mock_fixture', quality: 'reported', start_date: iso(row.start), end_date: iso(row.end), coverage_kind: 'endpoints', coverage_ratio: 1, coverage_seconds: Math.round((row.end - row.start) / 1000) } },
+    ...(withSamples ? { charge_details: Array.from({ length: 21 }, (_, index) => {
+      const ratio = index / 20, date = iso(row.start + (row.end - row.start) * ratio)
+      return index % 2 === 0 ? { date, battery_level: Math.round(row.socStart + (row.socEnd - row.socStart) * ratio) }
+        : { date, charger_details: { charger_power: row.dc ? round1(95 - 45 * ratio) : 7 } }
+    }) } : {}),
   }
 }
 
@@ -224,8 +229,26 @@ function page<T>(kind: 'drives' | 'charges', rows: T[], page: number, show: numb
 /** Wire-shaped response router; `null` means "no fixture for this path". */
 export function mockRequest(path: string, enabled: boolean = MOCK_FIXTURE_ENABLED): Record<string, unknown> | null {
   if (!enabled) return null
+  const requestedVehicle = /^\/api\/(?:v1|matelink\/v1)\/cars\/([^/?]+)(?:[/?]|$)/.exec(path)
+  if (requestedVehicle && requestedVehicle[1] !== String(MOCK_CAR_ID)) return null
   const carPrefix = `/api/v1/cars/${MOCK_CAR_ID}`
+  const vehicleKeys = { car_id: MOCK_CAR_ID, vehicle_uid: 'mock-vehicle-uid-7' }
   if (path === '/api/v1/cars') return { data: { cars: [car] } }
+  if (path === `/api/matelink/v1/cars/${MOCK_CAR_ID}/snapshot`) return { data: {
+    ...vehicleKeys,
+    status: { ...status, ...vehicleKeys,
+      battery_details: { battery_level: status.battery_level, rated_battery_range: status.rated_range },
+      car_geodata: { latitude: status.latitude, longitude: status.longitude },
+      car_status: { locked: status.locked, sentry_mode: status.sentry_mode },
+      climate_details: { is_climate_on: status.is_climate_on, inside_temp: status.inside_temp, outside_temp: status.outside_temp },
+      driving_details: { speed: status.speed, power: status.power, shift_state: status.shift_state },
+      charging_details: { plugged_in: status.plugged_in, charging_state: status.charging_state, charge_limit_soc: status.charge_limit_soc,
+        time_to_full_charge: status.time_to_full_charge, charger_voltage: status.charger_voltage, charger_actual_current: status.charger_actual_current,
+        charge_energy_added: status.charge_energy_added, charger_power: status.charger_power },
+    },
+    observed_at: status.observed_at, source: status.source,
+    units: { unit_of_length: 'km', unit_of_temperature: 'C' }, field_sources: status.field_sources,
+  } }
   if (path === `${carPrefix}/snapshot`) return { data: { status, observed_at: status.observed_at, source: status.source, units: { unit_of_length: 'km', unit_of_temperature: 'C' }, field_sources: status.field_sources } }
   // Trend tools and insights read the legacy status payload; same evidence.
   if (path === `${carPrefix}/status`) return { data: { status, observed_at: status.observed_at, source: status.source, units: { unit_of_length: 'km', unit_of_temperature: 'C' }, field_sources: status.field_sources } }
@@ -233,8 +256,7 @@ export function mockRequest(path: string, enabled: boolean = MOCK_FIXTURE_ENABLE
   if (path === `${carPrefix}/telemetry/pairing`) return { data: { status: 'paired', source: 'mock_fixture' } }
   if (path === `${carPrefix}/charges/current`) return { data: { charge: null } }
   // Analysis endpoints (analysis_api.ts shapes). car_id/vehicle_uid satisfy assertVehicle.
-  const vehicleKeys = { car_id: MOCK_CAR_ID, vehicle_uid: 'mock-vehicle-uid-7' }
-  if (path === `${carPrefix}/battery-health`) return { data: { ...vehicleKeys, battery_health: { ...vehicleKeys,
+  if (path === `${carPrefix}/battery-health`) return { data: { ...vehicleKeys, source: 'mock_fixture', battery_health: { ...vehicleKeys,
     max_range: 298, current_range: 289, max_capacity: 60, current_capacity: currentCapacityFor(END), rated_efficiency: 142, battery_health_percentage: 99.3 },
     units: { unit_of_length: 'km' } } }
   if (/^\/api\/v1\/cars\/\d+\/updates\?page=(\d+)&show=20$/.test(path)) {
@@ -248,12 +270,11 @@ export function mockRequest(path: string, enabled: boolean = MOCK_FIXTURE_ENABLE
   }
   if (path === `/api/matelink/v1/cars/${MOCK_CAR_ID}/history-context`) return { data: { ...vehicleKeys, capability_version: 1 } }
   if (path === `${carPrefix.replace('/api/v1', '/api/matelink/v1')}/standby`) return { data: { ...vehicleKeys, windows: standbyWindows(), units: { unit_of_length: 'km', unit_of_temperature: 'C' } } }
-  if (path.startsWith('/api/v1/tesla/authorization') || path.includes('/authorization/status')) return { authorized: true, state: 'authorized', source: 'mock_fixture' }
   const history = /^\/api\/v1\/cars\/\d+\/(drives|charges)\?page=(\d+)&show=(\d+)$/.exec(path)
   if (history) {
     const [, kind, pageText, showText] = history
     if (kind === 'drives') return page('drives', planned.drives.map(row => rawDrive(row, false)), Number(pageText), Number(showText))
-    return page('charges', planned.charges.map(rawCharge), Number(pageText), Number(showText))
+    return page('charges', planned.charges.map(row => rawCharge(row)), Number(pageText), Number(showText))
   }
   const driveDetail = /^\/api\/v1\/cars\/\d+\/drives\/(\d+)$/.exec(path)
   if (driveDetail) {
@@ -263,7 +284,7 @@ export function mockRequest(path: string, enabled: boolean = MOCK_FIXTURE_ENABLE
   const chargeDetail = /^\/api\/v1\/cars\/\d+\/charges\/(\d+)$/.exec(path)
   if (chargeDetail) {
     const row = planned.charges.find(item => String(item.id) === chargeDetail[1])
-    return row ? { data: { charge: rawCharge(row) } } : { error: 'history_unavailable' }
+    return row ? { data: { charge: rawCharge(row, true) } } : { error: 'history_unavailable' }
   }
   const parked = /^\/api\/matelink\/v1\/cars\/\d+\/parked\/(\d+)\/(\d+)$/.exec(path)
   if (parked) {
@@ -271,9 +292,11 @@ export function mockRequest(path: string, enabled: boolean = MOCK_FIXTURE_ENABLE
     const newer = planned.drives.find(item => String(item.id) === parked[2])
     if (!older || !newer) return { error: 'parked_history_bounds_unavailable' }
     const minutes = Math.round((Date.parse(iso(newer.start)) - Date.parse(iso(older.end))) / 60_000)
-    return { data: { older_drive_id: older.id, newer_drive_id: newer.id, start_date: iso(older.end), end_date: iso(newer.start),
-      address: older.to, start_battery_level: Math.round(100 - older.kwh / 0.6), end_battery_level: Math.round(100 - older.kwh / 0.6 - newer.kwh / 0.6),
-      battery_delta: Math.round(newer.kwh / 0.6 - older.kwh / 0.6), energy_kwh: null, average_power_kw: null, peak_power_kw: null,
+    const startBatteryLevel = Math.round(100 - older.kwh / 0.6)
+    const endBatteryLevel = Math.round(100 - older.kwh / 0.6 - newer.kwh / 0.6)
+    return { data: { ...vehicleKeys, older_drive_id: older.id, newer_drive_id: newer.id, start_date: iso(older.end), end_date: iso(newer.start),
+      address: older.to, start_battery_level: startBatteryLevel, end_battery_level: endBatteryLevel,
+      battery_delta: endBatteryLevel - startBatteryLevel, energy_kwh: null, average_power_kw: null, peak_power_kw: null,
       inside_temp_average: null, outside_temp_average: null, sample_count: 0, coverage_seconds: 0, coverage_ratio: 0,
       linked_charge: null, source: 'mock_fixture' } }
   }

@@ -1,5 +1,6 @@
 import type { Charge, Drive } from '../services/types'
-import { aggregateDriveHistory, isHistoryQuarantined, sortHistoryByStartDate } from './history'
+import { aggregateDriveHistory, historyTimestamp, isHistoryQuarantined, sortHistoryByStartDate } from './history'
+import { sameEnergyInstant } from './drive_energy'
 import { historyDateTime } from './history_query'
 import { sameParkedSource } from './drive_history'
 import { isAppDriveAnalysisEligible } from './app_history_projection'
@@ -32,26 +33,33 @@ export function calendarCells(month: string, rows: readonly Drive[]) {
   })
 }
 export type ParkedWindow = { olderId: string; newerId: string; startDate: string; endDate: string; minutes: number; source: string;
-  startSoc: number | null; endSoc: number | null; socDelta: number | null; energyKwh: null; chargeOverlap: boolean; chargeCoverageComplete: boolean; address: string | null }
+  startSoc: number | null; endSoc: number | null; socDelta: number | null; energyKwh: null; chargeOverlap: boolean; chargeCoverageComplete: boolean; chargeTimesValid: boolean; address: string | null }
 function validSoc(value: number | null) { return value != null && Number.isFinite(value) && value >= 0 && value <= 100 ? value : null }
+function exactInstant(value: string | null | undefined): number | null {
+  return value && /(?:Z|[+-]\d{2}:\d{2})$/i.test(value) && sameEnergyInstant(value, value) ? historyTimestamp(value) : null
+}
 export function buildParkedWindows(drives: readonly Drive[], charges: readonly Charge[], chargeCoverageComplete: boolean): ParkedWindow[] {
   // A row with an unknown position in the timeline may lie between any two drives.
-  if (drives.some(row => !Number.isFinite(Date.parse(row.startDate ?? '')) || !Number.isFinite(Date.parse(row.endDate ?? '')))) return []
+  if (drives.some(row => exactInstant(row.startDate) === null || exactInstant(row.endDate) === null)) return []
   const ordered = sortHistoryByStartDate(drives).reverse()
   const windows: ParkedWindow[] = []
-  const chargeTimesComplete = chargeCoverageComplete && charges.every(charge => !isHistoryQuarantined(charge) &&
-    Number.isFinite(Date.parse(charge.startDate ?? '')) && (charge.endDate == null || Number.isFinite(Date.parse(charge.endDate))))
+  const chargeTimes = charges.map(charge => {
+    const start = exactInstant(charge.startDate), end = charge.endDate == null ? null : exactInstant(charge.endDate)
+    return { start, end, valid: !isHistoryQuarantined(charge) && start !== null && end !== null && end > start }
+  })
+  const chargeTimesValid = chargeTimes.every(charge => charge.valid)
+  const chargeTimesComplete = chargeCoverageComplete && chargeTimesValid
   for (let index = 1; index < ordered.length; index++) {
     const older = ordered[index - 1], newer = ordered[index]
     if (!isAppDriveAnalysisEligible(older) || !isAppDriveAnalysisEligible(newer)) continue
     const start = Date.parse(older.endDate ?? ''), end = Date.parse(newer.startDate ?? '')
     if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start || !sameParkedSource(older, newer)) continue
-    const chargeOverlap = charges.some(charge => !isHistoryQuarantined(charge) && Date.parse(charge.startDate ?? '') < end &&
-      (charge.endDate == null || Date.parse(charge.endDate) > start))
+    const chargeOverlap = chargeTimes.some(charge => charge.valid && charge.start !== null && charge.end !== null &&
+      charge.start < end && charge.end > start)
     const startSoc = validSoc(older.endBatteryLevel), endSoc = validSoc(newer.startBatteryLevel)
     windows.push({ olderId: older.id, newerId: newer.id, startDate: older.endDate!, endDate: newer.startDate!, minutes: (end - start) / 60000,
       source: older.source!, startSoc, endSoc, socDelta: startSoc != null && endSoc != null ? endSoc - startSoc : null,
-      energyKwh: null, chargeOverlap, chargeCoverageComplete: chargeTimesComplete, address: older.endAddress ?? newer.startAddress })
+      energyKwh: null, chargeOverlap, chargeCoverageComplete: chargeTimesComplete, chargeTimesValid, address: older.endAddress ?? newer.startAddress })
   }
   return windows.reverse()
 }
@@ -93,16 +101,25 @@ export function distanceCurveEstimates(points: readonly { date: string; speedKmh
 }
 
 export const CURVE_RENDER_MAX_POINTS = 600
-export type CurveRenderPoint = { index: number; time: number; value: number; breakBefore: boolean }
-/** Render-only time bucket min/max selection. Receipts and cursor samples are never changed. */
-export function selectCurveSamples(source: readonly { time: number; value: number | null }[]) {
-  const valid: { index: number; time: number; value: number; segment: number }[] = []
-  let segment = 0, open = false
+export type CurveRenderPoint = { index: number; time: number; value: number; breakBefore: boolean; inferredBefore?: boolean }
+export type CurveSourcePoint = { time: number; value: number | null; fieldState?: 'reported' | 'absent' | 'invalid'; otherChannel?: boolean; sourceConflict?: boolean }
+/** Render-only projection. `inferredBefore` requires a visibly inferred connector, never an observed line. */
+export function selectCurveSamples(source: readonly CurveSourcePoint[], options: { inferAcrossOtherChannels?: boolean; forceDisconnected?: boolean } = {}) {
+  const valid: { index: number; time: number; value: number; segment: number; inferenceCount: number }[] = []
+  let segment = 0, open = false, inferenceCount = 0, lastTime = -Infinity
   for (let index = 0; index < source.length; index++) {
     const point = source[index]
-    if (point.value == null || !Number.isFinite(point.value) || !Number.isFinite(point.time)) { open = false; continue }
-    if (!open) { segment++; open = true }
-    valid.push({ index, time: point.time, value: point.value, segment })
+    const invalid = !Number.isFinite(point.time) || point.sourceConflict === true
+    if (!invalid && options.inferAcrossOtherChannels && point.fieldState === 'absent' && point.value === null && point.otherChannel === true) {
+      if (open && point.time > lastTime) { inferenceCount++; lastTime = point.time; continue }
+      open = false; continue
+    }
+    if (invalid || point.value == null || !Number.isFinite(point.value) ||
+      (options.inferAcrossOtherChannels && point.fieldState !== 'reported')) { open = false; continue }
+    if (open && options.inferAcrossOtherChannels && point.time <= lastTime) open = false
+    if (!open || options.forceDisconnected) { segment++; open = true }
+    valid.push({ index, time: point.time, value: point.value, segment, inferenceCount })
+    lastTime = point.time
   }
   let selected = valid
   const thinned = valid.length > CURVE_RENDER_MAX_POINTS
@@ -133,7 +150,11 @@ export function selectCurveSamples(source: readonly { time: number; value: numbe
     for (const bucket of buckets.values()) { indexes.add(bucket.min); indexes.add(bucket.max) }
     selected = [...indexes].sort((a, b) => a - b).map(index => valid[index])
   }
-  const points: CurveRenderPoint[] = selected.map((point, index) => ({ index: point.index, time: point.time, value: point.value,
-    breakBefore: index === 0 || selected[index - 1].segment !== point.segment }))
+  const points: CurveRenderPoint[] = selected.map((point, index) => {
+    const previous = selected[index - 1], hardBreak = !previous || previous.segment !== point.segment
+    const inferredBefore = !hardBreak && point.inferenceCount > previous.inferenceCount
+    return { index: point.index, time: point.time, value: point.value, breakBefore: hardBreak || inferredBefore,
+      ...(inferredBefore ? { inferredBefore: true } : {}) }
+  })
   return { points, thinned, sourceCount: source.length, validCount: valid.length, segmentCount: segment }
 }

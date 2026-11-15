@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { appDriveMonthCounts } from '../pages/drives/drive_parity'
+import type { Drive } from '../services/types'
 import {
   defaultChargeHistoryQuery,
   defaultDriveHistoryQuery,
@@ -8,6 +10,7 @@ import {
   historyDetailDateTime,
   historyEditorialDate,
   normalizeHistoryQuery,
+  refreshRelativeHistoryQuery,
   readHistoryQuery,
   writeHistoryQuery,
 } from './history_query'
@@ -25,6 +28,62 @@ describe('persisted local calendar history query', () => {
     expect(historyDetailDateTime('2026-10-27T18:54:00+08:00'))
       .toBe(historyDetailDateTime('2026-10-27T10:54:00Z'))
     expect(historyDetailDateTime(null)).toBe('暂无日期')
+  })
+  it('keeps civil-only dates without inventing a time and rejects impossible dates', () => {
+    expect(historyDateTime('2026-11-09')).toBe('2026-11-09')
+    expect(historyDetailDateTime('2026-11-09')).toBe('11-09')
+    expect(historyEditorialDate('2026-11-09')).toBe('2026-11-09')
+    for (const value of ['2026-02-30', '2026-02-30T12:00:00Z', 'not-a-date']) {
+      expect(historyDateTime(value)).toBe('暂无日期')
+      expect(historyDetailDateTime(value)).toBe('暂无日期')
+      expect(historyEditorialDate(value)).toBe('暂无日期')
+    }
+  })
+  it('does not invent midnight for valid legacy date-only values', () => {
+    for (const value of ['2026-2-3', ' 2026-02-03 ', '2026/2/3', '2/3/2026']) {
+      expect(historyDateTime(value)).toBe('2026-02-03')
+      expect(historyDetailDateTime(value)).toBe('02-03')
+      expect(historyEditorialDate(value)).toBe('2026-02-03')
+    }
+    for (const value of ['2026-2-30', ' 2/30/2026 ', 'not-a-date']) {
+      expect(historyDateTime(value)).toBe('暂无日期')
+      expect(historyDetailDateTime(value)).toBe('暂无日期')
+      expect(historyEditorialDate(value)).toBe('暂无日期')
+    }
+    const midnight = '2026-02-03T00:00:00'
+    expect(historyDateTime(midnight)).toBe('2026-02-03 00:00')
+    expect(historyDetailDateTime(midnight)).toBe('02-03 00:00')
+    expect(historyEditorialDate(midnight)).toBe('周二 · 2月3日 · 00:00')
+  })
+  it('keeps incomplete dates unknown and complete English dates without inventing a time', () => {
+    for (const value of ['2026', '2026-11', '2026/11', '2026-11T12:30:00Z', 'Feb 2026', 'Feb 2026 12:30:00', 'Feb 30 2026', '30 Feb 2026', 'Feb 30 2026, 12:30:00']) {
+      expect(historyDateTime(value), value).toBe('暂无日期')
+      expect(historyDetailDateTime(value), value).toBe('暂无日期')
+      expect(historyEditorialDate(value), value).toBe('暂无日期')
+      expect(filterHistory([{ startDate: value }], { ...emptyHistoryQuery(), startDate: '2026-01-01', endDate: '2026-12-31' }), value).toHaveLength(0)
+      expect(filterHistory([{ startDate: value }], emptyHistoryQuery()), value).toHaveLength(1)
+    }
+    for (const value of ['Feb 03 2026', 'Feb 03, 2026', '03 Feb 2026', 'February 29, 2024']) {
+      const day = value.includes('2024') ? '2024-02-29' : '2026-02-03'
+      expect(historyDateTime(value), value).toBe(day)
+      expect(historyDetailDateTime(value), value).toBe(day.slice(5))
+      expect(historyEditorialDate(value), value).toBe(day)
+    }
+    expect(historyDateTime('Feb 03 2026 12:30:00')).toBe('2026-02-03 12:30')
+  })
+  it('filters civil-only dates by their supplied day and retains unknowns only in unbounded history', () => {
+    const rows = [
+      { id: 'valid-zero', startDate: '2026-11-09', distanceKm: 0, qualityState: 'observed' },
+      { id: 'invalid', startDate: '2026-02-30T12:00:00Z', distanceKm: 2, qualityState: 'observed' },
+      { id: 'missing', startDate: null, distanceKm: 3, qualityState: 'observed' },
+      { id: 'quarantined', startDate: '2026-11-09', distanceKm: 4, qualityState: 'quarantined' },
+    ]
+    expect(filterHistory(rows, { startDate: '2026-11-09', endDate: '2026-11-09', minDistanceKm: 0 }).map(row => row.id)).toEqual(['valid-zero'])
+    expect(filterHistory(rows, emptyHistoryQuery()).map(row => row.id)).toEqual(['valid-zero', 'invalid', 'missing'])
+  })
+  it('keeps a civil-only first-of-month in the drive chart and excludes an impossible date', () => {
+    const rows = [{ startDate: '2026-11-01' }, { startDate: '2026-02-30T12:00:00Z' }] as Drive[]
+    expect(appDriveMonthCounts(rows)[0]).toEqual({ month: '2026-11', count: 1 })
   })
   it('excludes quarantined drive and charge records without hiding legitimate zero or missing-energy summaries', () => {
     const rows = [
@@ -82,6 +141,7 @@ describe('persisted local calendar history query', () => {
       startDate: '2026-10-24', // 7 days inclusive: 24, 25, 26, 27, 28, 29, 30
       endDate: '2026-10-30',
       minDistanceKm: 0,
+      relativeDays: 7,
     })
 
     const chargeQuery = defaultChargeHistoryQuery(fixedNow)
@@ -89,6 +149,7 @@ describe('persisted local calendar history query', () => {
       startDate: '2026-10-01', // 30 days inclusive: 30 - 29 = 1
       endDate: '2026-10-30',
       minDistanceKm: 0,
+      relativeDays: 30,
     })
   })
 
@@ -98,4 +159,22 @@ describe('persisted local calendar history query', () => {
     const fallback = { startDate: '2026-10-24', endDate: '2026-10-30', minDistanceKm: 0 }
     expect(readHistoryQuery(storage, 'empty-scope', fallback)).toEqual(fallback)
   })
+})
+
+it('rolls explicitly relative charge dates into November without moving custom October filters', () => {
+  const october = defaultChargeHistoryQuery(new Date(2026, 9, 27, 12))
+  const november = refreshRelativeHistoryQuery(october, new Date(2026, 10, 12, 12))
+  expect(november.endDate).toBe('2026-11-12')
+  const row = { startDate: '2026-11-11T12:00:00+08:00' }
+  expect(filterHistory([row], november)).toEqual([row])
+  expect(filterHistory([row], october)).toEqual([])
+  const custom = { startDate: '2026-10-01', endDate: '2026-10-27', minDistanceKm: 0 }
+  expect(refreshRelativeHistoryQuery(custom, new Date(2026, 10, 12))).toEqual(custom)
+})
+
+it('rolls a selected 90-day range without changing a fixed custom range', () => {
+  const selected = normalizeHistoryQuery({ startDate: '2026-08-16', endDate: '2026-11-13', minDistanceKm: 0, relativeDays: 90 })
+  expect(refreshRelativeHistoryQuery(selected, new Date(2026, 10, 14, 12))).toMatchObject({ startDate: '2026-08-17', endDate: '2026-11-14', relativeDays: 90 })
+  const fixed = normalizeHistoryQuery({ startDate: '2026-08-16', endDate: '2026-11-13', minDistanceKm: 0 })
+  expect(refreshRelativeHistoryQuery(fixed, new Date(2026, 10, 14, 12))).toEqual(fixed)
 })

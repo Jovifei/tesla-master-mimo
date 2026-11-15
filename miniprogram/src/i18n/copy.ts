@@ -24,11 +24,13 @@ export type CopyKey =
   | 'history.duration'
   | 'history.totalTime'
   | 'history.energy'
+  | 'drives.energyUse'
   | 'history.speed'
   | 'history.cost'
   | 'history.soc'
   | 'drives.title'
   | 'charges.title'
+  | 'charges.energyAdded'
   | 'charges.showShort'
   | 'charges.hideShort'
   | 'charges.modeUnknown'
@@ -55,7 +57,7 @@ const zhCN: Catalogue = {
   'history.today': '今天',
   'history.lastDays': '近 {days} 天',
   'history.lastYear': '近1年',
-  'history.localCache': '本机缓存 · 未验证在线车辆',
+  'history.localCache': '本机缓存 · 未在线验证',
   'history.offlineVehicle': '车辆暂时无法验证；可查看本机历史，刷新验证后才能读取在线详情或更多记录。',
   'history.noMatchedDrives': '没有符合筛选的行程',
   'history.noMatchedCharges': '没有符合筛选的充电记录',
@@ -64,11 +66,13 @@ const zhCN: Catalogue = {
   'history.duration': '时长',
   'history.totalTime': '总时间',
   'history.energy': '能量',
+  'drives.energyUse': '能耗',
   'history.speed': '最高速度',
   'history.cost': '费用',
   'history.soc': '电量',
   'drives.title': '行程记录',
   'charges.title': '充电历史',
+  'charges.energyAdded': '充电量',
   'charges.showShort': '显示短充',
   'charges.hideShort': '隐藏短充',
   'charges.modeUnknown': '模式未确认',
@@ -95,7 +99,7 @@ const enUS: Catalogue = {
   'history.today': 'Today',
   'history.lastDays': 'Last {days} days',
   'history.lastYear': 'Last year',
-  'history.localCache': 'Local cache · online vehicle unverified',
+  'history.localCache': 'Local cache · offline',
   'history.offlineVehicle': 'Vehicle cannot be verified right now; local history remains available.',
   'history.noMatchedDrives': 'No matching trips',
   'history.noMatchedCharges': 'No matching charging sessions',
@@ -104,11 +108,13 @@ const enUS: Catalogue = {
   'history.duration': 'Duration',
   'history.totalTime': 'Total time',
   'history.energy': 'Energy',
+  'drives.energyUse': 'Consumption',
   'history.speed': 'Top speed',
   'history.cost': 'Cost',
   'history.soc': 'SOC',
   'drives.title': 'Trips',
   'charges.title': 'Charging',
+  'charges.energyAdded': 'Energy added',
   'charges.showShort': 'Show short charges',
   'charges.hideShort': 'Hide short charges',
   'charges.modeUnknown': 'Mode unknown',

@@ -1,6 +1,7 @@
 import type { WechatStorage } from './session'
 import { historyRowKey, isHistoryQuarantined, mergeHistoryByKey } from '../domain/history'
 import { cacheBytes, canStoreCache, USER_DATA_RESERVE_BYTES } from './cache_budget'
+import { MOCK_FIXTURE_ENABLED } from './mock_fixture'
 
 export type HistoryKind = 'drives' | 'charges'
 
@@ -104,6 +105,7 @@ export function readHistoryCache<T>(storage: Pick<WechatStorage, 'getStorageSync
   try {
     const value = storage.getStorageSync(key) as Partial<HistoryCache<T>> | undefined
     if (value && value.schema === HISTORY_CACHE_SCHEMA && value.scope === key && Array.isArray(value.items)) return boundedItems(key, value.items, value.savedAt ?? new Date().toISOString())
+    if (MOCK_FIXTURE_ENABLED) return []
     const storageInfo = storage as Pick<WechatStorage, 'getStorageInfoSync'>
     if (typeof storageInfo.getStorageInfoSync !== 'function') return []
     const legacyPrefix = key.replace(`.v${HISTORY_CACHE_SCHEMA}.`, `.v${PREVIOUS_HISTORY_CACHE_SCHEMA}.`) + '.'
@@ -117,7 +119,7 @@ export function readHistoryCache<T>(storage: Pick<WechatStorage, 'getStorageSync
     if (legacyItems.length === 0) return []
     const merged = mergeHistoryByKey([], legacyItems, item => {
       const row = item as T & { id?: string; sessionId?: string | null; startDate?: string | null }
-      return row.id ? historyRowKey({ id: row.id, sessionId: row.sessionId, startDate: row.startDate }) : JSON.stringify(row)
+      return row.id ? historyRowKey({ ...row, id: row.id }) : JSON.stringify(row)
     }).items
     writeHistoryCache(storage, key, merged)
     return boundedItems(key, merged, new Date().toISOString())
