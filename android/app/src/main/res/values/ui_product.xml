@@ -6,7 +6,6 @@
     <string name="ui_reduce_motion">Reduce motion</string>
     <string name="ui_day_newer">Newer date</string>
     <string name="ui_day_older">Older date</string>
-    <string name="ui_day_swipe_hint">Swipe up for older dates, down for newer dates · scroll records normally</string>
     <string name="ui_day_unknown">Date unavailable</string>
     <string name="ui_day_today">Today</string>
     <string name="ui_day_yesterday">Yesterday</string>

@@ -112,7 +112,7 @@ class UiProductContractAndroidTest {
     @Test fun preferencesPersistWithoutChangingOtherSettingsAndGridRetainsZero() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val prefs = AppearancePreferences(context)
-        prefs.setPalette(AppearancePalette.NEUTRAL); prefs.setReducedMotion(false); prefs.setDayStackAxis(DayStackAxis.HORIZONTAL)
+        prefs.setPalette(AppearancePalette.NEUTRAL); prefs.setReducedMotion(false)
         var renderedColor = 0L
         val scene = mutableStateOf(0)
         compose.setContent { MateLinkTheme(darkTheme = false) {
@@ -127,9 +127,6 @@ class UiProductContractAndroidTest {
         val neutral = renderedColor
         compose.onNodeWithTag("appearance_cream").performClick().assertIsSelected()
         compose.runOnIdle { assertEquals(AppearancePalette.CREAM, AppearancePreferences(context).palette()); assertNotEquals(neutral, renderedColor) }
-        compose.onNodeWithTag("day_axis_vertical").performClick().assertIsSelected()
-        compose.runOnIdle { assertEquals(DayStackAxis.VERTICAL, AppearancePreferences(context).dayStackAxis()) }
-        compose.onNodeWithTag("day_axis_horizontal").performClick().assertIsSelected()
         compose.onNodeWithTag("appearance_reduced_motion").performScrollTo().performClick()
         compose.runOnIdle { assertTrue(AppearancePreferences(context).reducedMotion()); scene.value = 1 }
         compose.onNodeWithTag("charge_cell_11/08").performClick()
@@ -137,7 +134,7 @@ class UiProductContractAndroidTest {
         compose.onNodeWithTag("charge_cell_11/07").performClick()
         compose.onNodeWithTag("charge_cell_selection").assertTextEquals("11/07 · Unknown")
         capture("charge-grid-cream")
-        prefs.setPalette(AppearancePalette.NEUTRAL); prefs.setReducedMotion(false); prefs.setDayStackAxis(DayStackAxis.HORIZONTAL)
+        prefs.setPalette(AppearancePalette.NEUTRAL); prefs.setReducedMotion(false)
     }
     @Test fun refreshKeepsTheSelectedDateButUsesFreshRecords() {
         val source = mutableStateOf(groups)

@@ -1,7 +1,6 @@
 package com.matelink.ui.components
 
 import com.matelink.ui.theme.AppearancePalette
-import com.matelink.ui.theme.DayStackAxis
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -11,12 +10,7 @@ class UiProductPolicyTest {
         assertEquals(AppearancePalette.CREAM, AppearancePalette.fromStorage("cream"))
         assertEquals(AppearancePalette.NEUTRAL, AppearancePalette.fromStorage("neutral"))
     }
-    @Test fun horizontalIsDefaultWithoutOverwritingLegacyPreferences() {
-        assertEquals(DayStackAxis.HORIZONTAL, DayStackAxis.fromStorage(null))
-        assertEquals(DayStackAxis.HORIZONTAL, DayStackAxis.fromStorage("unknown"))
-        assertEquals(DayStackAxis.VERTICAL, DayStackAxis.fromStorage("vertical"))
-    }
-    @Test fun verticalDirectionsAndBoundariesDoNotWrap() {
+    @Test fun horizontalDirectionsAndBoundariesDoNotWrap() {
         assertEquals(1, dayStackTarget(0, 3, -60f, 48f))
         assertEquals(0, dayStackTarget(1, 3, 60f, 48f))
         assertEquals(0, dayStackTarget(0, 3, 60f, 48f))
