@@ -946,7 +946,7 @@ describe('history pages consume canonical data across layers', () => {
     offline = true
     page = await mount('drives')
     expect(JSON.stringify(page.toJSON())).toContain('至少 5 km')
-    expect(JSON.stringify(page.toJSON())).toContain('未验证在线车辆')
+    expect(JSON.stringify(page.toJSON())).toContain('未在线验证')
     expect(JSON.stringify(page.toJSON())).not.toContain('private upstream diagnostic')
     await click(page, '清除筛选')
     await selectFixtureDay(page)

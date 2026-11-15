@@ -140,7 +140,7 @@ it('renders the full selected week including empty dates without manufacturing h
   for (let step = 0; step < 4; step += 1) {
     await act(async () => tree!.root.findByProps({ ariaLabel: '较旧日期' }).props.onClick())
   }
-  expect(JSON.stringify(tree!.toJSON())).toContain('当天尚无已返回记录')
+  expect(JSON.stringify(tree!.toJSON())).toContain('当天无记录')
   expect(calendarHistoryGroups(groups, '2026-02-30', '2026-11-10')).toEqual(groups)
 })
 it('persists optional vertical direction, rejects orthogonal gestures, and retains zero body side effects', async () => {

@@ -86,9 +86,9 @@ function DayStackState<T>({ groups, initialKey, rememberedKey, loading, onSelect
             <Button disabled={!older} onClick={() => selectIndex(index + 1)} ariaLabel="较旧日期">{appearance.dayAxis === 'horizontal' ? '›' : '↓'}</Button>
           </View>
         </View>
-        <Text className="muted">{appearance.dayAxis === 'horizontal' ? '左右' : '上下'}滑动日期抬头切换 · 正文正常滚动</Text>
+        <Text className="muted">{appearance.dayAxis === 'horizontal' ? '左右' : '上下'}切换日期</Text>
       </View>
-      <View key={active.key} className="day-stack-body">{active.items.length ? children(active) : <Text className="day-stack-empty">当天尚无已返回记录；不代表没有行程。</Text>}</View>
+      <View key={active.key} className="day-stack-body">{active.items.length ? children(active) : <Text className="day-stack-empty">当天无记录</Text>}</View>
       {unknownIndex >= 0 && active.key !== 'unknown' ? <Button className="button-secondary" onClick={() => selectIndex(unknownIndex)}>查看日期待确认</Button> : null}
       {index !== initialIndex ? <Button className="day-stack-close" onClick={() => { setSelected(null); onSelection?.(null) }}>收回至 {dayCaption(groups[initialIndex].key)}</Button> : null}
     </View>
