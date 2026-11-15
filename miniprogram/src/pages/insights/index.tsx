@@ -233,14 +233,13 @@ export default function InsightsPage() {
       <View className="card"><SectionHeading icon="chart" title="健康趋势与检测" /><Text className="muted">只在来源返回合格的连续容量历史时绘制趋势；当前接口未提供趋势样本，不生成示例曲线。车辆服务模式检测请在车辆内进行。</Text></View>
     </> : null}
     {car && kind === 'range' ? <>
-      <View className="card"><SectionHeading icon="route" title="个性化续航" /><MetricValue label="合格能耗与容量估算" value={range.rangeKm} unit="km" /><Text className="muted">近90天：同温度/速度条件至少5段且100km；不足时采用全部条件至少10段且300km。</Text>
-        <Text className="muted">此模型固定使用近90天的正能量与正里程；下方日期筛选用于额定续航偏差记录。</Text>
+      <View className="card"><SectionHeading icon="route" title="个性化续航" /><MetricValue label="合格能耗与容量估算" value={range.rangeKm} unit="km" />
         <Text className="muted">{range.source === 'unavailable' ? `样本不足：可用候选 ${range.candidateCount} 段` : `${range.source === 'grouped' ? '当前条件分组' : '全部条件'} · ${range.sampleCount} 段 / ${range.distanceKm.toFixed(1)} km · 含估算 ${range.estimated} 段`}</Text>
         {range.capacityKwh == null ? <Text className="muted">缺少带来源与报告时间的可用容量，个性化续航保持未知。</Text> : null}
         <View className="metric-grid"><MetricValue label="配对平均能耗" value={range.efficiencyKwh100Km} unit="kWh/100km" /><MetricValue label="车辆额定续航读数" value={status?.ratedRange ?? null} unit="km" /></View>
       </View>
-      <View className="card"><SectionHeading icon="speed" title="额定续航消耗偏差" /><MetricValue label="有效记录平均偏差" value={averageDeviation} unit="%" /><Text className="muted">逐段比较额定续航下降与实际里程；仅使用同时有两个端点及规范化公里数的记录，共 {comparisons.length} 段。</Text></View>
-      <View className="card"><SectionHeading icon="cloud" title="偏差影响因素" /><View className="metric-grid"><MetricValue label="夏季偏差（6–8月）" value={influences.summer} unit="%" /><MetricValue label="冬季偏差（12–2月）" value={influences.winter} unit="%" /><MetricValue label="低速偏差（≤40km/h）" value={influences.lowSpeed} unit="%" /><MetricValue label="高速偏差（>40km/h）" value={influences.highSpeed} unit="%" /></View><Text className="muted">沿用 App 的已加载记录分组；这是相关观察，不能确定单一原因。</Text></View>
+      <View className="card"><SectionHeading icon="speed" title="额定续航消耗偏差" /><MetricValue label="有效记录平均偏差" value={averageDeviation} unit="%" /><Text className="muted">共 {comparisons.length} 段</Text></View>
+      <View className="card"><SectionHeading icon="cloud" title="偏差影响因素" /><View className="metric-grid"><MetricValue label="夏季偏差（6–8月）" value={influences.summer} unit="%" /><MetricValue label="冬季偏差（12–2月）" value={influences.winter} unit="%" /><MetricValue label="低速偏差（≤40km/h）" value={influences.lowSpeed} unit="%" /><MetricValue label="高速偏差（>40km/h）" value={influences.highSpeed} unit="%" /></View></View>
       {comparisons.slice(0, rangeShown).map(item => <View className="card" key={historyRowKey(item.drive)}><Text>{historyDateTime(item.drive.startDate)}</Text><View className="metric-grid"><MetricValue label="额定续航下降" value={item.ratedDropKm} unit="km" /><MetricValue label="实际里程" value={item.distanceKm} unit="km" /><MetricValue label="偏差" value={item.deviationPercent} unit="%" /></View></View>)}
       {comparisons.length > rangeShown ? <Button className="button-secondary" onClick={() => setRangeShown(rangeShown + 20)}>查看更多续航记录（{rangeShown}/{comparisons.length}）</Button> : null}
       {!comparisons.length ? <Text className="muted">已加载记录尚缺额定续航起止端点，不能从SOC或当前续航补算历史偏差。</Text> : null}

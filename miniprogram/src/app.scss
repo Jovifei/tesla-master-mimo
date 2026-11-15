@@ -509,164 +509,13 @@ button {
 .tpms-evidence-toggle { background: transparent; color: #6b7280; font-size: 23rpx; padding: 8rpx 0; margin: 0; text-align: left; }
 .tpms-evidence-toggle::after { border: 0; }
 .tpms-evidence { padding: 20rpx 0; font-size: 24rpx; }
-.more-page {
-  padding: 32rpx;
-  padding-top: max(96rpx, calc(32rpx + env(safe-area-inset-top)));
-  padding-bottom: calc(32rpx + env(safe-area-inset-bottom));
-  box-sizing: border-box;
-  .app-toolbar {
-    margin: 8rpx 0 24rpx;
-    padding-right: max(180rpx, calc(160rpx + env(safe-area-inset-right)));
-    box-sizing: border-box;
-    .title {
-      font-size: 48rpx;
-      font-weight: 700;
-      color: #1f2937;
-    }
-  }
-}
-.more-status {
-  display: flex;
-  align-items: flex-start;
-  gap: 24rpx;
-  padding: 32rpx;
-  border-radius: 32rpx;
-  background: #ddf0f1;
-  color: #164e63;
-  margin-bottom: 32rpx;
-  box-sizing: border-box;
-}
-.more-status .visual-icon {
-  width: 48rpx;
-  height: 48rpx;
-  border-radius: 0;
-  background: transparent;
-  font-size: 48rpx;
-  color: #157a86;
-}
-.more-status-copy {
-  flex: 1;
-  min-width: 0;
-}
-.more-status-title {
-  display: block;
-  font-size: 32rpx;
-  font-weight: 600;
-  line-height: 1.4;
-  color: #164e63;
-}
-.more-status-description {
-  display: block;
-  margin-top: 8rpx;
-  color: #325a66;
-  font-size: 26rpx;
-  line-height: 1.5;
-}
-.more-section-heading {
-  display: block;
-  margin: 36rpx 8rpx 16rpx;
-  font-size: 28rpx;
-  font-weight: 600;
-  color: #1f2937;
-}
-.more-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16rpx;
-  margin-bottom: 24rpx;
-}
-.more-action {
-  min-width: 0;
-  margin: 0;
-  background: #ffffff;
-  border: 1rpx solid rgba(233, 237, 242, 0.7);
-  box-shadow: 0 2rpx 6rpx rgba(17, 24, 39, 0.04);
-  color: #1f2937;
-  text-align: left;
-}
-.more-action::after { border: 0; }
-.more-tile {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: space-between;
-  min-height: 184rpx;
-  padding: 32rpx;
-  border-radius: 32rpx;
-  line-height: 1.35;
-  box-sizing: border-box;
-}
-.more-tile .visual-icon {
-  width: 48rpx;
-  height: 48rpx;
-  border-radius: 0;
-  background: transparent;
-  font-size: 48rpx;
-  color: #157a86;
-}
-.more-tile-label {
-  display: block;
-  font-size: 30rpx;
-  font-weight: 500;
-  line-height: 1.35;
-  color: #1f2937;
-  overflow-wrap: anywhere;
-}
-.more-system {
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  margin: 0 0 32rpx;
-  border: 1rpx solid rgba(233, 237, 242, 0.7);
-  border-radius: 16rpx;
-  background: #ffffff;
-  box-shadow: 0 2rpx 6rpx rgba(17, 24, 39, 0.04);
-}
-.more-system .more-system-action {
-  display: flex;
-  align-items: center;
-  gap: 24rpx;
-  width: 100%;
-  min-height: 96rpx;
-  padding: 28rpx 32rpx;
-  border: 0;
-  border-bottom: 1rpx solid #f1f3f5;
-  border-radius: 0;
-  font-size: 30rpx;
-  line-height: 1.4;
-  box-sizing: border-box;
-}
-.more-system .more-system-action:last-child {
-  border-bottom: 0;
-}
-.more-system-action .visual-icon {
-  width: 44rpx;
-  height: 44rpx;
-  border-radius: 0;
-  background: transparent;
-  font-size: 44rpx;
-  color: #157a86;
-}
-.more-system-label {
-  flex: 1;
-  font-size: 30rpx;
-  color: #1f2937;
-}
-.more-system-chevron {
-  color: #9ca3af;
-  font-size: 40rpx;
-  font-weight: 300;
-}
 @media (prefers-color-scheme: dark) {
   page { background: #111315; color: #f5f6f7; }
   .card, .tpms-wheel-card { background: #191d22; border-color: #323840; }
   .metric, .vehicle-state-chips text { background: #242a31; }
   .metric-value, .status-value, .title, .section-title { color: #f5f6f7; }
   .metric-label, .metric-unit, .metric-source, .muted, .chart-date { color: #b7bdc6; }
-  .more-action, .more-system, .button-secondary { background: #15181c; color: #f5f6f7; border-color: #323840; }
-  .more-system .more-system-action { border-color: #323840; }
-  .more-status { background: #164e63; color: #cffafe; }
-  .more-status-description { color: #b9dee4; }
+  .button-secondary { background: #15181c; color: #f5f6f7; border-color: #323840; }
   .vehicle-battery-fill { background: #8cccd2; }
   .vehicle-battery-row .metric { background: transparent; }
 }
@@ -856,7 +705,16 @@ button {
 .more-page {
   background: var(--apple-bg);
   padding: 0 32rpx calc(48rpx + env(safe-area-inset-bottom));
-  
+  box-sizing: border-box;
+  .app-toolbar {
+    margin: 8rpx 0 24rpx;
+    .title {
+      font-size: 48rpx;
+      font-weight: 700;
+      color: var(--apple-label-primary);
+    }
+  }
+
   .more-status {
     display: flex;
     align-items: center;
@@ -910,6 +768,7 @@ button {
     .more-tile {
       width: 100% !important;
       margin: 0 !important;
+      min-height: 0 !important;
       padding: 24rpx 28rpx !important;
       display: flex !important;
       flex-direction: row !important;
@@ -921,6 +780,7 @@ button {
       border-bottom: 0.5px solid var(--apple-separator) !important;
       box-sizing: border-box !important;
       line-height: 1.3 !important;
+      text-align: left !important;
 
       &:last-child {
         border-bottom: none !important;
@@ -948,7 +808,16 @@ button {
         font-weight: 500 !important;
         color: var(--apple-label-primary) !important;
         flex: 1 !important;
+        min-width: 0 !important;
         text-align: left !important;
+        overflow-wrap: anywhere;
+      }
+
+      .more-tile-chevron {
+        flex: none !important;
+        font-size: 32rpx !important;
+        color: var(--apple-label-tertiary) !important;
+        font-weight: 400 !important;
       }
     }
   }
