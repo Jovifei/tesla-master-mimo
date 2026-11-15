@@ -388,7 +388,7 @@ export default function MePage() {
         <Text className="muted">{MOCK_FIXTURE_ENABLED ? '合成会话，未连接真实账号或车辆。' : '使用特斯拉账号登录，授权在 Tesla 官方页面完成。与 App 使用同一特斯拉账号，可查看该账号已有的车辆和历史数据。'}</Text>
       </View>
 
-      {!MOCK_FIXTURE_ENABLED ? <View className="card consent-card">
+      {!session && !MOCK_FIXTURE_ENABLED ? <View className="card consent-card">
         <View className="visual-heading"><VisualIcon name="shield" /><Text className="section-title">授权前确认</Text></View>
         <Text className="muted">请先阅读并确认以下文件。点击下方链接可查看完整内容。</Text>
         <View className="legal-links">
@@ -400,17 +400,18 @@ export default function MePage() {
           <View className="consent-row"><Checkbox value="privacy" checked={privacyAccepted}>同意隐私指引（{PRIVACY_VERSION}）</Checkbox></View>
         </CheckboxGroup>
         {restoring ? <LoadingIndicator label="正在恢复会话…" compact /> : null}
-        {!session ? <Button className="button" loading={loading} disabled={loading || restoring || !termsAccepted || !privacyAccepted} onClick={startTeslaAuthorization}>特斯拉账号登录</Button> : null}
-        {!session && !MOCK_FIXTURE_ENABLED ? <Button className="button button-secondary" disabled={loading || restoring || authorizationPending || !termsAccepted || !privacyAccepted} onClick={() => { void enterWithWechat() }}>使用已绑定微信进入</Button> : null}
-        {session ? <Text className="muted">MateLink 会话已建立{session.expiresAt ? `，有效期至 ${session.expiresAt}` : ''}。</Text> : null}
+        <Button className="button" loading={loading} disabled={loading || restoring || !termsAccepted || !privacyAccepted} onClick={startTeslaAuthorization}>特斯拉账号登录</Button>
+        {!MOCK_FIXTURE_ENABLED ? <Button className="button button-secondary" disabled={loading || restoring || authorizationPending || !termsAccepted || !privacyAccepted} onClick={() => { void enterWithWechat() }}>使用已绑定微信进入</Button> : null}
       </View> : null}
 
       {!MOCK_FIXTURE_ENABLED && authorizationPending ? (
-        <View className="card">
+        <View className="card account-pending-card">
           <View className="visual-heading"><VisualIcon name="shield" /><Text className="section-title">等待特斯拉账号授权</Text></View>
           <Text className="muted">请在 Tesla 官方页面完成登录，然后返回本小程序检查授权状态。</Text>
-          <Button className="button" loading={loading} onClick={() => { void resumePendingAuthorization() }}>检查授权状态</Button>
-          <Button className="button button-secondary" disabled={loading} onClick={() => { void cancelTeslaAuthorization() }}>取消本次授权</Button>
+          <View className="account-btn-row">
+            <Button className="button" loading={loading} onClick={() => { void resumePendingAuthorization() }}>检查授权状态</Button>
+            <Button className="button button-secondary" disabled={loading} onClick={() => { void cancelTeslaAuthorization() }}>取消本次授权</Button>
+          </View>
         </View>
       ) : null}
 
@@ -456,18 +457,42 @@ export default function MePage() {
       }}><VisualIcon name={item.icon} /><Text className="more-system-label">{item.label}</Text><Text className="more-system-chevron">›</Text></Button>)}</View>
 </> : null}
       {session && !MOCK_FIXTURE_ENABLED ? (
-        <View className="card">
+        <View className="card account-card">
           <View className="visual-heading"><VisualIcon name="account" /><Text className="section-title">账号管理</Text></View>
-          <Text className="muted">退出只结束当前会话；注销会请求服务端删除账号关联数据。</Text>
-          <Button className="button" loading={loading} disabled={loading || !termsAccepted || !privacyAccepted} onClick={startTeslaAuthorization}>重新授权 Tesla</Button>
-          <Button className="button button-secondary" disabled={loading || authorizationPending || !termsAccepted || !privacyAccepted} onClick={startTeslaAuthorization}>切换 Tesla 账号</Button>
-          {!MOCK_FIXTURE_ENABLED ? <>
-            <Text className="muted">{wechatBound === null ? '微信绑定状态暂未确认' : wechatBound ? '此账号已绑定微信' : '此账号尚未绑定微信'}{recoveryEnabled ? '，本机已启用快捷进入。' : '。'}</Text>
-            <Button className="button button-secondary" disabled={loading || restoring || authorizationPending} onClick={() => { void bindWechat() }}>{wechatBound ? '启用当前微信快捷进入' : '绑定当前微信'}</Button>
-            {wechatBound ? <Button className="button button-secondary" disabled={loading || restoring || authorizationPending} onClick={() => { void unbindWechat() }}>解绑微信</Button> : null}
-          </> : null}
-          <Button className="button button-secondary" disabled={loading} onClick={logout}>退出登录</Button>
-          <Button className="button button-danger" disabled={loading} onClick={() => { void deleteAccount() }}>注销账号</Button>
+          <Text className="muted">已通过 Tesla 官方授权连接。退出只结束当前会话；注销会删除服务端账号数据。</Text>
+
+          <View className="account-reauth-consent">
+            <View className="legal-links">
+              <Text className="legal-link" onClick={() => openLegal('terms')}>查看服务条款</Text>
+              <Text className="legal-link" onClick={() => openLegal('privacy')}>查看隐私指引</Text>
+            </View>
+            <CheckboxGroup onChange={onConsentChange}>
+              <View className="consent-row"><Checkbox value="terms" checked={termsAccepted}>同意服务条款（{TERMS_VERSION}）</Checkbox></View>
+              <View className="consent-row"><Checkbox value="privacy" checked={privacyAccepted}>同意隐私指引（{PRIVACY_VERSION}）</Checkbox></View>
+            </CheckboxGroup>
+          </View>
+
+          <View className="account-btn-row">
+            <Button className="button" loading={loading} disabled={loading || !termsAccepted || !privacyAccepted} onClick={startTeslaAuthorization}>重新授权 Tesla</Button>
+            <Button className="button button-secondary" disabled={loading || authorizationPending || !termsAccepted || !privacyAccepted} onClick={startTeslaAuthorization}>切换 Tesla 账号</Button>
+          </View>
+
+          <View className="account-wechat-box">
+            <View className="wechat-box-info">
+              <Text className="wechat-box-title">微信快捷进入</Text>
+              <Text className={`wechat-box-badge ${wechatBound ? 'bound' : ''}`}>{wechatBound === null ? '未确认' : wechatBound ? '已绑定' : '未绑定'}</Text>
+            </View>
+            <Text className="wechat-box-muted">{wechatBound === null ? '微信绑定状态暂未确认' : wechatBound ? '此账号已绑定微信' : '此账号尚未绑定微信'}{recoveryEnabled ? '，本机已启用快捷进入。' : '。'}</Text>
+            <View className="wechat-box-actions">
+              <Button className="button button-secondary" disabled={loading || restoring || authorizationPending} onClick={() => { void bindWechat() }}>{wechatBound ? '启用当前微信快捷进入' : '绑定当前微信'}</Button>
+              {wechatBound ? <Button className="button button-secondary" disabled={loading || restoring || authorizationPending} onClick={() => { void unbindWechat() }}>解绑微信</Button> : null}
+            </View>
+          </View>
+
+          <View className="account-btn-row account-danger-row">
+            <Button className="button button-secondary" disabled={loading} onClick={logout}>退出登录</Button>
+            <Button className="button button-danger" disabled={loading} onClick={() => { void deleteAccount() }}>注销账号</Button>
+          </View>
         </View>
       ) : null}
 

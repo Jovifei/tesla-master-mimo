@@ -223,6 +223,128 @@ button {
   box-shadow: none;
 }
 
+.account-card {
+  margin-top: 24rpx;
+  padding: 28rpx;
+  border-radius: var(--apple-radius-card);
+  background: var(--apple-surface);
+  border: 0.5px solid var(--apple-separator);
+  box-shadow: var(--apple-shadow-card);
+
+  .account-reauth-consent {
+    margin: 18rpx 0 14rpx;
+    padding: 16rpx 20rpx;
+    background: var(--apple-fill-quaternary);
+    border-radius: 18rpx;
+
+    .legal-links {
+      display: flex;
+      gap: 20rpx;
+      margin: 4rpx 0 10rpx;
+    }
+    .consent-row {
+      padding: 8rpx 0;
+      border-bottom: 0;
+      font-size: 24rpx;
+    }
+  }
+
+  .account-btn-row {
+    display: flex;
+    gap: 16rpx;
+    margin-top: 18rpx;
+
+    .button {
+      flex: 1;
+      margin-top: 0 !important;
+      height: 76rpx !important;
+      line-height: 76rpx !important;
+      font-size: 26rpx !important;
+      border-radius: 18rpx !important;
+      padding: 0 12rpx !important;
+      text-align: center;
+    }
+  }
+
+  .account-danger-row {
+    margin-top: 22rpx;
+    padding-top: 18rpx;
+    border-top: 0.5px solid var(--apple-separator);
+  }
+
+  .account-wechat-box {
+    margin-top: 20rpx;
+    padding: 20rpx 24rpx;
+    background: var(--apple-fill-quaternary);
+    border-radius: 20rpx;
+    display: flex;
+    flex-direction: column;
+    gap: 10rpx;
+
+    .wechat-box-info {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+
+      .wechat-box-title {
+        font-size: 26rpx;
+        font-weight: 600;
+        color: var(--apple-label-primary);
+      }
+      .wechat-box-badge {
+        font-size: 22rpx;
+        padding: 4rpx 14rpx;
+        border-radius: 999px;
+        background: #eef0f3;
+        color: #6b7280;
+
+        &.bound {
+          background: #e8f6ef;
+          color: #18794e;
+        }
+      }
+    }
+
+    .wechat-box-muted {
+      font-size: 22rpx;
+      color: var(--apple-label-secondary);
+      line-height: 1.4;
+    }
+
+    .wechat-box-actions {
+      display: flex;
+      gap: 14rpx;
+      margin-top: 6rpx;
+
+      .button {
+        flex: 1;
+        margin-top: 0 !important;
+        height: 68rpx !important;
+        line-height: 68rpx !important;
+        font-size: 24rpx !important;
+        border-radius: 16rpx !important;
+      }
+    }
+  }
+}
+
+.account-pending-card {
+  margin-top: 20rpx;
+  .account-btn-row {
+    display: flex;
+    gap: 16rpx;
+    margin-top: 16rpx;
+    .button {
+      flex: 1;
+      margin-top: 0 !important;
+      height: 76rpx !important;
+      line-height: 76rpx !important;
+      font-size: 26rpx !important;
+      border-radius: 18rpx !important;
+    }
+  }
+}
+
 .legal-links {
   display: flex;
   gap: 28rpx;
