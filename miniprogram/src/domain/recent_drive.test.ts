@@ -82,13 +82,19 @@ describe('locationDisplayText (App locationDisplay chain)', () => {
       location: { latitude: 30.35, longitude: 120.25 },
       recentDrive: parked,
     })
-    expect(moved).toBe('已获取位置 · 点击查看地图')
+    // App locationDisplay: without a geofence or cached address the card
+    // renders raw coordinates — "%.4f, %.4f".
+    expect(moved).toBe('30.3500, 120.2500')
   })
 
-  it('falls back to the map affordance, then to null without a location', () => {
+  it('falls back to raw coordinates, then to null without a location', () => {
     expect(locationDisplayText({ geofence: null, location: { latitude: 30.27, longitude: 120.15 } })).toBe(
-      '已获取位置 · 点击查看地图'
+      '30.2700, 120.1500'
     )
     expect(locationDisplayText({ geofence: null, location: null })).toBeNull()
+  })
+
+  it('treats the (0, 0) sentinel as no GPS fix and lets the page show 等待车端 GPS', () => {
+    expect(locationDisplayText({ geofence: null, location: { latitude: 0, longitude: 0 } })).toBeNull()
   })
 })

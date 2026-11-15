@@ -5,9 +5,9 @@ import { appDriveMonthCounts } from './drive_parity'
 describe('App monthly drive chart', () => {
   it('counts qualified rows by local-calendar month and fills empty months', () => {
     const rows = [
-      { startDate: '2026-07-02T12:00:00+08:00' },
-      { startDate: '2026-07-04T12:00:00+08:00' },
-      { startDate: '2026-09-01T12:00:00+08:00' },
+      { startDate: new Date(2026, 6, 2, 12).toISOString() },
+      { startDate: new Date(2026, 6, 4, 12).toISOString() },
+      { startDate: new Date(2026, 8, 1, 12).toISOString() },
     ] as Drive[]
     const groups = appDriveMonthCounts(rows)
     expect(groups.slice(0, 3)).toEqual([

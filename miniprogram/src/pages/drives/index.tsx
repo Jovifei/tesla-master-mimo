@@ -1,6 +1,7 @@
 import { VerticalDayStack } from '../../components/PresentationControls'
-import { calendarHistoryGroups, historyDayGroups } from '../../domain/ui_presentation'
+import { calendarHistoryGroups, civilDay, historyDayGroups } from '../../domain/ui_presentation'
 import { useAppearance } from '../../services/appearance'
+import { MOCK_FIXTURE_ENABLED } from '../../services/mock_fixture'
 import { Button, Map as TaroMap, Picker, ScrollView, Text, View } from '@tarojs/components'
 import Taro, { useDidHide, useDidShow, usePageScroll, useUnload } from '@tarojs/taro'
 import { useEffect, useRef, useState } from 'react'
@@ -17,6 +18,7 @@ import './index.scss'
 import { createRequestScopeGate } from '../../domain/request_scope'
 import { ApiError, ensureWechatSession, getApiOrigin, getApiSessionGeneration, matelinkApi } from '../../services/api'
 import { analysisApi } from '../../services/analysis_api'
+import { sameEnergyInstant } from '../../domain/drive_energy'
 import type { ParkedDetail } from '../../services/analysis_types'
 import { createParkedProofVerifier, parkedProofKey, type ParkedCandidate } from '../../services/parked_proof'
 import { carSelectionStorageKey, type Car, type Drive, type HistoryPage, type HistoryPageMeta } from '../../services/types'
@@ -74,12 +76,18 @@ const emptyMeta: HistoryPageMeta = {
 export default function DrivesPage() {
   const appearance = useAppearance()
   const [curveSampleIndex, setCurveSampleIndex] = useState(0)
+  const daySelection = useRef<{ owner: string; scope: string; key: string } | null>(null)
   const [cars, setCars] = useState<Car[]>([])
   const [car, setCar] = useState<Car | null>(null)
   const [items, setItems] = useState<Drive[]>([])
   const [meta, setMeta] = useState<HistoryPageMeta | null>(null)
   const [selected, setSelectedState] = useState<Drive | null>(null)
-  const [selectedEvidence, setSelectedEvidence] = useState<import('../../services/analysis_types').DriveEvidence | null>(null)
+  const [evidenceCandidate, setSelectedEvidence] = useState<import('../../services/analysis_types').DriveEvidence | null>(null)
+  const evidenceDrive = evidenceCandidate?.drive
+  const selectedEvidence = selected && evidenceDrive && selected.id === evidenceDrive.id && sameHistoryIdentity(selected, evidenceDrive) &&
+    !isHistoryQuarantined(selected) && !isHistoryQuarantined(evidenceDrive) &&
+    sameEnergyInstant(selected.startDate, evidenceDrive.startDate) && sameEnergyInstant(selected.endDate, evidenceDrive.endDate) &&
+    Date.parse(selected.endDate ?? '') > Date.parse(selected.startDate ?? '') ? evidenceCandidate : null
   const [mapFailed, setMapFailed] = useState(false)
   // Parked window detail: local facts render instantly, cloud enrichment
   // (temperatures, power, linked charge) fills in from the exact endpoint.
@@ -186,6 +194,7 @@ export default function DrivesPage() {
 
   const updateQuery = (patch: Partial<HistoryQuery>) => {
     const next = normalizeHistoryQuery({ ...queryRef.current, ...patch })
+    if (JSON.stringify(next) !== JSON.stringify(queryRef.current)) daySelection.current = null
     if (queryScopeRef.current) writeHistoryQuery(Taro, queryScopeRef.current, next)
     setQuery(next)
   }
@@ -545,6 +554,20 @@ export default function DrivesPage() {
     return () => { cancelled = true }
   }, [car?.stableId, offline, parkedSignature, parkingProofEpoch])
   const historyItems = candidates.filter(item => item.kind === 'drive' || confirmedParking.has(parkedProofKey(parkedCandidate(item))))
+  const today = civilDay(new Date().toISOString())
+  const containsToday = today != null && (!query.startDate || query.startDate <= today) && (!query.endDate || query.endDate >= today)
+  const dayGroups = calendarHistoryGroups(historyDayGroups(historyItems, item => item.kind === 'drive' ? item.drive.startDate : item.endDate), query.startDate, query.endDate)
+  if (containsToday && !dayGroups.some(group => group.key === today)) dayGroups.push({ key: today, label: today, items: [] })
+  dayGroups.sort((a, b) => a.key === 'unknown' ? 1 : b.key === 'unknown' ? -1 : b.key.localeCompare(a.key))
+  const daySession = readAppSession(Taro)
+  const dayOwner = (() => {
+    if (!car?.stableId || !daySession?.userId) return null
+    try { return JSON.stringify([getApiOrigin(), daySession.userId, getApiSessionGeneration(), car.stableId]) } catch { return null }
+  })()
+  const dayScope = dayOwner ? JSON.stringify([dayOwner, query]) : null
+  useEffect(() => {
+    if (dayOwner && daySelection.current && (daySelection.current.owner !== dayOwner || !loading && daySelection.current.scope !== dayScope)) daySelection.current = null
+  }, [dayOwner, dayScope, loading])
   const statisticsInterval = interval ? { ...interval, items: interval.items.filter(isAppStatisticsDrive) } : null
   const chartRows = statisticsInterval ? filterHistory(statisticsInterval.items, query) : []
   const navGeo = getAppNavGeometry()
@@ -560,6 +583,7 @@ export default function DrivesPage() {
         {cacheWarning ? <Text className="error">在线数据已读到，但未保存到本机。</Text> : null}
       </View>
 
+      {MOCK_FIXTURE_ENABLED ? <View className="card fixture-data-notice" style={{ backgroundColor: '#fff7ed', borderColor: '#c2410c' }}><Text className="section-title" style={{ color: '#9a3412', marginBottom: 0 }}>合成测试数据，未连接真实车辆</Text></View> : null}
       {car ? <View className="history-controls">
         <ScrollView scrollX className="history-filter-scroll"><HistoryDateChips kind="drives" query={query} onChange={updateQuery} /></ScrollView>
         <ScrollView scrollX className="history-filter-scroll"><View className="history-distance-chips">
@@ -606,8 +630,9 @@ export default function DrivesPage() {
           <Text className="section-title">行程历史</Text>
           {loading ? <LoadingIndicator label="正在读取行程…" compact /> : null}
           {historyItems.length === 0 && visibleItems.length === 0 && trustedItems.length > 0 ? <Text className="muted">{copy('history.noMatchedDrives')}</Text> : null}
-          <VerticalDayStack groups={calendarHistoryGroups(historyDayGroups(historyItems, item => item.kind === 'drive' ? item.drive.startDate : item.endDate), query.startDate, query.endDate)}
-            scopeKey={JSON.stringify([getApiOrigin(), readAppSession(Taro)?.userId, getApiSessionGeneration(), car?.stableId, query])}>
+          <VerticalDayStack groups={dayGroups} initialKey={containsToday ? today : undefined}
+            scopeKey={dayScope ?? ''} loading={loading} rememberedKey={dayScope && daySelection.current?.scope === dayScope ? daySelection.current.key : null}
+            onSelection={key => { if (dayOwner && dayScope) daySelection.current = key ? { owner: dayOwner, scope: dayScope, key } : null }}>
           {group => group.items.map(item => item.kind === 'parked' ? (
             <View key={item.key} className="history-record history-parked" onClick={() => { void openParked(item) }}>
               <View className="parked-heading">
@@ -642,7 +667,7 @@ export default function DrivesPage() {
                 })()}
               </View>
               <View className="history-record-metrics">
-                <MetricValue label={copy('history.energy')} value={efficiency(item.drive)} unit={efficiency(item.drive) != null ? "kWh/100km" : undefined} icon="energy" digits={1} negative={(efficiency(item.drive) ?? 0) < 0} />
+                <MetricValue label={copy('drives.energyUse')} value={efficiency(item.drive)} unit={efficiency(item.drive) != null ? "kWh/100km" : undefined} icon="energy" digits={1} negative={(efficiency(item.drive) ?? 0) < 0} />
                 <MetricValue label={copy('history.distance')} value={item.drive.distanceKm} unit="km" icon="distance" digits={1} />
                 <MetricValue label={copy('history.speed')} value={peakSpeedKmh(item.drive)} unit="km/h" icon="speed" digits={Number.isInteger(peakSpeedKmh(item.drive)) ? 0 : 1} />
                 <MetricValue label={copy('history.duration')} value={duration(item.drive.durationMinutes).value} unit={duration(item.drive.durationMinutes).unit} icon="clock" digits={Number.isInteger(item.drive.durationMinutes) ? 0 : 1} />
@@ -663,6 +688,7 @@ export default function DrivesPage() {
             <Button className="detail-curves-btn" onClick={() => { void Taro.navigateTo({ url: `/pages/analysis/index?kind=curves&id=${encodeURIComponent(selected.id)}` }) }}>详细曲线</Button>
           </View>
 
+          {MOCK_FIXTURE_ENABLED ? <View className="card fixture-data-notice" style={{ backgroundColor: '#fff7ed', borderColor: '#c2410c' }}><Text className="section-title" style={{ color: '#9a3412', marginBottom: 0 }}>合成测试数据，未连接真实车辆</Text></View> : null}
           {/* 1. 路线地图 */}
           {(() => {
             const points = selectedEvidence?.points ?? []
@@ -822,6 +848,7 @@ export default function DrivesPage() {
         <ScrollView className="history-detail-overlay" scrollY style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%' }} ariaLabel="驻车详情">
         <View className="history-detail-surface">
           <View className="history-detail-heading" style={{ paddingTop: `${navGeo.navBarTop}px`, paddingRight: `${navGeo.capsuleRightPadding}px`, minHeight: `${navGeo.headerTotalHeight}px` }}><Button className="detail-back" onClick={closeParked}>‹ 返回</Button><Text className="section-title">驻车详情</Text></View>
+          {MOCK_FIXTURE_ENABLED ? <View className="card fixture-data-notice" style={{ backgroundColor: '#fff7ed', borderColor: '#c2410c' }}><Text className="section-title" style={{ color: '#9a3412', marginBottom: 0 }}>合成测试数据，未连接真实车辆</Text></View> : null}
           {(() => {
             // App build70 layered design: hero (address/time/duration/badge) →
             // battery boundaries → cloud detail that shows one honest pending

@@ -40,8 +40,10 @@ const baseStatus: CarStatus = {
 }
 
 describe('vehicle_commands', () => {
-  it('offers catalog when authorization is ready or null', () => {
-    expect(offeredCommands(baseStatus)).toEqual(VEHICLE_COMMAND_CATALOG)
+  it('offers catalog only when authorization is ready; not-evaluated stays empty (App口径)', () => {
+    expect(offeredCommands(baseStatus)).toEqual([])
+    expect(offeredCommands({ ...baseStatus, commandAuthorization: null })).toEqual([])
+    expect(offeredCommands(null)).toEqual([])
 
     const readyStatus = {
       ...baseStatus,

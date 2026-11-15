@@ -2,12 +2,13 @@ import { historyCacheKey } from '../../services/history_cache'
 import React from 'react'
 import renderer, { act, type ReactTestRenderer } from 'react-test-renderer'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-const platform = vi.hoisted(() => ({ request: vi.fn(), login: vi.fn(), values: new Map<string, unknown>(), navigateTo: vi.fn(),
+const platform = vi.hoisted(() => ({ request: vi.fn(), login: vi.fn(), values: new Map<string, unknown>(), navigateTo: vi.fn(), showModal: vi.fn(), showToast: vi.fn(),
   show: (() => {}) as () => void, hide: (() => {}) as () => void, unload: (() => {}) as () => void }))
 vi.mock('@tarojs/components', () => ({ View: 'view', Text: 'text', Button: 'button', Picker: 'picker', Input: 'input', Image: 'image', Map: 'map', ScrollView: 'scroll-view', Canvas: 'canvas', Slider: 'slider' }))
 vi.mock('@tarojs/taro', () => ({ default: {
   request: platform.request, login: platform.login, getStorageSync: (key: string) => platform.values.get(key),
   setStorageSync: (key: string, value: unknown) => { platform.values.set(key, JSON.parse(JSON.stringify(value))) },
+  showModal: platform.showModal, showToast: platform.showToast,
   removeStorageSync: (key: string) => { platform.values.delete(key) }, getStorageInfoSync: () => ({ keys: [...platform.values.keys()] }), navigateTo: platform.navigateTo,
 }, useDidShow: (callback: () => void) => { platform.show = callback }, useDidHide: (callback: () => void) => { platform.hide = callback }, useUnload: (callback: () => void) => { platform.unload = callback }, usePageScroll: () => {} }))
 let tree: ReactTestRenderer | null = null
@@ -25,7 +26,7 @@ const response = (data: unknown) => ({ statusCode: 200, header: {}, data: { data
 function session(userId: string) { return { apiOrigin: origin, userId, accessToken: `synthetic-${userId}`, refreshToken: null, expiresAt: null, linkRequired: false } }
 let offline = false
 beforeEach(() => {
-  vi.resetModules(); platform.values.clear(); platform.request.mockReset(); platform.login.mockReset(); platform.navigateTo.mockReset(); offline = false
+  vi.resetModules(); platform.values.clear(); platform.request.mockReset(); platform.login.mockReset(); platform.navigateTo.mockReset(); platform.showModal.mockReset(); platform.showToast.mockReset(); offline = false
   vi.stubEnv('TARO_APP_API_BASE_URL', origin); platform.values.set('matelink.wechat.session.v1', session('owner'))
   // Fixed October fixtures explicitly request all-time history; they must not age out of a rolling 30-day product default.
   platform.values.set(`${historyCacheKey('charges', 'owner', 'uid7', origin)}.query`, { startDate: '', endDate: '', minDistanceKm: 0 })
@@ -49,10 +50,6 @@ async function detail() { const row = tree!.root.findByProps({ className: 'histo
 async function click(label: string) {
   const button = tree!.root.findAllByType('button').find(node => node.children.join('') === label)
   expect(button, label).toBeDefined(); await act(async () => { button!.props.onClick() }); await flush()
-}
-async function edit(amount: string, currency: string) {
-  await click('编辑本机费用')
-  await act(async () => { const fields = tree!.root.findAllByType('input'); fields[0].props.onInput({ detail: { value: amount } }); fields[1].props.onInput({ detail: { value: currency } }) })
 }
 const shown = () => tree!.root.findAllByType('text').map(node => node.children.join('')).join('\n')
 it('warns only when an ambiguous cached charge is actually loaded and keeps it out of the list and totals', async () => {
@@ -289,7 +286,7 @@ it('renders actual parsed charge detail in App section order, real sample extrem
   await mount(); await detail()
   const titles = tree!.root.findAllByProps({ className: 'section-title' }).map(node => node.children.join(''))
   const startIndex = titles.indexOf('充电详情')
-  expect(titles.slice(startIndex)).toEqual(['充电详情', '位置与费用', '电量', '电池', '功率', '电压与电流', '温度', '充电电量变化', '充电功率', '充电电压', '充电电流', '充电温度'])
+  expect(titles.slice(startIndex)).toEqual(['充电详情', '位置与费用', '电量', '电池', '功率', '电压与电流', '温度', '充电电量变化', '充电功率', '充电电压', '充电电流', '环境温度'])
   for (const label of ['AC输入效率 80%', '起始SOC 20%', '结束SOC 80%', '样本最高功率 10 kW', '样本最低功率 0 kW', '样本平均功率 5 kW', '样本平均电压 235 V', '样本平均电流 8 A', '样本平均温度 21 °C']) expect(tree!.root.findAllByProps({ ariaLabel: label }), label).toHaveLength(1)
   expect(shown()).toContain('功率 2 / 电压 2 / 电流 2 / 温度 2 点')
   // App parity: the five curves are inline in the detail; there is no
@@ -301,11 +298,42 @@ it('renders actual parsed charge detail in App section order, real sample extrem
   const serialized = JSON.stringify([...platform.values.values()])
   expect(serialized).not.toContain('charge_details'); expect(serialized).not.toContain('charger_voltage')
 })
-it('does not expose manual cost editing to users, keeping read-only accounting detail', async () => {
+it('saves and restores a local charge cost without fetching or modifying remote history', async () => {
   await mount(); await detail()
-  expect(tree!.root.findAllByType('button').some(node => node.children.join('') === '编辑本机费用')).toBe(false)
-  expect(shown()).not.toContain('本机手动费用')
+  const requestCount = platform.request.mock.calls.length
+  platform.showModal.mockResolvedValueOnce({ confirm: true, content: '15.75' })
+  await click('编辑本机费用')
+  expect(tree!.root.findByProps({ ariaLabel: '充电详情' }).findByProps({ ariaLabel: '充电费用 15.75 EUR' })).toBeDefined()
+  expect(shown()).toContain('费用来源：本机手动设置')
+  platform.showModal.mockResolvedValueOnce({ confirm: false, cancel: true })
+  await click('使用原始记录')
+  expect(tree!.root.findByProps({ ariaLabel: '充电详情' }).findByProps({ ariaLabel: '充电费用 15.75 EUR' })).toBeDefined()
+  platform.showModal.mockResolvedValueOnce({ confirm: true })
+  await click('使用原始记录')
+  expect(tree!.root.findByProps({ ariaLabel: '充电详情' }).findByProps({ ariaLabel: '充电费用 0 EUR' })).toBeDefined()
+  expect(platform.request).toHaveBeenCalledTimes(requestCount)
 })
+
+it('drops a delayed manual cost confirmation after the active account has changed', async () => {
+  await mount(); await detail()
+  let finish!: (result: { confirm: boolean; content: string }) => void
+  platform.showModal.mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
+  await click('编辑本机费用')
+  platform.values.set('matelink.wechat.session.v1', session('other'))
+  await act(async () => finish({ confirm: true, content: '30' }))
+  expect([...platform.values.keys()].some(key => key.startsWith('matelink.charge-cost.'))).toBe(false)
+})
+
+it('keeps the original timeline when the same charge identity returns a different time window', async () => {
+  await mount()
+  const original = platform.request.getMockImplementation()!
+  platform.request.mockImplementation(async (options: { url: string }) => options.url.endsWith('/charges/1')
+    ? response({ charge: { ...charge, end_date: '2026-10-14T00:30:00.000000001Z' } }) : original(options))
+  await detail()
+  expect(shown()).toContain('充电详情时间与列表不一致')
+  expect(tree!.root.findAllByProps({ id: 'charge-detail-power' })).toHaveLength(0)
+})
+
 it('shows an App-style short address, marked default-price estimate and only returned-day cell data', async () => {
   const legacy = { ...charge, source: 'teslamate_archive', cost: null, currency_code: null, charge_type: null, energy_contract: null,
     charge_energy_added: 24.0175, address: '合成路, Test District, Test City', latitude: null, longitude: null, charge_details: [] }
@@ -320,7 +348,7 @@ it('shows an App-style short address, marked default-price estimate and only ret
   const row = tree!.root.findByProps({ className: 'history-record' })
   expect(row.findByProps({ className: 'history-charge-location' }).findAllByType('text')[0].children.join('')).toBe('合成路')
   expect(row.findByProps({ ariaLabel: '充电费用 ≈¥27.38' })).toBeDefined()
-  expect(row.findByProps({ ariaLabel: '能量 24.0 kWh' })).toBeDefined()
+  expect(row.findByProps({ ariaLabel: '充电量 24.0 kWh' })).toBeDefined()
   const summary = tree!.root.findByProps({ className: 'card history-interval' })
   expect(summary.findByProps({ ariaLabel: '费用 ≈27.38 CNY' })).toBeDefined()
   expect(summary.findByProps({ ariaLabel: '单次均价 ≈27.38 CNY' })).toBeDefined()
@@ -440,5 +468,6 @@ it('shows TeslaMate unfilled raw zero as an estimate until the owner explicitly 
   expect(shown()).toContain('费用按 App 默认 ¥1.14/kWh 估算')
   await detail()
   expect(shown()).toContain('费用来源：按 App 默认 ¥1.14/kWh 与合格电池充入量估算')
-  expect(tree!.root.findAllByType('button').some(node => node.children.join('') === '编辑本机费用')).toBe(false)
+  expect(tree!.root.findAllByType('button').some(node => node.children.join('') === '编辑本机费用')).toBe(true)
+  expect(shown()).not.toContain('本机手动设置')
 })

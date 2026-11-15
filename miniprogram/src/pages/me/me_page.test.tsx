@@ -33,6 +33,30 @@ async function mount() {
   await act(async () => { renderer = TestRenderer.create(React.createElement(Page)); })
   await act(async () => { platform.show() }); await flush()
 }
+
+it('keeps fixture account controls separate from real authorization and data-status storage', async () => {
+  vi.stubEnv('TARO_APP_MOCK_FIXTURE', 'true')
+  vi.stubEnv('TARO_APP_API_BASE_URL', 'https://fixture.invalid')
+  platform.values.set('matelink.consent.v1', { sentinel: 'consent' })
+  platform.values.set('matelink.wechat.tesla-auth.v1', { sentinel: 'pending' })
+  const before = JSON.stringify([...platform.values])
+  await mount()
+  expect(visible()).toContain('合成会话')
+  expect(visible()).toContain('未连接真实账号或车辆')
+  expect(visible()).not.toContain('会话已建立')
+  expect(renderer!.root.findAllByProps({ className: 'consent-card' })).toHaveLength(0)
+  expect(visible()).not.toContain('退出登录')
+  expect(visible()).not.toContain('注销账号')
+  const dataStatus = renderer!.root.findAllByProps({ className: 'more-action more-system-action' })
+    .find(node => node.findAllByType('text').some(text => text.children.join('') === '数据状态'))
+  expect(dataStatus).toBeDefined()
+  await act(async () => { dataStatus!.props.onClick() })
+  expect(platform.switchTab).toHaveBeenCalledWith({ url: '/pages/vehicle/index' })
+  expect(JSON.stringify([...platform.values])).toBe(before)
+  expect(platform.request).not.toHaveBeenCalled()
+  expect(platform.bindingRequest).not.toHaveBeenCalled()
+  expect(platform.login).not.toHaveBeenCalled()
+})
 async function logout() {
   const button = renderer!.root.findAllByType('button').find(node => node.children.join('') === '退出登录')!
   await act(async () => { button.props.onClick() }); await flush()

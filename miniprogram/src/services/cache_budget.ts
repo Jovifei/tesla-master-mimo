@@ -1,4 +1,5 @@
 import type { WechatStorage } from './session'
+import { MOCK_FIXTURE_ENABLED } from './mock_fixture'
 
 // Total allowance is unchanged; new replaceable caches reserve capacity for user data.
 export const CACHE_BUDGET_BYTES = 800 * 1024
@@ -25,6 +26,7 @@ export function cacheBytes(value: unknown): number {
 }
 /** Counts only: no account keys, records, locations or credentials leave this projection. */
 export function localStorageUsage(storage: BudgetStorage): LocalStorageUsage | null {
+  if (MOCK_FIXTURE_ENABLED) return null
   if (!storage.getStorageInfoSync || !storage.getStorageSync) return null
   try {
     const keys = storage.getStorageInfoSync().keys
@@ -41,6 +43,7 @@ export function localStorageUsage(storage: BudgetStorage): LocalStorageUsage | n
   } catch { return null }
 }
 export function canStoreCache(storage: BudgetStorage, key: string, value: unknown): boolean {
+  if (MOCK_FIXTURE_ENABLED) return false
   if (!storage.getStorageInfoSync || !storage.getStorageSync || !key.startsWith('matelink.')) return false
   try {
     const usage = localStorageUsage(storage)

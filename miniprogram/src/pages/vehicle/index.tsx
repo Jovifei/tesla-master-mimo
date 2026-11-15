@@ -121,18 +121,33 @@ export default function VehiclePage() {
 
   const handleExecuteCommand = async (command: string, params?: Record<string, unknown>, confirm = false) => {
     if (!car) return
+    const selected = car, session = readAppSession(Taro), generation = getApiSessionGeneration(), version = requestVersion.current
+    let origin: string
+    try { origin = getApiOrigin() } catch { return }
+    if (!session?.userId || pageOwner.current !== `${session.userId}:${generation}` || pageOrigin.current !== origin || selectedStableId.current !== selected.stableId) return
+    let ticket: { isCurrent(): boolean }
+    try { ticket = scopeGate.current.begin('command') } catch { return }
+    const current = () => {
+      try { return foreground.current && version === requestVersion.current && generation === getApiSessionGeneration() &&
+        session.userId === readAppSession(Taro)?.userId && origin === getApiOrigin() &&
+        selectedStableId.current === selected.stableId && ticket.isCurrent() } catch { return false }
+    }
     setBusyCommand(command)
     setCommandOutcome(null)
+    let refresh = false
     try {
-      const res = await matelinkApi.executeVehicleCommand(car.id, command, params, confirm, car)
-      setCommandOutcome({ status: 'accepted', command, verified: res.verified ?? false })
-      void load()
+      const res = await matelinkApi.executeVehicleCommand(selected.id, command, params, confirm, selected)
+      if (!current()) return
+      setCommandOutcome({ status: res.result === 'accepted' ? 'accepted' : 'unconfirmed', command, verified: res.verified === true })
+      refresh = true
     } catch (err) {
+      if (!current()) return
       const errorClass = err instanceof ApiError ? (err.code || err.message) : 'error'
       setCommandOutcome({ status: 'failed', command, errorClass })
     } finally {
-      setBusyCommand(null)
+      if (current()) setBusyCommand(null)
     }
+    if (refresh && current()) void load()
   }
 
   const handleLoadNearby = async () => {
@@ -218,6 +233,7 @@ export default function VehiclePage() {
 
   const load = async (consumeIntent = false) => {
     clearImage()
+    setBusyCommand(null)
     setImageActivation(value => value + 1)
     setAppearanceOpen(false)
     const version = ++requestVersion.current
@@ -227,6 +243,7 @@ export default function VehiclePage() {
     try { incomingOrigin = getApiOrigin() } catch { /* A changed or invalid origin cannot own the old display. */ }
     if (pageOwner.current && (pageOwner.current !== incomingOwner || (pageOrigin.current && pageOrigin.current !== incomingOrigin))) {
       scopeGate.current.invalidate(); pageOwner.current = null; pageOrigin.current = null; selectedStableId.current = null
+      setCommandOutcome(null)
       setCars([]); setCar(null); setStatus(null); setHistoryEvidence(null); setReadinessItems([]); setPairing(null); setRecentDrive(null); setCached(false)
     }
     setLoading(true)
@@ -288,6 +305,7 @@ export default function VehiclePage() {
       try { return foreground.current && version === requestVersion.current && sessionGeneration === getApiSessionGeneration() &&
         readAppSession(Taro)?.userId === session.userId && origin === getApiOrigin() } catch { return false }
     }
+    let acceptOptional = true
     try {
       origin = getApiOrigin()
       const nextCars = await matelinkApi.getCars()
@@ -314,15 +332,37 @@ export default function VehiclePage() {
       })
       saveSelection(session.userId, selected.stableId)
       setHistoryEvidence(inspectHistoryCache(Taro, session.userId, selected.stableId, origin))
-      const [statusResult, readinessResult, pairingResult, recentDriveResult] = await Promise.allSettled([
-        (async () => { const ticket = scopeGate.current.begin('status'); const value = await matelinkApi.getCarSnapshot(selected.id, selected); return { ticket, value } })(),
-        (async () => { const ticket = scopeGate.current.begin('readiness'); const value = await matelinkApi.getReadiness(selected.id, selected); return { ticket, value } })(),
-        (async () => { const ticket = scopeGate.current.begin('pairing'); const value = await matelinkApi.getTelemetryPairing(selected.id, selected); return { ticket, value } })(),
-        (async () => { const ticket = scopeGate.current.begin('recent-drive'); const value = await matelinkApi.getDrives(selected.id, 1, 1, selected); return { ticket, value: value.items[0] ?? null } })(),
-      ])
-      if (!ownerIsCurrent()) return
-      if (statusResult.status === 'fulfilled' && statusResult.value.ticket.isCurrent()) {
-        const nextStatus = statusResult.value.value
+      const failures: Partial<Record<'status' | 'readiness' | 'pairing', string>> = {}
+      const reportFailure = (lane: 'status' | 'readiness' | 'pairing', reason: unknown) => {
+        failures[lane] = messageFor(reason)
+        setError(failures.status ?? failures.readiness ?? failures.pairing ?? null)
+      }
+      const current = (ticket: { isCurrent(): boolean }) => acceptOptional && ownerIsCurrent() &&
+        selectedStableId.current === selected.stableId && ticket.isCurrent()
+      const statusTicket = scopeGate.current.begin('status')
+      const statusPromise = matelinkApi.getCarSnapshot(selected.id, selected).then(
+        value => ({ status: 'fulfilled' as const, value }), reason => ({ status: 'rejected' as const, reason }),
+      )
+      const readinessTicket = scopeGate.current.begin('readiness')
+      void matelinkApi.getReadiness(selected.id, selected).then(value => {
+        if (current(readinessTicket)) setReadinessItems(value.items)
+      }).catch(reason => {
+        if (current(readinessTicket)) { setReadinessItems([]); reportFailure('readiness', reason) }
+      })
+      const pairingTicket = scopeGate.current.begin('pairing')
+      void matelinkApi.getTelemetryPairing(selected.id, selected).then(value => {
+        if (current(pairingTicket)) setPairing(value)
+      }).catch(reason => {
+        if (current(pairingTicket)) { setPairing(null); reportFailure('pairing', reason) }
+      })
+      const recentDriveTicket = scopeGate.current.begin('recent-drive')
+      void matelinkApi.getDrives(selected.id, 1, 1, selected).then(value => {
+        if (current(recentDriveTicket)) setRecentDrive(value.items[0] ?? null)
+      }).catch(() => { /* Recent drive is optional. */ })
+      const statusResult = await statusPromise
+      if (!current(statusTicket)) return
+      if (statusResult.status === 'fulfilled') {
+        const nextStatus = statusResult.value
         if (nextStatus.tpms) {
           const observed = observeTpmsCache(Taro, session.userId, origin!, selected.stableId, nextStatus.tpms)
           setTpmsCacheReason(observed.reason)
@@ -339,16 +379,10 @@ export default function VehiclePage() {
       } else {
         setStatus(readVehicleCache(Taro, session.userId, origin, selected.stableId))
         setCached(true)
+        reportFailure('status', statusResult.reason)
       }
-      if (readinessResult.status === 'fulfilled' && readinessResult.value.ticket.isCurrent()) setReadinessItems(readinessResult.value.value.items)
-      else setReadinessItems([])
-      if (pairingResult.status === 'fulfilled' && pairingResult.value.ticket.isCurrent()) setPairing(pairingResult.value.value)
-      else setPairing(null)
-      if (recentDriveResult.status === 'fulfilled' && recentDriveResult.value.ticket.isCurrent()) setRecentDrive(recentDriveResult.value.value)
-      else setRecentDrive(null)
-      const failed = [statusResult, readinessResult, pairingResult].find(item => item.status === 'rejected')
-      if (failed?.status === 'rejected') setError(messageFor(failed.reason))
     } catch (reason) {
+      acceptOptional = false
       if (ownerIsCurrent() || (origin === null && version === requestVersion.current && sessionGeneration === getApiSessionGeneration() && readAppSession(Taro)?.userId === session.userId)) {
         setError(messageFor(reason))
         const offlineCars = origin ? readCarsCache(Taro, session.userId, origin) : []
@@ -453,6 +487,8 @@ export default function VehiclePage() {
     }
     scopeGate.current.invalidate()
     clearImage()
+    setBusyCommand(null)
+    setCommandOutcome(null)
     saveSelection(session.userId!, next.stableId)
     setCar(next)
     setStatus(null)
@@ -557,7 +593,9 @@ export default function VehiclePage() {
   const navigate = (url: string) => { void Taro.navigateTo({ url }) }
   const settings = () => navigate('/pages/tools/index?kind=settings')
   const openBattery = () => navigate('/pages/insights/index?kind=battery')
-  const location = locationDisplayText({ geofence: status?.geofence, location: status?.location, recentDrive }) ?? '暂无数据'
+  const locationText = locationDisplayText({ geofence: status?.geofence, location: status?.location, recentDrive })
+  const coordinates = status?.location ? `${status.location.latitude.toFixed(4)}, ${status.location.longitude.toFixed(4)}` : null
+  const location = locationText && locationText === coordinates ? '已获取位置 · 点击查看地图' : locationText ?? '暂无数据'
   const headerGeometry = dashboardHeaderGeometry()
   return (
     <View className={`page vehicle-page ${uiAppearance.className}`} style={{ paddingTop: `${headerGeometry.top}px` }}>

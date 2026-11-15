@@ -13,9 +13,9 @@ import { activityNumber, ChargeActivityGrid, PresentationPreferences, VerticalDa
 import { APPEARANCE_KEY, readAppearance, writeAppearance } from '../services/appearance'
 let tree: TestRenderer.ReactTestRenderer | null = null
 const groups = historyDayGroups([
-  { key: 'd0', date: '2026-11-10T12:00:00+09:00' }, { key: 'p0', date: '2026-11-10T11:00:00+09:00' },
-  { key: 'd1', date: '2026-11-09T12:00:00+09:00' }, { key: 'p1', date: '2026-11-09T11:00:00+09:00' },
-  { key: 'd2', date: '2026-11-08T12:00:00+09:00' }, { key: 'd3', date: '2026-11-07T12:00:00+09:00' },
+  { key: 'd0', date: '2026-11-10' }, { key: 'p0', date: '2026-11-10' },
+  { key: 'd1', date: '2026-11-09' }, { key: 'p1', date: '2026-11-09' },
+  { key: 'd2', date: '2026-11-08' }, { key: 'd3', date: '2026-11-07' },
 ], row => row.date)
 function render(scope = 'A') { return <VerticalDayStack groups={groups} scopeKey={scope}>{group => <span>{group.items.map(item => item.key).join(',')}</span>}</VerticalDayStack> }
 afterEach(async () => { if (tree) await act(async () => tree!.unmount()); tree = null; storage.fail = false; writeAppearance({ palette: 'neutral', reducedMotion: false, dayAxis: 'horizontal' }); storage.values.clear(); storage.writes = [] })
@@ -37,12 +37,12 @@ it('vertical policy is bounded, axis-aware and rejects nonfinite input', () => {
   expect(verticalDayTarget(1, 4, 0, -20)).toBe(1)
   expect(verticalDayTarget(1, 4, NaN, 80)).toBe(1)
 })
-it('renders only current-day content, exposes every rear date, switches horizontally and resets per scope', async () => {
+it('renders only current-day content, exposes only two older rear dates, switches horizontally and resets per scope', async () => {
   await act(async () => { tree = TestRenderer.create(render()) })
   const body = () => tree!.root.findByType('span').children.join('')
   expect(body()).toBe('d0,p0')
   const rear = () => tree!.root.findAllByProps({ className: 'day-stack-date' })
-  expect(rear()).toHaveLength(3)
+  expect(rear()).toHaveLength(2)
   expect(rear().map(node => node.children.join('')).join('')).not.toContain('d1')
   const gesture = () => tree!.root.findByProps({ className: 'day-stack-header' })
   await act(async () => {
@@ -56,7 +56,7 @@ it('renders only current-day content, exposes every rear date, switches horizont
   })
   expect(body()).toBe('d0,p0')
   await act(async () => rear()[0].props.onClick())
-  expect(body()).toBe('d3')
+  expect(body()).toBe('d2')
   await act(async () => tree!.update(render('B')))
   expect(body()).toBe('d0,p0')
   expect(tree!.root.findByProps({ className: 'day-stack-body' }).props.onTouchEnd).toBeUndefined()
@@ -130,13 +130,16 @@ it('renders the full selected week including empty dates without manufacturing h
   expect(week).toHaveLength(7)
   expect(week.flatMap(group => group.items)).toHaveLength(6)
   await act(async () => { tree = TestRenderer.create(<VerticalDayStack groups={week} scopeKey="week">{group => <span>{group.items.map(row => row.key).join(',')}</span>}</VerticalDayStack>) })
-  expect(tree!.root.findAllByProps({ className: 'day-stack-date' })).toHaveLength(6)
+  expect(tree!.root.findAllByProps({ className: 'day-stack-date' })).toHaveLength(2)
   const yesterday = () => tree!.root.findAllByProps({ className: 'day-stack-date' }).find(node => node.children.join('').includes('2026-11-09'))!
   await act(async () => yesterday().props.onClick())
   expect(tree!.root.findByType('span').children.join('')).toBe('d1,p1')
-  await act(async () => yesterday().props.onClick())
+  expect(tree!.root.findAllByProps({ className: 'day-stack-date' }).map(node => node.children.join('')).join('')).not.toContain('2026-11-09')
+  await act(async () => tree!.root.findByProps({ className: 'day-stack-close' }).props.onClick())
   expect(tree!.root.findByType('span').children.join('')).toBe('d0,p0')
-  await act(async () => tree!.root.findAllByProps({ className: 'day-stack-date' })[0].props.onClick())
+  for (let step = 0; step < 4; step += 1) {
+    await act(async () => tree!.root.findByProps({ ariaLabel: '较旧日期' }).props.onClick())
+  }
   expect(JSON.stringify(tree!.toJSON())).toContain('当天尚无已返回记录')
   expect(calendarHistoryGroups(groups, '2026-02-30', '2026-11-10')).toEqual(groups)
 })

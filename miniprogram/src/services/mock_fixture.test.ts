@@ -1,5 +1,38 @@
 import { describe, expect, it } from 'vitest'
 import { MOCK_CAR_ID, mockFixtureStats, mockIso, mockPlanned, mockRequest } from './mock_fixture'
+import { readFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
+import { join } from 'node:path'
+import { runInNewContext } from 'node:vm'
+
+it('fixture build switch is substituted by the real webpack DefinePlugin without a process global', async () => {
+  const require = createRequire(join(process.cwd(), 'package.json'))
+  const webpack = require('webpack')
+  const ts = require('typescript')
+  const { createFsFromVolume, Volume } = require('memfs')
+  const source = readFileSync(join(process.cwd(), 'src/services/mock_fixture.ts'), 'utf8')
+  const javascript = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.ESNext } }).outputText
+
+  for (const enabled of ['true', 'false']) {
+    const memory = createFsFromVolume(new Volume())
+    const compiler = webpack({
+      mode: 'none', target: 'node', cache: false,
+      entry: `data:text/javascript;base64,${Buffer.from(javascript).toString('base64')}`,
+      output: { path: '/virtual', filename: 'fixture.js', library: { type: 'commonjs2' } },
+      plugins: [new webpack.DefinePlugin({ 'process.env.TARO_APP_MOCK_FIXTURE': JSON.stringify(enabled) })],
+    })
+    compiler.outputFileSystem = memory
+    await new Promise<void>((resolve, reject) => compiler.run((error: Error | null, stats: { hasErrors: () => boolean; toString: () => string }) => {
+      if (error) reject(error)
+      else if (stats.hasErrors()) reject(new Error('fixture webpack compilation failed'))
+      else resolve()
+    }))
+    const sandbox = { module: { exports: {} as { MOCK_FIXTURE_ENABLED: boolean } }, exports: {} }
+    runInNewContext(memory.readFileSync('/virtual/fixture.js', 'utf8'), sandbox)
+    expect(sandbox.module.exports.MOCK_FIXTURE_ENABLED).toBe(enabled === 'true')
+    await new Promise<void>((resolve, reject) => compiler.close((error: Error | null) => error ? reject(error) : resolve()))
+  }
+})
 
 it('routes nothing while the build switch is off', () => {
   expect(mockRequest('/api/v1/cars')).toBeNull()
@@ -73,6 +106,23 @@ describe('fixture routing (enabled)', () => {
       expect(win.source).toBe('mock_fixture')
       expect(win.energy_contract.stored_change.reason).toBe('no_qualified_parked_energy')
     }
+  })
+
+  it('keeps synthetic parked battery delta consistent with its reported endpoints', () => {
+    const drives = mockPlanned.drives
+    let checked = 0
+    for (let i = 0; i + 1 < drives.length; i++) {
+      const newer = drives[i], older = drives[i + 1]
+      if (newer.quarantined || older.quarantined || newer.start <= older.end) continue
+      const result = mockRequest(`/api/matelink/v1/cars/${MOCK_CAR_ID}/parked/${older.id}/${newer.id}`, true) as {
+        data: { start_battery_level: number; end_battery_level: number; battery_delta: number; energy_kwh: null; source: string }
+      }
+      expect(result.data.battery_delta).toBe(result.data.end_battery_level - result.data.start_battery_level)
+      expect(result.data.energy_kwh).toBeNull()
+      expect(result.data.source).toBe('mock_fixture')
+      checked++
+    }
+    expect(checked).toBeGreaterThan(0)
   })
 
   it('covers winter sub-zero temperatures without clamping', () => {

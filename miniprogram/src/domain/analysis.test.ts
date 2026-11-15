@@ -50,7 +50,7 @@ describe('advanced App analysis consumers', () => {
   })
 
   it('builds a real civil calendar and keeps unrecorded dates unknown rather than fabricating zero mileage', () => {
-    const cells = calendarCells('2026-02', [drive('feb', 0, 0, '2026-02-14T12:00:00+08:00')])
+    const cells = calendarCells('2026-02', [drive('feb', 0, 0, new Date(2026, 1, 14, 12).toISOString())])
     const days = cells.filter(cell => cell.day != null)
     expect(days).toHaveLength(28)
     expect(days.find(day => day.day?.endsWith('-14'))).toMatchObject({ count: 1, distance: { value: 0 } })
@@ -65,6 +65,7 @@ describe('advanced App analysis consumers', () => {
     const charge = { id: 'charge', startDate: '2026-10-14T09:00:00+08:00', endDate: '2026-10-14T09:30:00+08:00' } as Charge
     expect(buildParkedWindows([newer, older], [charge], true)[0].chargeOverlap).toBe(true)
     expect(buildParkedWindows([newer, older], [], false)[0].chargeCoverageComplete).toBe(false)
+    expect(buildParkedWindows([newer, older], [], false)[0].chargeTimesValid).toBe(true)
     expect(buildParkedWindows([{ ...newer, source: 'teslamate_archive' }, older], [], true)).toEqual([])
     expect(buildParkedWindows([newer, older], [{ ...charge, startDate: null }], true)[0].chargeCoverageComplete).toBe(false)
   })
@@ -103,4 +104,86 @@ describe('advanced App analysis consumers', () => {
     const unknown = { ...drive('middle', 1, 0), startDate: null, endDate: null, sourceInstanceId: 'archive-A' }
     expect(buildParkedWindows([newer, unknown, older], [], true)).toEqual([])
   })
+
+  it('does not infer adjacency when a drive has only a date or an invalid calendar instant', () => {
+    const older = { ...drive('old', 1, 0, '2026-10-14T08:00:00+08:00'), sourceInstanceId: 'archive-A', sourceVehicleId: 'car-A' }
+    const newer = { ...drive('new', 1, 0, '2026-10-14T10:00:00+08:00'), sourceInstanceId: 'archive-A', sourceVehicleId: 'car-A' }
+    const middle = { ...drive('middle', 1, 0, '2026-10-14T09:00:00+08:00'), sourceInstanceId: 'archive-A', sourceVehicleId: 'car-A' }
+    for (const change of [
+      { startDate: '2026-10-14' }, { endDate: '2026-10-14' }, { startDate: '2026-10-14T09:00:00' },
+      { startDate: '2026-02-30T09:00:00Z' }, { endDate: '2026-02-30T09:00:00Z' },
+    ]) {
+      expect(buildParkedWindows([newer, { ...middle, ...change }, older], [], true), JSON.stringify(change)).toEqual([])
+    }
+  })
+
+  it('marks imprecise charge coverage incomplete without inventing an overlap', () => {
+    const older = { ...drive('old', 1, 0, '2026-10-14T08:00:00+08:00'), sourceInstanceId: 'archive-A', sourceVehicleId: 'car-A' }
+    const newer = { ...drive('new', 1, 0, '2026-10-14T10:00:00+08:00'), sourceInstanceId: 'archive-A', sourceVehicleId: 'car-A' }
+    const exact = { id: 'charge', startDate: '2026-10-14T09:00:00+08:00', endDate: '2026-10-14T09:30:00+08:00' } as Charge
+    for (const change of [
+      { startDate: '2026-10-14', endDate: null }, { endDate: null }, { endDate: '2026-10-14' }, { startDate: '2026-10-14T09:00:00' },
+      { startDate: '2026-02-30T09:00:00Z' }, { endDate: '2026-02-30T09:00:00Z' },
+      { endDate: '2026-10-14T08:30:00+08:00' },
+    ]) {
+      const uncertain = { ...exact, ...change }
+      expect(buildParkedWindows([newer, older], [uncertain], true)[0], JSON.stringify(change))
+        .toMatchObject({ chargeOverlap: false, chargeCoverageComplete: false, chargeTimesValid: false })
+      expect(buildParkedWindows([newer, older], [uncertain, exact], true)[0])
+        .toMatchObject({ chargeOverlap: true, chargeCoverageComplete: false, chargeTimesValid: false })
+    }
+  })
+})
+
+
+it('marks only cross-channel gaps as inference-required, retaining hard breaks and original indexes', () => {
+  const source = [
+    { time: 0, value: 0, fieldState: 'reported' as const },
+    { time: 1, value: null, fieldState: 'absent' as const, otherChannel: true },
+    { time: 2, value: -2, fieldState: 'reported' as const },
+    { time: 3, value: null, fieldState: 'invalid' as const, otherChannel: true },
+    { time: 4, value: 5, fieldState: 'reported' as const },
+    { time: 5, value: null, fieldState: 'absent' as const, otherChannel: false },
+    { time: 6, value: 6, fieldState: 'reported' as const },
+    { time: NaN, value: null, fieldState: 'absent' as const, otherChannel: true },
+    { time: 8, value: 8, fieldState: 'reported' as const },
+    { time: 9, value: 9, fieldState: 'reported' as const, sourceConflict: true },
+    { time: 10, value: 10, fieldState: 'reported' as const },
+  ]
+  const plot = selectCurveSamples(source, { inferAcrossOtherChannels: true })
+  expect(plot.points.map(p => [p.index, p.value, p.breakBefore, !!p.inferredBefore])).toEqual([
+    [0, 0, true, false], [2, -2, true, true], [4, 5, true, false], [6, 6, true, false], [8, 8, true, false], [10, 10, true, false],
+  ])
+  expect(selectCurveSamples(source).points.find(p => p.index === 2)?.breakBefore).toBe(true)
+  expect(selectCurveSamples(source, { inferAcrossOtherChannels: true, forceDisconnected: true }).points.every(p => p.breakBefore && !p.inferredBefore)).toBe(true)
+})
+
+it('preserves inferred and hard gaps when 20,000 samples are reduced for rendering', () => {
+  const samples = Array.from({ length: 20_000 }, (_, index) => index % 2
+    ? { time: index, value: null, fieldState: index === 9999 ? 'invalid' as const : 'absent' as const, otherChannel: true }
+    : { time: index, value: index === 0 ? 0 : index === 10002 ? -99 : index, fieldState: 'reported' as const })
+  const plot = selectCurveSamples(samples, { inferAcrossOtherChannels: true })
+  expect(plot.points.length).toBeLessThanOrEqual(600)
+  expect(plot.points[0]).toMatchObject({ index: 0, value: 0 })
+  expect(plot.points[plot.points.length - 1]?.index).toBe(19998)
+  expect(plot.points.some(p => p.value === -99)).toBe(true)
+  expect(plot.points.some(p => p.inferredBefore)).toBe(true)
+  const right = plot.points.find(p => p.index > 9999)!
+  expect(right.breakBefore).toBe(true)
+  expect(right.inferredBefore).not.toBe(true)
+})
+
+
+it('breaks inferred paths at duplicate or reversed times and contradictory field states', () => {
+  const source = [
+    { time: 5, value: 0, fieldState: 'reported' as const },
+    { time: 5, value: null, fieldState: 'absent' as const, otherChannel: true },
+    { time: 6, value: 1, fieldState: 'reported' as const },
+    { time: 7, value: null, fieldState: 'absent' as const, otherChannel: true },
+    { time: 6, value: 2, fieldState: 'reported' as const },
+    { time: 8, value: 3, fieldState: 'invalid' as const },
+    { time: 9, value: 4, fieldState: 'reported' as const },
+  ]
+  expect(selectCurveSamples(source, { inferAcrossOtherChannels: true }).points.map(p => [p.index, p.breakBefore, !!p.inferredBefore]))
+    .toEqual([[0, true, false], [2, true, false], [4, true, false], [6, true, false]])
 })

@@ -88,6 +88,7 @@ const errorMessages: Record<string, string> = {
   wechat_recovery_storage_failed: '本机快捷进入设置无法保存，请检查微信存储后重试',
   wechat_account_changed: '当前微信关联的账号已变化，请先使用特斯拉账号登录确认',
   wechat_mock_unavailable: '合成数据模式下无法操作微信绑定',
+  mock_fixture_unavailable: '合成数据模式下不支持此操作',
 }
 
 export type ApiErrorOptions = {
@@ -125,6 +126,14 @@ export class ApiConfigurationError extends ApiError {
     })
     this.name = 'ApiConfigurationError'
   }
+}
+
+function fixtureUnavailable(): ApiError {
+  return new ApiError(errorMessages.mock_fixture_unavailable, { code: 'mock_fixture_unavailable' })
+}
+
+function assertRealRequestsAllowed(): void {
+  if (MOCK_FIXTURE_ENABLED) throw fixtureUnavailable()
 }
 
 type UnknownRecord = Record<string, unknown>
@@ -258,6 +267,7 @@ function unwrap<T>(value: T | ApiEnvelope<T>): T {
 }
 
 async function rawRequest<T extends TaroGeneral.IAnyObject>(path: string, options: Omit<Taro.request.Option, 'url'> = {}): Promise<Taro.request.SuccessCallbackResult<T>> {
+  assertRealRequestsAllowed()
   try {
     const response = await Taro.request<T>({
       ...options,
@@ -408,8 +418,10 @@ export async function requestJson<T extends TaroGeneral.IAnyObject>(path: string
     if (MOCK_FIXTURE_ENABLED) {
       // Review fixture: wire-shaped synthetic data through the real normalize
       // pipeline; rows carry source mock_fixture and never pass as real records.
+      if ((options.method ?? 'GET').toUpperCase() !== 'GET') throw fixtureUnavailable()
       const hit = mockRequest(path)
       if (hit !== null) return hit as T
+      throw fixtureUnavailable()
     }
     const sentSession = readAppSession(Taro)
     const response = await rawRequest<T>(path, {
@@ -929,6 +941,7 @@ export function getWechatRecoveryFailure(): ApiError | null { return wechatRecov
 
 export const matelinkApi = {
   async logout(): Promise<void> {
+    assertRealRequestsAllowed()
     const session = readAppSession(Taro)
     const pending = readPendingTeslaAuthorization(Taro)
     const capturedHeaders = session ? { Authorization: `Bearer ${session.accessToken}` } : {}
@@ -1060,6 +1073,7 @@ export const matelinkApi = {
   restoreWechatSession(): Promise<AppSession> { return restoreWechatSession(false) },
 
   async deleteAccount(): Promise<{ teslaConsentRevokeUrl: string | null; recoveryStorageWarning?: boolean }> {
+    assertRealRequestsAllowed()
     const owner = readAppSession(Taro)
     if (!owner?.userId) throw new ApiError(errorMessages.session_required, { status: 401, code: 'session_required' })
     if (accountDeletionInFlight) throw sessionChangedError()
@@ -1249,6 +1263,7 @@ export const matelinkApi = {
   },
 
   async startTeslaAuthorization(consent: AuthConsent): Promise<TeslaAuthorization> {
+    assertRealRequestsAllowed()
     if (accountDeletionInFlight) throw sessionChangedError()
     const apiOrigin = getApiOrigin()
     if (consent.termsVersion !== JOURVOLT_TERMS_VERSION || consent.privacyVersion !== JOURVOLT_PRIVACY_VERSION)
@@ -1288,6 +1303,7 @@ export const matelinkApi = {
   },
 
   async getTeslaAuthorizationStatus(): Promise<TeslaAuthorizationStatus> {
+    assertRealRequestsAllowed()
     const pending = readPendingTeslaAuthorization(Taro)
     if (!pending) return { status: 'none', expiresAt: null }
     if (pending.apiOrigin !== getApiOrigin()) throw sessionChangedError()
@@ -1307,6 +1323,7 @@ export const matelinkApi = {
   },
 
   async claimTeslaAuthorization(): Promise<AppSession> {
+    assertRealRequestsAllowed()
     if (accountDeletionInFlight) throw sessionChangedError()
     const pending = readPendingTeslaAuthorization(Taro)
     if (!pending) throw new ApiError(errorMessages.authorization_expired, { code: 'authorization_expired' })
@@ -1339,6 +1356,7 @@ export const matelinkApi = {
   },
 
   async cancelTeslaAuthorization(): Promise<void> {
+    assertRealRequestsAllowed()
     const pending = readPendingTeslaAuthorization(Taro)
     if (!pending) return
     if (pending.apiOrigin !== getApiOrigin()) throw sessionChangedError()
@@ -1351,6 +1369,7 @@ export const matelinkApi = {
   },
 
   async exchangeTeslaTicket(ticket: string): Promise<AppSession> {
+    assertRealRequestsAllowed()
     if (accountDeletionInFlight) throw sessionChangedError()
     if (!ticket.trim()) throw new ApiError('授权凭证为空', { code: 'invalid_login_ticket' })
     const key = ticket.trim()

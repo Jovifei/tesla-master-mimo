@@ -2,7 +2,7 @@ import type { CarStatus, Charge, Drive, DriveEnergyReceipt } from '../services/t
 import type { WechatStorage } from '../services/session'
 import { canStoreCache, cacheBytes } from '../services/cache_budget'
 import { aggregateDriveHistory, historyRowKey, isHistoryQuarantined } from './history'
-import { driveEnergyReceipt, resolveChargeEnergy, resolveDriveEnergy } from './drive_energy'
+import { driveDistanceKm, driveEnergyReceipt, resolveChargeEnergy, resolveDriveEnergy, sameEnergyInstant } from './drive_energy'
 
 const number = (value: unknown, min = -Infinity, max = Infinity): number | null =>
   typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max ? value : null
@@ -14,6 +14,34 @@ export function explicitCurrency(value: unknown): string | null { return typeof 
 export function insightDrive(drive: Drive): Drive {
   const receipt = drive.energyReceipt ?? { start_date: drive.startDate, end_date: drive.endDate, source: drive.source,
     odometer_details: { odometer_distance: drive.distanceKm }, energy_contract: { version: 1, net_energy: drive.energy?.evidence ?? null } }
+  const different = (a: unknown, b: unknown) => a != null && b != null && a !== b
+  const nullMismatch = (a: unknown, b: unknown) => (a === null && b != null) || (b === null && a != null)
+  const identity = (value: unknown) => typeof value === 'string' ? value.trim() : value
+  const differentInstant = (a: unknown, b: unknown) => a != null && b != null && a !== b && !sameEnergyInstant(a, b)
+  const source = drive.energyReceipt, metric = source?.energy_contract?.net_energy
+  const distance = source ? driveDistanceKm(source) : null
+  const conflicting = source && (
+    (source.drive_id != null && String(source.drive_id) !== drive.id) ||
+    different(identity(source.session_id), identity(drive.sessionId)) ||
+    different(source.source, drive.source) || nullMismatch(source.source, drive.source) || different(metric?.source, drive.source) ||
+    different(identity(source.source_instance_id), identity(drive.sourceInstanceId)) ||
+    different(identity(source.source_vehicle_id), identity(drive.sourceVehicleId)) ||
+    different(identity(source.source_record_id), identity(drive.sourceRecordId)) ||
+    different(identity(source.source_id), identity(drive.sourceRecordId)) ||
+    different(identity(source.source_id), identity(source.source_record_id)) ||
+    differentInstant(source.start_date, drive.startDate) || nullMismatch(source.start_date, drive.startDate) ||
+    differentInstant(source.end_date, drive.endDate) || nullMismatch(source.end_date, drive.endDate) ||
+    different(distance, drive.distanceKm) ||
+    (drive.distanceKm != null && ((source.distance_unit !== undefined && source.distance_unit !== 'km' && source.distance_unit !== 'mi') ||
+      (source.odometer_details != null && Object.prototype.hasOwnProperty.call(source.odometer_details, 'odometer_distance') && distance === null))) ||
+    different(source.battery_details?.start_battery_level, drive.startBatteryLevel) ||
+    different(source.battery_details?.end_battery_level, drive.endBatteryLevel) ||
+    different(metric?.start_soc, drive.startBatteryLevel) || different(metric?.end_soc, drive.endBatteryLevel) ||
+    different(metric?.start_soc, source.battery_details?.start_battery_level) ||
+    different(metric?.end_soc, source.battery_details?.end_battery_level)
+  )
+  if (conflicting) return { ...drive, energy: resolveDriveEnergy({ energy_contract: { version: 1, net_energy: null } }),
+    energyConsumedKwh: null, efficiencyWhKm: null }
   return { ...drive, energy: resolveDriveEnergy(receipt) }
 }
 export type CostGroup = { currency: string; cost: number | null; known: number; total: number; energyKwh: number | null; pairedCost: number | null; perKwh: number | null; average: number | null;

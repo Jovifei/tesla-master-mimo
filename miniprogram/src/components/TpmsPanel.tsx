@@ -1,6 +1,7 @@
 import { Button, Text, View } from '@tarojs/components'
 import { useState } from 'react'
 import { restoreTpmsSnapshot, tpmsMissingLabel, TPMS_WHEELS, type TpmsReport, type TpmsSnapshot } from '../domain/tpms'
+import { evaluateTpmsAlerts, validTpmsProfile, type TpmsProfile } from '../domain/tpms_alerts'
 import {
   analyzeTpmsTrend,
   groupTpmsSamples,
@@ -15,13 +16,14 @@ import MetricValue from './MetricValue'
 import TpmsHistoryChart from './TpmsHistoryChart'
 
 const wheelNames = { fl: '左前轮', fr: '右前轮', rl: '左后轮', rr: '右后轮' }
-type Props = { snapshot?: TpmsSnapshot | null; report?: TpmsReport | null; history?: TpmsHistory | null; cacheReason?: string | null; now?: number; trendDrives?: readonly TpmsTrendDrive[] }
+type Props = { snapshot?: TpmsSnapshot | null; report?: TpmsReport | null; history?: TpmsHistory | null; cacheReason?: string | null; now?: number; trendDrives?: readonly TpmsTrendDrive[]; profile?: TpmsProfile | null }
 
-export default function TpmsPanel({ snapshot, report, history, cacheReason, now = Date.now(), trendDrives = [] }: Props) {
+export default function TpmsPanel({ snapshot, report, history, cacheReason, now = Date.now(), trendDrives = [], profile = null }: Props) {
   const [evidenceExpanded, setEvidenceExpanded] = useState(false)
   const [expanded, setExpanded] = useState(false)
   const [historyPage, setHistoryPage] = useState(0)
   const current = restoreTpmsSnapshot(snapshot, now)
+  const comparison = evaluateTpmsAlerts(profile, current, history?.points, now)
   const points = [...(history?.points ?? [])].sort((a, b) => Date.parse(b.observedAt) - Date.parse(a.observedAt))
   const pages = Math.ceil(points.length / 20)
   const page = Math.max(0, Math.min(historyPage, pages - 1))
@@ -29,12 +31,16 @@ export default function TpmsPanel({ snapshot, report, history, cacheReason, now 
     <View className="tpms-heading"><Text className="section-title">胎压</Text></View>
     <View className="tpms-grid">{TPMS_WHEELS.map(wheel => {
       const row = current.wheels[wheel]
+      const rule = comparison.wheels.find(item => item.wheel === wheel)!
+      const ruleLabel = [rule.state === 'low' ? '低于设置下限' : rule.state === 'high' ? '高于设置上限' : rule.state === 'normal' ? '设置范围内' : '', rule.changed ? '变化规则提醒' : ''].filter(Boolean).join(' · ')
       return <View className="tpms-wheel-card" key={wheel}>
         <MetricValue label={wheelNames[wheel]} value={row.pressureBar ?? report?.[wheel] ?? null} unit="bar" digits={2} />
         {row.state === 'stale' ? <Text className="tpms-age">旧观测</Text> : null}
         {row.pressureBar == null && report?.[wheel] != null ? <Text className="tpms-age">观测未核验</Text> : null}
+        {ruleLabel ? <Text className="tpms-age">{ruleLabel}</Text> : null}
       </View>
     })}</View>
+    {validTpmsProfile(profile) && (profile.enabled || profile.changeEnabled) ? <Text className="metric-source">按本机保存的阈值比较，不代表车辆原厂告警。</Text> : null}
     {history?.limited ? <Text className="metric-source">本机胎压记录已按保留上限截取。</Text> : null}
     {cacheReason === 'cache_budget' || cacheReason === 'storage_unavailable' || cacheReason === 'ambiguous_archive' ? <Text className="metric-source">本次胎压观测未保存；已有本机记录保留。</Text> : null}
     <Button className="tpms-evidence-toggle" onClick={() => setEvidenceExpanded(!evidenceExpanded)}>{evidenceExpanded ? '收起观测依据与本机历史' : '观测依据与本机历史'}</Button>

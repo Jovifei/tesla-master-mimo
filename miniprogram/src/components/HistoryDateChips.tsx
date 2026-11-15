@@ -9,7 +9,7 @@ export default function HistoryDateChips({ query, onChange }: {
   kind: 'drives' | 'charges'; query: HistoryQuery; onChange: (patch: Partial<HistoryQuery>) => void
 }) {
   // App uses the same presets on both history tabs: 7d / 30d / all / today / custom.
-  const choices = [7, 30, null, 0]
+  const choices = [7, 30, 90, 365, null, 0]
   const today = new Date(), endDate = civil(today)
   const isPreset = choices.some(days => {
     const start = new Date(today.getFullYear(), today.getMonth(), today.getDate())

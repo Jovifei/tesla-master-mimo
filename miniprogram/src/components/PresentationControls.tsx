@@ -30,25 +30,31 @@ export function PresentationPreferences() {
 }
 
 type TouchEvent = { touches?: readonly { pageX: number; pageY: number }[]; changedTouches?: readonly { pageX: number; pageY: number }[] }
-export function VerticalDayStack<T>(props: { groups: DayGroup<T>[]; scopeKey: string; children: (group: DayGroup<T>) => ReactNode }) {
+export function VerticalDayStack<T>(props: { groups: DayGroup<T>[]; scopeKey: string; initialKey?: string | null; rememberedKey?: string | null; loading?: boolean; onSelection?: (key: string | null) => void; children: (group: DayGroup<T>) => ReactNode }) {
   // Scope changes remount only presentation state; no data is copied between accounts/cars.
-  return <DayStackState key={props.scopeKey} groups={props.groups}>{props.children}</DayStackState>
+  return <DayStackState key={props.scopeKey} {...props}>{props.children}</DayStackState>
 }
-function DayStackState<T>({ groups, children }: { groups: DayGroup<T>[]; children: (group: DayGroup<T>) => ReactNode }) {
-  const [selected, setSelected] = useState<string | null>(null)
+function DayStackState<T>({ groups, initialKey, rememberedKey, loading, onSelection, children }: { groups: DayGroup<T>[]; initialKey?: string | null; rememberedKey?: string | null; loading?: boolean; onSelection?: (key: string | null) => void; children: (group: DayGroup<T>) => ReactNode }) {
+  const [selected, setSelected] = useState<string | null>(rememberedKey ?? null)
   const touch = useRef<{ x: number; y: number } | null>(null)
   const appearance = useAppearance()
   useEffect(() => {
-    if (selected != null && !groups.some(group => group.key === selected)) setSelected(null)
+    if (!loading && selected != null && !groups.some(group => group.key === selected)) { setSelected(null); onSelection?.(null) }
     touch.current = null
-  }, [groups, selected, appearance.dayAxis])
-  const index = Math.max(0, groups.findIndex(group => group.key === selected))
+  }, [groups, selected, appearance.dayAxis, loading])
+  const initialIndex = Math.max(0, groups.findIndex(group => group.key === initialKey))
+  const selectedIndex = groups.findIndex(group => group.key === selected)
+  const index = selectedIndex < 0 ? initialIndex : selectedIndex
   if (!groups.length) return null
   const active = groups[index]
-  const selectIndex = (target: number) => setSelected(groups[Math.max(0, Math.min(groups.length - 1, target))].key)
-  const pageStart = Math.floor(index / 7) * 7
-  const rear = groups.slice(pageStart + 1, pageStart + 7).map((group, i) => ({ group, target: pageStart + i + 1, depth: i + 1 })).reverse()
-  const toggle = (target: number) => selectIndex(target === index ? 0 : target)
+  const selectIndex = (target: number) => { const key = groups[Math.max(0, Math.min(groups.length - 1, target))].key; setSelected(key); onSelection?.(key) }
+  const unknownIndex = groups.findIndex(group => group.key === 'unknown')
+  const newer = active.key !== 'unknown' && index > 0 && groups[index - 1].key !== 'unknown'
+  const older = active.key !== 'unknown' && index + 1 < groups.length && groups[index + 1].key !== 'unknown'
+  const activeDate = civilDay(active.key)
+  const rear = groups.slice(index + 1).map((group, i) => ({ group, target: index + i + 1 }))
+    .filter(({ group }) => activeDate === active.key && civilDay(group.key) === group.key && group.key < active.key)
+    .slice(0, 2).map((entry, i) => ({ ...entry, depth: i + 1 })).reverse()
   const start = (input: unknown) => {
     const event = input as TouchEvent
     const point = event.touches?.length === 1 ? event.touches[0] : null
@@ -61,26 +67,30 @@ function DayStackState<T>({ groups, children }: { groups: DayGroup<T>[]; childre
     const event = input as TouchEvent
     const from = touch.current; touch.current = null
     const point = event.changedTouches?.length === 1 ? event.changedTouches[0] : null
-    if (from && point && !event.touches?.length) selectIndex(daySwipeTarget(index, groups.length, point.pageX - from.x, point.pageY - from.y, appearance.dayAxis))
+    if (from && point && !event.touches?.length) {
+      const target = daySwipeTarget(index, groups.length, point.pageX - from.x, point.pageY - from.y, appearance.dayAxis)
+      if (target < index && newer || target > index && older) selectIndex(target)
+    }
   }
   return <View className={`day-stack axis-${appearance.dayAxis}${appearance.reducedMotion ? ' reduce-motion' : ''}`}>
-    {rear.map(({ group, target, depth }, order) => <View key={group.key} className={`day-stack-rear depth-${depth}${index === target ? ' is-selected' : ''}`}
+    {rear.map(({ group, target, depth }, order) => <View key={group.key} className={`day-stack-rear depth-${depth}`}
       style={{ marginLeft: `${depth * 6}rpx`, marginRight: `${depth * 6}rpx`, zIndex: order + 1 }}>
-      <Button className="day-stack-date" ariaLabel={`${index === target ? '收回' : '查看'} ${dayCaption(group.key)}`} onClick={() => toggle(target)}>{dayCaption(group.key)}</Button>
+      <Button className="day-stack-date" ariaLabel={`查看 ${dayCaption(group.key)}`} onClick={() => selectIndex(target)}>{dayCaption(group.key)}</Button>
     </View>)}
     <View className="day-stack-front">
       <View className="day-stack-header" catchMove onTouchStart={start} onTouchMove={move} onTouchEnd={end} onTouchCancel={() => { touch.current = null }}>
         <View className="day-stack-heading-row">
           <Text className="section-title">{dayCaption(active.key)}</Text>
           <View className="day-stack-arrows">
-            <Button disabled={index === 0} onClick={() => selectIndex(index - 1)} ariaLabel="较新日期">{appearance.dayAxis === 'horizontal' ? '‹' : '↑'}</Button>
-            <Button disabled={index === groups.length - 1} onClick={() => selectIndex(index + 1)} ariaLabel="较旧日期">{appearance.dayAxis === 'horizontal' ? '›' : '↓'}</Button>
+            <Button disabled={!newer} onClick={() => selectIndex(index - 1)} ariaLabel="较新日期">{appearance.dayAxis === 'horizontal' ? '‹' : '↑'}</Button>
+            <Button disabled={!older} onClick={() => selectIndex(index + 1)} ariaLabel="较旧日期">{appearance.dayAxis === 'horizontal' ? '›' : '↓'}</Button>
           </View>
         </View>
         <Text className="muted">{appearance.dayAxis === 'horizontal' ? '左右' : '上下'}滑动日期抬头切换 · 正文正常滚动</Text>
       </View>
       <View key={active.key} className="day-stack-body">{active.items.length ? children(active) : <Text className="day-stack-empty">当天尚无已返回记录；不代表没有行程。</Text>}</View>
-      {index > 0 ? <Button className="day-stack-close" onClick={() => selectIndex(0)}>收回至 {dayCaption(groups[0].key)}</Button> : null}
+      {unknownIndex >= 0 && active.key !== 'unknown' ? <Button className="button-secondary" onClick={() => selectIndex(unknownIndex)}>查看日期待确认</Button> : null}
+      {index !== initialIndex ? <Button className="day-stack-close" onClick={() => { setSelected(null); onSelection?.(null) }}>收回至 {dayCaption(groups[initialIndex].key)}</Button> : null}
     </View>
   </View>
 }

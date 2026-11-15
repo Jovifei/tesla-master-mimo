@@ -46,6 +46,7 @@ const testStatus: CarStatus = {
   passengerTempSetting: 21.5,
   observedAt: '2026-11-06T00:00:00Z',
   source: 'telemetry',
+  commandAuthorization: { ready: true, missingScopes: null },
 }
 
 describe('VehicleRemoteSections', () => {
