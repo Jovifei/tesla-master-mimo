@@ -26,7 +26,7 @@ type boundedHistoryPageRow struct {
 	StartBatteryLevel *int
 	EndBatteryLevel   *int
 	Metrics           historySampleMetrics
-    EnergyContract map[string]any
+	EnergyContract    map[string]any
 	Sequence          int
 }
 
@@ -139,10 +139,10 @@ SELECT s.id, s.public_id, s.started_at, s.ended_at, s.odometer_start, s.odometer
        s.source, s.quality_state, s.quality_reason,
        COALESCE(s.source_instance_id,''), COALESCE(s.source_vehicle_id,''), COALESCE(s.source_record_id,''),
        s.start_address, s.end_address, s.address, s.cost,
-       NULLIF(s.route_json->0->>'latitude','')::double precision,
-       NULLIF(s.route_json->0->>'longitude','')::double precision,
-       NULLIF(s.route_json->(jsonb_array_length(CASE WHEN jsonb_typeof(s.route_json)='array' THEN s.route_json ELSE '[]'::jsonb END)-1)->>'latitude','')::double precision,
-       NULLIF(s.route_json->(jsonb_array_length(CASE WHEN jsonb_typeof(s.route_json)='array' THEN s.route_json ELSE '[]'::jsonb END)-1)->>'longitude','')::double precision,
+       `+historyRoutePointLatitude(historyRouteFirstPointExpr)+`,
+       `+historyRoutePointLongitude(historyRouteFirstPointExpr)+`,
+       `+historyRoutePointLatitude(historyRouteLastPointExpr)+`,
+       `+historyRoutePointLongitude(historyRouteLastPointExpr)+`,
        `+historySOCAtPosition("observed.first_position")+`,
        `+historySOCAtPosition("observed.last_position")+`,
        observed.speed_max, observed.speed_avg, observed.speed_count,
@@ -188,7 +188,7 @@ ORDER BY p.started_at DESC, p.public_id DESC
 			return nil, err
 		}
 		var row boundedHistoryPageRow
-        var contractJSON []byte
+		var contractJSON []byte
 		var startLatitude, startLongitude, endLatitude, endLongitude *float64
 		if err := rows.Scan(
 			&row.Session.ID, &row.Session.PublicID, &row.Session.StartAt, &row.Session.EndAt,
@@ -204,9 +204,11 @@ ORDER BY p.started_at DESC, p.public_id DESC
 			return nil, err
 		}
 		row.Session.Kind = kind
-        if len(contractJSON)>0 && string(contractJSON)!="null" {
-            if err:=json.Unmarshal(contractJSON,&row.EnergyContract); err!=nil {return nil,err}
-        }
+		if len(contractJSON) > 0 && string(contractJSON) != "null" {
+			if err := json.Unmarshal(contractJSON, &row.EnergyContract); err != nil {
+				return nil, err
+			}
+		}
 		if startLatitude != nil && startLongitude != nil {
 			row.Session.Route = append(row.Session.Route, telemetryRoutePoint{
 				ObservedAt: row.Session.StartAt, Latitude: *startLatitude, Longitude: *startLongitude,
@@ -437,18 +439,24 @@ func (s *telemetryService) historyPageContext(ctx context.Context, userID string
 		return nil, nil, 0, resolvedShow, err
 	}
 	items := make([]map[string]any, 0, len(rows))
+	sessions := make([]telemetrySession, 0, len(rows))
 	for _, row := range rows {
 		if err := readCtx.Err(); err != nil {
 			return nil, nil, 0, resolvedShow, err
 		}
 		item := historySessionMap(row.Session, kind, row.Sequence)
-        if kind=="charge" && row.Session.Source=="telemetry_mqtt" && row.EnergyContract!=nil {
-            publishChargeEnergyContract(item,row.EnergyContract)
-        }
+		if kind == "charge" && row.Session.Source == "telemetry_mqtt" && row.EnergyContract != nil {
+			publishChargeEnergyContract(item, row.EnergyContract)
+		}
 		item["battery_details"] = driveBatteryDetails(row.StartBatteryLevel, row.EndBatteryLevel)
 		applyHistorySampleMetrics(item, row.Metrics, kind)
 		items = append(items, item)
+		sessions = append(sessions, row.Session)
 	}
+	// Archive drives can carry rated-range endpoints and counter-based charge
+	// windows; live drives and charges with missing addresses can borrow a
+	// labelled archive place. Enrichment never fails the read.
+	s.enrichHistorySessions(ctx, userID, vehicleID, kind, items, sessions)
 	return items, resultMeta, total, resolvedShow, readCtx.Err()
 }
 
@@ -576,5 +584,8 @@ func (s *telemetryService) historyDetailContext(ctx context.Context, userID stri
 	if err := readCtx.Err(); err != nil {
 		return nil, false, err
 	}
+	// Detail rows carry the full route, so address inference and endpoint
+	// evidence apply here exactly as they do for list rows.
+	s.enrichHistorySessions(ctx, userID, vehicleID, kind, []map[string]any{item}, []telemetrySession{session})
 	return item, true, nil
 }

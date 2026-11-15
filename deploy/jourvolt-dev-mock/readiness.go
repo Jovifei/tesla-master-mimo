@@ -49,6 +49,11 @@ func (a *app) dataReadiness(w http.ResponseWriter, r *http.Request, userID strin
 	items := readinessItemsWithHistory(providerStatus, source, err, driveHistoryAvailable, chargeHistoryAvailable)
 	setReadinessItemSource(items, "drives", a.historyReadinessSourceContext(r.Context(), userID, vehicleID, "drive", historyFallbackSource))
 	setReadinessItemSource(items, "charges", a.historyReadinessSourceContext(r.Context(), userID, vehicleID, "charge", historyFallbackSource))
+	if a.telemetry != nil {
+		if available, observedAt, known := a.telemetry.batteryHealthReadinessContext(r.Context(), userID, vehicleID); known {
+			setBatteryHealthReadiness(items, available, observedAt)
+		}
+	}
 	response := dataReadinessResponse{
 		CapabilityVersion: dataReadinessCapabilityVersion,
 		VehicleUID:        vehicleUID,
@@ -66,6 +71,28 @@ func setReadinessItemSource(items []dataReadinessItem, key, source string) {
 			items[index].Source = source
 			return
 		}
+	}
+}
+
+// setBatteryHealthReadiness replaces the static unsupported item once the
+// telemetry store can answer whether derived battery health evidence exists.
+func setBatteryHealthReadiness(items []dataReadinessItem, available bool, observedAt time.Time) {
+	for index := range items {
+		if items[index].Key != "battery_health" {
+			continue
+		}
+		items[index].Source = "battery_trend_evidence"
+		items[index].MessageKey = ""
+		items[index].Action = ""
+		if available {
+			items[index].Status = "available"
+			items[index].LastObservedAt = observedTimestamp(observedAt)
+		} else {
+			items[index].Status = "collecting"
+			items[index].MessageKey = "battery_health_collecting"
+			items[index].Action = "import_history"
+		}
+		return
 	}
 }
 

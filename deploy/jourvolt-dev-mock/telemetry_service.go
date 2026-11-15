@@ -28,6 +28,8 @@ var (
 
 type telemetryService struct {
 	keyChecks                sync.Map
+	batteryHealthCache       sync.Map
+	historyPlaceCache        sync.Map
 	recoveryStarted          atomic.Bool
 	store                    *store
 	config                   *telemetryConfig
@@ -402,11 +404,15 @@ func mergeTelemetryStatus(base vehicleStatus, snapshot telemetrySnapshot) vehicl
 	// never rewrite the provenance maps of an earlier provider/status value.
 	if base.TPMSFieldObservedAt != nil {
 		merged.TPMSFieldObservedAt = make(map[string]time.Time, len(base.TPMSFieldObservedAt))
-		for field, at := range base.TPMSFieldObservedAt { merged.TPMSFieldObservedAt[field] = at }
+		for field, at := range base.TPMSFieldObservedAt {
+			merged.TPMSFieldObservedAt[field] = at
+		}
 	}
 	if base.TPMSFieldSources != nil {
 		merged.TPMSFieldSources = make(map[string]string, len(base.TPMSFieldSources))
-		for field, source := range base.TPMSFieldSources { merged.TPMSFieldSources[field] = source }
+		for field, source := range base.TPMSFieldSources {
+			merged.TPMSFieldSources[field] = source
+		}
 	}
 	if !snapshot.ObservedAt.IsZero() {
 		merged.ObservedAt = snapshot.ObservedAt
@@ -458,13 +464,13 @@ func mergeTelemetryStatus(base vehicleStatus, snapshot telemetrySnapshot) vehicl
 		setTelemetryStatusField(&merged, field, value)
 		switch field {
 		case "TpmsPressureFl", "TpmsPressureFr", "TpmsPressureRl", "TpmsPressureRr":
-			if snapshot.FieldSources[field]=="telemetry_mqtt" && !snapshot.FieldObservedAt[field].IsZero() {
-				if merged.TPMSFieldObservedAt==nil {
-					merged.TPMSFieldObservedAt=make(map[string]time.Time)
-					merged.TPMSFieldSources=make(map[string]string)
+			if snapshot.FieldSources[field] == "telemetry_mqtt" && !snapshot.FieldObservedAt[field].IsZero() {
+				if merged.TPMSFieldObservedAt == nil {
+					merged.TPMSFieldObservedAt = make(map[string]time.Time)
+					merged.TPMSFieldSources = make(map[string]string)
 				}
-				merged.TPMSFieldObservedAt[field]=snapshot.FieldObservedAt[field]
-				merged.TPMSFieldSources[field]="telemetry_mqtt"
+				merged.TPMSFieldObservedAt[field] = snapshot.FieldObservedAt[field]
+				merged.TPMSFieldSources[field] = "telemetry_mqtt"
 			}
 		}
 	}
@@ -982,7 +988,9 @@ func (b *telemetryResponseBody) Close() error {
 
 func (s *telemetryService) commandProxyHTTPClient(requestURL string, timeout time.Duration) (*http.Client, error) {
 	client := credentialHTTPClient(s.httpClient)
-	if s.httpClient == nil { client.Timeout = timeout }
+	if s.httpClient == nil {
+		client.Timeout = timeout
+	}
 	parsed, err := url.Parse(requestURL)
 	if err != nil || parsed.Scheme != "https" {
 		return client, err
@@ -1090,7 +1098,9 @@ func (s *telemetryService) getFleetTelemetryConfig(ctx context.Context, userID, 
 }
 
 func telemetryCommandErrorClass(status int, body []byte) string {
-    if errors.Is(teslaTokenFailure(status,body),errTeslaConfiguration) { return "configuration_invalid" }
+	if errors.Is(teslaTokenFailure(status, body), errTeslaConfiguration) {
+		return "configuration_invalid"
+	}
 	if status == http.StatusUnauthorized || status == http.StatusForbidden {
 		return "permission_required"
 	}
@@ -1294,19 +1304,19 @@ func historySessionMap(session telemetrySession, kind string, index int) map[str
 		// Fleet Telemetry currently provides no dedicated driving-energy field in
 		// this configuration. Never reuse charging energy as drive consumption.
 		if session.Source == "local_import" {
-            // Keep the original archival scalar for older clients and backups.
-            // Its source field was ambiguously called EnergyAdded, so new apps
-            // must not promote it into an observed driving-net measurement.
-            result["energy_consumed_net"] = session.EnergyAdded
-            result["energy_contract"] = map[string]any{
-                "version": 1, "net_energy": map[string]any{
-                    "value_kwh": nil, "unit": "kWh", "source": "local_import",
-                    "quality": "unknown", "reason": "unverified_import_energy_purpose",
-                },
-            }
-        } else {
-            result["energy_consumed_net"] = nil
-        }
+			// Keep the original archival scalar for older clients and backups.
+			// Its source field was ambiguously called EnergyAdded, so new apps
+			// must not promote it into an observed driving-net measurement.
+			result["energy_consumed_net"] = session.EnergyAdded
+			result["energy_contract"] = map[string]any{
+				"version": 1, "net_energy": map[string]any{
+					"value_kwh": nil, "unit": "kWh", "source": "local_import",
+					"quality": "unknown", "reason": "unverified_import_energy_purpose",
+				},
+			}
+		} else {
+			result["energy_consumed_net"] = nil
+		}
 		result["consumption_net"] = nil
 		if source == "telemetry_mqtt" {
 			result["energy_contract"] = completedSessionEnergyContract(session)
@@ -1406,8 +1416,8 @@ func historySessionMap(session telemetrySession, kind string, index int) map[str
 		}
 		result["charge_details"] = chargeDetails
 		if source == "telemetry_mqtt" {
-            publishChargeEnergyContract(result, completedSessionEnergyContract(session))
-        }
+			publishChargeEnergyContract(result, completedSessionEnergyContract(session))
+		}
 	}
 	applyHistorySampleMetrics(result, sessionSampleMetrics(session, kind), kind)
 	result["sequence"] = index
