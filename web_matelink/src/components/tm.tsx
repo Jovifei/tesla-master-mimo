@@ -188,6 +188,7 @@ export type MapLine = { lat: number; lng: number }
 
 const viteEnv = (import.meta as unknown as { env?: Record<string, string | undefined> }).env ?? {}
 export const AMAP_KEY = viteEnv.VITE_AMAP_KEY ?? ''
+export const AMAP_SECURITY_CODE = viteEnv.VITE_AMAP_SECURITY_CODE ?? ''
 
 /** WGS-84 → GCJ-02 (the coordinate system AMap tiles use), standard public algorithm. */
 export function wgs84ToGcj02(lat: number, lng: number): { lat: number; lng: number } {
@@ -225,6 +226,9 @@ function loadAmap(key: string): Promise<unknown> {
   if (w.AMap) return Promise.resolve(w.AMap)
   if (!amapLoader) {
     amapLoader = new Promise((resolve, reject) => {
+      if (AMAP_SECURITY_CODE) {
+        w._AMapSecurityConfig = { securityJsCode: AMAP_SECURITY_CODE }
+      }
       const script = document.createElement('script')
       script.src = `https://webapi.amap.com/maps?v=2.0&key=${encodeURIComponent(key)}`
       script.onload = () => resolve((window as AmapWindow).AMap)
