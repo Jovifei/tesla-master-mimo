@@ -291,7 +291,7 @@ class StatsDatabaseMigrationTest {
             }
             database.openHelper.writableDatabase.query("PRAGMA user_version").use { cursor ->
                 cursor.moveToFirst()
-                assertEquals(23, cursor.getInt(0))
+                assertEquals(24, cursor.getInt(0))
             }
             database.openHelper.writableDatabase.query(
                 "SELECT identity_hash FROM room_master_table WHERE id = 42"
@@ -624,7 +624,7 @@ class StatsDatabaseMigrationTest {
     private fun assertLatestVersion(database: StatsDatabase) {
         database.openHelper.writableDatabase.query("PRAGMA user_version").use { cursor ->
             assertTrue(cursor.moveToFirst())
-            assertEquals(23, cursor.getInt(0))
+            assertEquals(24, cursor.getInt(0))
         }
     }
 

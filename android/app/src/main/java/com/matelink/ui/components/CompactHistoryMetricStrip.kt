@@ -56,7 +56,7 @@ fun CompactHistoryMetricStrip(
     val measure = rememberTextMeasurer()
     val density = LocalDensity.current
     val numberStyle = MaterialTheme.typography.titleSmall.copy(
-        fontFamily = MetricMono, fontWeight = FontWeight.SemiBold,
+        fontFamily = MetricMono, fontWeight = FontWeight.Bold,
         fontSize = numberFontSize, lineHeight = numberFontSize * 1.25f
     )
     val captionStyle = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, lineHeight = 12.sp)

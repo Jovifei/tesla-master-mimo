@@ -1,0 +1,60 @@
+name: UI stage source preservation and diagnostic audit
+on:
+  push:
+    branches: [codex/ui-product-app-20261109]
+    paths: ['.github/workflows/ui-delivery-audit-20261113.yml']
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: bash
+jobs:
+  audit:
+    if: github.repository == 'Jovifei/tesla-master-mimo'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Read only immutable platform trees
+        run: |
+          set -euo pipefail
+          mkdir -p delivery-audit
+          for sha in a75ae213a9cbd91d153e45c6236536e6c0b1327f 95bda618c7d9d09ff50985c9befe8558fb24a0e7 1a8cdbede3799a9d4f2bab39620e4c9b7e023fa6 6debf2527d6ca7c39d7257909eed4f06d8e481ba 9cece6f0ff5d9b24f6c026a7f6d5331becac41c3 4b622f98eb5a5c7a6d715155146add9ea6fb296c; do git fetch --depth=2 origin "$sha"; done
+          python3 - <<'PY'
+          import subprocess,json
+          from pathlib import Path
+          def git(*args):return subprocess.check_output(['git',*args]).decode().strip()
+          platforms={
+            'android':('a75ae213a9cbd91d153e45c6236536e6c0b1327f','95bda618c7d9d09ff50985c9befe8558fb24a0e7','android', ['android/app/src/main/java/com/matelink/data']),
+            'mini':('1a8cdbede3799a9d4f2bab39620e4c9b7e023fa6','6debf2527d6ca7c39d7257909eed4f06d8e481ba','miniprogram', ['miniprogram/src/domain/drive_energy.ts','miniprogram/src/domain/address_display.ts','miniprogram/src/services/charge_cost.ts','miniprogram/src/services/parked_proof.ts','miniprogram/src/services/api.ts','miniprogram/src/services/history_cache.ts','miniprogram/src/domain/history_controller.ts']),
+            'web':('9cece6f0ff5d9b24f6c026a7f6d5331becac41c3','4b622f98eb5a5c7a6d715155146add9ea6fb296c','web_matelink',['web_matelink/src/api/drive-energy.ts','web_matelink/src/api/recent-drive.ts','web_matelink/src/api/analysis.ts','web_matelink/src/api/charge-filter.ts'])}
+          output={'evidence_class':'source-and-synthetic-only','audit_commit':git('rev-parse','HEAD'),'platforms':{}}
+          for name,(base,source,root,protected) in platforms.items():
+            for path in protected:
+              git('cat-file','-e',base+':'+path)
+              subprocess.run(['git','diff','--exit-code',base,source,'--',path],check=True)
+            changed=git('diff','--name-only',base,source).splitlines()
+            assert all(p.startswith((root+'/', '.github/workflows/', 'tools/ui-alignment-20261113/','docs/')) for p in changed),(name,changed)
+            meta=git('cat-file','-p',source).split('\n\n',1)[0].splitlines()
+            output['platforms'][name]={'baseline':base,'source':source,'tree':git('rev-parse',source+'^{tree}'),'parents':[l[7:] for l in meta if l.startswith('parent ')],'product_tree':git('rev-parse',source+':'+root),'protected_paths_unchanged':protected,'changed_paths':changed}
+          subprocess.run(['git','diff','--exit-code','95bda618c7d9d09ff50985c9befe8558fb24a0e7','HEAD','--','android'],check=True)
+          output['android_delivery_tree_matches_tested_product']=True
+          output['production_charge_recovery_verified']=False
+          Path('delivery-audit/preservation.json').write_text(json.dumps(output,ensure_ascii=False,indent=2)+'\n')
+          print(json.dumps({k:{'source':v['source'],'protected_count':len(v['protected_paths_unchanged'])} for k,v in output['platforms'].items()},indent=2))
+          PY
+      - name: Offline diagnostic unit tests; no provider requests
+        run: |
+          set -euo pipefail
+          python3 tools/ui-alignment-20261113/test_charge_window_audit.py -v 2>&1 | tee delivery-audit/diagnostic-tests.log
+          cp tools/ui-alignment-20261113/charge-window-audit.py tools/ui-alignment-20261113/test_charge_window_audit.py delivery-audit/
+          sha256sum delivery-audit/* > delivery-audit/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ui-delivery-preservation-audit
+          path: delivery-audit/
+          retention-days: 14
+          if-no-files-found: error

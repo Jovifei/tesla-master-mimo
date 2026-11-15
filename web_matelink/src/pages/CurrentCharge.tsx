@@ -1,7 +1,24 @@
-import mockData from '../mock_data.json';
+import { useEffect, useState } from 'react';
+import { api, getApiErrorMessage } from '../api/client';
+import type { CarStatus } from '../api/types';
 
 export default function CurrentCharge({ carId }: { carId: number }) {
-  const status = mockData.statuses[String(carId) as keyof typeof mockData.statuses];
+  const [status, setStatus] = useState<CarStatus | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setError('');
+    api.getCarStatus(carId)
+      .then(value => { if (active) { setStatus(value); setLoading(false); } })
+      .catch(err => { if (active) { setError(getApiErrorMessage(err)); setLoading(false); } });
+    return () => { active = false; };
+  }, [carId]);
+
+  if (loading) return <div className="animate-pulse text-gray-400">Loading current charge...</div>;
+  if (error) return <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-700 dark:border-red-900 dark:bg-red-900/20 dark:text-red-200">TeslaMate charge status unavailable: {error}</div>;
 
   if (!status || status.state !== 'charging') {
     return (
@@ -57,7 +74,9 @@ export default function CurrentCharge({ carId }: { carId: number }) {
       {/* Location */}
       <div className="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm">
         <div className="text-sm text-gray-500">Charging Location</div>
-        <div className="font-medium">📍 Home - Shanghai</div>
+        <div className="font-medium">📍 {Number.isFinite(status.latitude) && Number.isFinite(status.longitude)
+          ? `${status.latitude.toFixed(4)}, ${status.longitude.toFixed(4)}`
+          : 'Location unavailable'}</div>
       </div>
     </div>
   );

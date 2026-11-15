@@ -41,6 +41,8 @@ fun TeslaAccountSection(
     val uiState by viewModel.uiState.collectAsState()
     var actionInProgress by rememberSaveable { mutableStateOf(false) }
     var deleteFailed by rememberSaveable { mutableStateOf(false) }
+    var showLogoutConfirmation by rememberSaveable { mutableStateOf(false) }
+    var showAccountActions by rememberSaveable { mutableStateOf(false) }
     var showDeleteConfirmation by rememberSaveable { mutableStateOf(false) }
 
     Card(
@@ -65,16 +67,13 @@ fun TeslaAccountSection(
             if (authenticated) {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(
-                        onClick = {
-                            actionInProgress = true
-                            viewModel.logout {
-                                actionInProgress = false
-                                onLogout()
-                            }
-                        },
+                        onClick = { showLogoutConfirmation = true },
                         enabled = !actionInProgress,
                         modifier = Modifier.weight(1f)
                     ) { Text(stringResource(R.string.tesla_account_logout)) }
+                    TextButton(onClick = { showAccountActions = !showAccountActions }) { Text(stringResource(R.string.ui_account_management)) }
+                }
+                if (showAccountActions) {
                     TextButton(
                         onClick = { showDeleteConfirmation = true },
                         enabled = !actionInProgress
@@ -82,7 +81,6 @@ fun TeslaAccountSection(
                 }
                     TextButton(
                         onClick = {
-                            actionInProgress = true
                             onLogin()
                         },
                         enabled = !actionInProgress
@@ -91,7 +89,7 @@ fun TeslaAccountSection(
                 }
             } else {
                 Button(onClick = onLogin, enabled = !actionInProgress) {
-                    Text(stringResource(R.string.tesla_account_reauthorize))
+                    Text(stringResource(R.string.ui_login_connect))
                 }
             }
             if (actionInProgress) CircularProgressIndicator(modifier = Modifier.padding(top = 4.dp))
@@ -110,6 +108,17 @@ fun TeslaAccountSection(
             }
         }
     }
+    if (showLogoutConfirmation) AlertDialog(
+        onDismissRequest = { showLogoutConfirmation = false },
+        title = { Text(stringResource(R.string.tesla_account_logout)) },
+        text = { Text(stringResource(R.string.ui_logout_preserves_history)) },
+        confirmButton = { TextButton(onClick = {
+            showLogoutConfirmation = false
+            actionInProgress = true
+            viewModel.logout { actionInProgress = false; onLogout() }
+        }) { Text(stringResource(R.string.tesla_account_logout)) } },
+        dismissButton = { TextButton(onClick = { showLogoutConfirmation = false }) { Text(stringResource(R.string.cancel)) } }
+    )
     if (showDeleteConfirmation) {
         AlertDialog(
             onDismissRequest = { showDeleteConfirmation = false },

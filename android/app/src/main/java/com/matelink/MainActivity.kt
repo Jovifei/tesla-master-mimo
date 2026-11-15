@@ -9,6 +9,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.matelink.ui.navigation.MateLinkNavHost
+import com.matelink.ui.screens.archive.archiveIntentForActivityCreate
 import com.matelink.ui.theme.MateLinkTheme
 import dagger.hilt.android.AndroidEntryPoint
 
@@ -24,7 +25,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        currentIntent = intent
+        currentIntent = archiveIntentForActivityCreate(intent, savedInstanceState != null)
         setContent {
             MateLinkTheme {
                 MateLinkNavHost(intent = currentIntent)

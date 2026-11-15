@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.HelpOutline
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -310,7 +312,7 @@ private fun Sparkline(
             ) {
                 Icon(
                     imageVector = iconForCondition(sample.weatherCondition),
-                    contentDescription = null,
+                    contentDescription = if (sample.weatherCondition.name == "UNKNOWN") stringResource(R.string.status_unknown) else null,
                     tint = condColor,
                     modifier = Modifier.size(16.dp)
                 )
@@ -348,6 +350,7 @@ private fun iconForCondition(c: WeatherCondition): ImageVector = when (c) {
     WeatherCondition.RAIN -> CustomIcons.WeatherRain
     WeatherCondition.SNOW -> CustomIcons.WeatherSnow
     WeatherCondition.THUNDERSTORM -> CustomIcons.WeatherThunderstorm
+    else -> Icons.Default.HelpOutline
 }
 
 private fun colorForCondition(c: WeatherCondition): Color = when (c) {
@@ -358,4 +361,5 @@ private fun colorForCondition(c: WeatherCondition): Color = when (c) {
     WeatherCondition.RAIN -> Color(0xFF1E88E5)
     WeatherCondition.SNOW -> Color(0xFF42A5F5)
     WeatherCondition.THUNDERSTORM -> Color(0xFF7E57C2)
+    else -> Color(0xFF90A4AE)
 }

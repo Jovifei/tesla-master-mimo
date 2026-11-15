@@ -51,6 +51,47 @@ class ChargeSourceInstanceAdmissionTest {
         return (result as ApiResult.Success).data.charges
     }
 
+    @Test fun complementaryPartialCoordinatesNeverBecomeAValidLocation() = runBlocking {
+        var db = open()
+        try {
+            val saved = row("A").copy(latitude = null, longitude = 120.0)
+            db.chargeSummaryDao().upsert(saved.toSyncSummary(localId)!!)
+            val incoming = row("A").copy(latitude = 30.0, longitude = null)
+            val result = loaded(db, listOf(incoming)).single()
+            assertNull(com.matelink.domain.telemetry.usableVehicleCoordinates(result.latitude, result.longitude))
+            db.close(); db = open()
+            val reopened = db.chargeSummaryDao().get(localId, 17)!!.toAnalysisChargeData()
+            assertNull(com.matelink.domain.telemetry.usableVehicleCoordinates(reopened.latitude, reopened.longitude))
+        } finally { db.close() }
+    }
+
+    @Test fun matchingReceiptMayReuseACompleteCoordinatePairButNotADifferentInstanceOrVehicle() = runBlocking {
+        val db = open()
+        try {
+            val dao = db.chargeSummaryDao()
+            val saved = row("A").copy(latitude = 30.0, longitude = 120.0)
+            dao.upsert(saved.toSyncSummary(localId)!!)
+            val partial = row("A").copy(latitude = 31.0, longitude = null)
+            val same = loaded(db, listOf(partial)).single()
+            assertEquals(30.0 to 120.0,
+                com.matelink.domain.telemetry.usableVehicleCoordinates(same.latitude, same.longitude))
+            val fresh = loaded(db, listOf(partial.copy(latitude = 32.0, longitude = 121.0))).single()
+            assertEquals(32.0 to 121.0,
+                com.matelink.domain.telemetry.usableVehicleCoordinates(fresh.latitude, fresh.longitude))
+
+            val otherInstance = loaded(db, listOf(partial.copy(sourceInstanceId = "B"))).single()
+            assertNull(com.matelink.domain.telemetry.usableVehicleCoordinates(otherInstance.latitude, otherInstance.longitude))
+
+            dao.upsert(saved.toSyncSummary(localId - 1)!!)
+            dao.upsert(row("A").copy(latitude = null, longitude = null).toSyncSummary(localId)!!)
+            val otherVehicle = loaded(db, listOf(partial)).single()
+            assertNull(com.matelink.domain.telemetry.usableVehicleCoordinates(otherVehicle.latitude, otherVehicle.longitude))
+            assertEquals(30.0 to 120.0, dao.get(localId - 1, 17)!!.toAnalysisChargeData().let {
+                com.matelink.domain.telemetry.usableVehicleCoordinates(it.latitude, it.longitude)
+            })
+        } finally { db.close() }
+    }
+
     @Test fun daoRejectsDifferentInstanceAndOneSidedInstanceWithoutMutatingReceipt() = runBlocking {
         val db = open()
         try {

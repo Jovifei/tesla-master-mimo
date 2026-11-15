@@ -8,7 +8,7 @@ import retrofit2.http.Query
 
 interface OpenMeteoApi {
 
-    @GET("v1/archive?hourly=temperature_2m,weathercode")
+    @GET("v1/archive?hourly=temperature_2m,weathercode&timezone=GMT&temperature_unit=celsius")
     suspend fun getHistoricalWeather(
         @Query("latitude") latitude: Double,
         @Query("longitude") longitude: Double,

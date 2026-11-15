@@ -1,0 +1,11 @@
+# Full Android gate correction (same review stage)
+
+At App `8721b721fcf3307b809a14c2126122e4b5d9d574`, the full gate found Debug 1876/18 failures and Release 1876/19 failures (8 established skips), despite passing focused and API35 gates. No source approval is assigned to that SHA. The complete failing XML is retained in Actions run 41491959142.
+
+The drive-only contract deliberately removes charging requests from DrivesViewModel. Old tests that required the removed endpoint were corrected without removing any test: actual combined-history timeout tests remain unchanged; five drive/charge concurrency tests now start a separate real charge-family caller and keep their original cancellation, energy, address and Room assertions. Live Room publication still checks all ID/source/window/parking cases, additionally proving no charging request. Own-family refresh progress/timeouts and late-address car switching now gate the actual drive endpoint instead of the unrelated one.
+
+Review also found that LatestHistoryLoad stored an immediately launched job only after its block could publish and reenter load(). A reentrant newer job could therefore be replaced by the older completed job. The next lazy job is now installed before start; an actual immediate-dispatch cancellation regression proves the newer job remains owned. The notice refresh test waits for initial load completion before revoking its synthetic identity, preserving the intended unavailable-identity assertions instead of relying on mid-publication timing.
+
+Build84 release metadata assertions and localized release descriptions now match the shipped candidate. All numerical, isolation, cancellation and version assertions remain, no tests were disabled. Full Debug/Release/lint/R8/API35 and isolated cross-layer gates must pass at the later terminal SHA. Mini source and backend/production/device state are not changed by this correction.
+
+The independent Mini branch full compatibility gate exposed an inherited pagination assertion that could return on a transient old list. Expanding Oct 19 by 30 days includes the Sep 20 record, so the test now waits for load-more completion and requires both records, exact total count and 5.70 aggregate. The same correction is applied to this App's matching regression. Neither branch's application behavior or test coverage is disabled.

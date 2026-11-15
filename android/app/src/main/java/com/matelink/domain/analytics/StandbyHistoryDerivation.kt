@@ -46,7 +46,7 @@ fun buildLocalStandbyWindows(
             climateSampleCount = 0,
             source = "local_history"
         )
-    }
+    }.sortedByDescending { parseInstant(it.startDate) }
 }
 
 private data class TimedDrive(

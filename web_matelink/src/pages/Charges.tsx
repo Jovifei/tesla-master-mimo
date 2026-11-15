@@ -22,15 +22,19 @@ export default function Charges({ carId }: { carId: number }) {
     typeFilter === 'All' || c.charging_type === typeFilter
   );
 
-  // Monthly chart data
-  const monthlyData = [
-    { month: 'Jan', charges: 18, energy: 520 },
-    { month: 'Feb', charges: 15, energy: 430 },
-    { month: 'Mar', charges: 20, energy: 580 },
-    { month: 'Apr', charges: 17, energy: 490 },
-    { month: 'May', charges: 19, energy: 550 },
-    { month: 'Jun', charges: 12, energy: 340 },
-  ];
+  const monthlyData = [...charges.reduce((months, charge) => {
+    const date = new Date(charge.start_date);
+    if (!Number.isFinite(date.getTime())) return months;
+    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+    const item = months.get(key) ?? { key, month: date.toLocaleDateString(undefined, { month: 'short' }), charges: 0, energy: 0 };
+    item.charges += 1;
+    item.energy += Number.isFinite(charge.charge_energy_added) ? charge.charge_energy_added : 0;
+    months.set(key, item);
+    return months;
+  }, new Map<string, { key: string; month: string; charges: number; energy: number }>()).values()]
+    .sort((a, b) => a.key.localeCompare(b.key))
+    .slice(-6)
+    .map(item => ({ ...item, energy: Number(item.energy.toFixed(1)) }));
 
   if (error) return <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-700 dark:border-red-900 dark:bg-red-900/20 dark:text-red-200">TeslaMate charges unavailable: {error}</div>;
   if (loading) return <div className="animate-pulse text-gray-400">Loading charges...</div>;
@@ -57,18 +61,27 @@ export default function Charges({ carId }: { carId: number }) {
       {/* Monthly Chart */}
       <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm">
         <h2 className="font-semibold mb-4">Monthly Charges</h2>
-        <ResponsiveContainer width="100%" height={200}>
-          <BarChart data={monthlyData}>
-            <XAxis dataKey="month" />
-            <YAxis />
-            <Tooltip />
-            <Bar dataKey="energy" fill="#1E88E5" />
-          </BarChart>
-        </ResponsiveContainer>
+        {monthlyData.length === 0 ? (
+          <div className="h-48 flex items-center justify-center text-sm text-gray-400">No charging data for the selected vehicle</div>
+        ) : (
+          <ResponsiveContainer width="100%" height={200}>
+            <BarChart data={monthlyData}>
+              <XAxis dataKey="month" />
+              <YAxis />
+              <Tooltip />
+              <Bar dataKey="energy" fill="#1E88E5" />
+            </BarChart>
+          </ResponsiveContainer>
+        )}
       </div>
 
       {/* Charge List */}
-      {filteredCharges.map(charge => (
+      {filteredCharges.length === 0 ? (
+        <div className="rounded-xl border border-gray-200 dark:border-gray-700 p-6 text-center text-sm text-gray-500">
+          <div>No charges match this filter.</div>
+          {typeFilter !== 'All' && <button onClick={() => setTypeFilter('All')} className="mt-2 text-blue-600 hover:underline">Clear filter</button>}
+        </div>
+      ) : filteredCharges.map(charge => (
         <Link key={charge.id} to={`/charges/${charge.id}`} className="block">
           <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow">
             <div className="flex items-center justify-between mb-2">

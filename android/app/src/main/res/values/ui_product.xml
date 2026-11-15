@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ui_appearance_title">Appearance</string>
+    <string name="ui_palette_neutral">Neutral white · default</string>
+    <string name="ui_palette_cream">Milk white</string>
+    <string name="ui_reduce_motion">Reduce motion</string>
+    <string name="ui_day_newer">Newer date</string>
+    <string name="ui_day_older">Older date</string>
+    <string name="ui_day_swipe_hint">Swipe up for older dates, down for newer dates · scroll records normally</string>
+    <string name="ui_day_unknown">Date unavailable</string>
+    <string name="ui_day_today">Today</string>
+    <string name="ui_day_yesterday">Yesterday</string>
+    <string name="ui_day_before_yesterday">Day before yesterday</string>
+    <string name="ui_load_older_days">Load older dates</string>
+    <string name="ui_charge_cells_hint">Each cell is one recorded period. Darker means more; — means unknown.</string>
+    <string name="ui_charge_select_cell">Tap a cell for its value and unit</string>
+    <string name="ui_login_tagline">Your vehicle. Every journey, clearly.</string>
+    <string name="ui_login_steps">Sign in · Official Tesla authorization · Confirm vehicle</string>
+    <string name="ui_login_confirm_vehicle">Complete authorization and confirm your vehicle</string>
+    <string name="ui_login_connect">Connect securely with Tesla</string>
+</resources>

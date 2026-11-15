@@ -3,9 +3,17 @@ package com.matelink.data.api
 import com.matelink.data.api.models.BatteryHealthResponse
 import com.matelink.data.api.models.CarsResponse
 import com.matelink.data.api.models.CarStatusResponse
+import com.matelink.data.api.models.NearbyChargingResponse
+import com.matelink.data.api.models.VehicleCommandRequest
+import com.matelink.data.api.models.VehicleCommandResponse
+import com.matelink.data.api.models.VehiclePlaceDeleteResponse
+import com.matelink.data.api.models.VehiclePlaceRequest
+import com.matelink.data.api.models.VehiclePlaceResponse
+import com.matelink.data.api.models.VehiclePlacesResponse
 import com.matelink.data.api.models.ChargeDetailResponse
 import com.matelink.data.api.models.ChargesResponse
 import com.matelink.data.api.models.DataReadinessResponse
+import com.matelink.data.api.models.FleetTelemetryDiagnosticsResponse
 import com.matelink.data.api.models.DriveDetailResponse
 import com.matelink.data.api.models.DrivesResponse
 import com.matelink.data.api.models.GlobalSettingsResponse
@@ -21,10 +29,12 @@ import com.matelink.data.api.models.HistoryImportRequest
 import com.matelink.data.api.models.HistoryImportResponse
 import retrofit2.Response
 import retrofit2.http.Body
+import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.Path
 import retrofit2.http.POST
 import retrofit2.http.Query
+import retrofit2.http.Streaming
 
 // The readiness probe is included for onboarding/connection checks.
 // Note: neither platform uses /api/healthz (available on server but unused).
@@ -32,6 +42,19 @@ import retrofit2.http.Query
 // iOS uses mixed leading "/" — ensure base URL ends with "/" for consistency.
 
 interface TeslamateApi {
+
+    @GET("api/v1/archive/enrollments/{handle}")
+    suspend fun getArchiveEnrollment(
+        @Path("handle") handle: String,
+        @retrofit2.http.Tag fence: ArchiveEnrollmentRequestFence
+    ): Response<com.matelink.data.api.models.ArchiveEnrollmentResponse>
+
+    @POST("api/v1/archive/enrollments/{handle}/decision")
+    suspend fun decideArchiveEnrollment(
+        @Path("handle") handle: String,
+        @Body decision: com.matelink.data.api.models.ArchiveEnrollmentDecision,
+        @retrofit2.http.Tag fence: ArchiveEnrollmentRequestFence
+    ): Response<com.matelink.data.api.models.ArchiveEnrollmentResponse>
 
     @GET("api/matelink/v1/cars/{carId}/history-context")
     suspend fun getHistoryContext(@Path("carId") carId: Int): Response<com.matelink.data.api.models.HistoryContextResponse>
@@ -76,6 +99,35 @@ interface TeslamateApi {
         @Path("carId") carId: Int
     ): Response<CarStatusResponse>
 
+    @GET("api/v1/cars/{carId}/nearby-charging-sites")
+    suspend fun getNearbyChargingSites(
+        @Path("carId") carId: Int
+    ): Response<NearbyChargingResponse>
+
+    @POST("api/v1/cars/{carId}/commands/{command}")
+    suspend fun executeVehicleCommand(
+        @Path("carId") carId: Int,
+        @Path("command") command: String,
+        @Body request: VehicleCommandRequest
+    ): Response<VehicleCommandResponse>
+
+    @GET("api/v1/cars/{carId}/places")
+    suspend fun getVehiclePlaces(
+        @Path("carId") carId: Int
+    ): Response<VehiclePlacesResponse>
+
+    @POST("api/v1/cars/{carId}/places")
+    suspend fun createVehiclePlace(
+        @Path("carId") carId: Int,
+        @Body request: VehiclePlaceRequest
+    ): Response<VehiclePlaceResponse>
+
+    @DELETE("api/v1/cars/{carId}/places/{placeId}")
+    suspend fun deleteVehiclePlace(
+        @Path("carId") carId: Int,
+        @Path("placeId") placeId: Long
+    ): Response<VehiclePlaceDeleteResponse>
+
     @GET("api/v1/cars/{carId}/charges")
     suspend fun getCharges(
         @Path("carId") carId: Int,
@@ -116,10 +168,26 @@ interface TeslamateApi {
         @Path("carId") carId: Int
     ): Response<BatteryHealthResponse>
 
+    @Streaming
+    @GET("api/v1/cars/{carId}/battery-trend/evidence")
+    suspend fun getBatteryTrendEvidence(
+        @Path("carId") carId: Int,
+        @Query("cursor") cursor: String? = null,
+        @Query("snapshot_max_seq") snapshotMaxSeq: Long? = null,
+        @Query("limit") limit: Int = 50,
+        @retrofit2.http.Tag fence: ArchiveEnrollmentRequestFence
+    ): Response<okhttp3.ResponseBody>
+
     @GET("api/v1/cars/{carId}/data-readiness")
     suspend fun getDataReadiness(
         @Path("carId") carId: Int
     ): Response<DataReadinessResponse>
+
+    @GET("api/v1/cars/{carId}/telemetry/diagnostics")
+    suspend fun getTelemetryDiagnostics(
+        @Path("carId") carId: Int,
+        @retrofit2.http.Tag fence: ArchiveEnrollmentRequestFence? = null
+    ): Response<FleetTelemetryDiagnosticsResponse>
 
     @GET("api/v1/cars/{carId}/telemetry/pairing")
     suspend fun getTelemetryPairing(

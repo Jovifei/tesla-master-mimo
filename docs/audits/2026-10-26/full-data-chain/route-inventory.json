@@ -1,0 +1,98 @@
+{
+  "routes": [
+    "TeslaLogin",
+    "Settings",
+    "TariffConfig",
+    "TpmsSettings",
+    "AmapSetup",
+    "AmapPreview",
+    "Dashboard",
+    "More",
+    "About",
+    "Charges",
+    "ChargeDetail",
+    "CurrentCharge",
+    "Drives",
+    "DriveDetail",
+    "DriveCurves",
+    "ParkedDetail",
+    "Battery",
+    "DataReadiness",
+    "Mileage",
+    "Updates",
+    "Stats",
+    "CountriesVisited",
+    "RegionsVisited",
+    "WhereWasI",
+    "Trips",
+    "TripDetail",
+    "CreateTrip",
+    "SentryHistory",
+    "TpmsTrend",
+    "TemperatureTrend",
+    "AnnualReport",
+    "AnnualReportPDF",
+    "Export",
+    "Vehicle3d",
+    "Efficiency",
+    "Cost",
+    "Range",
+    "Vampire",
+    "Timeline"
+  ],
+  "groups": {
+    "01-auth-home": [
+      "TeslaLogin",
+      "Dashboard"
+    ],
+    "02-charging": [
+      "Charges",
+      "ChargeDetail",
+      "CurrentCharge"
+    ],
+    "03-driving-parked": [
+      "Drives",
+      "DriveDetail",
+      "DriveCurves",
+      "ParkedDetail"
+    ],
+    "04-analysis": [
+      "Battery",
+      "Efficiency",
+      "Range",
+      "Vampire",
+      "TemperatureTrend",
+      "TpmsTrend"
+    ],
+    "05-statistics": [
+      "Stats",
+      "CountriesVisited",
+      "RegionsVisited",
+      "Cost",
+      "Mileage",
+      "Timeline"
+    ],
+    "06-trips-reports": [
+      "Trips",
+      "CreateTrip",
+      "TripDetail",
+      "AnnualReport",
+      "AnnualReportPDF",
+      "Export"
+    ],
+    "07-system": [
+      "More",
+      "Settings",
+      "TariffConfig",
+      "TpmsSettings",
+      "AmapSetup",
+      "AmapPreview",
+      "About",
+      "DataReadiness",
+      "Updates",
+      "Vehicle3d",
+      "WhereWasI",
+      "SentryHistory"
+    ]
+  }
+}

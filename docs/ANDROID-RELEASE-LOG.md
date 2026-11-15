@@ -1,9 +1,26 @@
 # MateLink Android 版本发布台账
 
+## 2026-10-27 显示验收续查候选（2.1.55 / build74）
+
+- 同一App分支保留build73，追加三项经RED复现的消费者修复：新授权失败/旧会话、首页电流显示、年度费用漏计；布局参数不改。
+- 当前为软件候选；[验收记录](releases/2026-10-27-display-acceptance.md)记录实际测试、打包、SHA和安装状态，三项发现/修复版本分别进入[87条问题账本](APP-ISSUE-VERSIONS.md)。
+- 代码63cdb8ee；Debug1566/0/0/0、Release1566/0/0/8，双lint0error，R8/assembleRelease和签名核验PASS。APK为MateLink-2.1.55-build74-63cdb8ee.apk，SHA256 AA2DDD82F008DCCB6F31C71634972DD8FD291A2177AFB4D8FF5BA59918F2ADC6；设备尚未安装验收。
+- 原始目录配置仍72，实际手机版本尚不能读取；本轮无ADB设备，未安装或清理用户数据，不因本地回归通过声称真实逐页验收完成。
+
+## 2026-10-27 App数据链路修复候选（2.1.54 / build73）
+
+- 发现基准为2.1.53/build72已审候选；本轮在E盘 `matelink-release-data-audit-20261026`、App分支 `codex/app-release-data-fixes-20261027` 实施，原候选基线提交 `e53a2d01`。
+- [逐问题版本台账](APP-ISSUE-VERSIONS.md)保存发现日期、版本、改法、验证与提交；[批次记录](releases/2026-10-27-app-data-fixes.md)及F1–F7分组记录对应来源→资格/计算→持久化→展示链。
+- 本轮只修数据、元信息、计算、并发及现有位置formatter/路由绑定；保持原页面参数排列、尺寸、字体、间距与既有颜色。
+- **代码提交**：`161d77cea4d110aac93b52956644ab3ea5603733`。Debug/Release各1556方法0fail/0error（Release8既有skip），双lint0error，AndroidTest源码编译、两个Go模块tests/vet和R8通过。
+- **签名候选**：`com.matelink` 73/2.1.54，debuggable=false，证书与既有包一致；APK SHA256 `425072A9A5C46DD9F54901FEE07170A6FEAE3C1DA2C6BFE3A48214B68A726482`。包内GIT_SHA=161d77ce，文件位于批准下载目录。安装、provider和生产验收分别保留待验。
+- 软件修复不等于真实历史补采；未曾采集的旧样本、未提供的来源实例/事件脉冲保持明确边界。本轮未安装手机或部署生产，Hub当前拒绝连接未成功上报。
+
+
 本文件记录 MateLink Android App 每次**正式包（release）**的版本更新与真机安装情况，倒序排列（最新在最上）。
 
 适用范围：Release 正式包为 `com.matelink`；Debug 固定为隔离包 `com.matelink.test.mock`，不得覆盖车主包。
-完整构建、部署与真机验证 SOP 请参见：[SOP-ANDROID-DEVICE-DEPLOYMENT-AND-VERIFICATION.md](file:///e:/project/tesla_master/app_mimo/docs/SOP-ANDROID-DEVICE-DEPLOYMENT-AND-VERIFICATION.md)
+完整构建、部署与真机验证 SOP 请参见：[SOP-ANDROID-DEVICE-DEPLOYMENT-AND-VERIFICATION.md(release-quality/SOP-ANDROID-DEVICE-DEPLOYMENT-AND-VERIFICATION.md)
 
 > 安全约定：本文件只记录构建配置的文件路径与公网地址，**不记录 keystore 口令**。
 > 签名配置文件位于仓库外（`E:\Claude_allow\matelink-release.properties`），不提交远端。

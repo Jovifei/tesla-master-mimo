@@ -7,6 +7,7 @@ import androidx.room.Transaction
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import com.matelink.data.local.HistorySourceReceiptArchive
+import com.matelink.data.local.HistorySourceArchiveException
 import com.matelink.data.local.entity.HistoryDetailReceipt
 import com.matelink.domain.analytics.HistorySummaryEvidenceCodec
 import com.matelink.data.repository.mergeStoredDrive
@@ -22,6 +23,9 @@ import com.matelink.util.parseIsoInstant
 
 @Dao
 interface DriveSummaryDao {
+    @Query("SELECT * FROM drives_summary WHERE carId = :carId AND qualityState != 'quarantined' ORDER BY startDate DESC")
+    suspend fun getAllForCar(carId: Int): List<DriveSummary>
+
     @Query("SELECT COUNT(*) FROM drives_summary WHERE carId = :carId AND qualityState != 'quarantined'")
     suspend fun countDiagnosticHistory(carId: Int): Int
 
@@ -99,7 +103,7 @@ interface DriveSummaryDao {
     @Query("SELECT COUNT(*) FROM history_detail_receipts WHERE receiptId = :receiptId")
     suspend fun archiveExists(receiptId: String): Int
 
-    @Query("SELECT COALESCE(SUM(encodedByteCount), 0) FROM history_detail_receipts WHERE state='archived_source_conflict'")
+    @Query("SELECT COALESCE(SUM(encodedByteCount), 0) FROM history_detail_receipts WHERE state='archived_source_conflict' AND kind='archived_drive_source'")
     suspend fun archiveUsedBytes(): Long
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
@@ -109,10 +113,8 @@ interface DriveSummaryDao {
         if (archiveExists(receipt.receiptId) > 0) return
         val maxBytes = 64L * 1024 * 1024
         val used = archiveUsedBytes()
-        check(receipt.encodedByteCount >= 0L && used <= maxBytes &&
-            receipt.encodedByteCount <= maxBytes - used) {
-            "history_conflict_archive_budget_exceeded"
-        }
+        if (receipt.encodedByteCount < 0L || used < 0L || used > maxBytes || receipt.encodedByteCount > maxBytes - used)
+            throw HistorySourceArchiveException("history_conflict_archive_budget_exceeded")
         insertConflictArchive(receipt)
     }
 
@@ -163,6 +165,10 @@ interface DriveSummaryDao {
     @Query("SELECT * FROM drives_summary WHERE carId = :carId AND qualityState != 'quarantined' ORDER BY startDate DESC")
     fun observeAll(carId: Int): Flow<List<DriveSummary>>
 
+    /** Hidden rows must remain in the live chronology so they can block parking adjacency. */
+    @Query("SELECT * FROM drives_summary WHERE carId = :carId ORDER BY startDate ASC")
+    fun observeAllForAdjacency(carId: Int): Flow<List<DriveSummary>>
+
     @Query("SELECT MAX(driveId) FROM drives_summary WHERE carId = :carId")
     suspend fun getMaxDriveId(carId: Int): Int?
 
@@ -179,9 +185,33 @@ interface DriveSummaryDao {
     @Query("SELECT * FROM drives_summary WHERE carId = :carId AND qualityState != 'quarantined' ORDER BY startDate ASC")
     suspend fun getAllChronological(carId: Int): List<DriveSummary>
 
+    /** Display filtering must happen after adjacency is proved against every stored quality. */
+    @Query("SELECT * FROM drives_summary WHERE carId = :carId ORDER BY startDate ASC")
+    suspend fun getAllChronologicalForAdjacency(carId: Int): List<DriveSummary>
+
     /** Latest drive with a non-empty endAddress to resolve last known parked location. */
     @Query("SELECT * FROM drives_summary WHERE carId = :carId AND qualityState != 'quarantined' AND endAddress != '' ORDER BY startDate DESC LIMIT 1")
     suspend fun getLatestWithEndAddress(carId: Int): DriveSummary?
+
+    @Query("SELECT * FROM drives_summary WHERE qualityState != 'quarantined' AND endAddress != '' ORDER BY startDate DESC LIMIT 1")
+    suspend fun getLatestWithEndAddressAnyCar(): DriveSummary?
+
+    @Query("SELECT * FROM drives_summary WHERE qualityState != 'quarantined' ORDER BY startDate DESC LIMIT 1")
+    suspend fun getLatestAnyCar(): DriveSummary?
+
+    @Query("SELECT * FROM drives_summary WHERE qualityState != 'quarantined' ORDER BY startDate DESC")
+    fun observeAllAnyCar(): Flow<List<DriveSummary>>
+
+    @Query("SELECT * FROM drives_summary WHERE qualityState != 'quarantined' ORDER BY startDate DESC")
+    suspend fun getAllAnyCar(): List<DriveSummary>
+
+    /** Drive ending immediately on or before a given timestamp (e.g. arrival before charge). */
+    @Query("SELECT * FROM drives_summary WHERE carId = :carId AND qualityState != 'quarantined' AND endDate <= :beforeDate ORDER BY endDate DESC LIMIT 1")
+    suspend fun getDriveEndingBefore(carId: Int, beforeDate: String): DriveSummary?
+
+    /** Drive starting immediately on or after a given timestamp (e.g. departure after charge). */
+    @Query("SELECT * FROM drives_summary WHERE carId = :carId AND qualityState != 'quarantined' AND startDate >= :afterDate ORDER BY startDate ASC LIMIT 1")
+    suspend fun getDriveStartingAfter(carId: Int, afterDate: String): DriveSummary?
 
     // === Quick Stats Queries ===
 
@@ -608,6 +638,8 @@ internal suspend fun persistDriveRowsWithoutEvidenceLoss(
 ) {
     rows.forEach { incoming ->
         val prior = get(incoming.carId, incoming.driveId)
+        if (prior != null && prior.apiEvidence.isNullOrBlank() && prior != incoming)
+            throw HistorySourceArchiveException("history_legacy_unverified_preservation_required")
         val superseded = prior != null && HistorySourceReceiptArchive.replaced(prior, incoming)
         val merged = mergeStoredDrive(incoming, prior)
         if (superseded) {
@@ -626,6 +658,20 @@ internal suspend fun persistDriveRowsWithoutEvidenceLoss(
                     archive(prior)
                     archive(incoming)
                 }
+            }
+        } else if (prior != null) {
+            val previousSource = HistorySummaryEvidenceCodec.sourceEvidence(prior.apiEvidence)
+                ?: prior.apiEvidence?.takeIf(String::isNotBlank)
+            val incomingSource = HistorySummaryEvidenceCodec.sourceEvidence(incoming.apiEvidence)
+                ?: incoming.apiEvidence?.takeIf(String::isNotBlank)
+            val nextSource = HistorySummaryEvidenceCodec.sourceEvidence(merged.apiEvidence)
+                ?: merged.apiEvidence?.takeIf(String::isNotBlank)
+            if (previousSource != null && previousSource != nextSource) {
+                // Keep source bytes and units, including an undecodable original.
+                archive(prior.copy(apiEvidence = previousSource))
+            }
+            if (incomingSource != null && incomingSource != nextSource && incomingSource != previousSource) {
+                archive(incoming.copy(apiEvidence = incomingSource))
             }
         }
         val marked = merged.copy(apiEvidence = HistorySummaryEvidenceCodec.carryDetailTerminal404(

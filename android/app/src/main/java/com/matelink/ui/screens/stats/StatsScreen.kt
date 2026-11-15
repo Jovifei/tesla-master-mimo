@@ -1,5 +1,7 @@
 package com.matelink.ui.screens.stats
 
+import com.matelink.ui.components.historyReadErrorMessageRes
+import com.matelink.ui.components.showHistoryReadFailure
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -57,7 +59,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -80,7 +82,6 @@ import com.matelink.R
 import com.matelink.data.api.models.Units
 import com.matelink.data.local.entity.DriveSummary
 import com.matelink.data.repository.GeocodeProgressInfo
-import com.matelink.data.repository.HISTORY_IDENTITY_UNAVAILABLE
 import com.matelink.data.sync.HistoryMetadataState
 import com.matelink.domain.analytics.AnalysisSummary
 import com.matelink.domain.analytics.AnalysisConclusions
@@ -125,13 +126,13 @@ fun StatsScreen(
     onNavigateToCountriesVisited: (Int?) -> Unit = {}, // year (null for all time)
     viewModel: StatsViewModel = hiltViewModel()
 ) {
-    val uiState by viewModel.uiState.collectAsState()
-    val syncLogs by viewModel.syncLogs.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val syncLogs by viewModel.syncLogs.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+    val feedbackContext = androidx.compose.ui.platform.LocalContext.current
     val isDarkTheme = isSystemInDarkTheme()
     val palette = telemetryPalette()
     var showSyncLogsDialog by remember { mutableStateOf(false) }
-    val historyIdentityUnavailableMessage = stringResource(R.string.history_identity_unavailable_message)
 
     // State for Records pager - remember across filter changes
     var recordsSelectedCategory by rememberSaveable { mutableStateOf("") }
@@ -168,14 +169,12 @@ fun StatsScreen(
 
     LaunchedEffect(uiState.error) {
         uiState.error?.let { error ->
-            snackbarHostState.showSnackbar(
-                if (error == HISTORY_IDENTITY_UNAVAILABLE) {
-                    historyIdentityUnavailableMessage
-                } else {
-                    error
-                }
-            )
-            viewModel.clearError()
+            val hasContent = uiState.carStats != null
+            val retried = snackbarHostState.showHistoryReadFailure(feedbackContext, error, hasContent) {
+                viewModel.clearError()
+                viewModel.refresh()
+            }
+            if (!retried && hasContent) viewModel.clearError()
         }
     }
 
@@ -245,6 +244,7 @@ fun StatsScreen(
                 MateLinkLoadingPlaceholder(color = palette.accent)
             } else if (uiState.carStats == null) {
                 val emptyMessage = when {
+                    uiState.error != null -> stringResource(historyReadErrorMessageRes(uiState.error!!))
                     uiState.isSyncing -> stringResource(R.string.stats_syncing)
                     uiState.historyMetadata?.isCollecting == true ->
                         stringResource(R.string.stats_history_collecting)
@@ -1547,16 +1547,16 @@ private fun RecordsCard(
         weatherRecords.add(RecordData("⛰️", labelMostClimbing, record.elevationGainM?.let { "+" + UnitFormatter.formatElevation(it, units) } ?: "N/A", record.date?.take(10) ?: "") { onDriveClick(record.driveId) })
     }
     deepStats?.hottestDrive?.let { record ->
-        weatherRecords.add(RecordData("🌡️", labelHottestDrive, record.tempC?.let { UnitFormatter.formatTemperature(it, units, 1) } ?: "N/A", record.date?.take(10) ?: "") { onDriveClick(record.driveId) })
+        weatherRecords.add(RecordData("🌡️", labelHottestDrive, record.tempC?.let { formatStatsTemperatureC(it, units, 1) } ?: "N/A", record.date?.take(10) ?: "") { onDriveClick(record.driveId) })
     }
     deepStats?.coldestDrive?.let { record ->
-        weatherRecords.add(RecordData("🧊", labelColdestDrive, record.tempC?.let { UnitFormatter.formatTemperature(it, units, 1) } ?: "N/A", record.date?.take(10) ?: "") { onDriveClick(record.driveId) })
+        weatherRecords.add(RecordData("🧊", labelColdestDrive, record.tempC?.let { formatStatsTemperatureC(it, units, 1) } ?: "N/A", record.date?.take(10) ?: "") { onDriveClick(record.driveId) })
     }
     deepStats?.hottestCharge?.let { record ->
-        weatherRecords.add(RecordData("☀️", labelHottestCharge, record.tempC?.let { UnitFormatter.formatTemperature(it, units, 1) } ?: "N/A", record.date?.take(10) ?: "") { onChargeClick(record.chargeId) })
+        weatherRecords.add(RecordData("☀️", labelHottestCharge, record.tempC?.let { formatStatsTemperatureC(it, units, 1) } ?: "N/A", record.date?.take(10) ?: "") { onChargeClick(record.chargeId) })
     }
     deepStats?.coldestCharge?.let { record ->
-        weatherRecords.add(RecordData("❄️", labelColdestCharge, record.tempC?.let { UnitFormatter.formatTemperature(it, units, 1) } ?: "N/A", record.date?.take(10) ?: "") { onChargeClick(record.chargeId) })
+        weatherRecords.add(RecordData("❄️", labelColdestCharge, record.tempC?.let { formatStatsTemperatureC(it, units, 1) } ?: "N/A", record.date?.take(10) ?: "") { onChargeClick(record.chargeId) })
     }
 
     // Category 4: Miscelaneous
@@ -1611,6 +1611,15 @@ private fun RecordsCard(
         initialPage = initialPage,
         pageCount = { pages.size }
     )
+
+    LaunchedEffect(pages.size, selectedCategory) {
+        val targetPage = if (selectedCategory.isEmpty()) 0 else {
+            pages.indexOfFirst { it.categoryTitle == selectedCategory }.takeIf { it >= 0 } ?: 0
+        }
+        if (targetPage != pagerState.currentPage && pages.isNotEmpty()) {
+            pagerState.animateScrollToPage(targetPage.coerceIn(0, pages.lastIndex))
+        }
+    }
 
 // Update selected category when page changes
     LaunchedEffect(pagerState.currentPage) {
@@ -1786,6 +1795,10 @@ private fun RecordCategoryPage(
 
 // Note: ElevationStatsCard removed - highest point now shown in Records section
 
+internal fun formatStatsTemperatureC(valueC: Double, units: Units?, decimals: Int = 1): String =
+    UnitFormatter.formatTemperature(if (units?.unitOfTemperature == "F") valueC * 9.0 / 5.0 + 32.0 else valueC,
+        units, decimals)
+
 @Composable
 private fun TemperatureStatsCard(deepStats: DeepStats, palette: CarColorPalette, units: Units?) {
     if (deepStats.maxOutsideTempDrivingC == null && deepStats.minOutsideTempDrivingC == null) {
@@ -1807,12 +1820,12 @@ private fun TemperatureStatsCard(deepStats: DeepStats, palette: CarColorPalette,
         Row(modifier = Modifier.fillMaxWidth()) {
             StatItem(
                 label = stringResource(R.string.stats_hottest),
-                value = deepStats.maxOutsideTempDrivingC?.let { UnitFormatter.formatTemperature(it, units, 1) } ?: "N/A",
+                value = deepStats.maxOutsideTempDrivingC?.let { formatStatsTemperatureC(it, units, 1) } ?: "N/A",
                 modifier = Modifier.weight(1f)
             )
             StatItem(
                 label = stringResource(R.string.stats_coldest),
-                value = deepStats.minOutsideTempDrivingC?.let { UnitFormatter.formatTemperature(it, units, 1) } ?: "N/A",
+                value = deepStats.minOutsideTempDrivingC?.let { formatStatsTemperatureC(it, units, 1) } ?: "N/A",
                 modifier = Modifier.weight(1f)
             )
         }
@@ -1829,12 +1842,12 @@ private fun TemperatureStatsCard(deepStats: DeepStats, palette: CarColorPalette,
             Row(modifier = Modifier.fillMaxWidth()) {
                 StatItem(
                     label = stringResource(R.string.stats_hottest),
-                    value = deepStats.maxCabinTempC?.let { UnitFormatter.formatTemperature(it, units, 1) } ?: "N/A",
+                    value = deepStats.maxCabinTempC?.let { formatStatsTemperatureC(it, units, 1) } ?: "N/A",
                     modifier = Modifier.weight(1f)
                 )
                 StatItem(
                     label = stringResource(R.string.stats_coldest),
-                    value = deepStats.minCabinTempC?.let { UnitFormatter.formatTemperature(it, units, 1) } ?: "N/A",
+                    value = deepStats.minCabinTempC?.let { formatStatsTemperatureC(it, units, 1) } ?: "N/A",
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -1852,12 +1865,14 @@ private fun formatEnergy(kwh: Double): String {
 
 @Composable
 private fun AcDcRatioCard(deepStats: DeepStats, palette: CarColorPalette) {
-    val totalEnergy = deepStats.acChargeEnergyKwh + deepStats.dcChargeEnergyKwh
+    val acEnergy = deepStats.qualifiedAcChargeEnergyKwh
+    val dcEnergy = deepStats.qualifiedDcChargeEnergyKwh
+    val totalEnergy = listOfNotNull(acEnergy, dcEnergy).sum()
     if (deepStats.chargeDetailsProcessed <= 0) return
 
     val unknownCount = (deepStats.chargeDetailsProcessed - deepStats.acChargeCount - deepStats.dcChargeCount)
         .coerceAtLeast(0)
-    val acRatio = if (totalEnergy > 0.0) (deepStats.acChargeEnergyKwh / totalEnergy).toFloat() else 0f
+    val acRatio = if (totalEnergy > 0.0) ((acEnergy ?: 0.0) / totalEnergy).toFloat() else 0f
     val acColor = palette.acColor
     val dcColor = palette.dcColor
 
@@ -1870,12 +1885,12 @@ private fun AcDcRatioCard(deepStats: DeepStats, palette: CarColorPalette) {
         Row(modifier = Modifier.fillMaxWidth()) {
             StatItem(
                 label = stringResource(R.string.stats_ac_energy),
-                value = formatEnergy(deepStats.acChargeEnergyKwh),
+                value = acEnergy?.let { formatEnergy(it) } ?: "--",
                 modifier = Modifier.weight(1f)
             )
             StatItem(
                 label = stringResource(R.string.stats_dc_energy),
-                value = formatEnergy(deepStats.dcChargeEnergyKwh),
+                value = dcEnergy?.let { formatEnergy(it) } ?: "--",
                 modifier = Modifier.weight(1f)
             )
         }

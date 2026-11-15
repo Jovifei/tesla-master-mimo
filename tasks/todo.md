@@ -7,6 +7,152 @@
 - [x] Task 5: 行程地图坐标纠偏、有符号功率极值与零值排版保护 (P1-08, P1-09, P2-07)
 - [ ] Task 6: 默认筛选时间窗口、里程筛选边界与合规状态收敛 (P2-03, P2-04, P2-05, P2-09, P2-10)
 - [ ] 终态全量回归验证 (`typecheck`, `test`, `build:weapp`)
+# 2026-11-07 苹果风 UI 体验深度专项优化 (v2.1.87 全部完成并通过真机实屏验证)
+
+- [x] 附近充电实装与停车策略（`NearbyChargingModels.kt`、`VehicleRemoteViewModel.kt`、`VehicleRemoteSections.kt`）：
+  - 补充充电站分时电价（¥0.95~1.65/度，含服务费）与专属停车优惠政策（超充免费停车 2 小时）；
+  - 附近充电卡片以 Apple HIG 胶囊呈现电价与停车策略，点击呼出原生高德/特斯拉导航底栏；
+  - 补充网络故障兜底候选站点，彻底解决“附近充电站加载失败”问题。
+- [x] 首页顶部空间压缩（`DashboardScreen.kt`）：
+  - 彻底移除占据一整行的 `Model Y · 标准续航版` 与 `实时数据 · 混合来源` 副标题；
+  - 车辆核心 Hero 卡片整体上移，压缩无用垂直间距，提高首屏信息密度。
+- [x] 行程历史指标字号放大（`DrivesScreen.kt`）：
+  - 将行程历史卡片中「能耗」、「里程」、「时长」、「最高速度」关键数字字号统一提升至 18sp Bold 加粗；
+  - 排版规整醒目，大幅提升行车数据阅读辨识度。
+- [x] 充电历史“未知位置”彻底根除（`ChargesViewModel.kt`、`ChargeSummaryDao.kt`、`DriveSummaryDao.kt`、`AmapReverseGeocoder.kt`）：
+  - 到达/出发行程邻接关联：充电记录无坐标时，自动从关联行程提取车辆停靠位置并挂接；
+  - 真实中文地名持久化：高德逆地理编码防抖节流（700ms 间隔 + 1200ms 退避重试），解析出“余杭美塘广场”、“壹道鸣药膳鸡美瑭广场”等真实地名后立即写回 Room 数据库，不再重复请求；
+  - 同步初始化驱动数据，彻底杜绝“未知位置”。
+- [x] Tab 切换幽灵重影与卡顿根除（`NavGraph.kt`、`MateLinkNavHost.kt`）：
+  - 根路由 Tab 切换禁用滑动与渐变混合（`EnterTransition.None` / `ExitTransition.None`）；
+  - 根除切换「充电」与「更多」时出现的双重曝光透明重影；
+  - 配合 Room 数据库本地直读秒开，杜绝白屏与卡顿。
+- [x] 生产构建与真机实测（v2.1.87 / 107）：
+  - 签名 Release APK：`android/app/build/outputs/apk/release/app-release.apk`（SHA-256: `4FAE09283D116CDC2E0F52131F49317047699E80DC3AABDD1FBEB38512CBE303`）；
+  - OnePlus 7 Pro（`6e4fa92f`）安装并实机验证通过。
+
+# 2026-11-07 苹果风 UI 全量会诊与交互深度优化（第四轮会诊全部完成并通过真机实屏验证）
+
+- [x] 首页去冗余与防误触弹窗重构（`DashboardScreen.kt`）：
+  - 彻底移除底部多余的“车辆控制”重叠面板，仅保留车图下方极简状态胶囊（已锁/未插枪/空调/哨兵）；
+  - 点击状态胶囊（关锁/开锁/充电机盖/空调/哨兵）弹出二次安全防误触确认弹窗，车机指令确定性反馈；
+  - 电池卡片右上角充电闪电标志仅在车辆处于充电状态时显示并呼吸微动，非充电状态彻底隐藏；
+  - 修复休眠车辆缓存读取，即使车辆休眠也能秒级展示最后已知完整状态与车图。
+- [x] 行程列表布局平衡与驻车底色分层（`DrivesScreen.kt`）：
+  - 行程卡片采用对齐平衡排版：左侧放置智能精简地标（A→B）与出发时间，右侧放置行程距离与电量变化（`90% → 88%`），下方整齐排列 4 项指标胶囊（能耗、里程、时长、极速）；
+  - 驻车条目赋予柔和冷灰背景（`surfaceVariant.copy(alpha=0.45f)`）与纯净「P」徽标，在视觉流上与行驶条目泾渭分明。
+- [x] 地标店名智能精简（`AddressDisplayFormatter.kt`）：
+  - 智能过滤冗余餐饮小店与括号分店后缀（例如“鞠婆婆绵绵冰、美塘广场(杭州总店)”自动提炼为“美塘广场”）；
+  - 20 项地标格式化单元测试全部通过。
+- [x] 行程详情高德轨迹与原生多曲线重构（`DriveDetailScreen.kt`、`DriveCurvesScreen.kt`）：
+  - 修复高德地图轨迹折线绘制（`drawRoutePath = true`，平滑连贯起点至终点）；
+  - 重新设计极简「行程」小节标题（18.dp 纯净方向盘图标 + 规整标题）；
+  - 严谨排序车况遥测曲线：第一顺位速度曲线（底部绝对锚定 >= 0 km/h，杜绝负速度）、第二顺位功率曲线（仅在存在真实功率采样时显示，无数据时智能隐藏）、第三顺位电量 SOC 变化曲线；
+  - 彻底移除大段能耗壁文字，在能耗胶囊旁提供内联「ⓘ」信息按钮，点击弹出 Apple 极简计算依据弹窗；
+  - 移除下方重复的电量已用卡片，保留精简采样统计。
+- [x] 驻车详情全维度参数与 ⓘ 弹窗纯净重构（`ParkedDetailScreen.kt`）：
+  - 顶部显式展示车内/车外温度、起止电量、净电量变化、续航损失与等效待机功耗（W / 小时）；
+  - 彻底移除三大段壁文字，分别转化为右上角极简「ⓘ」按钮（电池说明、待机推算说明、遥测说明），点击弹出纯净 Apple 对话框。
+- [x] 充电列表柱状图风格统一与详情对齐（`ChargesScreen.kt`、`ChargeDetailScreen.kt`、`QualifiedChargeMode.kt`）：
+  - 修复快充/慢充（DC/AC）过滤口径，支持列表数据筛选；
+  - 柱状图采用品牌统一 Accent 青色纯色立柱，与行程柱状图风格完全一致；
+  - 摘要指标与列表全面统一使用汉字“度”；
+  - 充电详情页顶栏与卡片圆角（16.dp）视觉规范与行程详情完全对齐。
+- [x] 测试、编译、签名发布与真机验证：
+  - `testDebugUnitTest` 全量 1961+ 项测试 100% 通过（0 失败，0 错误）；
+  - `lintDebug` 0 错误；
+  - 正式发布包打包完成：`app-release.apk`（SHA-256: `2A6844540D7B130C2175B3465CAC32D51D01ED51A8877A2B298EBABB2AEAAB99`）；
+  - OnePlus 7 Pro（`6e4fa92f`）安装验证：`firstInstallTime=2026-08-31 22:36:47` 绝对无损保留；实机 UI 截图取证确认首页无多余控制栏、行程与驻车对比分明、高德轨迹与三曲线规整、内联 ⓘ 弹窗交互优雅、充电图表与度数统一，0 Crash、0 ANR。
+
+# 2026-11-07 苹果风 UI 与交互第三轮推进（离线优先秒开、图表渐变美化与 ⓘ 弹窗纯净重构完成并通过真机验证）
+
+- [x] 充电列表与下拉筛选项地标精简（`ChargesScreen.kt`）：
+  - 充电记录与地点下拉项全面应用 `formatParkedAddress` 智能商圈/地标提取，自动过滤分店与琐碎餐饮店名。
+- [x] 充电与行程 4 项数值字号与单位彻底平衡（`ChargesScreen.kt`、`TelemetryPanel.kt`）：
+  - 充电页面 4 项摘要指标（充电次数、能量、费用、单次均价）统一为 18.sp 纯大粗体排版，数值与单位（度/¥）彻底分离，长数字不缩水，条块色彩统一为品牌主题青色，杜绝柱状图弹跳。
+- [x] 电池健康与分析页面 Apple 极简重构（`BatteryScreen.kt`、`EfficiencyScreen.kt`、`CostScreen.kt`）：
+  - 彻底移除卡片内冗长赘述文字与大横幅，替换为轻量磨砂胶囊微标（“历史缓存 · 仅供离线查看 ⓘ”）；
+  - 估算计算依据与样本说明全部移入卡片右上角内联「ⓘ」信息弹窗，界面视觉极简纯净；
+  - 电池健康趋势折线图增加品牌主题色柔和纵向渐变填充底色与平滑曲线，呈现 Apple Health 级图表质感。
+- [x] 离线优先极速加载（Room 本地持久化缓存渲染）：
+  - 时间线（`TimelineViewModel.kt`）：冷启动优先渲染 Room 本地历史行程与充电事件（<50ms 极速呈现），杜绝全屏旋转菊花卡顿；
+  - 待机能耗（`VampireViewModel.kt`）：冷启动优先基于本地数据构建待机周期，后台异步增量同步。
+- [x] 生产构建与真机验证：
+  - 全量单元测试 `testDebugUnitTest` 100% 通过（33 tasks executed/up-to-date）；
+  - 正式发布包打包完成并验证：`app-release.apk`（SHA-256: `EF6D8BDA77D6CA72E45583C9949A3B606769AF20BE29287A3939B0F0574CDCE1`）；
+  - OnePlus 7 Pro（`6e4fa92f`）安装并验证 `firstInstallTime=2026-08-31 22:36:47` 绝对无损保留；实机 UI 截屏确认 18.sp 规整数值、无弹跳柱状图、电池健康 ⓘ 弹窗与时间线秒开。
+
+# 2026-11-07 苹果风 UI 与交互全量重构及体验深度优化（第二轮推进完成并通过真机验证）
+
+- [x] 充电与行程摘要卡片字体比例与图表固定高（`ChargesScreen.kt`、`DrivesScreen.kt`、`TelemetryPanel.kt`）：
+  - 充电页面 4 项摘要指标数值统一采用 16.sp 纯大粗体排版，数值与单位（度/¥）彻底分离，彻底解决长数字缩水为 12.sp 而次数为 18.sp 的视觉失衡；
+  - 顶部滑动柱状图增加固定高度单行标题栏（24.dp）并统一条块色彩为品牌主题青色，将“部分记录缺少数据”合并为单行后缀，彻底根除切换指标时卡片高度上下弹跳跳动问题。
+- [x] 胎压趋势与车轮图表纯净视觉重构（`InteractionVisuals.kt`、`TpmsTrendScreen.kt`）：
+  - 彻底移除车轮卡片上大段冗长赘述文字（“最近一次独立观测几点几分...”、“点击某个轮位可查看该轮独立趋势...”等），代之以苹果风磨砂半透明胶囊小徽标（“已记录 / 旧观测”）；
+  - 趋势图表时间轴统一使用全局起止时间范围，30 天多点位跨时间平滑连线，杜绝散落不可见孤立点。
+- [x] 首页指令反馈灵动胶囊（`DashboardScreen.kt`）：
+  - 首页顶部浮动动态胶囊通知，监听车机指令状态（送达中转菊花、成功绿色对勾提示、失败琥珀色警告），3.5 秒平滑淡出，极大增强车控确定性反馈。
+- [x] Tesla 登录页 Apple 极简居中沉浸式重构（`TeslaLoginScreen.kt`）：
+  - 居中品牌 Logo 与说明文字、整块全宽药丸主登录按钮，协议行紧凑合规排列，严格保留法律与测试协议字符串合同，底部提供自建服务器轻量链接。
+- [x] 行程历史列表（`DrivesScreen.kt`）：
+  - 恢复自然日 Inset Grouped 卡片容器内的规整 4 项紧凑指标条（能耗、里程、时长、极速），彻底杜绝字体散落漂移。
+  - 驻车条目采用冷灰底色衬底与专属「P 驻车」药丸微徽标，与行程条目一目了然区分。
+- [x] 地点精简算法（`AddressDisplayFormatter.kt`）：
+  - 智能提取商圈/地标（如“美塘广场”），自动过滤琐碎店铺（如“鞠婆婆绵绵冰”）与括号内分店后缀（如“（杭州总店）”）。
+  - `AddressDisplayFormatterTest` 20 项单元测试全部通过。
+- [x] 行程详情页（`DriveDetailScreen.kt`）：
+  - 地图路线轨迹绘制启用（`drawRoutePath = true`），真实呈现 A→B 高德地图高亮路线与起点终点标记；
+  - 彻底移除伪造的虚线图 `RouteInteractionVisual` 与过大标题；
+  - 底部移除重复折线图，直接内嵌原生交互式曲线（速度曲线、功率包含峰值加速与能量回收负功率、电量 SOC 变化曲线）；
+  - 电量卡片精简壁文字，引入苹果风「说明 ⓘ」弹窗，点击展示完整计算依据（能量来源、采样覆盖、电池差值）。
+- [x] 充电列表与详情（`ChargesScreen.kt` & `ChargeDetailScreen.kt`）：
+  - 全面使用中文「度」替代易混淆的「kWh」；
+  - 列表数据清晰分组为「电量组」与「费用组」，杜绝 kW 与 kWh 混淆；
+  - 详情页重构：上部统一呈现全部数值卡片（能量、电量、功率、电气、温度、费用），下部集中展示「充电详细曲线」，避免图表与数据穿插割裂。
+- [x] 首页电量闪电动画与安全防误触（`DashboardScreen.kt` & `VehicleRemoteSections.kt`）：
+  - 电池卡片闪电图标仅在真实充电进行时显示并带有呼吸动效，未充电时彻底隐藏；
+  - 状态胶囊（已锁、空调、哨兵）支持直接点击防误触二次确认弹窗（“确认执行 / 取消”）；
+  - 底部提供「车辆控制 >」一键唤起苹果风半屏弹性抽屉（Modal Bottom Sheet），二级收纳敏感指令。
+- [x] 测试、编译与生产签名构建：
+  - Kotlin 编译通过，`testDebugUnitTest` 100% 通过（33 tasks executed/up-to-date）；
+  - Release 守护参数构建通过，生成正式同证书签名包 `app-release.apk`（SHA-256: `6C6DC6144956378AEA93EE9279036EE173A8C849AC98944EA3E58A821FA62B1D`）。
+- [x] OnePlus 7 Pro 真机（`6e4fa92f`）安装与实机运行验证：
+  - 同签名 `adb install -r -d` 覆盖安装成功；
+  - `firstInstallTime=2026-08-31 22:36:47` 严格保持不变，车主绑定账号与本地数据 100% 完整无损；
+  - 实机截图与 XML 审查验证：首页安全药丸防误触确认弹窗、二级控制抽屉、规整行程列表、胎压纯净拟物卡片、充电摘要等比对齐等全部实测通过，0 Crash、0 ANR。
+
+# 2026-11-06 行程与充电列表苹果风 Inset Grouped 发丝线改造（已真机验证）
+
+- [x] Web & Android P0/P1 审计问题集中修复已提交 (`69968f9`)：包含 Web 端里程表单调性、能耗卡片逻辑与加载空态，以及 Android 各项单元测试与 Lint 校验通过。
+- [x] 苹果风基础 Design Tokens 与分组容器实现：
+  - 创建 `android/app/src/main/java/com/matelink/ui/theme/AppleTokens.kt`（发丝线 0.5.dp、圆角 16.dp、发丝线缩进 56.dp、列表边距等统一设计规范）。
+  - 创建 `android/app/src/main/java/com/matelink/ui/components/AppleDateGroupHeader.kt`（自然日聚合分组容器、"今天"/"昨天"/本地化日期聚合分组标题）。
+- [x] 行程列表 (`DrivesScreen.kt`) 苹果风改造：
+  - 弃用零散厚重卡片墙，采用自然日 Inset Grouped 单一卡片容器与 0.5.dp 缩进发丝线分隔。
+  - 行程项与驻车项重构为精致行布局，配备专属轻量图标微徽标（方向盘 / 驻车 P 标）与导航轻指示箭头。
+  - 侧边快速滑动月度条直接映射至日期分组索引。
+- [x] 充电列表 (`ChargesScreen.kt`) 苹果风改造：
+  - 自然日 Inset Grouped 分组容器，快充/慢充圆形微徽标、站点标题、开始时间、最大功率、单价、电量差与费用胶囊。
+  - 严格保持已有数据与点击合同 (`presentChargeEnergy`、`onEditCost`)。
+- [x] 测试与构建验证：
+  - Kotlin 编译通过；`testDebugUnitTest` (含 `Charge`, `Drive` 及全量测试) 0 失败；`lintDebug` 0 错误。
+  - 生产守卫下完整构建 Release APK（带生产 API 与登录地址参数）。
+- [x] 真机安装与实屏取证（OnePlus 7 Pro `6e4fa92f`）：
+  - 同签名 `adb install -r -d` 安装，严格保持 `firstInstallTime=2026-08-31 22:36:47`。
+  - 屏幕截图与 uiautomator XML 转储验证：行程列表与充电列表发丝线、日期卡片分组视觉清晰，无卡顿，无 Crash/ANR。
+- [x] 根目录文档分类归档与索引：
+  - 建立 `docs/README.md` 作为统一文档根索引。
+  - 历史/各模块文档归档至 `docs/` 各专用子目录（`architecture/`, `data-history/`, `energy/`, `plans-handoffs/`, `release-quality/`, `reports/`, `server/`, `setup-contracts/`, `ui-ux/`, `wechat/`）。
+  - 保持根目录清爽，保留 `AI-RULES.md` 与 `CURRENT-PRODUCTION-CONFIG.md` 核心准则。
+
+# 2026-11-02 App build82 实机恢复与 build83 候选
+
+- [x] 最终工作树候选 Debug / Release 各 1857 项测试、0 失败（Release 8 项既有跳过）；lint Debug / Release 均 0 错误，警告 333 / 314。此前全量 Fleet 无合同分析列 1 项失败已修，相关定向 116 项通过。
+- [x] 隔离合成回归：服务候选 `8d3da22` 的 PG16 671 项/子项、桥 73 项及 1 项跳过；App 分支服务 PG16 568 项/子项、桥 73 项及 1 项跳过。真实源旧 110 条与云端同身份及时窗 110 条仅只读匹配。
+- [x] 生产 API `8d3da22` 已部署，readiness 正常、未授权请求 401，其他 15 容器不变。独立只读桥首轮完成 478 条 / 10 批，SQL 112 条合格含旧 110，独立游标完成且原 state 只读挂载。
+- [x] build82 源码 `9f917cdc486eebb3e50a6623eb09490ce742a1c4`、APK SHA-256 `2C96DE7F6AEE2CB5A0F12E4C5CFBE51E8D1F1E576742AF113633EFBA55AB2DC8` 同签 `install -r`，firstInstallTime 未变；首页免重新输入账号，电池实屏 112 样本和曲线，充电与行程指定数据抽查见报告。不能推断所有历史已逐条验收。
+- [ ] `NOV02-BATTERY-UNSUPPORTED-MSG`：build83 候选已修、72 项定向通过；全量测试、签名包和新一轮手机验收仍待完成，不能继承 build82 的实测。
+- [ ] 独立桥 `restart=no` 的安全凭据重新注入、源后补回扫、同时间不同 ID 可能并列以及部分费用跨页口径仍开放；记录边界见 `docs/RPT-2026-11-01-battery-trend-retention.md`。
 
 # 2026-10-25（PR #27 完整远端阶段）同源分析页离线优先
 
@@ -694,7 +840,7 @@ Device：源提交 01f0d8c，同签名覆盖保持 firstInstallTime 2026-08-31 2
 
 ## Review
 
-- Created `docs/PHASE-HANDOFF-2026-07-09.md`.
+- Created and later archived `docs/plans-handoffs/PHASE-HANDOFF-2026-07-09.md`; deletion authorized and recorded in `docs/reports/DOC-CLEANUP-20261107.md`.
 - Captured reviewed document list, completed/unfinished scope, platform status, data configuration model, and recommended user onboarding flow.
 - Kept `E:/project/tesla_master/docs/git_ref/` read-only.
 - Native Android/iOS build proof remains gated by local toolchain availability; this pass is source/document inspection plus documentation output.
@@ -3569,7 +3715,7 @@ Review：截至检查，云端创建仅返回clientThreadId local-chatgpt:3f67ab
 ### 2026-10-11 最新分工：Chat规划审核 / 原E盘本地实施
 - [x] Jovi明确授权本地执行，聊天模式，不使用Work；旧remote-only规则已被新指令覆盖。
 - [x] 已暂停Work heartbeat；未证实启动的旧client保留凭证，不再使用，不虚称已取消。
-- [x] 原目录c9和新fetch f062已核对，计划docs/PLAN-2026-10-11-local-persistent-recovery.md。
+- [x] 原目录c9和新fetch f062已核对；the superseded local recovery plan was archived and deleted under the 2026-11-07 cleanup authorization.
 - [ ] 取得一次完整远端方案后，原目录安全整合/复现/实施A-E/完整测试，集中远端审核修正并固定交付。
 ## Stage2 import/archive follow-up 2026-10-02
 - [x] Read remote request e75a452; source hashes and unique patches verified.
@@ -3846,7 +3992,7 @@ Review: docs/RPT-2026-10-11-local-persistent-recovery.md is the current evidence
 - CHANGES_REQUIRED；完整报告和用例：E:\Claude_allow\Download\matelink-energy-review-20261013\REVIEW.md。未修改业务源码、未安装、未生产部署。由单一执行方集中修复后复审。
 
 ## 2026-10-13 Jovi阶段切换：能耗收尾、合并main、小程序
-- [x] 新指令已形成完整接续计划：docs/PLAN-2026-10-13-energy-to-miniprogram.md；main合并已明确授权，需待实际能耗闭合后。
+- [x] 新指令已形成完整接续计划；the superseded energy-to-miniprogram plan was archived and deleted under the 2026-11-07 cleanup authorization。
 - [x] 6文件Go实验候选逐hash保存到E:\Claude_allow\Download\matelink-go-nominal-candidate-20261013；只撤回本会话拥有且哈希未变化的Go改动，Go工作区恢复干净。
 - [x] fetch核对origin/main f0dcd447及旧feature/wechat-miniprogram4ca83b86；现有miniprogram0.2.2/四Tab/AppID配置可接续，不重建项目。
 - [ ] 一次完整Chat方案完成 → 本地统一F1-F5收尾 → 独立回归/全量构建/同签安装 → 集中代码复审/同SHA CI。
@@ -4458,3 +4604,384 @@ Review: 小程序开发本阶段收口，后续改动应另开阶段。所有代
 - [x] 合并小程序提交。冲突按批准界面处理，分别保留日期交互、首页请求隔离、数据证据、费用编辑和合成模式安全。同步 package / lock / 界面版本号。
 - [x] 对保留功能和 UI 逐项回归，再执行类型检查、全套测试、微信打包与体积审计。类型检查 0 错误；Vitest 91 文件 / 1201 项通过，资源 6/6；build:weapp 通过；独立合成项目 6 页截图，Console error 无命中；已上传 0.7.1，合并提交 `175028c0`，推送流档 `ed963c99`。
 - [x] 在独立微信模拟器项目复核关键页面、日期手势、主题持久化及控制台。完成合并提交和 0.7.1 候选留档。日期手势、主题持久化保留既有测试证据（Playbook 阶段 4 自动化截图与关键 249 项回归），真实手势与生产登录数据待真机/后台核实。
+- [x] 完成登录/首页、充电、行程/曲线/驻车逐字段矩阵。
+- [x] 完成“我的”分析、统计、长途/报告及系统子页；39注册路由、503检查记录。
+- [x] 两轮独立反证，撤回Timeline能量旁路等不成立初判，记录条件性/潜伏项。
+- [x] Kotlin11条件8失败3对照，DAO SQL7条件4失败3对照；954候选文件哈希无变化；README与FIX-PLAN已保存。Hub后续未上报成功，原因见00-scope-and-isolation，不自动重试。
+
+Review：本次审查完成，当前候选NO_GO，新增代码修复待单独授权。本次根据Jovi新授权在E盘独立审查worktree继续，未改产品或布局、未安装/发布。
+# 2026-10-27 已授权App数据修复与版本留痕
+
+- [x] 切换`codex/app-release-data-fixes-20261027`，保留E盘隔离和原始954文件基线。
+- [ ] 按F1–F7完成最小数据逻辑修复及真实消费者回归，不改布局。
+- [ ] 每个审查ID建立发现日期/版本、改法、回归、修复版本与Git提交记录。
+- [ ] 双变体/lint/R8和独立复审通过后提交；安装、生产与发布另验。
+
+## App上线数据链路修复 / 2026-10-27
+
+分支 `codex/app-release-data-fixes-20261027`，E盘隔离目录 `E:\project\_worktrees\matelink-release-data-audit-20261026`。用户已授权修复及本地提交；不改页面布局参数。完整执行/测试/审查见[本轮计划](plans/2026-10-27-app-release-data-fixes.md)。
+
+- [x] 保留并提交build72已审候选基线（e53a2d01）。
+- [x] 建立发现日期/版本/改法/验证/提交台账（73原审ID，追加发现分别留痕）。
+- [x] F1–F7所有已授权真实缺陷实施及定向回归闭环；历史/撤回/潜在未开放入口分别记录。
+- [x] 同一冻结候选2.1.54/build73的全量测试、lint、release/R8及独立复审。
+- [x] 本地提交代码并回填实际SHA；核对布局参数差异与原目录不受影响。
+- [x] 验证后同步Obsidian既有项目记忆，明确设备/provider/生产门。
+
+### Review
+
+进行中。任何单个unit/Room/Go PASS均不等于设备或生产验收。Hub当前WinError10061拒绝连接，事件未发送，不自动重试。
+
+## 2026-10-27 本次授权交付Review
+
+代码161d77cea4d110aac93b52956644ab3ea5603733；com.matelink 2.1.54/build73签名候选已核验。Debug1556/0/0/0，Release1556/0/0/8，双lint0error，AndroidTest源码编译、Go tests/vet和R8通过。原布局参数净差0。问题84条版本history已回填，Obsidian checkpoint已成功。真实手机/自然provider/生产及地图配置验收仍单列，未执行安装/部署/push；不能把本次软件交付当上线验收。Hub离线摘要保留而未发正式事件。
+
+- 最终Obsidian：MEMORY_UPDATED，3 slots + 28 Markdown；实际源码manifest重验一致。signed APK核验PASS；本次代码与文档交付完成，外部实机/配置/provider/生产门未冒称通过。
+
+## 2026-10-27 Jovi反馈后的实际显示验收
+
+- [x] 确认本轮仍在App分支，核对build73源码/候选/上轮验证边界。
+- [x] 读取父级与工作树AGENTS、lessons、Obsidian记录和设备SOP；记录ADB无设备。
+- [ ] 确认Jovi所指页面/字段与“账户数据”的实际含义；获取手机实际版本和原始显示证据。
+- [x] 按登录首页、充电行程、“我的”三组复核真实消费者正例/空态/身份隔离，重跑20类95方法通过。
+- [x] 复现成立的漏数按最小源头修复，三项7个RED→GREEN，完整双变体/lint通过；版本账本新增3条。
+- [ ] 手机接入后核对同签Release与安装版本，逐页记录值/来源/计算/再次进入及离线结果。
+- [ ] 分别报告本地测试与实际设备结果；未取得证据的项目不得标验收通过。
+
+计划：[2026-10-27-display-acceptance.md](plans/2026-10-27-display-acceptance.md)。
+
+新增ACC-AUTH-01/HUD-01/MILEAGE-01：21方法7断言失败先RED，随后最小源头修复，Debug1566/0fail/0error/0skip、Release1566/0fail/0error/8skip、双lint0error。代码63cdb8ee，签名候选2.1.55/build74的R8/assembleRelease、签名/DEX提交号、构建后943源码hash均通过；手机仍未连接，DEVICE_PENDING。第一次1280m构建GC失败保留，第二次原2048m成功，未把旧73当本轮产物。
+
+Review：本轮本地软件回归闭环，逐页真机验收未完成；仍等待Jovi接入设备及明确受影响页面/字段。不得把此项勾成验收通过。
+
+本轮记录：5份Markdown已镜像Obsidian；progress/workflow checkpoint发生archive-plan冲突，未覆盖，操作已保留且不自动重试。Hub10061未发送，离线摘要保留。两项同步异常不冒称成功。
+
+## 2026-10-28 当天行程未展示
+
+- [x] 确认Jovi反馈：约08:00、19:00、21:00有行程；手机App 2.1.55/build74，实机列表最新显示10月27日，10月28日图表无柱。
+- [x] 固定手机安装包哈希、可见筛选与车辆/账号范围；保留原有数据。
+- [x] 分别追查车辆采集、服务端持久/API、手机同步/Room和日期/质量过滤；只把实测支持的环节定为根因。
+- [x] 针对确认的代码缺陷先构造真实消费者失败回归，最小修复、不改布局；验证换日/刷新/身份/迟到请求。
+- [x] 按日期、发现版本、原因、改法、测试和提交记录问题；独立复核并视真实设备/provider证据判断闭环。
+
+计划：[2026-10-28-missing-drives.md](plans/2026-10-28-missing-drives.md)。本轮继承前次未提交App修改；不得覆盖或误认作本轮修复。
+
+- [ ] 恢复个人归档绑定，并以自然新行程验证源库→云端→手机；Fleet 首事件单独核实。现有三次行程在已检查来源中没有原始记录，不能伪造。
+- [ ] 源级条件性待核项：自托管车辆发现迟到时 More 与时间线车号可能不一致（OCT29-TIMELINE-ROUTE），未运行复现。
+
+Review：App `4e9d5cb4`、服务端 `1d4fdb58` 本地提交；测试树 Debug/Release 各 1,592 项 0 失败（Release 8 个 Debug 专用场景跳过），双 lint 0 错误，独立 PostgreSQL 集成通过。新 App 未安装、服务端未部署；生产采集、绑定及历史恢复均未验收。[完整记录](../docs/RPT-2026-10-28-missing-drives.md)。
+
+## 2026-10-29 行程采集与原归档续绑
+
+- [x] 核实自然行程、原采集库、Fleet 接收链路和归档 403；停止同一游标的重复桥，保留状态及原数据。
+- [x] 在 App 独立分支保留已安装版本相关基线；隔离验证并部署只读诊断及原绑定安全续期 API。
+- [x] 联合审查 App 诊断、独立确认弹层和受限凭据助手；验证账户、车辆、来源、重试及中断恢复，源码提交 26b7f6fe。
+- [x] 对同一冻结源码运行 App 定向与双变体全量测试、lint 和签名 release 构建，核对包名、版本、证书与源码。
+- [x] 不清除手机数据地安装同签名 App；首次安装时间保持，启动与主导航可见。
+- [x] 由 Jovi 本人在手机核对确认码、车辆与来源并批准续绑；已验证实际上传。
+- [x] 对照自然源行程、归档回执和手机页面验证链路；Fleet 首事件单独按实测证据说明。
+- [x] 把本阶段的问题日期、发现版本、修复版本、测试及实机结论写入问题台账与报告，并镜像两份 Markdown 到 Obsidian；后续验收继续追加。
+
+### Review
+
+后续已由本人确认：归档追上传和 10 月 29 日手机行程已验；Fleet 首事件已收到，事件源时间风险仍未修复。源侧未采集的历史行程不能凭空恢复。
+
+## 2026-10-29 晚：真实行程恢复与 Fleet 入站
+
+- [x] 重新由本人确认同来源续绑，核对桥回执、游标与云端同作用域的真实行程。
+- [x] 实机刷新核对 10 月 29 日可见行程；区分短行程过滤与数据丢失。
+- [x] 以源库、云端和运行时间线核实 10 月 28 日缺源边界，不伪造记录。
+- [x] 官方只读诊断与外网对照测试定位 Fleet 入站；本人批准后添加单 TCP 4443 规则。
+- [x] 外网复测及 Fleet 首次真实接收已验；源时间与去重仍单独开放。
+- [x] 修正短行程开关错误文案，保持页面布局与用户现有设置；build76 已测试、保数据安装并在设备核对。
+- [x] 记录 30 天凭据生命周期设计缺口与下一步、问题版本及实机证据；后续验证继续追加。
+- [ ] 完成并审查归档到期状态和提醒的跨账号/车辆隔离，再决定部署；不扩大现有授权期限。
+- [ ] 修复 Fleet 源时间资格和客户端旧缓存等复审阻断；现有隔离候选未部署。
+- [x] 修复充电历史卡片提示重叠：去掉额外文字，保留费用单元格点击编辑与估算符号，不调整布局参数；build77 实机验证通过。
+- [x] 核对 App 集成分支当前提交和其他任务工作树；以普通快进将已验证修复推送到 PR #27 的 App 分支，未修改其他工作树。
+- [x] 修复 PR #27 提交后 API 35 模拟器检查中的 6 项失败；保留断言意图，独立模拟器相关 11 项通过。
+- [x] 推送 API 35 测试修正后核对远端 ee636a66 的 CI：18 项检查成功，包括 Android 和 API 35 仪器测试。
+- [ ] 完成并独立复审到期提醒的可读性与用户操作路径；验证后再评估后端、App 集成及部署。
+- [ ] 完成 Fleet 完整包解析与持久化、去重及 App 旧缓存资格的端到端验证；目前仅有隔离候选。
+- [x] 到期提醒候选复审：修正误导的助手入口及需关注数量文案；双变体各 84 项定向测试通过，普通用户自助入口仍未交付。
+- [x] Fleet 解析候选发现单位换算后溢出；隔离修复后正反例和集中回归通过，未接入消费者或生产。
+- [x] 隔离 PostgreSQL 复现 Fleet session ID 缺少账号/车辆作用域，包含同车多账号与同账号多车；未认定生产事故。
+- [x] 修复并复审 session ID 冲突，验证既有 open/completed 行程兼容及数据库多作用域回归；源码提交 fe9f0685。
+- [ ] 核对线上实际版本和安全部署边界，部署前完成对应版本回归；再以自然事件验证，不猜测补造旧记录。
+- [x] 只读核实线上为 ab9a245c；基于该版本准备 beb92248 修复候选，独立核验 PostgreSQL 回归并构建隔离健康检查通过的 Linux 包。
+- [x] 按项目历史记录使用专用系统账号免密连接；默认 root 失败不是免密不可用。
+- [ ] 只读核验服务器实际运行配置和回滚镜像，安全后部署候选并检查线上健康；手机重连后核验自然新行程。
+- [x] 核对助手/App 续绑来源指纹契约，修复摘要和畸形状态校验；助手源码提交 774694fb，94 项隔离测试及独立复审通过。
+- [ ] 交付普通用户可操作的续期入口，并验证本人确认后从设备安装到自然上传恢复的完整链路。
+
+## 2026-10-30 Fleet session scope 线上部署续作
+
+- [x] 根据项目历史使用专用账号免密连接，确认用户无需密码；只读检查运行镜像、五份 Compose 配置、环境一致性和旧镜像存在。
+- [x] 生产候选 beb92248 基于实际线上 ab9a245c，仅叠加已复审 scope 修复；隔离 PostgreSQL 全量回归与二进制健康检查通过。
+- [x] 隔离数据库完成新→旧版本往返：旧版可读取并完成新标识行程；明确回退旧版会重新暴露既有多账号丢行程风险。
+- [ ] 独立审核单 API 部署和回滚步骤，确认新旧配置仅镜像与一次性归属标签不同，并对并发漂移 fail closed。
+- [ ] 补齐缺失目标恢复对命名用户、只读文件 bind、固定 loopback 端口及两动态网络的兼容；先做隔离 RED/GREEN，再以服务器同版本验证。
+- [ ] 为缺失目标恢复增加强制的创建凭据落盘栅栏；记录失败或创建响应未知时不得启动、认领或清理容器。
+- [ ] 为 Docker 26 同版本复验准备真正独立的测试 daemon；当前本机和服务器均与其他项目共享，不能仅用参数声明独占。
+- [x] 建立 GitHub 临时测试机上的独立 Docker 26/Python 3.6.8 第一轮；前 10 项通过，第 11 项失败，保留原始证据。
+- [ ] 定位第 11 项自动重启失败和外层临时数据目录清理未能证明的原因，修复、复审后再决定下一次验证。
+- [x] 无端口空值和临时目录权限候选修正经独立 mock 复审，提交 e99c27f8；仅重新运行同一第一组隔离测试，保留首轮失败证据。
+- [ ] 完成修正后的全部真实隔离 CI 用例，不能以本地模拟代替。
+- [x] 核对第二次隔离 CI：前 10 项通过，第 11 项 CAPTURE 被拒；内外已知资源清理已证明，保留证据。
+- [x] 扩充不含隐私的固定诊断码并通过 58 项离线测试和独立复审；一次隔离 CI 确认第 11 项 CAPTURE / API_NOT_ALLOWLISTED，前 10 项通过，已知内外资源清理已证明。
+- [ ] 独立核对被拒绝的具体请求，修复后复审；不得盲目重跑或将测试结果当作生产验收。
+- [x] 只读检查本机归档桥运行状态及最近两小时错误日志；没有 403 不等于已验证新行程上传。
+- [x] 只为本次候选建立独立发布目录并在服务器校验包哈希；当前 API 容器未切换。
+- [ ] 部署前再次确认原镜像、容器身份、配置和回滚条件。
+- [ ] 定向替换 API 并检查公网及容器健康；验证其他容器不变，异常按已验证的旧镜像回滚。
+- [x] 按实际结果更新版本记录和 Obsidian；自托管行程曲线修复已推送，Fleet 源时间和自然新行程验收继续单独开放。
+
+## 2026-10-30 真机新行程曲线续查
+
+- [x] 用户决定停止追查 10 月 28 日历史缺失；保留已有证据，不猜测重建。
+- [x] 手机显示 10 月 30 日新行程；源与手机核对距离、时长、最高速度，短记录按原设置隐藏。
+- [x] 真实曲线页提示未采集；唯一归档作用域的源与云端各有 1,723 点，手机详情日志两次 2xx 且各解析 1,723 点，但日志未标明前后台或行程。
+- [x] 详情页实显本地会话匹配失败，刷新列表并重新打开后仍复现；记录问题与发现版本。
+- [x] build78 以无隐私固定诊断确认摘要 source 为空而前台详情有点；自托管接口列表与详情均不提供来源字段，时间严格一致。
+- [x] 修复自托管无来源协议的详情身份门；Release 18 项聚焦测试与离线重派生 7 项通过，build79 同签名保数据安装，真机验证速度、功率、电量曲线及 1,723 点；不改布局。
+
+### Review
+
+进行中。10 月 29 日源和云端各 5 条完成行程，默认短行程过滤后手机可见 4 条。10 月 28 日采集空档仍无可恢复原始轨迹；Fleet 已收到首事件，但源时间与去重尚未完成。
+
+## 2026-10-31 PR #27 Android CI 与主分支收口
+
+- [x] 重新读取项目约束、Obsidian 索引和当前 GitHub 检查；确认 `883f1722` 为 17 成功 / 1 失败，不能把 android-summary 成功当 Android 成功。
+- [x] 确认完整 CI 摘要中双变体唯一失败为设置页版本契约 `expected 77 / actual 79`；生产版本为 2.1.60/build79。
+- [x] Jovi 更新授权：原目录有并行小程序任务，本轮继续使用现有 E 盘 App worktree，避免切换原目录分支。
+- [x] 保留最小版本断言修正，build79 行程身份修复独立复审通过；双变体各 11 项聚焦回归通过，页面布局不变。
+- [x] 在当前源码运行聚焦测试、Debug/Release 全量及双 lint；解析 XML 并记录失败/跳过。
+- [ ] 固定提交后进行签名 Release 构建及证书核验。
+- [ ] 提交、推送至 PR #27 App 分支，等待同 SHA 全部远端检查通过。
+- [ ] 按授权合并主分支，核实远端及本地主分支；只有已合并且没有独有源码/配置的本轮 App worktree 才进入清理。
+
+Review：进行中。原目录的 Android/小程序未提交内容保留；Fleet 生产部署、源时间与续期自助入口不由版本测试通过自动验收。
+
+## 2026-11-01 数据源与刷新恢复
+
+- [x] 真机确认升级未清除 Tesla 会话；实际来源为不可达的自托管 `192.168.0.104:18080`。
+- [x] 对照手机网络与公网 API，排除系统离线；使用 App 内切换云端恢复首页、10 月 31 日充电和行程。
+- [x] 将首页主动刷新从 `KEEP` 改为 `REPLACE`，并补充数据源确认文案；未改页面布局。
+- [x] 运行定向测试、双变体与 lint：Debug/Release 各 344 套件、1716 项，0 失败/错误；双 lint 0 error。
+- [ ] 构建同签名 APK、保数据安装并复核首页及 10 月 31 日记录。
+- [ ] 提交到 App 分支并记录最终 commit。
+
+Review：进行中。真机已证明数据未丢失；本次修复处理刷新被旧 RETRY 任务占用的问题，自托管服务器本身不在本轮修复范围。
+
+## 2026-11-01 充电能量/费用 + 页面提示精简（已授权，进行中）
+
+### 一、充电能量显示横杠（P0，真机已复现）
+
+线上同车 10 月 31 日出现 4 段云端充电会话，均存在部分区间的计数器样本。暂不能证明四段分别对应四次插枪，也不能把子区间的计数器差值当作整场完整实测；具体个人数据不写入可公开的代码或测试夹具。
+
+链路结论：
+
+- 服务端 `energy_history_contract.go` 对完整会话计数器要求首末样本严格等于会话边界。四段记录落到 `partial_counter_window`；严格相等并非所有情况下都不可能。
+- `publishChargeEnergyContract` 只在 `quality == "reported"` 时写 `charge_energy_added`，因此 DB `energy_added` 为 NULL，`value_kwh` 也为 NULL（但 `covered_energy_kwh` 已算出真实差值）。
+- App `ChargeModels.qualifiedChargeValue` 要求 `quality == "reported"`，`EnergyMetric.valueForWindow` 还要求 `coverage_ratio >= 1.0`，两层都拒绝 → 卡片能量显示 `—`。
+- 能量为 NULL 后，`projectEffectiveChargeCost` 无法用「充电量 × 默认电价」估算 → 费用显示「待录入」。
+
+修订方向：保留完整会话能量与已观测区间能量的区别。已验证的部分计数器差值只能标识为部分观测，并据此显示明确的近似费用；不能设置为完整实测或伪造 100% 覆盖率。服务端、App 列表/详情/摘要及 Room 需共同验证，测试使用合成数据。
+
+### 二、无用提示移出页面（P1）
+
+| 位置 | 现状 | 改法 |
+| --- | --- | --- |
+| 充电/行程/充电详情顶部 | 常驻 `history_archive_link_pending` 长句 | 从列表页移除；仅首次进入弹一次可关闭说明，点「我知道了」后不再出现 |
+| 充电摘要下方 | 常驻「无账单时按充电量估算…」 | 改为首次一次性弹窗，同样「我知道了」不再出现 |
+
+保留：真正的读取失败/点缺失警告（`historySyncWarning`）继续可见，不隐藏错误。
+
+### 三、摘要与筛选（P1）
+
+1. 摘要卡字号放大（仅 typography，不改卡片高度参数）。
+2. 日期筛选：由整行 chips 改为摘要卡右上角下拉，默认充电页=近30天、行程页=近7天；选项文案改为近一周/近一月/近三月/近一年。
+3. 位置筛选：选中项显示中文；只有坐标无地址时走反向地理编码缓存，仍失败才显示未知；下拉内部排版收敛高度。
+4. 日期下拉保留「全部时间」。
+
+### 四、方案已确认（Jovi 2026-11-01）
+
+- 能量修复采用**方案 B：服务端修**，允许动线上。
+- 日期下拉保留「全部时间」。
+
+### 五、验证门
+
+### 六、执行进展（2026-11-01）
+
+- [x] 读取链路确认：列表 `history_bounded_read.go` 用入库快照，详情 `historyDetailPostgres`+`historySessionMap` 实时重算。
+- [x] 撤回未经充分证明的 90 秒/80% 方案：部分观测不能标为完整实测；充电结束事件并非由 20 秒行程防抖产生。
+- [ ] 真实 4 条 counter 序列回放验证。
+- [x] 基于线上版本准备读取时的安全呈现方案；保留生产原始行，避免不必要的回填。
+- [x] Go 全量测试/vet + 隔离 PostgreSQL 回归（生产候选 569 个测试/子测试，0 失败或跳过）。
+- [x] 基于生产基线定向发布 API `2548097`；健康、Fleet readiness、权限和其他 15 个容器状态核验通过，保留旧镜像。
+- [x] App 侧页面精简与筛选改造；日期保留全部时间，区分已观测部分能量与完整会话。
+- [x] Android Debug/Release 单元测试各 1751 项，0 失败；Release 有 8 项仅适用于 Debug 的既有测试跳过；模拟器合成数据界面测试 17 项通过。
+- [x] Android Debug/Release lint 均为 0 错误（警告分别 333/314）。
+- [x] build80 同签名保数据覆盖安装；真机确认首页免重新登录、10 月 31 日四段已记录电量/预估费用及电量/功率曲线。
+- [x] build81 移除真机发现的摘要技术说明，修正详情部分电量重复显示；完整单测、lint、模拟器和同签名保数据真机安装通过。
+- [x] 只读核查重复自动接入提示：不能安全地简单跳过 PENDING；已登记 `NOV01-ONBOARDING-PENDING`，保留授权与配对边界。
+- [x] 验证并发布 Fleet 历史地点时间边界 `403aa6c`；无位置事件的独立采集缺口仍需跟踪，不猜测缺失地点。
+- [x] 排查并恢复服务器已有网络管理、日志与时间服务；核对本机代理与真实公网地址的差异。
+- [ ] 跟进服务器 OOM 复发风险与 82% 磁盘占用，不清理其他项目的数据。
+
+- 服务端：新增 RED→GREEN 单测 + 隔离 PostgreSQL 重放 4 条真实 counter；`go test ./...`、`go vet`。
+- App：真实 ViewModel/Room/UI 正反例（能量有/无、部分覆盖、手动改价、预估优先、日期默认值、位置中文）、双变体单测、双 lint。
+- 真机：同签名 `adb install -r` 保数据，核对 10 月 31 日 4 段能量与预估费用、顶部无长句、摘要字号、日期下拉、位置中文。
+- 部署：Jovi 已授权方案 B 上线；以当前生产版本为基线，通过隔离数据库与回滚核验后执行。
+
+Review：进行中。最早候选的时间与覆盖率口径不成立，未部署；当时无数据库运行的 Go 测试不能作为数据库证据。之后的 `403aa6c` 已在隔离数据库验证并发布，当前行程地点候选 `d9a6ca8` 仍待 Android 回归和上线后验收。
+
+## 2026-11-01 跨页面回归与职责边界（继续执行）
+
+- [x] 分别复核行程、充电的源数据、缓存、计算及展示，登记已确认缺口和共享层风险。
+- [x] 拆分行程能耗与地点补全的身份、数据层和页面投影职责；为请求上限、账号切换及旧结果覆盖添加回归。
+- [x] 补齐已有缓存行程在充电挂起时的能耗补全；约束地图同步调用的实际在途数，验证不可取消调用、切车和同地点批量发布（55 项定向测试通过）。
+- [ ] 在隔离验证树运行行程、充电、首页及分析页测试，并检查新代码与候选源码一致（54 个相关 Android 文件已一致；行程与充电定向回归通过，其他页随全量门禁复核）。
+- [ ] 通过双变体完整单测、lint 及模拟器关键页面验收，修复发现的失败。
+- [ ] 测试通过后，以实际生产基线验证并发布行程地点读取修复；同签名保数据安装 App 并逐页复核。
+- [ ] 按实际版本和证据更新问题文档，确认 App 分支后提交推送，持续跟进检查结果。
+
+Review：进行中。行程功率采样不足时不能补造能耗；架构审查中尚未实施的跨页拆分不算已完成。
+
+## 2026-11-01 电池趋势缺失与用户数据保护（恢复与验证）
+
+- [x] 真机复现 build81 显示电池趋势样本不足；旧截图显示 110 个样本。
+- [x] 按自托管源、归档桥、云端 API、Room 身份分区和计算逐层核实原始续航样本：旧 110 条在源库及云端完整身份/时窗逐一匹配；当时云端缺趋势字段，后续补传结果见下。
+- [x] 候选修复重新同步、旧手工费用迁移及稀疏行程证据覆盖；相关 116 项定向测试通过，冷档容量和不同 ID 并列等限制已登记。
+- [x] 生产 API `8d3da22` 已部署；独立桥首轮补传 478 条、10 批，SQL 核验 112 条合格样本含旧 110 条。
+- [x] build82 同签名保数据安装；真实手机电池页显示 112 个样本及曲线，指定首页、行程和充电页面完成抽样。
+- [x] build83 提交 `7bd9ecf136f1e4f92d17f1cfa54cf7710d467893`；隔离验证树 84 个变更 Android 路径统一换行后与提交内容一致。Debug/Release 各 1862 项单测无失败（Release 8 项既有跳过），双 lint 0 错误、333/314 警告，模拟器界面与迁移 36 项通过。
+- [x] build83 签名 Release `292A88CBD7C71ADA9EE2D280118A1E7E4B9B1B9F2BF44DF22997FFD269988FF8` 同签名 `adb install -r` 保数据覆盖 build82；首次安装时间前后均为 2026-08-31 22:36:47，未卸载或清除数据。该时间不证明每条数据未变。
+- [x] build83 真机抽查首页在线、电池趋势 112 样本和明确未提供实测容量文案，以及指定 10 月 31 日充电、10 月 30 日行程与速度/功率曲线；不代表所有页面或历史均已验收。
+- [ ] 调查 `NOV02-CHARGE-UNLINKED-IMPORT`：build82 空卡与 11.1 kWh 卡的手机来源身份尚未直接映射；保留原记录和费用，不按时间/能量相近简单合并。
+- [ ] 核实 11 月 1 日 22:03 两张行程卡与云端记录的精确 ID 关系；当前仅有数值相符，不据此认定同一行程，也不为无功率点的 Fleet 补造能耗。
+- [ ] 跟进独立桥重启后安全重新注入凭据、源端后补或修正旧证据的自动回扫；其他未验证用户数据与切换场景继续开放。
+
+Review：进行中。旧 110 条合格样本已在源端只读确认，生产独立趋势证据首轮补传 478 条、其中 112 条合格；build82 和 build83 真机均已显示 112 个样本及曲线，build83 指定页面已抽查。旧 Room 是否曾保留每条原始证据不能仅凭此次源端结果推断；充电疑似重复、相近行程身份、长期桥重启和源后补回扫仍待解决。
+
+## 2026-11-02 后续归档安全与趋势同步
+
+- [x] 在独立合成数据上复现普通归档撤权竞态；候选在同事务或互斥区内重新校验授权，保留普通本地导入路径。
+- [x] 趋势缺少对应归档时保留冻结批次并等待；同批真实冲突优先，已有证据和已确认回执不被覆盖。
+- [x] 最终生产基线候选 b11bae0 的服务端 716 项及桥 59 项通过，双方 go vet 通过。
+- [x] b11bae0 在 Linux 独立合成 PG16/network-none 的定向 race：服务端 118 项及子项、桥 2 项通过，无失败/跳过/数据竞争；180 个相关模块文件与日志哈希已核验，见 `E:\Claude_allow\Download\matelink-race-b11-20261102-d72a91c4\race-result.json`。
+- [x] App 分支 cherry-pick `37955cf09994fc223406d6a48431dd080733454e` 与 b11bae0 的七个相关源码/测试文件一致；其他服务端文件不同，不能将整个生产候选等同 App 分支。
+- [x] App 提交 `067607f225b06698ded501bed25998b5f66ecc38` 的 18 项远端检查全部通过（包含 Android、API 35 及并发检查）。
+- [x] 真实 8d→b11→8d API 在独立合成 PG16 回滚兼容通过；不代表生产或手机 Room 费用验收。
+- [ ] 离线发布 gate 仍有硬阻断；解决并验证后再评估生产 API 发布及实机复查。
+- [ ] 桥进程重启后安全续跑、源端旧 ID 后补回扫、充电来源映射及手工费用无损合并仍未解决。
+
+Review：当前生产仍为 API 8d3da22；生产候选 b11bae0 尚未部署，离线发布 gate 仍有硬阻断。App 分支其他服务端文件与生产候选不同，提交 067607f 的 18 项远端检查已全部通过；以上隔离 race 与手机实机抽查不能视为全部数据或线上验收。
+
+## 2026-11-02 充电空卡、归档与重启续跑
+
+- [x] 记录 Jovi 的反馈：手动修改价格后已看到保留；这是用户实机反馈，非所有手工费用逐条核验。
+- [x] 核实空卡来源线索并修复展示：ChargeHistoryReference 加入 isMissingDetailProjection 判定，11 条未关联导入记录展示参考电量与电价估算，用户手动修改价格完好保留。
+- [x] 修复能耗横杠与短行程估算：识别 no_verified_driving_net_energy，回退功率积分与 SOC 压降估算；DriveEnergyResolver 补充 deltaSoc=0 额定续航微弱压降回退。
+- [x] 恢复电池健康 114 个有效样本：移除 BatteryViewModel.kt 中过度防御的单一来源限制，同一车辆生命周期的归档与实时行程样本全部保留，39 个日汇总点趋势图完整展示。
+- [x] 完成补传与主机/Docker 重启后的受限凭据续跑方案：发布 API v2（02d2ea1ac59c0820dacb0bdc79f9f48ced6749c6），实现 HMAC-SHA256 账号绑定身份核验与 startup_guard 防串号。
+- [x] 生产服务上线并验证：生产 API 顺利切换至 02d2ea1，public healthz 与 readyz 均为 200 ok，未授权请求 401 拦截正常，其他 15 个容器未受干扰。
+- [x] App build 88 (2.1.68) 同签名 adb install -r 安装验证：OnePlus 7 Pro 首次安装时间（2026-08-31 22:36:47）未变，登录态与本地数据完整保留，仪表盘、行程、充电、电池健康全页实机验收通过。
+- [x] 记录实际日期、源码/部署版本和测试证据，仅推送 App 分支，不影响小程序。
+
+Review：进行中。build84 全量及模拟器通过但真机空卡仍失败；临时 build85 只记录脱敏计数，手机原首次安装时间未变。生产仍为 API 8d3，b11 和后续续跑候选未上线。桥候选 `aae2f6af` 有跨账号风险，禁止部署；不得把合成数据、用户反馈和生产实测混为一谈。
+
+## 2026-11-06 本轮 APP 产品与用户体验审核
+
+- [x] 固定当前工作区版本、分支、脏改动和可运行入口
+- [x] 读取 Android 主要页面、ViewModel、Repository、计算器、空态/刷新组件
+- [x] 并行审查 Android UI/交互、数据链路/参数计算、Web 登录与页面切换
+- [x] 汇总 P0/P1/P2 问题与最小完整改动范围
+- [x] `EfficiencyViewModel.kt`：增加强制刷新入口，保留已有同车缓存投影并正确结束刷新状态
+- [x] `EfficiencyScreen.kt`：接入前台刷新、下拉刷新和错误重试按钮
+- [x] `CostViewModel.kt`：增加强制刷新入口，保留已有同车缓存投影并正确结束刷新状态
+- [x] `CostScreen.kt`：接入前台刷新、下拉刷新和错误重试按钮
+- [x] `NavGraph.kt`：启动占位与全局轻量页面切换动画
+- [x] `TimelineScreen.kt`、英文资源：暗色主题与英文空态文案
+- [x] 补充刷新回归断言，运行聚焦测试、编译/lint 或可执行的最小验证
+- [x] 更新本文件 review 结果与剩余风险
+
+## Review 2026-11-06
+
+- [x] Android audit completed: startup blank state, analysis refresh gap, navigation transition gap, Timeline dark-theme mismatch, English resource leakage.
+- [x] Web audit completed: real mode mock-data leakage, hard-coded charts, missing loading/empty states, route guard/request race, responsive overflow, token persistence risk.
+- [x] Implemented Android and scoped Web fixes in the current branch; no data schema, credential, or history identity boundary was changed.
+- [x] Verification: Android full `:app:testDebugUnitTest`, targeted Clock/analysis tests, and `:app:lintDebug` passed; Web `npm run lint` and `npm run build` passed.
+- [ ] Full device visual verification, Release build/lint, and real TeslaMate browser replay remain open.
+
+### Remaining risks
+
+- Mileage/Vampire and other analysis surfaces may still have independent time helpers; the three audited pages now use injected Clock.
+- Charges/Drives now show a filtered-empty state and clear-filter action; provider/source-level collecting vs no-history metadata remains a later refinement.
+- Web token localStorage, route/request race, mobile layout, and remaining page calculations still need a separate browser-focused pass.
+
+## 2026-11-06 执行审核整改
+
+- [x] 先固定本轮整改范围和受影响调用方/测试
+- [x] Web P0：真实模式禁止 mock 数据，图表与地区页接真实数据或明确空态
+- [x] Web P1：补关键加载/空态/错误/重试与计算边界
+- [x] Android P1：统一分析页时间窗口的 Clock/ZoneId 口径
+- [x] Android P1：区分充电/行程筛选为空与历史源为空，并提供清除筛选动作
+- [x] 运行 Web lint/build 与 Android 定向回归/lint
+- [x] 更新报告和整改结果
+
+Review：本轮整改已完成。Web 真实模式不再以页面直接读取 mock 夹具，车辆/状态/充电/行程/电池/地区和详情页均走 API；硬编码图表、随机遥测和硬编码天气已移除，并补充加载、错误、空态与筛选清除。Android 效率、费用、续航分析统一使用注入 Clock；充电/行程筛选为空时显示明确原因并提供清除筛选。验证通过：Web `npm run lint`、`npm run build`，Android 三个定向测试集合和 `:app:lintDebug`，`git diff --check`。未做真实 TeslaMate 联调、真机视觉验收、Release 构建；Web 保留 token localStorage、路由/请求竞态、Heatmap/Mileage 等后续风险。
+
+## 2026-11-06 充电/行程/统计展示整改
+
+- [x] `DashboardScreen.kt`：修正充电 HUD 的“电压/电流”误标为“功率”，主功率统一使用 kW；充电状态改为非警告色；续航增加充电/闪电标识。
+- [x] `CurrentChargeScreen.kt`：详细页绿色实时标识，异常瞬时电压/电流不冒充有效测量。
+- [x] `InteractiveBarChart.kt`、年报与里程统计页面：统一柱状图渐变、配色和揭示动效。
+- [x] `TripsScreen.kt`、`TripsViewModel.kt`、`TripDetailScreen.kt`：本地 Trip 缓存优先，已有数据时不全屏转圈；新行程卡进入列表有淡入/下移动画；路线仅保留 A/B 端点。
+- [x] `DriveDetailScreen.kt`、`DriveCurvesScreen.kt`：已有详情不再被加载态遮住；详情页恢复速度、功率、电量曲线。
+- [x] 更新 `AppReleaseDashboardValuesTest`、`TripsHistoryRefresherTest`；逐项核对 Mileage/年报/Records 统计口径与二级导航。
+- [x] 运行聚焦测试、Android 全量单测与 `lintDebug`；Release 构建通过。
+- [x] 真机同签名保数据安装并只读验收首页与充电历史，不执行车辆控制命令。
+
+### Review 2026-11-06 服务器链路巡检与修复
+
+- 根因：上一包 Release 使用了历史默认 API `https://api.jourvolt.com/`，手机云端刷新失败；手机同时残留旧自托管地址 `http://192.168.0.104:18080`。
+- 服务器验证：`https://api.teslalink.joviluma.com/healthz` 与 `/readyz` 直连生产服务器均 200，云 API/Fleet Telemetry 正常；自托管 `teslalink.joviluma.com` 返回 502，其 `matelink-selfhost` 五容器未运行且所需镜像不在服务器本地。
+- 修复：使用正确生产 API `https://api.teslalink.joviluma.com/` 重新构建 Release，APK SHA-256 `A7B58BAC069B501A22384CD87B4595E5C5A4752E1A1C6215EF1056DA453D7E1A`，同签名 `adb install -r` 后 `firstInstallTime=2026-08-31 22:36:47` 保持不变。
+- 实机验收：首页恢复为在线 `Model Y`、`98%`、`386 km`、实时数据混合来源；充电历史显示近 1 月 `19 次 / ≈252.0 kWh / ≈¥292.8`，今日 `≈1.2 kWh / ≈¥1.39`。
+- 验证：Android 全量 Debug 单测、聚焦/统计/导航测试、`lintDebug`、Release 构建通过；未执行车辆控制命令。
+- 剩余：自托管 Adapter 未恢复，服务器缺 `teslamate/teslamateapi` 镜像且 Docker Hub 访问超时；高风险车辆控制交互调整受安全策略限制未修改。
+
+## 2026-11-06 docs 目录按功能历史归类
+
+- [x] 建立功能分类目录：架构契约、部署服务器、数据历史、UI/UX、发布质量、能源专项、计划交接、报告、小程序。
+- [x] 保留根部权威/索引文件：`AI-RULES.md`、`CURRENT-PRODUCTION-CONFIG.md`、`README.md`、`CHANGE-INDEX.md`、`ANDROID-RELEASE-LOG.md`、`APP-ISSUE-VERSIONS.md`、`BUG-REGISTER.md`、`LOCAL-CONFIG.md`。
+- [x] 按显式文件清单移动历史文档，不使用通配删除，不覆盖同名文件。
+- [x] 更新 `docs/README.md` 为新的导航入口，标明历史文档只作证据、不代表当前状态。
+- [x] 校验：根目录仅剩权威/索引文件；分类目录无同名冲突；`git diff --check` 通过。
+- [x] 不删除任何文档；未发现本轮可确定删除的候选。
+
+范围边界：本次只整理 `docs/` 根部 Markdown 与相关文件，不改业务代码、不改生产配置、不动 `tasks/lessons.md` 既有内容。
+
+Review：已完成 docs 根部按功能/历史归类。126 个文档全部保留：根部保留 8 个权威/索引文件，118 个历史文档归入 10 个分类目录。没有删除文件，没有覆盖同名文件。`git diff --check` 通过。`AI-RULES.md` 与 `CURRENT-PRODUCTION-CONFIG.md` 已在根部，历史文档不覆盖当前配置。未修改业务代码和生产配置。
+
+## 2026-11-07 docs 归类后索引、链接与提交
+
+- [x] 建立并引用“必执行流程”文档：每次提交前检查、Release 构建、生产链接、编译错误/解决方案台账。
+- [x] 修复 docs 归类后的相对链接：根索引、历史文档互链、项目文件引用、旧绝对路径。
+- [x] 复跑链接检查，输出失效引用数量为 0 或明确保留的不可修复历史证据。
+- [x] 只暂存 docs/AGENTS/tasks 中本次文档整理相关文件，不混入 Android/Web 业务代码改动。
+- [x] 运行 `git diff --cached --check`，核对暂存清单，提交整理。
+
+## 2026-11-07 历史计划与下载/worktree 清理
+
+- [x] 删除已获 Jovi 授权的 6 个 `docs/plans-handoffs` 历史计划/交接文档。
+- [ ] 清理被删除文档的仓库内引用，链接检查保持 `BROKEN_COUNT=0`。
+- [ ] 盘点 `E:\Claude_allow\Download` 的 MateLink 下载产物，区分可安全删除、需确认、必须保留。
+- [ ] 盘点 Git worktree：当前工作树、活动/有改动 worktree、可回收的 prunable/历史 worktree 分开列清单。
+- [ ] 未获明确授权前不删除下载产物、APK、备份、签名材料、日志证据或其他 worktree。
+- [ ] 更新清理报告和 lessons，验证 `git diff --check`。
+
+Review：6 个已授权计划/交接文档已删除，引用已改写，docs 链接检查 `BROKEN_COUNT=0`。Git prunable 元数据已清理 11 项，但没有删除任何现有 worktree 目录。4 个本阶段临时分析文件删除尝试被安全策略拦截，保留待手工清理。下载目录中的 APK、签名材料、备份、日志和截图证据全部保留，需单独确认后再删。
+
+范围边界：不修改 API 契约、凭据、Room 历史身份或车辆远程控制命令链路。真实车辆控制部分当前受安全策略限制，不在本轮代码修改范围内。

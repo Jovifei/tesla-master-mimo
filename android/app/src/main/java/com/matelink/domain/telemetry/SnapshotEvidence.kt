@@ -29,7 +29,7 @@ fun snapshotEvidence(
     val fieldKinds = normalizedFields.values.filter(String::isNotEmpty).toSet()
     val mixed = fieldKinds.size > 1 || (normalizedSource != null && fieldKinds.any { it != normalizedSource })
     val freshness = when (normalizedSource) {
-        "live_mqtt" -> if (fresh && (normalizedFields.isEmpty() || normalizedFields.values.any { it == "live_mqtt" })) SnapshotFreshness.LIVE else SnapshotFreshness.RECENT
+        "live_mqtt", "telemetry_mqtt" -> if (fresh && (normalizedFields.isEmpty() || normalizedFields.values.any { it == normalizedSource })) SnapshotFreshness.LIVE else SnapshotFreshness.RECENT
         "fleet_api" -> if (observedAt.isNullOrBlank() || fresh) SnapshotFreshness.LIVE else SnapshotFreshness.RECENT
         "mqtt_latest" -> SnapshotFreshness.RECENT
         "database_latest", "teslamate_api", "mock_fixture" -> SnapshotFreshness.HISTORY

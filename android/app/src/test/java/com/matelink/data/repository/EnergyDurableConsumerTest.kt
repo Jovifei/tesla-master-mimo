@@ -376,13 +376,27 @@ class EnergyDurableConsumerTest {
             db.aggregateDao().upsertChargeAggregate(ChargeDetail(9, startDate = start, endDate = end).toAggregate(-7, 1L))
             db.aggregateDao().upsertDriveAggregate(d.toAggregate(-7, 1L).copy(schemaVersion = 5))
             val version = com.matelink.data.local.entity.SchemaVersion.DRIVE_ENERGY
-            assertEquals(6, version)
-            assertEquals(5, com.matelink.data.local.entity.SchemaVersion.CURRENT)
+            assertEquals(7, version)
+            assertEquals(7, com.matelink.data.local.entity.SchemaVersion.CURRENT)
             assertTrue(db.chargeSummaryDao().getUnprocessedChargeIds(-7, com.matelink.data.local.entity.SchemaVersion.CURRENT).isEmpty())
             assertEquals(listOf(4), dao.getUnprocessedDriveIds(-7, version))
-            dao.mergeResolvedDetail(-7, d) {}
-            db.aggregateDao().upsertDriveAggregate(d.toAggregate(-7, 2L))
+            val databaseVersion = db.openHelper.readableDatabase.version
+            var computations = 0
+            suspend fun reprocessPending() {
+                for (id in dao.getUnprocessedDriveIds(-7, version)) {
+                    assertEquals(4, id)
+                    computations++
+                    dao.mergeResolvedDetail(-7, d) {}
+                    db.aggregateDao().upsertDriveAggregate(d.toAggregate(-7, 2L))
+                }
+            }
+            reprocessPending()
             assertTrue(dao.getUnprocessedDriveIds(-7, version).isEmpty())
+            val storedOnce = dao.get(-7, 4)!!
+            reprocessPending()
+            assertEquals(1, computations)
+            assertEquals(storedOnce, dao.get(-7, 4))
+            assertEquals(databaseVersion, db.openHelper.readableDatabase.version)
             assertEquals(0.6, dao.get(-7, 4)!!.energyConsumed!!, 1e-12)
         } finally { db.close() }
     }

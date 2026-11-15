@@ -1,0 +1,19 @@
+<resources>
+    <string name="interaction_vehicle_illustration">Bundled vehicle illustration, not a bound vehicle</string>
+    <string name="interaction_vehicle_schematic">Vehicle-position schematic; not model identification</string>
+    <string name="interaction_link_idle">Waiting for your authorization</string>
+    <string name="interaction_link_pending">Verifying the connection…</string>
+    <string name="interaction_link_action">Confirmation is still required</string>
+    <string name="interaction_link_confirmed">Connection confirmed</string>
+    <string name="interaction_link_unavailable">Connection not confirmed</string>
+    <string name="interaction_route_schematic">Endpoint order only · not the actual route</string>
+    <string name="interaction_observed">Observed</string>
+    <string name="interaction_stale">Earlier observation</string>
+    <string name="interaction_warning">Existing rule warning</string>
+    <string name="interaction_unknown">Unverified / unavailable</string>
+    <string name="interaction_wheel_select">Tap a wheel to focus its recorded trend; tap again to show all.</string>
+    <string name="interaction_openings_aggregate">Door/window flags are aggregate reports; the exact opening is unknown.</string>
+    <string name="interaction_openings_show">Show vehicle-position diagram</string>
+    <string name="interaction_openings_hide">Hide vehicle-position diagram</string>
+    <string name="interaction_recorded_interval">Recorded charging intervals only; gaps do not prove no charging.</string>
+</resources>

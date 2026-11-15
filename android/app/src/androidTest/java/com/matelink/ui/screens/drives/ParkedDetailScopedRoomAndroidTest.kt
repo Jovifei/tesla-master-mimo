@@ -21,7 +21,7 @@ class ParkedDetailScopedRoomAndroidTest {
             startAddress = "", endAddress = "", distance = 1.0, speedMax = 20, speedAvg = 10,
             powerMax = 5, powerMin = -2, startBatteryLevel = startSoc, endBatteryLevel = endSoc,
             outsideTempAvg = null, insideTempAvg = null, energyConsumed = null, efficiency = null,
-            apiEvidence = """{"drive_id":$driveId,"start_date":"$start","end_date":"$end","source":"teslamate_archive","source_instance_id":"$instance"}"""
+            apiEvidence = """{"drive_id":$driveId,"start_date":"$start","end_date":"$end","battery_details":{"start_battery_level":$startSoc,"end_battery_level":$endSoc},"source":"teslamate_archive","source_instance_id":"$instance"}"""
         )
 
     private fun charge(carId: Int, id: Int, instance: String?) : ChargeSummary {

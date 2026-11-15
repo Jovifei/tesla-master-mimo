@@ -1,8 +1,15 @@
 package com.matelink.ui.screens.charges
 
+import com.matelink.ui.components.EmptyHistoryVisual
+import com.matelink.ui.components.historyReadErrorMessageRes
+import com.matelink.ui.components.showHistoryReadFailure
 import com.matelink.domain.model.UnitFormatter
 
 import androidx.compose.foundation.background
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -13,9 +20,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -25,14 +34,18 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.BatteryStd
 import androidx.compose.material.icons.filled.BatteryChargingFull
-import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.ElectricBolt
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Paid
+import androidx.compose.material.icons.filled.EvStation
+import androidx.compose.material.icons.filled.PriceCheck
+import androidx.compose.material.icons.filled.ReceiptLong
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -40,8 +53,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -59,7 +70,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
 import com.matelink.ui.components.HistoryForegroundRefreshEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -70,19 +81,33 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.matelink.R
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Bolt
+import com.matelink.ui.components.AppleDateGroupHeader
+import com.matelink.ui.components.HistoryDateGroup
+import com.matelink.ui.theme.AppleTokens
 import com.matelink.data.api.models.ChargeData
 import com.matelink.data.repository.HISTORY_IDENTITY_UNAVAILABLE
+import com.matelink.ui.components.ChargeActivityCell
+import com.matelink.ui.components.ChargeActivityGrid
 import com.matelink.ui.components.BarChartData
 import com.matelink.ui.components.BarSegment
 import com.matelink.ui.components.DateRangePickerDialog
+import com.matelink.ui.components.HistoryDateFilterMenu
 import com.matelink.ui.components.CompactHistoryMetricStrip
 import com.matelink.ui.components.HistoryReadNotices
+import com.matelink.ui.components.HistoryArchiveNotice
+import com.matelink.ui.components.HistoryOnceNotice
+import com.matelink.ui.components.MetricPanelKind
+import com.matelink.ui.components.MetricStatusPanel
 import com.matelink.ui.components.InteractiveBarChart
 import com.matelink.ui.components.MateLinkLoadingPlaceholder
 import com.matelink.ui.components.MateLinkLoadingMark
@@ -100,6 +125,7 @@ import com.matelink.ui.theme.telemetryPalette
 import com.matelink.domain.analytics.ChargeCostSource
 import com.matelink.domain.analytics.EffectiveChargeCost
 import com.matelink.util.toChineseDisplayAddress
+import com.matelink.util.formatParkedAddress
 import java.time.LocalDate
 
 data class ChargeEnergyPresentation(
@@ -117,8 +143,9 @@ fun ChargesScreen(
     onNavigateToChargeDetail: (Int) -> Unit = {},
     viewModel: ChargesViewModel = hiltViewModel()
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+    val feedbackContext = LocalContext.current
     val isDarkTheme = isSystemInDarkTheme()
     val palette = telemetryPalette()
     var priceEditTarget by remember { mutableStateOf<ChargeData?>(null) }
@@ -128,20 +155,20 @@ fun ChargesScreen(
         viewModel.setCarId(carId)
     }
 
-    val serverNotConfiguredMessage = stringResource(R.string.server_not_configured_message)
-    val historyIdentityUnavailableMessage = stringResource(R.string.history_identity_unavailable_message)
     LaunchedEffect(uiState.error) {
         uiState.error?.let { error ->
-            snackbarHostState.showSnackbar(
-                when (error) {
-                    "Server not configured" -> serverNotConfiguredMessage
-                    HISTORY_IDENTITY_UNAVAILABLE -> historyIdentityUnavailableMessage
-                    else -> error
-                }
-            )
-            viewModel.clearError()
+            val hasContent = uiState.charges.isNotEmpty()
+            val retried = snackbarHostState.showHistoryReadFailure(feedbackContext, error, hasContent) {
+                viewModel.clearError()
+                viewModel.refresh()
+            }
+            if (!retried && hasContent) viewModel.clearError()
         }
     }
+
+    val archiveNoticeVisible = HistoryArchiveNotice(uiState.localArchiveLinkPending, uiState.historyNoticeLocalCarId)
+    HistoryOnceNotice("charge_estimate_v1", R.string.charge_estimate_once_notice,
+        enabled = !archiveNoticeVisible && uiState.charges.isNotEmpty())
 
     Scaffold(
         topBar = {
@@ -173,9 +200,12 @@ fun ChargesScreen(
                 canLoadMore = uiState.canLoadMore,
                 onLoadMore = { viewModel.loadMore() },
                 historySyncWarning = uiState.historySyncWarning,
-                localArchiveLinkPending = uiState.localArchiveLinkPending,
+                readError = uiState.error,
+                localArchiveLinkPending = uiState.localArchiveLinkPending &&
+                    uiState.historyNoticeLocalCarId?.let { it < 0 } != true,
                 charges = uiState.charges,
                 dcChargeIds = uiState.dcChargeIds,
+                acChargeIds = uiState.acChargeIds,
                 processedChargeIds = uiState.processedChargeIds,
                 chartData = uiState.chartData,
                 chartGranularity = uiState.chartGranularity,
@@ -189,6 +219,8 @@ fun ChargesScreen(
                 pendingLegacyAmounts = uiState.pendingLegacyAmounts,
                 pendingBoundAmounts = uiState.pendingBoundAmounts,
                 otherCurrencyAmounts = uiState.otherCurrencyAmounts,
+                referenceEnergyKwh = uiState.referenceEnergyKwh,
+                referenceEstimates = uiState.referenceEstimates,
                 customStartDate = uiState.customStartDate,
                 customEndDate = uiState.customEndDate,
                 initialScrollPosition = uiState.scrollPosition,
@@ -197,7 +229,9 @@ fun ChargesScreen(
                 isFilterLoading = uiState.isFilterLoading,
                 onDateFilterSelected = { viewModel.setDateFilter(it) },
                 onCustomRangeSelected = { start, end -> viewModel.setCustomDateRange(start, end) },
+                onClearFilters = { viewModel.clearFilters() },
                 availableLocations = uiState.availableLocations,
+                locationLabels = uiState.locationLabels,
                 selectedLocations = uiState.selectedLocations,
                 onLocationFilterToggled = { viewModel.setLocationFilter(it) },
                 onLocationFilterCleared = { viewModel.clearLocationFilter() },
@@ -242,9 +276,11 @@ private fun ChargesContent(
     canLoadMore: Boolean = false,
     onLoadMore: () -> Unit = {},
     historySyncWarning: String?,
+    readError: String?,
     localArchiveLinkPending: Boolean,
     charges: List<ChargeData>,
     dcChargeIds: Set<Int>,
+    acChargeIds: Set<Int> = emptySet(),
     processedChargeIds: Set<Int>,
     chartData: List<ChargeChartData>,
     chartGranularity: ChartGranularity,
@@ -258,9 +294,12 @@ private fun ChargesContent(
     pendingLegacyAmounts: Map<Int, Double>,
     pendingBoundAmounts: Map<Int, Pair<String?, Double>>,
     otherCurrencyAmounts: Map<Int, Pair<String, Double>>,
+    referenceEnergyKwh: Map<Int, Double>,
+    referenceEstimates: Map<Int, Double>,
     customStartDate: LocalDate?,
     customEndDate: LocalDate?,
     availableLocations: List<String>,
+    locationLabels: Map<String, String>,
     selectedLocations: Set<String>,
     onLocationFilterToggled: (String) -> Unit,
     onLocationFilterCleared: () -> Unit,
@@ -270,6 +309,7 @@ private fun ChargesContent(
     isFilterLoading: Boolean,
     onDateFilterSelected: (DateFilter) -> Unit,
     onCustomRangeSelected: (LocalDate, LocalDate) -> Unit,
+    onClearFilters: () -> Unit,
     onChargeTypeFilterSelected: (ChargeTypeFilter) -> Unit,
     onCostFilterSelected: (CostFilter) -> Unit,
     onEditCost: (ChargeData) -> Unit,
@@ -280,13 +320,48 @@ private fun ChargesContent(
         initialFirstVisibleItemScrollOffset = initialScrollOffset
     )
 
-    // Header items in render order: date chips, dropdowns, free hint (conditional),
-    // summary, charts (conditional), history header. Adjust if items are added.
+    // Summary, secondary filters, optional notices/chart, then history heading.
     val showFreeHint = freeSupercharging && selectedCostFilter == CostFilter.NO_COST
-    val headerCount = 4 +
+    val headerCount = 3 +
         (if (historySyncWarning != null || localArchiveLinkPending) 1 else 0) +
         (if (showFreeHint) 1 else 0) +
-        (if (chartData.isNotEmpty()) 1 else 0)
+        (if (chartData.isNotEmpty()) 1 else 0) + 1
+
+    val groupedCharges = remember(charges) {
+        val groups = mutableListOf<HistoryDateGroup<ChargeData>>()
+        var currentDate: LocalDate? = null
+        var currentGroupItems = mutableListOf<ChargeData>()
+
+        for (charge in charges) {
+            val chargeDate = charge.startDate.parseListItemDate()
+            if (currentGroupItems.isEmpty()) {
+                currentDate = chargeDate
+                currentGroupItems.add(charge)
+            } else if (chargeDate == currentDate) {
+                currentGroupItems.add(charge)
+            } else {
+                val key = currentDate?.toString() ?: "unknown_${groups.size}"
+                groups.add(HistoryDateGroup(currentDate, key, currentGroupItems))
+                currentDate = chargeDate
+                currentGroupItems = mutableListOf(charge)
+            }
+        }
+        if (currentGroupItems.isNotEmpty()) {
+            val key = currentDate?.toString() ?: "unknown_${groups.size}"
+            groups.add(HistoryDateGroup(currentDate, key, currentGroupItems))
+        }
+        groups
+    }
+
+    val indexToDate = remember(headerCount, groupedCharges) {
+        buildList {
+            repeat(headerCount) { add(null) }
+            for (group in groupedCharges) {
+                add(group.date) // header
+                add(group.date) // group container
+            }
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
     LazyColumn(
@@ -302,41 +377,36 @@ private fun ChargesContent(
         }
 
         item {
-            DateFilterChips(
-                selectedFilter = selectedDateFilter,
-                customStartDate = customStartDate,
-                customEndDate = customEndDate,
-                palette = palette,
-                onFilterSelected = onDateFilterSelected,
-                onCustomRangeSelected = onCustomRangeSelected
-            )
+            SummaryCard(summary = summary, currencySymbol = currencySymbol, palette = palette,
+                selectedDateFilter = selectedDateFilter, customStartDate = customStartDate,
+                customEndDate = customEndDate, onDateFilterSelected = onDateFilterSelected,
+                onCustomRangeSelected = onCustomRangeSelected)
         }
 
-        // Secondary filters: charge type, cost and location all stay reachable so a
-        // narrowed list can be widened again without leaving the page.
         item {
-            Row(
+            LazyRow(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                ChargeTypeFilterDropdown(
+                item { ChargeTypeFilterDropdown(
                     selectedFilter = selectedChargeTypeFilter,
                     palette = palette,
                     onFilterSelected = onChargeTypeFilterSelected
-                )
-                CostFilterDropdown(
+                ) }
+                item { CostFilterDropdown(
                     selectedFilter = selectedCostFilter,
                     palette = palette,
                     onFilterSelected = onCostFilterSelected
-                )
-                LocationFilterDropdown(
+                ) }
+                item { LocationFilterDropdown(
                     availableLocations = availableLocations,
+                    locationLabels = locationLabels,
                     selectedLocations = selectedLocations,
                     palette = palette,
                     onLocationToggled = onLocationFilterToggled,
                     onClearAll = onLocationFilterCleared
-                )
+                ) }
             }
         }
 
@@ -351,17 +421,23 @@ private fun ChargesContent(
             }
         }
 
-        item {
-            SummaryCard(summary = summary, currencySymbol = currencySymbol, palette = palette)
-            Text(
-                text = stringResource(R.string.default_charge_price_hint),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-            )
+        item(key = "charge_history_window") {
+            Column(Modifier.padding(horizontal = 4.dp, vertical = 4.dp)) {
+                Text(stringResource(R.string.ui_charge_returned_count, charges.size),
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (selectedDateFilter == DateFilter.CUSTOM && customEndDate?.isBefore(LocalDate.now()) == true) {
+                    Text(stringResource(R.string.ui_charge_fixed_end, customEndDate.toString()),
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                TextButton(onClick = {
+                    onChargeTypeFilterSelected(ChargeTypeFilter.ALL)
+                    onCostFilterSelected(CostFilter.ALL)
+                    onLocationFilterCleared()
+                    onDateFilterSelected(DateFilter.LAST_30_DAYS)
+                }) { Text(stringResource(R.string.ui_charge_view_recent)) }
+            }
         }
-
-        // Charges charts (daily/weekly/monthly based on date range) - swipeable
+        // One daily energy calendar; summaries keep their existing calculations.
         if (chartData.isNotEmpty()) {
             item {
                 ChargesChartsPager(
@@ -384,51 +460,90 @@ private fun ChargesContent(
 
         if (charges.isEmpty()) {
             item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                val hasFilters = selectedDateFilter != DateFilter.ALL_TIME ||
+                    selectedChargeTypeFilter != ChargeTypeFilter.ALL ||
+                    selectedCostFilter != CostFilter.ALL || selectedLocations.isNotEmpty()
+                if (readError == null && hasFilters) {
+                    MetricStatusPanel(
+                        kind = MetricPanelKind.EMPTY,
+                        title = stringResource(R.string.metric_state_filter_empty_title),
+                        body = stringResource(R.string.metric_state_filter_empty_body),
+                        actionLabel = stringResource(R.string.history_clear_filters),
+                        onAction = onClearFilters
                     )
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(32.dp),
-                        contentAlignment = Alignment.Center
+                } else {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                     ) {
-                        Text(
-                            text = stringResource(R.string.no_charges_found),
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Column(
+                            modifier = Modifier.fillMaxWidth().padding(32.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            EmptyHistoryVisual(charging = true, failed = readError != null)
+                            Text(
+                                text = stringResource(readError?.let(::historyReadErrorMessageRes) ?: R.string.no_charges_found),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
             }
         } else {
-            items(charges, key = { it.chargeId }) { charge ->
-                ChargeItem(
-                    charge = charge,
-                    isDcCharge = when (historyChargeType(charge, dcChargeIds, processedChargeIds)) {
-                        ChargeType.DC -> true
-                        ChargeType.AC -> false
-                        ChargeType.UNKNOWN -> null
-                    },
-                    currencySymbol = currencySymbol,
-                    effectiveCost = effectiveCosts[charge.chargeId]
-                        ?: EffectiveChargeCost(null, ChargeCostSource.UNAVAILABLE),
-                    pendingLegacyAmount = pendingLegacyAmounts[charge.chargeId],
-                    pendingBoundAmount = pendingBoundAmounts[charge.chargeId],
-                    otherCurrencyAmount = otherCurrencyAmounts[charge.chargeId],
-                    palette = palette,
-                    onEditCost = { onEditCost(charge) },
-                    onClick = {
-                        onChargeClick(
-                            charge.chargeId,
-                            listState.firstVisibleItemIndex,
-                            listState.firstVisibleItemScrollOffset
-                        )
+            groupedCharges.forEach { group ->
+                item(key = "header_${group.dateKey}") {
+                    AppleDateGroupHeader(date = group.date)
+                }
+                item(key = "group_${group.dateKey}") {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(AppleTokens.groupCornerRadius),
+                        color = MaterialTheme.colorScheme.surfaceContainer,
+                        tonalElevation = 0.dp
+                    ) {
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            group.items.forEachIndexed { index, charge ->
+                                if (index > 0) {
+                                    HorizontalDivider(
+                                        modifier = Modifier.padding(
+                                            start = AppleTokens.dividerIndent,
+                                            end = AppleTokens.rowHorizontal
+                                        ),
+                                        thickness = AppleTokens.hairline,
+                                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+                                    )
+                                }
+                                ChargeItem(
+                                    charge = charge,
+                                    isDcCharge = when (historyChargeType(charge, dcChargeIds, processedChargeIds, acChargeIds)) {
+                                        ChargeType.DC -> true
+                                        ChargeType.AC -> false
+                                        ChargeType.UNKNOWN -> null
+                                    },
+                                    currencySymbol = currencySymbol,
+                                    effectiveCost = effectiveCosts[charge.chargeId]
+                                        ?: EffectiveChargeCost(null, ChargeCostSource.UNAVAILABLE),
+                                    pendingLegacyAmount = pendingLegacyAmounts[charge.chargeId],
+                                    pendingBoundAmount = pendingBoundAmounts[charge.chargeId],
+                                    otherCurrencyAmount = otherCurrencyAmounts[charge.chargeId],
+                                    referenceEnergyKwh = referenceEnergyKwh[charge.chargeId],
+                                    referenceEstimate = referenceEstimates[charge.chargeId],
+                                    palette = palette,
+                                    onEditCost = { onEditCost(charge) },
+                                    onClick = {
+                                        onChargeClick(
+                                            charge.chargeId,
+                                            listState.firstVisibleItemIndex,
+                                            listState.firstVisibleItemScrollOffset
+                                        )
+                                    }
+                                )
+                            }
+                        }
                     }
-                )
+                }
             }
         }
 
@@ -470,17 +585,14 @@ private fun ChargesContent(
 
     MonthScrollIndicator(
         state = listState,
-        dateAt = { index ->
-            if (index < headerCount) null
-            else charges.getOrNull(index - headerCount)?.startDate.parseListItemDate()
-        },
+        dateAt = { index -> indexToDate.getOrNull(index) },
         accent = palette.accent,
         modifier = Modifier.align(Alignment.CenterEnd),
     )
 
     // Sub-100ms loads never see a spinner — only sustained ones cross the
     // perceptual threshold worth giving feedback for.
-    val showSpinner = rememberDebouncedLoading(isFilterLoading || (isLoading && !isRefreshing))
+    val showSpinner = rememberDebouncedLoading((isFilterLoading || (isLoading && !isRefreshing)) && charges.isEmpty())
     if (showSpinner) {
         // Overlay scrim lets the existing UI content show through clearly with a subtle dim.
         Box(
@@ -498,51 +610,26 @@ private fun ChargesContent(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DateFilterChips(
+private fun DateFilterDropdown(
     selectedFilter: DateFilter,
     customStartDate: LocalDate?,
     customEndDate: LocalDate?,
-    palette: CarColorPalette,
     onFilterSelected: (DateFilter) -> Unit,
     onCustomRangeSelected: (LocalDate, LocalDate) -> Unit
 ) {
     var showDatePicker by remember { mutableStateOf(false) }
-
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically) {
-        val customLabel = if (selectedFilter == DateFilter.CUSTOM &&
-            customStartDate != null && customEndDate != null) {
-            "${formatShortDate(customStartDate)} – ${formatShortDate(customEndDate)}"
-        } else stringResource(R.string.history_choose_date)
-        FilterChip(
-            selected = selectedFilter == DateFilter.CUSTOM,
-            onClick = { showDatePicker = true },
-            label = { Text(customLabel) },
-            leadingIcon = {
-                Icon(Icons.Default.CalendarMonth, contentDescription = null,
-                    modifier = Modifier.size(16.dp))
-            },
-            colors = FilterChipDefaults.filterChipColors(
-                selectedContainerColor = palette.surface,
-                selectedLabelColor = palette.onSurface
-            )
-        )
-        LazyRow(modifier = Modifier.weight(1f).testTag("charge_date_filters"),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(listOf(DateFilter.LAST_7_DAYS, DateFilter.LAST_30_DAYS,
-                DateFilter.LAST_90_DAYS, DateFilter.ALL_TIME)) { filter ->
-                FilterChip(
-                    selected = filter == selectedFilter,
-                    onClick = { onFilterSelected(filter) },
-                    label = { Text(stringResource(filter.labelRes)) },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = palette.surface,
-                        selectedLabelColor = palette.onSurface
-                    )
-                )
-            }
-        }
-    }
+    val filters = listOf(DateFilter.LAST_7_DAYS, DateFilter.LAST_30_DAYS,
+        DateFilter.LAST_90_DAYS, DateFilter.LAST_YEAR, DateFilter.ALL_TIME, DateFilter.TODAY)
+    val labels = listOf(stringResource(R.string.history_last_week),
+        stringResource(R.string.history_last_month), stringResource(R.string.history_last_three_months),
+        stringResource(R.string.history_last_year), stringResource(R.string.filter_all_time),
+        stringResource(R.string.filter_today))
+    val index = filters.indexOf(selectedFilter)
+    val label = if (selectedFilter == DateFilter.CUSTOM && customStartDate != null && customEndDate != null)
+        "${formatShortDate(customStartDate)} – ${formatShortDate(customEndDate)}"
+    else labels.getOrNull(index) ?: stringResource(R.string.history_choose_date)
+    HistoryDateFilterMenu(label, labels, index, "charge_date_filters",
+        onSelect = { onFilterSelected(filters[it]) }, onChooseDates = { showDatePicker = true })
 
     if (showDatePicker) {
         DateRangePickerDialog(
@@ -565,32 +652,17 @@ private fun ChargeTypeFilterDropdown(
     onFilterSelected: (ChargeTypeFilter) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val isActive = selectedFilter != ChargeTypeFilter.ALL
     val themeColor = when (selectedFilter) {
         ChargeTypeFilter.ALL -> palette.onSurfaceVariant
         ChargeTypeFilter.AC -> palette.acColor
         ChargeTypeFilter.DC -> palette.dcColor
     }
     Box {
-        FilterChip(
-            selected = isActive,
-            onClick = { expanded = true },
-            label = { Text(getChargeTypeFilterLabel(selectedFilter)) },
-            leadingIcon = { Icon(Icons.Default.ElectricBolt, null, Modifier.size(16.dp)) },
-            colors = FilterChipDefaults.filterChipColors(
-                selectedContainerColor = themeColor,
-                selectedLabelColor = Color.White,
-                selectedLeadingIconColor = Color.White,
-                containerColor = Color.Transparent
-            ),
-            border = FilterChipDefaults.filterChipBorder(
-                enabled = true,
-                selected = isActive,
-                borderColor = themeColor.copy(alpha = 0.6f),
-                borderWidth = 1.dp,
-                selectedBorderWidth = 0.dp
-            )
-        )
+        TextButton(onClick = { expanded = true }, contentPadding = PaddingValues(horizontal = 8.dp)) {
+            Text(if (selectedFilter == ChargeTypeFilter.ALL) stringResource(R.string.history_charge_type)
+                else getChargeTypeFilterLabel(selectedFilter), color = themeColor)
+            Icon(Icons.Default.ArrowDropDown, contentDescription = null, tint = themeColor)
+        }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             ChargeTypeFilter.entries.forEach { entry ->
                 DropdownMenuItem(
@@ -619,28 +691,13 @@ private fun CostFilterDropdown(
     onFilterSelected: (CostFilter) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val isActive = selectedFilter != CostFilter.ALL
     val themeColor = palette.onSurfaceVariant
     Box {
-        FilterChip(
-            selected = isActive,
-            onClick = { expanded = true },
-            label = { Text(stringResource(selectedFilter.labelRes)) },
-            leadingIcon = { Icon(Icons.Default.Paid, null, Modifier.size(16.dp)) },
-            colors = FilterChipDefaults.filterChipColors(
-                selectedContainerColor = themeColor,
-                selectedLabelColor = Color.White,
-                selectedLeadingIconColor = Color.White,
-                containerColor = Color.Transparent
-            ),
-            border = FilterChipDefaults.filterChipBorder(
-                enabled = true,
-                selected = isActive,
-                borderColor = themeColor.copy(alpha = 0.6f),
-                borderWidth = 1.dp,
-                selectedBorderWidth = 0.dp
-            )
-        )
+        TextButton(onClick = { expanded = true }, contentPadding = PaddingValues(horizontal = 8.dp)) {
+            Text(stringResource(if (selectedFilter == CostFilter.ALL) R.string.cost else selectedFilter.labelRes),
+                color = themeColor)
+            Icon(Icons.Default.ArrowDropDown, contentDescription = null, tint = themeColor)
+        }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             CostFilter.entries.forEach { entry ->
                 DropdownMenuItem(
@@ -671,7 +728,18 @@ private fun getChargeTypeFilterLabel(filter: ChargeTypeFilter): String {
 }
 
 @Composable
-private fun SummaryCard(summary: ChargesSummary, currencySymbol: String, palette: CarColorPalette) {
+internal fun SummaryCard(
+    summary: ChargesSummary, currencySymbol: String, palette: CarColorPalette,
+    selectedDateFilter: DateFilter, customStartDate: LocalDate?, customEndDate: LocalDate?,
+    onDateFilterSelected: (DateFilter) -> Unit, onCustomRangeSelected: (LocalDate, LocalDate) -> Unit
+) {
+    val avgPricePerKwh = if (summary.totalCost != null && summary.totalEnergyAdded != null && summary.totalEnergyAdded > 0.05) {
+        summary.totalCost / summary.totalEnergyAdded
+    } else null
+    val avgEnergyPerCharge = if (summary.totalEnergyAdded != null && summary.totalCharges > 0) {
+        summary.totalEnergyAdded / summary.totalCharges
+    } else null
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -682,86 +750,134 @@ private fun SummaryCard(summary: ChargesSummary, currencySymbol: String, palette
             modifier = Modifier.padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text(
-                text = stringResource(R.string.summary),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = palette.onSurface
-            )
+            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(text = stringResource(R.string.summary), style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold, color = palette.onSurface)
+                DateFilterDropdown(selectedDateFilter, customStartDate, customEndDate,
+                    onDateFilterSelected, onCustomRangeSelected)
+            }
 
             Surface(
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
                 shape = MaterialTheme.shapes.medium
             ) {
-                TelemetryMetricStrip(
-                    metrics = listOf(
-                        TelemetryMetricSpec(
-                            Icons.Default.ElectricBolt,
-                            stringResource(R.string.summary_sessions_compact),
-                            summary.totalCharges.toString(),
-                            palette.accent,
-                            unit = stringResource(
-                                if (summary.totalCharges == 1) R.string.charge_session_unit
-                                else R.string.charge_sessions_unit
+                Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                    TelemetryMetricStrip(
+                        metrics = listOf(
+                            TelemetryMetricSpec(
+                                Icons.Default.EvStation,
+                                stringResource(R.string.summary_sessions_compact),
+                                summary.totalCharges.toString(),
+                                palette.accent,
+                                unit = stringResource(
+                                    if (summary.totalCharges == 1) R.string.charge_session_unit
+                                    else R.string.charge_sessions_unit
+                                ),
+                                valueFontSize = 18.sp
+                            ),
+                            TelemetryMetricSpec(
+                                Icons.Default.BatteryChargingFull,
+                                stringResource(R.string.energy),
+                                summary.totalEnergyAdded?.let { energy ->
+                                    val prefix = if (summary.partialEnergyCount > 0 || summary.energyCoverage < summary.totalCharges) "≈" else ""
+                                    when {
+                                        energy > 999 -> "$prefix%.2f".format(energy / 1000)
+                                        energy < 10 -> "$prefix%.1f".format(energy)
+                                        else -> "$prefix%.1f".format(energy)
+                                    }
+                                } ?: stringResource(R.string.not_available),
+                                palette.acColor,
+                                unit = if (summary.totalEnergyAdded != null && summary.totalEnergyAdded > 999) "MWh" else "度",
+                                valueFontSize = 18.sp
+                            ),
+                            TelemetryMetricSpec(
+                                Icons.Default.Paid,
+                                stringResource(R.string.cost),
+                                summary.totalCost?.let { cost ->
+                                    val prefix = if (summary.estimatedCostCount > 0 || summary.costCoverage < summary.totalCharges) "≈" else ""
+                                    when {
+                                        cost < 100 -> "$prefix%.2f".format(cost)
+                                        cost < 1000 -> "$prefix%.1f".format(cost)
+                                        else -> "$prefix%.0f".format(cost)
+                                    }
+                                } ?: stringResource(R.string.not_available),
+                                Color(0xFF22C55E),
+                                unit = if (summary.totalCost != null) currencySymbol else null,
+                                valueFontSize = 18.sp
+                            ),
+                            TelemetryMetricSpec(
+                                Icons.Default.ReceiptLong,
+                                stringResource(R.string.summary_avg_charge_compact),
+                                summary.avgCostPerCharge?.let { cost ->
+                                    val prefix = if (summary.estimatedCostCount > 0 || summary.costCoverage < summary.totalCharges) "≈" else ""
+                                    "$prefix%.2f".format(cost)
+                                } ?: stringResource(R.string.not_available),
+                                palette.dcColor,
+                                unit = if (summary.avgCostPerCharge != null) currencySymbol else null,
+                                valueFontSize = 18.sp
                             )
                         ),
-                        TelemetryMetricSpec(
-                            Icons.Default.BatteryChargingFull,
-                            stringResource(R.string.energy),
-                            summary.totalEnergyAdded?.let { energy ->
-                                when {
-                                    energy > 999 -> "%.2f MWh".format(energy / 1000)
-                                    energy < 10 -> "%.1f kWh".format(energy)
-                                    else -> "%.0f kWh".format(energy)
-                                }
-                            } ?: stringResource(R.string.not_available),
-                            palette.acColor
-                        ),
-                        TelemetryMetricSpec(
-                            Icons.Default.Paid,
-                            stringResource(R.string.cost),
-                            summary.totalCost?.let { cost ->
-                                val value = when {
-                                    cost < 100 -> "$currencySymbol%.2f".format(cost)
-                                    cost < 1000 -> "$currencySymbol%.1f".format(cost)
-                                    else -> "$currencySymbol%.0f".format(cost)
-                                }
-                                if (summary.estimatedCostCount > 0) "≈$value" else value
-                            } ?: stringResource(R.string.not_available),
-                            Color(0xFF22C55E)
-                        ),
-                        TelemetryMetricSpec(
-                            Icons.Default.Paid,
-                            stringResource(R.string.summary_avg_charge_compact),
-                            summary.avgCostPerCharge?.let { cost ->
-                                val value = "$currencySymbol%.2f".format(cost)
-                                if (summary.estimatedCostCount > 0) "≈$value" else value
-                            } ?: stringResource(R.string.not_available),
-                            palette.dcColor
-                        )
-                    ),
-                    modifier = Modifier.padding(vertical = 4.dp),
-                    adaptive = false,
-                    maxColumns = 4
-                )
-            }
-            if (summary.totalCharges > 0) {
-                Text(
-                    text = "${stringResource(R.string.stats_analysis_cost_coverage)} " +
-                        "${summary.costCoverage}/${summary.totalCharges}" +
-                        if (summary.estimatedCostCount > 0)
-                            " · ${stringResource(R.string.cost_estimate_coverage, summary.estimatedCostCount)}"
-                        else "",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                        adaptive = false,
+                        maxColumns = 4
+                    )
+
+                    HorizontalDivider(
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f),
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 2.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.PriceCheck,
+                                contentDescription = null,
+                                tint = Color(0xFF22C55E),
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Text(
+                                text = "${stringResource(R.string.charge_unit_price)}: " +
+                                    (avgPricePerKwh?.let { "$currencySymbol%.2f / 度".format(it) } ?: stringResource(R.string.not_available)),
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Speed,
+                                contentDescription = null,
+                                tint = palette.accent,
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Text(
+                                text = "${stringResource(R.string.charge_avg_energy)}: " +
+                                    (avgEnergyPerCharge?.let { "%.1f 度 / 次".format(it) } ?: stringResource(R.string.not_available)),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
             }
         }
     }
 }
 
 @Composable
-private fun ChargeItem(
+internal fun ChargeItem(
     charge: ChargeData,
     isDcCharge: Boolean?,
     currencySymbol: String,
@@ -771,182 +887,234 @@ private fun ChargeItem(
     otherCurrencyAmount: Pair<String, Double>?,
     palette: CarColorPalette,
     onEditCost: (() -> Unit)? = null,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    referenceEnergyKwh: Double? = null,
+    referenceEstimate: Double? = null
 ) {
-    val context = LocalContext.current
     val unknownLocation = stringResource(R.string.unknown_location)
     val freeLabel = stringResource(R.string.charge_free)
     val notAvailableLabel = stringResource(R.string.not_available)
-    val accent = when (isDcCharge) {
-        true -> palette.dcColor
-        false -> palette.acColor
-        null -> MaterialTheme.colorScheme.primary
-    }
-    val energy = presentChargeEnergy(charge.batteryInputKwh)
+    val energy = presentChargeEnergy(charge.batteryInputKwh ?: charge.partialBatteryInputKwh)
+    val referenceEnergy = presentChargeEnergy(referenceEnergyKwh).energyKwh
+    val isReferenceEnergy = energy.energyKwh == null && referenceEnergy != null
+    val displayedEnergy = energy.energyKwh ?: referenceEnergy
+    val isPartialEnergy = charge.batteryInputKwh == null && charge.partialBatteryInputKwh != null
     val start = charge.startBatteryLevel
     val end = charge.endBatteryLevel
 
-    val isFree = effectiveCost.source == ChargeCostSource.FREE
-    val costText = when {
-        isFree -> freeLabel
-        effectiveCost.cost != null -> (if (effectiveCost.source == ChargeCostSource.ESTIMATE) "≈" else "") + "$currencySymbol%.2f".format(effectiveCost.cost)
-        else -> notAvailableLabel
+    val durationHours = charge.durationMin?.let { if (it > 0) it / 60.0 else null }
+    val avgPowerKw = if (displayedEnergy != null && durationHours != null) displayedEnergy / durationHours else null
+    val resolvedDc = isDcCharge ?: (charge.chargeType?.equals("dc", true) == true || (avgPowerKw != null && avgPowerKw > 22.0))
+
+    val accent = if (resolvedDc) palette.dcColor else palette.acColor
+
+    val pending = pendingChargeAmountForDisplay(
+        effectiveCost.source == ChargeCostSource.MANUAL && effectiveCost.cost != null,
+        pendingBoundAmount, pendingLegacyAmount)
+    val isFree = pending == null && effectiveCost.source == ChargeCostSource.FREE
+    val isReferenceCost = pending == null && effectiveCost.cost == null && referenceEstimate != null
+    val displayCost = pending?.amount ?: effectiveCost.cost ?: referenceEstimate
+    val costUnit = when {
+        pending != null -> pending.currencySymbol ?: stringResource(R.string.charge_cost_currency_pending_short)
+        displayCost != null && !isFree -> currencySymbol
+        else -> null
     }
+    val secondaryCostText = if (pending != null && effectiveCost.cost != null) {
+        when (effectiveCost.source) {
+            ChargeCostSource.ESTIMATE -> "${stringResource(R.string.charge_cost_estimate)} ≈$currencySymbol%.2f".format(effectiveCost.cost)
+            ChargeCostSource.TESLAMATE -> "${stringResource(R.string.charge_cost_actual)} $currencySymbol%.2f".format(effectiveCost.cost)
+            ChargeCostSource.FREE -> freeLabel
+            else -> null
+        }
+    } else null
     val is24Hour = true
 
-    TelemetryPanel(
+    val resolvedUnitPrice = if (displayCost != null && displayedEnergy != null && displayedEnergy > 0.05) {
+        displayCost / displayedEnergy
+    } else null
+    val rangeAddedKm = if (charge.endRatedRangeKm != null && charge.startRatedRangeKm != null && charge.endRatedRangeKm!! > charge.startRatedRangeKm!!) {
+        charge.endRatedRangeKm!! - charge.startRatedRangeKm!!
+    } else null
+
+    val addressText = charge.address
+        ?.let { formatParkedAddress(it, "") }
+        ?.takeIf { it.isNotBlank() && !it.contains("未知") }
+        ?: charge.address?.takeIf { it.isNotBlank() && !it.contains("未知") }
+        ?: if (charge.latitude != null && charge.longitude != null) "%.3f°N, %.3f°E".format(charge.latitude, charge.longitude)
+        else unknownLocation
+
+    val dateAndTempText = buildString {
+        append(formatEditorialDate(charge.startDate, is24Hour))
+        if (charge.outsideTempAvg != null) {
+            append(" · ")
+            append(stringResource(R.string.outside_temp))
+            append(" ")
+            append("%.1f°C".format(charge.outsideTempAvg))
+        }
+    }
+
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick),
-        accent = accent
+            .clickable(onClick = onClick)
+            .padding(horizontal = AppleTokens.rowHorizontal, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+        Surface(
+            color = accent.copy(alpha = 0.14f),
+            shape = CircleShape,
+            modifier = Modifier.size(32.dp)
         ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = if (resolvedDc) Icons.Default.Bolt else Icons.Default.ElectricBolt,
+                    contentDescription = null,
+                    tint = accent,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.width(12.dp))
+
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(
+                text = addressText,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Row(
-                    modifier = Modifier.weight(1f),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Surface(
-                        color = accent.copy(alpha = 0.14f),
-                        shape = CircleShape
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.LocationOn,
-                            contentDescription = null,
-                            tint = accent,
-                            modifier = Modifier.padding(9.dp).size(20.dp)
-                        )
-                    }
-                    Column {
-                        Text(
-                            text = charge.address.toChineseDisplayAddress() ?: unknownLocation,
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Medium,
-                            maxLines = 1
-                        )
-                        Text(
-                            text = formatEditorialDate(charge.startDate, is24Hour),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                Text(
+                    text = formatEditorialDate(charge.startDate, is24Hour),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                val durationLabel = charge.durationStr?.takeIf { it.isNotBlank() }
+                    ?: charge.durationMin?.let { "${it}m" }
+                if (durationLabel != null) {
+                    Text(
+                        text = "·",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = durationLabel,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
-                ChargeTypeBadge(isDcCharge = isDcCharge, palette = palette)
             }
 
-            Surface(
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                shape = MaterialTheme.shapes.medium
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                CompactHistoryMetricStrip(
-                    metrics = listOf(
-                        TelemetryMetricSpec(
-                            icon = Icons.Default.Timer,
-                            label = stringResource(R.string.duration),
-                            value = charge.durationStr?.takeIf { it.isNotBlank() }
-                                ?: charge.durationMin?.let { "${it}m" }
-                                ?: notAvailableLabel,
-                            tint = Color(0xFFF59E0B)
-                        ),
-                        TelemetryMetricSpec(
-                            icon = Icons.Default.ElectricBolt,
-                            label = stringResource(R.string.energy),
-                            value = energy.energyKwh?.let { "%.1f kWh".format(it) } ?: notAvailableLabel,
-                            tint = accent
-                        ),
-                        TelemetryMetricSpec(
-                            icon = Icons.Default.Paid,
-                            label = stringResource(R.string.trip_charge_cost),
-                            value = if (effectiveCost.cost != null && !isFree) costText.replace(currencySymbol, "") else costText,
-                            unit = if (effectiveCost.cost != null && !isFree) currencySymbol else null,
-                            tint = if (isFree) palette.acColor else Color(0xFF22C55E)
-                        ),
-                        TelemetryMetricSpec(
-                            icon = Icons.Default.BatteryStd,
-                            label = stringResource(R.string.battery),
-                            value = UnitFormatter.formatSocRange(start, end, notAvailableLabel).replace("%", "").replace(" ", ""),
-                            unit = if (start != null || end != null) "%" else null,
-                            tint = Color(0xFFF97316)
-                        )
-                    ),
-                    modifier = Modifier.padding(vertical = 4.dp),
-                    clickableMetricIndex = if (onEditCost != null) 2 else null,
-                    onMetricClick = onEditCost,
-                    metricClickLabel = stringResource(R.string.edit_charge_cost)
+                Text(
+                    text = if (resolvedDc) stringResource(R.string.charging_dc) else stringResource(R.string.charging_ac),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = accent
                 )
-                if (effectiveCost.source == ChargeCostSource.MANUAL &&
-                    effectiveCost.qualificationReason == "instance_unverified") {
-                    Text(stringResource(R.string.charge_cost_instance_unverified),
+                // Note: Charging power (kW) deliberately omitted from list card per user direction (kept in detail page)
+                if (resolvedUnitPrice != null) {
+                    Text(
+                        text = "·",
                         style = MaterialTheme.typography.labelSmall,
-                        color = palette.onSurfaceVariant)
-                }
-                pendingLegacyAmount?.let { amount ->
-                    Text(stringResource(R.string.charge_cost_saved_unconfirmed, amount),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "$currencySymbol%.2f/度".format(resolvedUnitPrice),
                         style = MaterialTheme.typography.labelSmall,
-                        color = palette.onSurfaceVariant)
-                }
-                pendingBoundAmount?.let { (code, amount) ->
-                    Text(stringResource(R.string.charge_cost_saved_unbound, code ?: "?", amount),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = palette.onSurfaceVariant)
-                }
-                otherCurrencyAmount?.let { (code, amount) ->
-                    Text(stringResource(R.string.charge_cost_other_currency, code, amount),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = palette.onSurfaceVariant)
-                }
-                charge.cost?.takeIf { it.isFinite() && it >= 0.0 &&
-                    charge.currencyCode.isNullOrBlank() && !charge.source.isNullOrBlank() }
-                    ?.let { amount ->
-                        Text(stringResource(R.string.charge_cost_source_unconfirmed, amount),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = palette.onSurfaceVariant)
-                    }
-                if (effectiveCost.qualificationReason == "source_unverified") {
-                    charge.cost?.takeIf { it.isFinite() && it >= 0.0 }?.let { amount ->
-                        Text(stringResource(R.string.charge_cost_source_identity_unverified, amount),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = palette.onSurfaceVariant)
-                    }
-                }
-                if (effectiveCost.qualificationReason == "currency_mismatch") {
-                    charge.cost?.takeIf { it.isFinite() && it > 0.0 }?.let { amount ->
-                        Text(stringResource(R.string.charge_cost_source_other_currency,
-                            charge.currencyCode.orEmpty(), amount),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = palette.onSurfaceVariant)
-                    }
-                }
-                if (effectiveCost.qualificationReason == "provider_zero_unverified" &&
-                    !charge.currencyCode.isNullOrBlank()) {
-                    Text(stringResource(R.string.charge_cost_source_zero_unverified),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = palette.onSurfaceVariant)
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         }
+
+        Spacer(modifier = Modifier.width(10.dp))
+
+        Column(
+            horizontalAlignment = Alignment.End,
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            // 电量组: 充入度数 + SOC变动
+            displayedEnergy?.let {
+                val prefix = if (isPartialEnergy || isReferenceEnergy) "≈" else "+"
+                Text(
+                    text = "$prefix%.1f 度".format(it),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = palette.onSurface
+                )
+            }
+
+            val socRange = UnitFormatter.formatSocRange(start, end, "")
+            if (socRange.isNotBlank()) {
+                Text(
+                    text = socRange,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = accent,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+
+            // 费用组: 总金额
+            val costText = when {
+                displayCost != null && !isFree ->
+                    (if (isReferenceCost || (pending == null && effectiveCost.source == ChargeCostSource.ESTIMATE)) "≈" else "") + "$currencySymbol%.2f".format(displayCost)
+                isFree -> freeLabel
+                else -> null
+            }
+            if (costText != null) {
+                Surface(
+                    color = (if (isFree) palette.acColor else if (pending != null) Color(0xFFF59E0B) else Color(0xFF22C55E)).copy(alpha = 0.12f),
+                    shape = RoundedCornerShape(4.dp),
+                    modifier = Modifier.clickable(enabled = onEditCost != null) { onEditCost?.invoke() }
+                ) {
+                    Text(
+                        text = costText,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (isFree) palette.acColor else if (pending != null) Color(0xFFF59E0B) else Color(0xFF22C55E)
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.width(4.dp))
+
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+            modifier = Modifier.size(16.dp)
+        )
     }
 }
 
 @Composable
 private fun ChargeTypeBadge(isDcCharge: Boolean?, palette: CarColorPalette) {
-    val backgroundColor = when (isDcCharge) {
-        true -> palette.dcColor
-        false -> palette.acColor
-        null -> MaterialTheme.colorScheme.onSurfaceVariant
+    val isDc = isDcCharge == true
+    val isAc = isDcCharge == false
+    val backgroundColor = when {
+        isDc -> palette.dcColor
+        isAc -> palette.acColor
+        else -> palette.acColor
     }
-    val text = when (isDcCharge) {
-        true -> stringResource(R.string.charging_dc)
-        false -> stringResource(R.string.charging_ac)
-        null -> stringResource(R.string.status_unknown)
+    val text = when {
+        isDc -> stringResource(R.string.charging_dc)
+        isAc -> stringResource(R.string.charging_ac)
+        else -> stringResource(R.string.charging_ac)
     }
 
     Box(
@@ -982,54 +1150,11 @@ private fun ChargesChartsPager(
     currencySymbol: String,
     palette: CarColorPalette
 ) {
-    val pagerState = rememberPagerState(pageCount = { ChargesChartType.entries.size })
-
-    Column {
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(
-                containerColor = palette.surface
-            )
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp)
-            ) {
-                HorizontalPager(
-                    state = pagerState,
-                    modifier = Modifier.fillMaxWidth()
-                ) { page ->
-                    val chartType = ChargesChartType.entries[page]
-                    ChargesChartPage(
-                        chartData = chartData,
-                        granularity = granularity,
-                        chartType = chartType,
-                        currencySymbol = currencySymbol,
-                        palette = palette
-                    )
-                }
-                //ChartLegend(palette = palette)
-            }
-        }
-
-        // Page indicator dots
-        Spacer(modifier = Modifier.height(8.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.Center
-        ) {
-            repeat(ChargesChartType.entries.size) { index ->
-                val isSelected = pagerState.currentPage == index
-                Box(
-                    modifier = Modifier
-                        .padding(horizontal = 4.dp)
-                        .size(8.dp)
-                        .clip(CircleShape)
-                        .background(
-                            if (isSelected) palette.accent
-                            else palette.onSurfaceVariant.copy(alpha = 0.3f)
-                        )
-                )
-            }
+    Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = palette.surface)) {
+        Column(Modifier.padding(16.dp)) {
+            ChargesChartPage(chartData, granularity, ChargesChartType.ENERGY, currencySymbol, palette)
+            Text(stringResource(R.string.ui_charge_calendar_limit), style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -1065,7 +1190,7 @@ private fun ChargesChartPage(
     val icon = when (chartType) {
         ChargesChartType.ENERGY -> Icons.Default.BatteryChargingFull
         ChargesChartType.COST -> Icons.Default.Paid
-        ChargesChartType.COUNT -> Icons.Default.ElectricBolt
+        ChargesChartType.COUNT -> Icons.Default.EvStation
     }
     Column {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1086,77 +1211,63 @@ private fun ChargesChartPage(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        val barData = when (chartType) {
-            ChargesChartType.ENERGY -> chartData.map { data ->
-                BarChartData(
-                    label = data.label,
-                    value = data.totalEnergy,
-                    displayValue = if (data.energyCoverage > 0) {
-                        "%.1f kWh".format(data.totalEnergy)
-                    } else stringResource(R.string.not_available),
-                    segments = listOf(
-                        BarSegment(data.energyAc, palette.acColor, "AC"),
-                        BarSegment(data.energyDc, palette.dcColor, "DC"),
-                        BarSegment(data.energyUnknown, palette.onSurfaceVariant, stringResource(R.string.not_available))
-                    )
-                )
-            }
-            ChargesChartType.COST -> chartData.map { data ->
-                BarChartData(
-                    label = data.label,
-                    value = data.totalCost,
-                    displayValue = if (data.costCoverage > 0) {
-                        val value = "$currencySymbol%.2f".format(data.totalCost)
-                        if (data.estimatedCostCount > 0) "≈$value" else value
-                    } else stringResource(R.string.not_available),
-                    segments = listOf(
-                        BarSegment(data.costAc, palette.acColor, "AC"),
-                        BarSegment(data.costDc, palette.dcColor, "DC"),
-                        BarSegment(data.costUnknown, palette.onSurfaceVariant, stringResource(R.string.not_available))
-                    )
-                )
-            }
-            ChargesChartType.COUNT -> chartData.map { data ->
-                BarChartData(
-                    label = data.label,
-                    value = data.count.toDouble(),
-                    displayValue = data.count.toString(),
-                    segments = listOf(
-                        BarSegment(data.countAc.toDouble(), palette.acColor, "AC"),
-                        BarSegment(data.countDc.toDouble(), palette.dcColor, "DC"),
-                        BarSegment(data.countUnknown.toDouble(), palette.onSurfaceVariant, stringResource(R.string.not_available))
-                    )
-                )
-            }
+        val axisUnit = when (chartType) {
+            ChargesChartType.ENERGY -> "度"
+            ChargesChartType.COST -> currencySymbol
+            ChargesChartType.COUNT -> stringResource(R.string.charge_sessions_unit)
+        }
+        val missingData = when (chartType) {
+            ChargesChartType.ENERGY -> chartData.any { it.energyCoverage < it.count }
+            ChargesChartType.COST -> chartData.any { it.costCoverage < it.count }
+            ChargesChartType.COUNT -> false
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(24.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = stringResource(R.string.visual_trip_chart_unit, axisUnit) +
+                    if (missingData) " · ${stringResource(R.string.history_chart_partial_data)}" else "",
+                style = MaterialTheme.typography.labelMedium,
+                color = palette.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
 
-        val valueFormatter: (Double) -> String = when (chartType) {
-            ChargesChartType.ENERGY -> { v -> "%.1f kWh".format(v) }
-            ChargesChartType.COST -> { v -> "$currencySymbol%.2f".format(v) }
-            ChargesChartType.COUNT -> { v -> v.toInt().toString() }
+        val unavailable = stringResource(R.string.not_available)
+        val cells = chartData.map { data ->
+            val value = when (chartType) {
+                ChargesChartType.ENERGY -> data.totalEnergy.takeIf { data.energyCoverage > 0 }
+                ChargesChartType.COST -> data.totalCost.takeIf { data.costCoverage > 0 }
+                ChargesChartType.COUNT -> data.count.toDouble()
+            }?.takeIf { it.isFinite() && it >= 0 }
+            val approximate = when (chartType) {
+                ChargesChartType.ENERGY -> data.partialEnergyCount > 0 || data.energyCoverage < data.count
+                ChargesChartType.COST -> data.estimatedCostCount > 0 || data.costCoverage < data.count
+                ChargesChartType.COUNT -> false
+            }
+            val display = value?.let {
+                (if (approximate) "≈" else "") +
+                    com.matelink.ui.components.formatTelemetryNumber(it, if (chartType == ChargesChartType.COST) 2 else 1) + " $axisUnit"
+            } ?: unavailable
+            ChargeActivityCell(data.label, value, display,
+                key = "${granularity.name}:${data.sortKey}",
+                precision = when (chartType) { ChargesChartType.COUNT -> 0; ChargesChartType.COST -> 2; else -> 1 },
+                approximate = approximate,
+                          date = if (granularity == ChartGranularity.DAILY) java.time.LocalDate.ofEpochDay(data.sortKey) else null)
         }
-
-        // Set number of labels to display
-        val labelInterval = when {
-            barData.size <= 7 -> 1  // Show all for Today and last 7 days
-            barData.size <= 30 -> 3 // Show 1 label every 3 bars for last 30 days
-            else -> ((barData.size + 5) / 6).coerceAtLeast(1)
-        }
-
-        InteractiveBarChart(
-            data = barData,
-            modifier = Modifier.fillMaxWidth(),
-            barColor = palette.accent,
-            labelColor = palette.onSurfaceVariant,
-            showEveryNthLabel = labelInterval,
-            valueFormatter = valueFormatter
-        )
+        ChargeActivityGrid(cells = cells, scopeKey = "${granularity.name}:${chartType.name}:$axisUnit")
     }
 }
 
 @Composable
 private fun LocationFilterDropdown(
     availableLocations: List<String>,
+    locationLabels: Map<String, String>,
     selectedLocations: Set<String>,
     palette: CarColorPalette,
     onLocationToggled: (String) -> Unit,
@@ -1165,35 +1276,24 @@ private fun LocationFilterDropdown(
     var expanded by remember { mutableStateOf(false) }
     var searchText by remember { mutableStateOf("") }
     val hasSelection = selectedLocations.isNotEmpty()
+    val unknownLocation = stringResource(R.string.unknown_location)
+    fun label(key: String): String = (locationLabels[key] ?: locationKeyAddress(key))
+        ?.let { formatParkedAddress(it, unknownLocation) } ?: unknownLocation
 
     Box {
-        FilterChip(
-            selected = hasSelection,
-            onClick = { expanded = true },
-            label = {
-                Text(
-                    if (hasSelection && selectedLocations.size == 1)
-                        selectedLocations.first().toChineseDisplayAddress()
-                            ?: stringResource(R.string.unknown_location)
-                    else if (hasSelection)
-                        stringResource(R.string.selected_locations_count, selectedLocations.size)
-                    else
-                        stringResource(R.string.filter_location)
-                )
-            },
-            leadingIcon = { Icon(Icons.Default.LocationOn, null, Modifier.size(16.dp)) },
-            trailingIcon = if (hasSelection) {
-                {
-                    Icon(
-                        Icons.Default.Clear,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp).clickable { onClearAll() }
-                    )
-                }
-            } else null
-        )
+        TextButton(onClick = { expanded = true }, contentPadding = PaddingValues(horizontal = 8.dp)) {
+            Text(
+                if (hasSelection && selectedLocations.size == 1)
+                    label(selectedLocations.first())
+                else if (hasSelection) stringResource(R.string.selected_locations_count, selectedLocations.size)
+                else stringResource(R.string.filter_location_all),
+                modifier = Modifier.widthIn(max = 120.dp), maxLines = 1,
+                overflow = TextOverflow.Ellipsis, color = palette.onSurfaceVariant
+            )
+            Icon(Icons.Default.ArrowDropDown, contentDescription = null, tint = palette.onSurfaceVariant)
+        }
         DropdownMenu(
-            expanded = expanded,
+            expanded = expanded, modifier = Modifier.widthIn(min = 220.dp, max = 320.dp).heightIn(max = 360.dp),
             onDismissRequest = { expanded = false; searchText = "" }
         ) {
             OutlinedTextField(
@@ -1204,10 +1304,16 @@ private fun LocationFilterDropdown(
                 singleLine = true
             )
             val filtered = availableLocations.filter {
-                it.contains(searchText, ignoreCase = true)
+                locationKeyAddress(it)?.contains(searchText, ignoreCase = true) == true ||
+                    label(it).contains(searchText, ignoreCase = true)
             }
             val allFilteredSelected = filtered.isNotEmpty() && filtered.all { it in selectedLocations }
 
+            if (hasSelection) {
+                DropdownMenuItem(text = { Text(stringResource(R.string.history_clear_location)) },
+                    leadingIcon = { Icon(Icons.Default.Clear, contentDescription = null) },
+                    onClick = { onClearAll(); expanded = false; searchText = "" })
+            }
             DropdownMenuItem(
                 text = {
                     Text(
@@ -1238,7 +1344,17 @@ private fun LocationFilterDropdown(
             filtered.forEach { location ->
                 val isSelected = location in selectedLocations
                 DropdownMenuItem(
-                    text = { Text(location) },
+                    text = {
+                        val displayed = label(location)
+                        val original = locationKeyAddress(location)
+                        val duplicate = availableLocations.count { label(it) == displayed } > 1
+                        Column {
+                            Text(displayed)
+                            if (duplicate && original != null && original != displayed) {
+                                Text(original, style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                    },
                     leadingIcon = {
                         if (isSelected)
                             Icon(Icons.Default.Check, null, tint = palette.accent)

@@ -20,6 +20,9 @@ import com.matelink.data.local.entity.ChargeCostOverride
 import com.matelink.data.model.Currency
 import com.matelink.data.repository.ApiResult
 import com.matelink.data.repository.TeslamateRepository
+import com.matelink.data.repository.HistoryDetailRepository
+import com.matelink.data.repository.verifiedDetailIdentity
+import com.matelink.data.local.entity.DriveSummary
 import com.matelink.data.repository.TripWeatherPoint
 import com.matelink.data.repository.WeatherRepository
 import com.matelink.data.repository.countryCodeToFlag
@@ -60,7 +63,8 @@ import javax.inject.Inject
 @Immutable
 data class TripRoutePoint(
     val latitude: Double,
-    val longitude: Double
+    val longitude: Double,
+    val observedAt: String? = null
 )
 
 @Immutable
@@ -77,7 +81,12 @@ enum class TripMapPointType { START, CHARGE, END }
 /** One drive leg's GPS points, kept separate for alternating colors on the map. */
 @Immutable
 data class TripRouteSegment(
-    val points: List<TripRoutePoint>
+    val points: List<TripRoutePoint>,
+    val driveId: Int? = null,
+    val startDate: String? = null,
+    val endDate: String? = null,
+    val receiptId: String? = null,
+    val parts: List<List<TripRoutePoint>> = listOf(points)
 )
 
 @Immutable
@@ -102,6 +111,7 @@ data class TripDetailUiState(
     val savedTripId: Long? = null,
     val savedTripName: String? = null,
     val dcChargeIds: Set<Int> = emptySet(),
+    val acChargeIds: Set<Int> = emptySet(),
     val showAddLegSheet: Boolean = false,
     val showMergeSheet: Boolean = false,
     val showDeleteConfirm: Boolean = false,
@@ -151,7 +161,7 @@ internal fun projectTripChargeCosts(
         (paired.sumOf { it.first } / pairedEnergy).takeIf { it.isFinite() && it >= 0.0 }
     else null
     return TripChargeCostProjection(priced, observedCostSumOrNull(priced.map { it.cost }),
-        pairedUnitCost, trip.charges.isNotEmpty() && priced.size == trip.charges.size,
+        pairedUnitCost, trip.expectedChargeCount > 0 && priced.size == trip.expectedChargeCount,
         energyById.values.count { it != null }, paired.size)
 }
 
@@ -174,18 +184,19 @@ internal const val MAX_AUTO_TRIP_ROUTE_DRIVES = 12
 /** Child requests belong to the current load; scope is checked at each request admission. */
 internal suspend fun <T : Any> fetchBoundedTripRoute(
     driveIds: List<Int>, isCurrent: () -> Boolean, fetch: suspend (Int) -> T?
-): List<T> {
+): List<T?> {
     if (driveIds.size > MAX_AUTO_TRIP_ROUTE_DRIVES || !isCurrent()) return emptyList()
     return coroutineScope {
         val gate = Semaphore(2)
-        driveIds.map { id ->
+        val slots = driveIds.map { id ->
             async {
                 gate.withPermit {
                     currentCoroutineContext().ensureActive()
                     if (!isCurrent()) null else fetch(id)?.takeIf { isCurrent() }
                 }
             }
-        }.awaitAll().filterNotNull()
+        }.awaitAll()
+        if (isCurrent()) slots else emptyList()
     }
 }
 
@@ -212,7 +223,8 @@ class TripDetailViewModel @Inject constructor(
     private val weatherRepository: WeatherRepository,
     private val settingsDataStore: SettingsDataStore,
     private val vehicleContextRepository: VehicleContextRepository,
-    private val chargeCostOverrideStore: ChargeCostOverrideStore
+    private val chargeCostOverrideStore: ChargeCostOverrideStore,
+    private val historyDetails: HistoryDetailRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(TripDetailUiState())
@@ -221,6 +233,7 @@ class TripDetailViewModel @Inject constructor(
     private var loaded = false
     private var currentCarId: Int = -1
     private var currentStartDate: String = ""
+    private var requestedSavedTripId: Long? = null
     private var hasBeenPaused = false
     private var loadGeneration = 0L
     private var loadJob: Job? = null
@@ -274,15 +287,32 @@ class TripDetailViewModel @Inject constructor(
         if (id == null && historyContext != null) invalidateHistory()
     }
 
-    fun loadTrip(carId: Int, tripStartDate: String) {
+    private fun ownerGuard(): (() -> Boolean)? {
+        val scope = historyScope ?: return null
+        val vehicle = historyContext ?: return null
+        val token = loadGeneration
+        return { isCurrent(token, scope, vehicle) }
+    }
+
+    private suspend fun mutateOwner(guard: () -> Boolean, action: suspend () -> Unit): Boolean = try {
+        tripRepository.withCurrentOwner(guard, action)
+    } catch (e: CancellationException) { throw e }
+      catch (_: Exception) {
+        if (!guard()) invalidateHistory()
+        false
+    }
+
+    fun loadTrip(carId: Int, tripStartDate: String, savedTripId: Long? = requestedSavedTripId) {
         if (loaded && currentCarId == carId && currentStartDate == tripStartDate &&
-            currentLocalCarId() != null) return
-        if (currentCarId != carId || currentStartDate != tripStartDate || currentLocalCarId() == null) {
+            requestedSavedTripId == savedTripId && currentLocalCarId() != null) return
+        if (currentCarId != carId || currentStartDate != tripStartDate ||
+            requestedSavedTripId != savedTripId || currentLocalCarId() == null) {
             _uiState.value = TripDetailUiState()
         }
         loaded = true
         currentCarId = carId
         currentStartDate = tripStartDate
+        requestedSavedTripId = savedTripId
         val generation = ++loadGeneration
 
         loadJob?.cancel()
@@ -334,9 +364,10 @@ class TripDetailViewModel @Inject constructor(
             if (!isCurrent(generation, scope, context)) return@launch
             val localCarId = context.localHistoryCarId
             val cached = tripCache.take(tripStartDate)
-                ?.takeIf { projectTripChargeCosts(it, localCarId, manualRecords, currencyCode) != null }
+                ?.takeIf { (savedTripId == null || it.savedTripId == savedTripId) &&
+                    projectTripChargeCosts(it, localCarId, manualRecords, currencyCode) != null }
             val trip = cached ?: tripRepository.getSavedTripsReadOnly(localCarId)
-                .find { it.startDate == tripStartDate &&
+                .singleOrNull { (if (savedTripId != null) it.savedTripId == savedTripId else it.startDate == tripStartDate) &&
                     projectTripChargeCosts(it, localCarId, manualRecords, currencyCode) != null }
             if (!isCurrent(generation, scope, context)) return@launch
             if (trip == null) {
@@ -351,6 +382,7 @@ class TripDetailViewModel @Inject constructor(
             val dcIds = try {
                 aggregateDao.getDcChargeIds(localCarId).toSet()
             } catch (e: Exception) { emptySet() }
+            val acIds = aggregateDao.getAcChargeIds(localCarId).toSet()
             if (!isCurrent(generation, scope, context)) return@launch
 
             // Placeholder charge markers — only on first load. On revalidation, keep the existing
@@ -375,6 +407,7 @@ class TripDetailViewModel @Inject constructor(
                     savedTripId = savedId,
                     savedTripName = savedName,
                     dcChargeIds = dcIds,
+                    acChargeIds = acIds,
                     chargeCosts = costs
                 )
             }
@@ -430,9 +463,10 @@ class TripDetailViewModel @Inject constructor(
         if (refs.isEmpty()) return
         val tripId = _uiState.value.savedTripId ?: return
         val localCarId = checkedLocalCarId() ?: return
+        val guard = ownerGuard() ?: return
         viewModelScope.launch {
             if (currentLocalCarId() != localCarId) return@launch
-            tripRepository.extendTripWithLegs(tripId, refs)
+            if (!mutateOwner(guard) { tripRepository.extendTripWithLegs(tripId, refs) }) return@launch
             if (currentLocalCarId() != localCarId) return@launch
             _uiState.update { it.copy(showAddLegSheet = false, eligibleLegs = null) }
             reloadTrip()
@@ -468,9 +502,12 @@ class TripDetailViewModel @Inject constructor(
         val keptId = _uiState.value.savedTripId ?: return
         val (otherId, _) = _uiState.value.pendingMergeTarget ?: return
         val localCarId = checkedLocalCarId() ?: return
+        val guard = ownerGuard() ?: return
         viewModelScope.launch {
             if (currentLocalCarId() != localCarId) return@launch
-            val newId = tripRepository.mergeTrips(keptId, otherId, localCarId) ?: return@launch
+            var mergedId: Long? = null
+            if (!mutateOwner(guard) { mergedId = tripRepository.mergeTrips(keptId, otherId, localCarId) }) return@launch
+            val newId = mergedId ?: return@launch
             if (currentLocalCarId() != localCarId) return@launch
             // The merged trip's startDate equals the earliest source's startDate.
             // Re-derive currentStartDate so reloadTrip finds the merged trip.
@@ -508,9 +545,10 @@ class TripDetailViewModel @Inject constructor(
         val tripId = _uiState.value.savedTripId ?: return
         val localCarId = checkedLocalCarId() ?: return
         val draft = _uiState.value.renameDraft
+        val guard = ownerGuard() ?: return
         viewModelScope.launch {
             if (currentLocalCarId() != localCarId) return@launch
-            tripRepository.renameTrip(tripId, draft)
+            if (!mutateOwner(guard) { tripRepository.renameTrip(tripId, draft) }) return@launch
             val updated = tripRepository.getTripName(tripId)
             if (currentLocalCarId() == localCarId)
                 _uiState.update { it.copy(showRenameDialog = false, savedTripName = updated, renameDraft = "") }
@@ -529,9 +567,10 @@ class TripDetailViewModel @Inject constructor(
     fun confirmDelete() {
         val tripId = _uiState.value.savedTripId ?: return
         val localCarId = checkedLocalCarId() ?: return
+        val guard = ownerGuard() ?: return
         viewModelScope.launch {
             if (currentLocalCarId() != localCarId) return@launch
-            tripRepository.deleteTrip(tripId)
+            if (!mutateOwner(guard) { tripRepository.deleteTrip(tripId) }) return@launch
             if (currentLocalCarId() == localCarId)
                 _uiState.update { it.copy(showDeleteConfirm = false, justDeleted = true) }
         }
@@ -671,134 +710,97 @@ class TripDetailViewModel @Inject constructor(
         }
     }
 
-    private suspend fun CoroutineScope.loadRoutePositions(carId: Int, trip: Trip, localCarId: Int,
-                                   generation: Long, scope: HistoryReadScope, context: VehicleContext) {
-            val tripKey = computeTripKey(trip, localCarId)
-
-            // Try cache first
-            val cachedRows = tripRouteCacheDao.getSegments(tripKey)
-            val deferredByBudget = cachedRows.isEmpty() && trip.drives.size > MAX_AUTO_TRIP_ROUTE_DRIVES
-            val segments = if (cachedRows.isNotEmpty()) {
-                cachedRows.map { row -> deserializeSegment(row.segmentData) }
-            } else if (deferredByBudget) {
-                emptyList()
-            } else {
-                val fetched = fetchRouteFromApi(carId, trip) {
-                    isCurrent(generation, scope, context)
-                }
-                if (fetched.isNotEmpty() && isCurrent(generation, scope, context)) {
-                    val now = System.currentTimeMillis()
-                    tripRouteCacheDao.insertAll(
-                        fetched.mapIndexed { index, segment ->
-                            TripRouteCache(
-                                tripKey = tripKey,
-                                segmentIndex = index,
-                                segmentData = serializeSegment(segment),
-                                createdAt = now
-                            )
-                        }
-                    )
-                }
-                fetched
+    private suspend fun CoroutineScope.loadRoutePositions(
+        carId: Int, trip: Trip, localCarId: Int, generation: Long,
+        scope: HistoryReadScope, context: VehicleContext
+    ) {
+        fun current() = isCurrent(generation, scope, context)
+        try {
+            // The immutable detail store verifies account/origin/vehicle, source,
+            // exact window and content hash. Legacy drive-set byte caches cannot.
+            val cached = trip.drives.associate { drive ->
+                val identity = drive.verifiedDetailIdentity(context)
+                val read = identity?.let { historyDetails.readDrive(it) }
+                drive.driveId to (read?.detail?.let { detail ->
+                    tripRouteSegment(drive, detail, read.receipt?.receiptId)
+                })
             }
-
-            // Simplify for display — keeps route shape, reduces rendering work
-            val simplified = segments.map { segment ->
-                TripRouteSegment(
-                    RouteSimplifier.simplify(
-                        segment.points,
-                        epsilon = 0.0001,
-                        lat = { it.latitude },
-                        lon = { it.longitude }
-                    )
-                )
+            if (!current()) return
+            val missing = trip.drives.filter { cached[it.driveId] == null }
+            val deferred = missing.size > MAX_AUTO_TRIP_ROUTE_DRIVES
+            val fetched = fetchBoundedTripRoute(missing.map { it.driveId }, ::current) { driveId ->
+                val drive = missing.first { it.driveId == driveId }
+                val identity = drive.verifiedDetailIdentity(context) ?: return@fetchBoundedTripRoute null
+                val response = repository.getDriveDetail(carId, driveId)
+                if (!current() || response !is ApiResult.Success) return@fetchBoundedTripRoute null
+                val detail = response.data
+                if (!identity.matches(detail.driveId, detail.source, detail.sourceInstanceId,
+                        detail.startDate, detail.endDate, detail.sourceId, detail.sourceRecordId))
+                    return@fetchBoundedTripRoute null
+                historyDetails.saveDrive(identity, detail, ensureCurrent = {
+                    check(current()) { "history_identity_unavailable" }
+                })
+                if (!current()) return@fetchBoundedTripRoute null
+                val saved = historyDetails.readDrive(identity)
+                tripRouteSegment(drive, detail, saved.receipt?.receiptId)
             }
-
-            val allPoints = simplified.flatMap { it.points }
-
-            // Rebuild markers from scratch: [start] + charges + [end]. Building from `trip` avoids
-            // double-adding start/end on revalidation (previous version appended to current state).
+            if (!current()) return
+            val byId = missing.mapIndexed { index, drive -> drive.driveId to fetched.getOrNull(index) }.toMap()
+            // Exactly one slot per drive: failure must never shift a later leg
+            // into this drive's weather/time window.
+            val segments = trip.drives.map { drive ->
+                val segment = cached[drive.driveId] ?: byId[drive.driveId]
+                    ?: TripRouteSegment(emptyList(), drive.driveId, drive.startDate, drive.endDate)
+                segment.copy(points = RouteSimplifier.simplify(segment.points,
+                    epsilon = 0.0001, lat = { it.latitude }, lon = { it.longitude }))
+            }
             val markers = mutableListOf<TripMapMarker>()
-            if (allPoints.isNotEmpty()) {
-                val first = allPoints.first()
-                markers.add(
-                    TripMapMarker(
-                        first.latitude, first.longitude,
-                        TripMapPointType.START, trip.startAddress
-                    )
-                )
-            }
+            segments.firstOrNull()?.points?.firstOrNull()?.takeIf {
+                trip.drives.firstOrNull()?.startDate == trip.startDate
+            }?.let { markers += TripMapMarker(it.latitude, it.longitude, TripMapPointType.START, trip.startAddress) }
             trip.charges.forEach { charge ->
-                markers.add(
-                    TripMapMarker(
-                        charge.latitude, charge.longitude,
-                        TripMapPointType.CHARGE, charge.address,
-                        chargeId = charge.chargeId
-                    )
-                )
-            }
-            if (allPoints.isNotEmpty()) {
-                val last = allPoints.last()
-                markers.add(
-                    TripMapMarker(
-                        last.latitude, last.longitude,
-                        TripMapPointType.END, trip.endAddress
-                    )
-                )
-            }
-
-            if (!isCurrent(generation, scope, context)) return
-            _uiState.update { it.copy(routeSegments = simplified, markers = markers,
-                isMapLoading = false, routeDeferredByBudget = deferredByBudget) }
-
-            // Weather fetch kicks in after route data is ready — it needs per-drive GPS points
-            // to sample. Runs in the same viewModelScope so it's cancelled if the screen goes
-            // away. Only fetches if we don't already have samples (memory cache across reloads).
-            if (_uiState.value.weatherPoints.isEmpty() && simplified.isNotEmpty()) {
-                launch {
-                    val samples = weatherRepository.getWeatherAlongTrip(trip.drives, simplified)
-                    if (samples.isNotEmpty() && isCurrent(generation, scope, context)) {
-                        _uiState.update { it.copy(weatherPoints = samples) }
-                    }
+                com.matelink.domain.telemetry.usableVehicleCoordinates(charge.latitude, charge.longitude)?.let {
+                    markers += TripMapMarker(it.first, it.second, TripMapPointType.CHARGE,
+                        charge.address, chargeId = charge.chargeId)
                 }
             }
+            segments.lastOrNull()?.points?.lastOrNull()?.takeIf {
+                trip.drives.lastOrNull()?.endDate == trip.endDate
+            }?.let { markers += TripMapMarker(it.latitude, it.longitude, TripMapPointType.END, trip.endAddress) }
+            if (!current()) return
+            _uiState.update { it.copy(routeSegments = segments, markers = markers,
+                weatherPoints = emptyList(), isMapLoading = false, routeDeferredByBudget = deferred) }
+            if (segments.any { it.points.isNotEmpty() }) launch {
+                val samples = weatherRepository.getWeatherAlongTrip(trip.drives, segments)
+                if (current()) _uiState.update { it.copy(weatherPoints = samples.filter { point -> point.clockContractVersion == 1 }) }
+            }
+        } catch (e: CancellationException) { throw e }
+          catch (_: Exception) {
+            if (current()) _uiState.update { it.copy(isMapLoading = false,
+                routeSegments = emptyList(), markers = emptyList(), weatherPoints = emptyList()) }
+        }
     }
 
-    private suspend fun fetchRouteFromApi(
-        carId: Int, trip: Trip, isCurrent: () -> Boolean
-    ): List<TripRouteSegment> {
-        return fetchBoundedTripRoute(trip.drives.map { it.driveId }, isCurrent) { driveId ->
-            when (val result = repository.getDriveDetail(carId, driveId)) {
-                is ApiResult.Success -> TripRouteSegment(result.data.positions
-                    ?.filter { it.latitude != null && it.longitude != null }
-                    ?.map { TripRoutePoint(it.latitude!!, it.longitude!!) }
-                    ?: emptyList())
-                is ApiResult.Error -> null
-            }
-        }.filter { it.points.isNotEmpty() }
-        }
 
-    /** SHA-256 hash of sorted drive IDs, used as cache key. Delegates to [TripRepository]. */
-    private fun computeTripKey(trip: Trip, localCarId: Int): String =
-        "$localCarId:${tripRepository.computeFingerprint(trip)}"
-
-    /** Pack points as big-endian doubles: [lat0, lon0, lat1, lon1, ...] */
-    private fun serializeSegment(segment: TripRouteSegment): ByteArray {
-        val buf = ByteBuffer.allocate(segment.points.size * 16) // 2 doubles × 8 bytes
-        for (pt in segment.points) {
-            buf.putDouble(pt.latitude)
-            buf.putDouble(pt.longitude)
-        }
-        return buf.array()
-    }
-
-    private fun deserializeSegment(data: ByteArray): TripRouteSegment {
-        val buf = ByteBuffer.wrap(data)
-        val count = data.size / 16
-        return TripRouteSegment(
-            (0 until count).map {
-                TripRoutePoint(buf.getDouble(), buf.getDouble())
-            }
-        )
+    /** Summary identity/evidence revisions must not reuse a different trip's metadata cache. */
+    private fun computeTripKey(trip: Trip, localCarId: Int): String {
+        val parts = trip.drives.map { "${it.driveId}:${it.startDate}:${it.endDate}:${it.apiEvidence}" } +
+            trip.charges.map { "${it.chargeId}:${it.startDate}:${it.endDate}:${it.apiEvidence}" }
+        val framed = parts.joinToString("") { "${it.length}:$it" }
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+            .digest(framed.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
+        return "$localCarId:trip-v2:$digest"
     }
 }
+
+internal fun tripRouteSegment(
+        drive: DriveSummary, detail: com.matelink.data.api.models.DriveDetail, receiptId: String?
+    ): TripRouteSegment {
+        val points = detail.positions.orEmpty().mapNotNull { point ->
+            com.matelink.domain.telemetry.usableVehicleCoordinates(point.latitude, point.longitude)
+                ?.let { TripRoutePoint(it.first, it.second, point.date) }
+        }
+        val parts = com.matelink.domain.map.observedDriveRouteSegments(detail.positions.orEmpty(), drive.startDate, drive.endDate)
+            .map { part -> part.map { TripRoutePoint(it.first, it.second) } }
+        return TripRouteSegment(points, drive.driveId, drive.startDate, drive.endDate, receiptId, parts)
+    }

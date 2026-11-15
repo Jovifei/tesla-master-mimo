@@ -33,8 +33,10 @@ class ChargeModeListContractTest {
         val old = ChargeData(chargeId = 11)
         assertEquals(ChargeType.UNKNOWN, historyChargeType(old,
             dcIds = emptySet(), processedIds = emptySet()))
-        assertEquals(ChargeType.AC, historyChargeType(old,
+        assertEquals(ChargeType.UNKNOWN, historyChargeType(old,
             dcIds = emptySet(), processedIds = setOf(11)))
+        assertEquals(ChargeType.AC, historyChargeType(old,
+            dcIds = emptySet(), processedIds = setOf(11), acIds = setOf(11)))
         assertEquals(ChargeType.DC, historyChargeType(old,
             dcIds = setOf(11), processedIds = setOf(11)))
     }

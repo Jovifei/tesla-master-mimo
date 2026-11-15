@@ -21,9 +21,13 @@ type telemetryConfig struct {
 	CommandProxyURL string
 	CACertPath      string
 	VINHashKey      []byte
-	CommandTimeout  time.Duration
-	StopDebounce    time.Duration
-	EventTTL        time.Duration
+	// GrayVehicleIDs is the optional TELEMETRY_GRAY_VEHICLE_IDS
+	// allowlist for gray-release telemetry fields (design §7). It is
+	// deliberately not part of the required configuration names.
+	GrayVehicleIDs map[int]bool
+	CommandTimeout time.Duration
+	StopDebounce   time.Duration
+	EventTTL       time.Duration
 }
 
 func loadTelemetryConfig(getenv func(string) string) (*telemetryConfig, error) {
@@ -81,12 +85,17 @@ func loadTelemetryConfig(getenv func(string) string) (*telemetryConfig, error) {
 	if err != nil || len(key) != 32 {
 		return nil, fmt.Errorf("TELEMETRY_VIN_HASH_KEY_BASE64 must encode exactly 32 bytes")
 	}
+	grayVehicleIDs, err := parseGrayVehicleIDs(getenv("TELEMETRY_GRAY_VEHICLE_IDS"))
+	if err != nil {
+		return nil, err
+	}
 	return &telemetryConfig{
 		MQTTURL: mqttURL, MQTTUsername: values["TELEMETRY_MQTT_USERNAME"], MQTTPassword: values["TELEMETRY_MQTT_PASSWORD"],
 		TopicBase: strings.Trim(values["TELEMETRY_MQTT_TOPIC_BASE"], "/"), PublicHost: publicHost, PublicPort: publicPort,
 		PartnerDomain: publicHost,
 		StatusPort:    8080, CommandProxyURL: commandProxyURL, CACertPath: values["TELEMETRY_CA_CERT_PATH"],
 		VINHashKey: key, CommandTimeout: 30 * time.Second, StopDebounce: defaultDriveStopDebounce, EventTTL: telemetryEventTTL,
+		GrayVehicleIDs: grayVehicleIDs,
 	}, nil
 }
 

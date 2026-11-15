@@ -139,6 +139,9 @@ class TaskCHistoryBehaviorTest {
     fun partialRemoteNestedEvidenceMergesWithCachedEvidenceWithoutReplacingZeros() {
         val cached = DriveData(
             driveId = 7,
+            startDate = "2026-08-01T00:00:00Z",
+            endDate = "2026-08-01T01:00:00Z",
+            source = "teslamate_archive", lengthUnit = "km", qualityState = "observed",
             odometerDetails = DriveOdometerDetails(
                 odometerStart = 100.0,
                 distance = 0.0
@@ -147,6 +150,8 @@ class TaskCHistoryBehaviorTest {
         )
         val partialRemote = DriveData(
             driveId = 7,
+            startDate = cached.startDate, endDate = cached.endDate,
+            source = cached.source, lengthUnit = cached.lengthUnit, qualityState = cached.qualityState,
             odometerDetails = DriveOdometerDetails(odometerEnd = 101.0),
             batteryDetails = DriveBatteryDetails(endBatteryLevel = 79)
         )

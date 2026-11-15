@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ui_appearance_title">页面主题</string>
+    <string name="ui_palette_neutral">中性白 · 默认</string>
+    <string name="ui_palette_cream">奶白</string>
+    <string name="ui_reduce_motion">减少动画</string>
+    <string name="ui_day_newer">较新日期</string>
+    <string name="ui_day_older">较旧日期</string>
+    <string name="ui_day_swipe_hint">日期区上滑看较旧日期，下滑返回 · 记录区正常滚动</string>
+    <string name="ui_day_unknown">日期未知</string>
+    <string name="ui_day_today">今天</string>
+    <string name="ui_day_yesterday">昨天</string>
+    <string name="ui_day_before_yesterday">前天</string>
+    <string name="ui_load_older_days">加载更早日期</string>
+    <string name="ui_charge_cells_hint">每格对应一个已记录时段；颜色越深数值越大，“—”表示未知。</string>
+    <string name="ui_charge_select_cell">点击格子查看具体数值和单位</string>
+    <string name="ui_login_tagline">你的车辆，每一次旅程都清晰。</string>
+    <string name="ui_login_steps">账号登录 · Tesla 官方授权 · 确认车辆</string>
+    <string name="ui_login_confirm_vehicle">继续完成授权与车辆确认</string>
+    <string name="ui_login_connect">使用 Tesla 账号安全连接</string>
+</resources>

@@ -177,13 +177,13 @@ class StatsReadScopeAndYearTest {
             f.db.chargeSummaryDao().upsertAll(listOf(charge(1,id,included,10.0,5.0),
                 charge(2,id,excluded,999.0,999.0),charge(3,id,middle,4.0,2.0,true)))
             fun driveAggregate(record:Int,height:Int,temp:Double,country:String)=DriveDetailAggregate(
-                driveId=record,carId=id,schemaVersion=1,computedAt=1,
+                driveId=record,carId=id,schemaVersion=com.matelink.data.local.entity.SchemaVersion.TEMPERATURE_C,computedAt=1,
                 maxElevation=height,minElevation=height-50,startElevation=0,endElevation=height,
                 elevationGain=height,elevationLoss=0,hasElevationData=true,
                 maxInsideTemp=temp+10,minInsideTemp=temp-10,maxOutsideTemp=temp,minOutsideTemp=temp-5,
                 maxPower=null,minPower=null,climateOnPositions=0,positionCount=2,startCountryCode=country)
             fun chargeAggregate(record:Int,power:Int,temp:Double,dc:Boolean)=ChargeDetailAggregate(
-                chargeId=record,carId=id,schemaVersion=1,computedAt=1,isFastCharger=dc,
+                chargeId=record,carId=id,schemaVersion=com.matelink.data.local.entity.SchemaVersion.TEMPERATURE_C,computedAt=1,isFastCharger=dc,
                 fastChargerBrand=null,connectorType=null,maxChargerPower=power,maxChargerVoltage=null,
                 maxChargerCurrent=null,chargerPhases=null,maxOutsideTemp=temp,minOutsideTemp=temp-5,chargePointCount=2)
             f.db.aggregateDao().upsertDriveAggregates(listOf(driveAggregate(1,100,10.0,"CN"),

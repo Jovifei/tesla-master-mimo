@@ -1,0 +1,147 @@
+name: Android alignment qualification 20261113
+on:
+  push:
+    branches: [codex/ui-product-app-20261109]
+    paths: ['.github/workflows/ui-alignment-app-20261113.yml']
+permissions:
+  contents: read
+jobs:
+  source:
+    if: github.repository == 'Jovifei/tesla-master-mimo'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    outputs:
+      sha: ${{ steps.commit.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 3
+      - name: Validate exact reviewed diff before applying
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = 817a849df0e5193636c301d3025d4bb13e09c8cb
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64,gzip,hashlib,subprocess
+          p=Path('tools/ui-alignment-20261113/app.patch.b64')
+          encoded=p.read_text().strip()
+          if 'U8AwnNSII6AqR' in encoded:
+              assert encoded.count('U8AwnNSII6AqR')==1
+              encoded=encoded.replace('U8AwnNSII6AqR','U8AwnNSI6AqR')
+          assert len(encoded)==6856
+          patch=gzip.decompress(base64.b64decode(encoded,validate=True))
+          assert hashlib.sha256(patch).hexdigest()=='0a4525bdbbdc4f092f0c9c4d5a79f82c6d847e2aafe9878b3b85b6c357f02682'
+          targets=[l[6:] for l in patch.decode().splitlines() if l.startswith('+++ b/')]
+          assert len(targets)==7 and all(p.startswith('android/app/src/') and '..' not in p for p in targets)
+          subprocess.run(['git','apply','--check','--whitespace=error','-'],input=patch,check=True)
+          subprocess.run(['git','apply','--whitespace=error','-'],input=patch,check=True)
+          PY
+      - id: commit
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add android/app/src/
+          git rm tools/ui-alignment-20261113/app.patch.b64
+          git diff --cached --check
+          git commit -m 'feat(android): default horizontal day cards with persistent axis choice and native regression coverage'
+          git push origin HEAD:refs/heads/codex/ui-product-app-20261109
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+  build:
+    needs: source
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.source.outputs.sha }}
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+          log-accepted-android-sdk-licenses: false
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+      - run: bash tools/energy-stage/android-ci.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-alignment-build-${{ needs.source.outputs.sha }}
+          path: |
+            android-evidence/
+            android/app/build/test-results/
+            android/app/build/reports/
+            android/app/build/outputs/apk/
+          retention-days: 7
+          if-no-files-found: error
+  native:
+    needs: source
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.source.outputs.sha }}
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          log-accepted-android-sdk-licenses: false
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Isolated emulator preparation only
+        run: |
+          set -euo pipefail
+          test "$GITHUB_ACTIONS" = true
+          test -c /dev/kvm
+          sudo chmod 0666 /dev/kvm
+          mkdir -p emulator-evidence
+          git rev-parse HEAD HEAD^{tree} HEAD^ > emulator-evidence/SOURCE_HEAD.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('android/gradle.properties')
+          keys={'systemProp.http.proxyHost','systemProp.http.proxyPort','systemProp.https.proxyHost','systemProp.https.proxyPort','systemProp.http.nonProxyHosts'}
+          p.write_text('\n'.join(x for x in p.read_text().splitlines() if x.split('=',1)[0] not in keys)+'\n')
+          PY
+          cat > emulator-evidence/run.sh <<'SH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          test "$(adb devices | awk 'NR>1 && $2=="device" {print $1}')" = emulator-5554
+          test "$(adb -s emulator-5554 shell getprop ro.kernel.qemu | tr -d '\r')" = 1
+          adb -s emulator-5554 shell settings put global airplane_mode_on 1
+          adb -s emulator-5554 shell svc wifi disable
+          trap 'adb -s emulator-5554 pull /sdcard/Android/data/com.matelink.test.mock/files/ui-product-evidence emulator-evidence/screenshots || true' EXIT
+          bash android/gradlew -p android :app:connectedDebugAndroidTest --no-daemon --max-workers=1 -Dorg.gradle.jvmargs='-Xmx4g -XX:MaxMetaspaceSize=1g -XX:+UseSerialGC' -Pkotlin.compiler.execution.strategy=in-process -PallowConnectedDeviceTests=isolated-device -PMATELINK_INSTRUMENTATION_CLASSES=com.matelink.ui.components.UiProductContractAndroidTest -PJOURVOLT_API_BASE_URL=http://127.0.0.1:18090/ -PJOURVOLT_AUTH_HOST=auth.teslalink.joviluma.com 2>&1 | tee emulator-evidence/tests.log
+          SH
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: aosp_atd
+          arch: x86_64
+          profile: pixel_4
+          ram-size: 3072M
+          disk-size: 8G
+          emulator-boot-timeout: 700
+          disable-animations: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot-load -no-snapshot-save -no-metrics -accel on
+          script: bash emulator-evidence/run.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-alignment-native-${{ needs.source.outputs.sha }}
+          path: |
+            emulator-evidence/
+            android/app/build/outputs/androidTest-results/
+            android/app/build/reports/androidTests/
+          retention-days: 7
+          if-no-files-found: error

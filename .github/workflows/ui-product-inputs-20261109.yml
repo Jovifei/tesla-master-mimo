@@ -1,0 +1,48 @@
+name: UI product immutable inputs 20261109
+on:
+  push:
+    branches: [codex/ui-product-app-20261109]
+    paths: ['.github/workflows/ui-product-inputs-20261109.yml']
+permissions:
+  contents: read
+jobs:
+  source:
+    if: github.repository == 'Jovifei/tesla-master-mimo'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Export only bounded product source, no evidence media or credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin 929a63eeb46f36feb9295400da96d5382127068d 0913bf3795069e02a03dcae2c02dc8b05c09651e 427de74e273cd86527aca4b8fd1386e38c1336e8 cb500aef439d31b1ae09dc2f16e191da267d5afd
+          python3 - <<'PY'
+          import pathlib,subprocess,json,hashlib
+          out=pathlib.Path('ui-product-inputs');out.mkdir()
+          refs={'app':('929a63eeb46f36feb9295400da96d5382127068d',['android/','.github/workflows/']), 'mini':('0913bf3795069e02a03dcae2c02dc8b05c09651e',['miniprogram/','.github/workflows/']), 'web':('427de74e273cd86527aca4b8fd1386e38c1336e8',['web_matelink/','.github/workflows/']), 'ios':('cb500aef439d31b1ae09dc2f16e191da267d5afd',['ios/','.github/workflows/'])}
+          suffixes={'.kt','.kts','.toml','.xml','.json','.properties','.java','.ts','.tsx','.js','.jsx','.mjs','.cjs','.scss','.css','.html','.swift','.yml','.yaml','.md','.plist','.pbxproj','.xcconfig','.xcworkspacedata','.xcscheme','.sh','.bat','.txt','.lock','.xctestplan','.entitlements'}
+          receipt={}
+          for name,(ref,prefixes) in refs.items():
+              paths=subprocess.check_output(['git','ls-tree','-r','--name-only',ref],text=True).splitlines()
+              chosen=[]
+              for p in paths:
+                  if not any(p.startswith(x) for x in prefixes):continue
+                  if any(x in p.lower() for x in ['node_modules/','/build/','/dist/','.env','local.properties','signing.properties','keystore','service-account','google-services.json']):continue
+                  f=pathlib.Path(p)
+                  if f.suffix not in suffixes and f.name not in ['gradlew','gradle-wrapper.jar','Podfile','Gemfile']:continue
+                  content=subprocess.check_output(['git','show',ref+':'+p])
+                  dest=out/name/p;dest.parent.mkdir(parents=True,exist_ok=True);dest.write_bytes(content)
+                  chosen.append({'path':p,'sha256':hashlib.sha256(content).hexdigest(),'bytes':len(content)})
+              receipt[name]={'source':ref,'tree':subprocess.check_output(['git','rev-parse',ref+'^{tree}'],text=True).strip(),'files':chosen}
+          (out/'receipt.json').write_text(json.dumps(receipt,indent=2))
+          print({k:len(v['files']) for k,v in receipt.items()})
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ui-product-immutable-inputs
+          path: ui-product-inputs/
+          retention-days: 7
+          if-no-files-found: error

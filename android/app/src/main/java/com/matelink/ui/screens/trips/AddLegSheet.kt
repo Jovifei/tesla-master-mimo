@@ -48,6 +48,9 @@ import com.matelink.R
 import com.matelink.data.local.entity.ChargeSummary
 import com.matelink.data.local.entity.DriveSummary
 import com.matelink.data.local.entity.SavedTripLeg
+import com.matelink.domain.analytics.qualifiedChargeMode
+import com.matelink.domain.analytics.toAnalysisChargeData
+import com.matelink.domain.analytics.toAnalysisDriveData
 import com.matelink.domain.EligibleLegs
 import com.matelink.domain.LegRef
 import com.matelink.ui.icons.CustomIcons
@@ -66,7 +69,8 @@ fun AddLegSheet(
     palette: CarColorPalette,
     onPickLegs: (List<LegRef>) -> Unit,
     onDismiss: () -> Unit,
-    startInMultiSelect: Boolean = false
+    startInMultiSelect: Boolean = false,
+    acChargeIds: Set<Int> = emptySet()
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
@@ -125,7 +129,7 @@ fun AddLegSheet(
                         CandidateRow(
                             candidate = candidate,
                             palette = palette,
-                            isDc = candidate is Candidate.Charge && candidate.charge.chargeId in dcChargeIds,
+                            mode = (candidate as? Candidate.Charge)?.charge?.let { qualifiedChargeMode(it.toAnalysisChargeData(), it.chargeId in dcChargeIds, it.chargeId in acChargeIds) },
                             multiMode = multiMode,
                             isSelected = ref in selected,
                             onTap = {
@@ -218,7 +222,7 @@ private fun buildCandidateList(eligible: EligibleLegs): List<Candidate> {
 private fun CandidateRow(
     candidate: Candidate,
     palette: CarColorPalette,
-    isDc: Boolean,
+    mode: String?,
     multiMode: Boolean,
     isSelected: Boolean,
     onTap: () -> Unit,
@@ -274,19 +278,19 @@ private fun CandidateRow(
                 }
                 Column(horizontalAlignment = Alignment.End) {
                     Text(
-                        text = "%.1f km".format(candidate.drive.distance),
+                        text = candidate.drive.toAnalysisDriveData().distanceKm?.let { "%.1f km".format(it) } ?: "— km",
                         style = MaterialTheme.typography.bodySmall,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = formatDuration(context.resources, candidate.drive.durationMin),
+                        text = candidate.drive.toAnalysisDriveData().durationMin?.let { formatDuration(context.resources, it) } ?: "—",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
             is Candidate.Charge -> {
-                val chipColor = if (isDc) palette.dcColor else palette.acColor
+                val chipColor = if (mode == "dc") palette.dcColor else palette.acColor
                 Icon(
                     Icons.Filled.ElectricBolt,
                     contentDescription = null,
@@ -309,17 +313,17 @@ private fun CandidateRow(
                     )
                 }
                 Spacer(Modifier.width(8.dp))
-                ChargeTypeChip(isDc = isDc, chipColor = chipColor)
+                ChargeTypeChip(mode = mode, chipColor = chipColor)
                 Spacer(Modifier.width(8.dp))
                 Column(horizontalAlignment = Alignment.End) {
                     Text(
-                        text = "+%.1f kWh".format(candidate.charge.energyAdded),
+                        text = candidate.charge.toAnalysisChargeData().batteryInputKwh?.let { "+%.1f kWh".format(it) } ?: "— kWh",
                         style = MaterialTheme.typography.bodySmall,
                         fontWeight = FontWeight.Bold,
                         color = chipColor
                     )
                     Text(
-                        text = formatDuration(context.resources, candidate.charge.durationMin),
+                        text = candidate.charge.toAnalysisChargeData().durationMin?.let { formatDuration(context.resources, it) } ?: "—",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -330,7 +334,7 @@ private fun CandidateRow(
 }
 
 @Composable
-private fun ChargeTypeChip(isDc: Boolean, chipColor: Color) {
+private fun ChargeTypeChip(mode: String?, chipColor: Color) {
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(4.dp))
@@ -339,7 +343,7 @@ private fun ChargeTypeChip(isDc: Boolean, chipColor: Color) {
         contentAlignment = Alignment.Center
     ) {
         Text(
-            text = if (isDc) "DC" else "AC",
+            text = mode?.uppercase(Locale.ROOT) ?: stringResource(R.string.cost_mode_unknown),
             style = MaterialTheme.typography.labelSmall,
             color = Color.White,
             fontWeight = FontWeight.Bold

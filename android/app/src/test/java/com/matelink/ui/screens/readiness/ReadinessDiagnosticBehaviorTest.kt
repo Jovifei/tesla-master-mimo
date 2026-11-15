@@ -131,8 +131,9 @@ class ReadinessDiagnosticBehaviorTest {
                     captures++
                     val verified = captures >= 2
                     return object : ReadinessEvidenceSession {
+                        override val connectionSource = com.matelink.data.local.HistoryConnectionSource.SELF_HOSTED
                         override suspend fun isCurrent() = true
-                        override fun verifies(readiness: DataReadiness?) = verified
+                        override fun verifies(readiness: DataReadiness?, car: com.matelink.data.api.models.CarData?) = verified
                         override suspend fun localEvidence() = ReadinessLocalEvidence(scopeVerified = verified)
                     }
                 }
@@ -201,8 +202,9 @@ class ReadinessDiagnosticBehaviorTest {
         override val scopeChanges = MutableSharedFlow<Unit>(replay = 1).apply { tryEmit(Unit) }
         var current = true
         override suspend fun capture(carId: Int) = object : ReadinessEvidenceSession {
+            override val connectionSource = com.matelink.data.local.HistoryConnectionSource.SELF_HOSTED
             override suspend fun isCurrent() = current
-            override fun verifies(readiness: DataReadiness?) = current
+            override fun verifies(readiness: DataReadiness?, car: com.matelink.data.api.models.CarData?) = current
             override suspend fun localEvidence() = ReadinessLocalEvidence(qualifiedDrives = 2, persistedDrives = 2, persistedCharges = 0)
         }
     }

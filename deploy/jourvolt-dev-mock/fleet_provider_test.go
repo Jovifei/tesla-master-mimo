@@ -265,6 +265,124 @@ func TestFleetVehicleDataKeepsMissingLocationAndTPMSUnavailable(t *testing.T) {
 	}
 }
 
+func TestFleetVehicleDataMapsExtendedDisplayFields(t *testing.T) {
+	windowOpen, windowClosed := 1, 0
+	valet := true
+	updateStatus, downloadPct, installPct, expectedSec := "downloading", 42, 0, 1800
+	limitActive, limitPin := true, false
+	limitMPH := 70.0
+	mediaState, mediaTitle := "Playing", "Song"
+	driverTemp, fan := 22.5, 3
+	seatLevel := 2
+	steeringHeater := true
+	cable, latch := "IEC", "Engaged"
+	heater := false
+	scheduledStart := int64(1767225600000) // 2026-01-01T00:00:00Z in epoch ms
+	scheduledDeparture := int64(1767240000000)
+	minutesToFull := 95
+	milesAdded := 10.0
+
+	status := mapTeslaVehicleStatus(teslaVehicleData{
+		ChargeState: teslaChargeState{
+			ConnChargeCable: &cable, ChargePortLatch: &latch, BatteryHeaterOn: &heater,
+			ScheduledChargingStart: &scheduledStart, ScheduledDeparture: &scheduledDeparture,
+			MinutesToFullCharge: &minutesToFull, ChargeMilesAddedRated: &milesAdded,
+		},
+		ClimateState: teslaClimateState{
+			DriverTempSetting: &driverTemp, FanStatus: &fan,
+			SeatHeaterLeft: &seatLevel, SteeringWheelHeater: &steeringHeater,
+		},
+		VehicleState: teslaVehicleState{
+			FrontLeftWindow: &windowClosed, FrontRightWindow: &windowOpen,
+			RearLeftWindow: &windowClosed, RearRightWindow: &windowClosed,
+			ValetMode: &valet,
+			SoftwareUpdate: &teslaSoftwareUpd{
+				Status: &updateStatus, DownloadPercent: &downloadPct,
+				InstallPercent: &installPct, ExpectedDurationSec: &expectedSec,
+			},
+			SpeedLimitMode: &teslaSpeedLimit{
+				Active: &limitActive, CurrentLimitMPH: &limitMPH, PinCodeRequired: &limitPin,
+			},
+			MediaInfo: &teslaMediaInfo{MediaState: &mediaState, NowPlayingTitle: &mediaTitle},
+		},
+	}, "Extended Tesla", "online")
+
+	if status.WindowsOpen == nil || !*status.WindowsOpen {
+		t.Fatalf("windows_open = %#v, want true when one window is open", status.WindowsOpen)
+	}
+	if status.ValetMode == nil || !*status.ValetMode {
+		t.Fatalf("valet_mode = %#v", status.ValetMode)
+	}
+	if status.SoftwareUpdateStatus == nil || *status.SoftwareUpdateStatus != "downloading" ||
+		status.SoftwareDownloadPercent == nil || *status.SoftwareDownloadPercent != 42 {
+		t.Fatalf("software update = status %#v download %#v", status.SoftwareUpdateStatus, status.SoftwareDownloadPercent)
+	}
+	if status.SpeedLimitCurrentKMH == nil || *status.SpeedLimitCurrentKMH != 113 {
+		t.Fatalf("speed limit = %#v, want 113 km/h for 70 mph", status.SpeedLimitCurrentKMH)
+	}
+	if status.MediaTitle == nil || *status.MediaTitle != "Song" || status.MediaArtist != nil {
+		t.Fatalf("media = title %#v artist %#v", status.MediaTitle, status.MediaArtist)
+	}
+	if status.SeatHeaterLeft == nil || *status.SeatHeaterLeft != 2 ||
+		status.SteeringWheelHeater == nil || !*status.SteeringWheelHeater {
+		t.Fatalf("climate = seat %#v wheel %#v", status.SeatHeaterLeft, status.SteeringWheelHeater)
+	}
+	if status.ScheduledChargingStartTime == nil ||
+		status.ScheduledChargingStartTime.Format("2006-01-02T15:04:05Z") != "2026-01-01T00:00:00Z" {
+		t.Fatalf("scheduled start = %#v", status.ScheduledChargingStartTime)
+	}
+	if status.ScheduledDepartureTime == nil || status.MinutesToFullCharge == nil || *status.MinutesToFullCharge != 95 {
+		t.Fatalf("schedule/minutes = %#v %#v", status.ScheduledDepartureTime, status.MinutesToFullCharge)
+	}
+	if status.ChargeRangeAddedRated == nil || *status.ChargeRangeAddedRated != 16.09344 {
+		t.Fatalf("charge range added = %#v, want km conversion of 10 mi", status.ChargeRangeAddedRated)
+	}
+	if status.ConnChargeCable == nil || *status.ConnChargeCable != "IEC" || status.BatteryHeaterOn == nil || *status.BatteryHeaterOn {
+		t.Fatalf("charge detail = cable %#v heater %#v", status.ConnChargeCable, status.BatteryHeaterOn)
+	}
+}
+
+func TestFleetVehicleDataExtendedFieldsStayNilWhenAbsent(t *testing.T) {
+	status := mapTeslaVehicleStatus(teslaVehicleData{}, "Offline Tesla", "offline")
+
+	if status.WindowsOpen != nil || status.ValetMode != nil || status.MediaTitle != nil ||
+		status.SoftwareUpdateStatus != nil || status.SpeedLimitActive != nil {
+		t.Fatalf("absent vehicle fields must stay nil: %#v", status)
+	}
+	if status.DriverTempSetting != nil || status.SeatHeaterLeft != nil || status.SteeringWheelHeater != nil {
+		t.Fatalf("absent climate fields must stay nil: %#v", status)
+	}
+	if status.ScheduledChargingStartTime != nil || status.ScheduledDepartureTime != nil ||
+		status.ConnChargeCable != nil || status.MinutesToFullCharge != nil || status.ChargeRangeAddedRated != nil {
+		t.Fatalf("absent charge fields must stay nil: %#v", status)
+	}
+}
+
+func TestFleetVehicleDataDecodesExtendedJSONFields(t *testing.T) {
+	var envelope teslaVehicleDataEnvelope
+	body := []byte(`{"response":{
+		"charge_state":{"conn_charge_cable":"IEC","scheduled_charging_start_time":1767225600000,"minutes_to_full_charge":95},
+		"climate_state":{"driver_temp_setting":22.5,"seat_heater_left":2,"steering_wheel_heater":true},
+		"vehicle_state":{"fd_window":0,"fp_window":1,"valet_mode":true,
+			"software_update":{"status":"downloading","download_percent":42},
+			"speed_limit_mode":{"active":true,"current_limit_mph":70},
+			"media_info":{"media_state":"Playing","now_playing_title":"Song"}}
+	}}`)
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	data := envelope.Response
+	if data.ChargeState.ConnChargeCable == nil || *data.ChargeState.ConnChargeCable != "IEC" ||
+		data.ChargeState.ScheduledChargingStart == nil || *data.ChargeState.ScheduledChargingStart != 1767225600000 {
+		t.Fatalf("charge decode = %#v", data.ChargeState)
+	}
+	if data.VehicleState.FrontRightWindow == nil || *data.VehicleState.FrontRightWindow != 1 ||
+		data.VehicleState.SoftwareUpdate == nil || data.VehicleState.SoftwareUpdate.DownloadPercent == nil ||
+		data.VehicleState.MediaInfo == nil || data.VehicleState.MediaInfo.NowPlayingTitle == nil {
+		t.Fatalf("vehicle decode = %#v", data.VehicleState)
+	}
+}
+
 func TestFleetVehicleDataPathRequestsLocationData(t *testing.T) {
 	path := fleetVehicleDataPath("VIN/with space")
 	if !strings.Contains(path, "/api/1/vehicles/VIN%2Fwith%20space/vehicle_data?") {

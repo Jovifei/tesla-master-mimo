@@ -2,9 +2,42 @@ package com.matelink.ui.screens.charges
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ChargeDetailCostPresentationTest {
+
+    @Test
+    fun verifiedManualWinsOverUnverifiedCandidates() {
+        assertNull(pendingChargeAmountForDisplay(true, "CNY" to 23.0, 31.0))
+    }
+
+    @Test
+    fun pendingAmountKeepsItsOwnCurrencyAndLegacyHasNone() {
+        assertEquals(PendingChargeAmount(23.0, "¥"), pendingChargeAmountForDisplay(false, "CNY" to 23.0, 31.0))
+        assertEquals(PendingChargeAmount(31.0, null), pendingChargeAmountForDisplay(false, null, 31.0))
+        assertEquals(PendingChargeAmount(0.0, null), pendingChargeAmountForDisplay(false, null, 0.0))
+        assertNull(pendingChargeAmountForDisplay(false, "CNY" to Double.NaN, Double.POSITIVE_INFINITY))
+        assertEquals(PendingChargeAmount(4.0, null), pendingChargeAmountForDisplay(false, "unknown" to 4.0, null))
+    }
+
+    @Test
+    fun partialEnergySupportsOnlyTheMatchingEstimatedUnitCost() {
+        val estimated = ChargeDetailCostPresentation(15.0, ChargeDetailCostState.ESTIMATE, "estimate_partial_counter")
+        val rate = requireNotNull(chargeUnitCost(estimated, null, 10.0))
+        assertEquals(1.5, rate.amount, 0.0)
+        assertTrue(rate.estimated)
+        assertNull(chargeUnitCost(estimated, null, 0.0))
+        assertNull(chargeUnitCost(estimated, null, Double.NaN))
+        assertNull(chargeUnitCost(estimated, 0.0, 10.0))
+        assertNull(chargeUnitCost(estimated.copy(qualificationReason = null), null, 10.0))
+        for (state in listOf(ChargeDetailCostState.MANUAL, ChargeDetailCostState.ACTUAL, ChargeDetailCostState.FREE))
+            assertNull(chargeUnitCost(ChargeDetailCostPresentation(15.0, state), null, 10.0))
+        val manual = requireNotNull(chargeUnitCost(ChargeDetailCostPresentation(15.0, ChargeDetailCostState.MANUAL), 5.0, 10.0))
+        assertEquals(3.0, manual.amount, 0.0)
+        assertFalse(manual.estimated)
+    }
 
     @Test
     fun configuredDefaultRateIsClearlyEstimated() {

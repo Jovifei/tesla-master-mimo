@@ -1,5 +1,6 @@
 package com.matelink.ui.screens.settings
 
+import androidx.compose.material3.Surface
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
@@ -278,6 +279,20 @@ private fun SettingsPanelCard(
 }
 
 @Composable
+private fun SettingsDestinationRow(title: String, subtitle: String, onClick: () -> Unit) {
+    Surface(onClick = onClick, modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
+        color = MaterialTheme.colorScheme.surface, shape = MaterialTheme.shapes.medium) {
+        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null)
+        }
+    }
+}
+
+@Composable
 internal fun SettingsContent(
     modifier: Modifier = Modifier,
     uiState: SettingsUiState,
@@ -324,6 +339,9 @@ internal fun SettingsContent(
     var showReleaseNotesDialog by rememberSaveable { mutableStateOf(false) }
     var advancedNetworkExpanded by rememberSaveable { mutableStateOf(false) }
     var extraSettingsExpanded by rememberSaveable { mutableStateOf(false) }
+    var settingsDestination by rememberSaveable { mutableStateOf<String?>(null) }
+    androidx.activity.compose.BackHandler(settingsDestination != null) { settingsDestination = null }
+
 
     Column(
         modifier = modifier
@@ -331,9 +349,21 @@ internal fun SettingsContent(
             .verticalScroll(rememberScrollState())
             .padding(16.dp)
     ) {
-        accountContent()
-        Spacer(modifier = Modifier.height(16.dp))
+        if (settingsDestination == null) {
+            accountContent()
+            Spacer(Modifier.height(16.dp))
+            com.matelink.ui.theme.AppearancePreferencePanel()
+            Spacer(Modifier.height(16.dp))
+            SettingsDestinationRow(stringResource(R.string.language), stringResource(R.string.ui_language_currency)) { settingsDestination = "display" }
+            SettingsDestinationRow(stringResource(R.string.tpms_profile_title), stringResource(R.string.settings_tpms_entry_subtitle), onNavigateToTpmsSettings)
+            SettingsDestinationRow(stringResource(R.string.amap_settings_section), stringResource(R.string.settings_china_map_guidance), onNavigateToAmapSetup)
+            SettingsDestinationRow(stringResource(R.string.tariff_title), stringResource(R.string.tariff_enable_hint), onNavigateToTariffConfig)
+            SettingsDestinationRow(stringResource(R.string.settings_extra), stringResource(R.string.ui_settings_advanced)) { settingsDestination = "advanced" }
+        } else {
+            TextButton(onClick = { settingsDestination = null }) { Text("‹ " + stringResource(R.string.settings_title)) }
+        }
 
+        if (settingsDestination == "advanced") {
         if (uiState.isFirstRunSetup) {
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -541,6 +571,8 @@ internal fun SettingsContent(
 
         Spacer(modifier = Modifier.height(16.dp))
 
+        }
+        if (settingsDestination == "display") {
         // === Display Settings Section ===
         Text(
             text = stringResource(R.string.settings_display_title),
@@ -549,9 +581,6 @@ internal fun SettingsContent(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // TODO(parity): iOS SettingsView has an explicit dark mode toggle (isDarkMode).
-        //  Android currently follows system theme only.
-        //  Ref: app_mimo/ios/MateLink/Features/Settings/SettingsView.swift
 
         // Language selection
         val languageOptions = com.matelink.locale.LocaleHelper.SUPPORTED_LOCALES
@@ -591,43 +620,6 @@ internal fun SettingsContent(
                 }
             }
         }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Card(
-            modifier = Modifier.fillMaxWidth().clickable(onClick = onNavigateToTpmsSettings),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-            )
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = stringResource(R.string.tpms_profile_title),
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.Medium
-                    )
-                    Text(
-                        text = stringResource(R.string.settings_tpms_entry_subtitle),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null)
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Text(
-            text = stringResource(R.string.settings_china_map_guidance),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
 
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -672,53 +664,9 @@ internal fun SettingsContent(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        Text(
-            text = stringResource(R.string.amap_settings_section),
-            style = MaterialTheme.typography.titleMedium
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        amapSettingsEntry()
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // === Tariff Config Entry ===
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { onNavigateToTariffConfig() },
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-            )
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = stringResource(R.string.tariff_title),
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.Medium
-                    )
-                    Text(
-                        text = stringResource(R.string.tariff_enable_hint),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+        Button(onClick = onSave, enabled = !uiState.isSaving, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.save)) }
         }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
+        if (settingsDestination == "advanced") {
         if (com.matelink.BuildConfig.DEBUG) {
             // Test-package-only mock mode.
             Row(
@@ -1075,6 +1023,7 @@ internal fun SettingsContent(
                 }
         )
         Spacer(modifier = Modifier.height(16.dp))
+        }
     }
 
     if (showReleaseNotesDialog) {

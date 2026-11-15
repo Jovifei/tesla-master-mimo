@@ -25,6 +25,11 @@ class VehicleContextRepository @Inject constructor(
     private val teslamateRepository: TeslamateRepository,
     private val legacyHistoryMigrationRepository: LegacyHistoryMigrationRepository
 ) : HistoryCarIdResolver, VehicleContextResolver {
+    internal val verifiedMappingChanges get() = contextStore.verifiedMappingChanges
+    internal fun verifiedMappingVersion(remoteApiCarId: Int, scope: HistoryReadScope): Long =
+        if (scope.source == HistoryConnectionSource.CLOUD)
+            contextStore.verifiedMappingVersion(scope.accountNamespace.orEmpty(), scope.effectiveApiOrigin, remoteApiCarId)
+        else 0L
     internal val historyScopeChanges get() = combine(
         connectionModeStore.mode, sessionStore.session, settingsDataStore.settings
     ) { _, _, _ ->

@@ -1,6 +1,11 @@
 package com.matelink.ui.screens.drives
 
-import com.matelink.data.local.entity.DriveSummary
+import com.matelink.data.api.models.DriveData
+import com.matelink.data.api.models.DriveBatteryDetails
+import com.matelink.data.api.models.DriveOdometerDetails
+import com.matelink.data.repository.toLocalSummary
+import com.matelink.domain.analytics.toRawAnalysisDriveData
+import com.matelink.domain.analytics.HistorySummaryEvidenceCodec
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -11,18 +16,14 @@ class ParkedDetailLocalFallbackTest {
         driveId: Int, endBatteryLevel: Int, startBatteryLevel: Int = 35,
         startDate: String = "2026-10-23T18:40:00Z", endDate: String = "2026-10-23T18:42:00Z",
         source: String = "teslamate_archive", instance: String? = "instance-A"
-    ) = DriveSummary(
-        driveId = driveId, carId = 1,
-        startDate = startDate, endDate = endDate,
-        durationMin = 2,
+    ) = DriveData(
+        driveId = driveId, startDate = startDate, endDate = endDate, durationMin = 2,
         startAddress = "A Road", endAddress = "访云街 西蔡庙, Hangzhou",
-        distance = 1.0, speedMax = 30, speedAvg = 20,
-        powerMax = 10, powerMin = -5,
-        startBatteryLevel = startBatteryLevel, endBatteryLevel = endBatteryLevel,
-        outsideTempAvg = null, insideTempAvg = null,
-        energyConsumed = null, efficiency = null,
-        apiEvidence = """{"drive_id":$driveId,"start_date":"$startDate","end_date":"$endDate","source":"$source","source_instance_id":${instance?.let { "\"$it\"" } ?: "null"}}"""
-    )
+        odometerDetails = DriveOdometerDetails(distance = 1.0), lengthUnit = "km",
+        speedMax = 30, speedAvg = 20.0, powerMax = 10, powerMin = -5,
+        batteryDetails = DriveBatteryDetails(startBatteryLevel, endBatteryLevel),
+        source = source, sourceInstanceId = instance, qualityState = "observed"
+    ).toLocalSummary(1)!!
 
     private fun older(endBatteryLevel: Int, endDate: String = "2026-10-23T20:59:00Z") =
         drive(10, endBatteryLevel, endDate = endDate)
@@ -43,7 +44,7 @@ class ParkedDetailLocalFallbackTest {
         assertNull(detail.insideTempAverage)
         assertNull(detail.linkedCharge)
         assertEquals(0, detail.sampleCount)
-        assertEquals(0.0, detail.coverageRatio, 0.0)
+        assertEquals(0.0, detail.coverageRatio!!, 0.0)
     }
 
     @Test fun outOfRangeBatteryStaysUnknownInsteadOfFabricating() {
@@ -55,7 +56,11 @@ class ParkedDetailLocalFallbackTest {
     }
 
     @Test fun nonChineseAddressFallsBackToRawAddress() {
-        val detail = requireNotNull(buildLocalParkedDetail(10, 11, older(31).copy(endAddress = "123 Main Street, Springfield"), newer(32)))
+        val initial = older(31)
+        val address = "123 Main Street, Springfield"
+        val observed = initial.copy(endAddress = address,
+            apiEvidence = HistorySummaryEvidenceCodec.encode(initial.toRawAnalysisDriveData().copy(endAddress = address)))
+        val detail = requireNotNull(buildLocalParkedDetail(10, 11, observed, newer(32)))
 
         assertEquals("123 Main Street, Springfield", detail.address)
     }

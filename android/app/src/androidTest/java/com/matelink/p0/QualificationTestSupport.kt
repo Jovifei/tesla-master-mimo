@@ -5,7 +5,7 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.onAllNodesWithText
-import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -19,7 +19,12 @@ import androidx.compose.ui.test.junit4.ComposeTestRule
 import androidx.test.platform.app.InstrumentationRegistry
 import com.matelink.R
 import com.matelink.data.local.AppSettings
+import com.matelink.data.local.ConnectionMode
+import com.matelink.data.local.ConnectionModeStore
+import com.matelink.data.local.DataReadinessStore
+import com.matelink.data.local.JourVoltSessionStore
 import com.matelink.data.repository.SettingsRepository
+import com.matelink.data.repository.compatibilityDataReadiness
 import com.matelink.locale.LocaleHelper
 import com.matelink.receiver.DebugEndpointReceiver
 import dagger.hilt.android.EntryPointAccessors
@@ -59,12 +64,29 @@ internal suspend fun prepareQualificationState(
         apiToken = VALID_SYNTHETIC_TOKEN,
         currencyCode = "EUR"
     )
+    ConnectionModeStore(context.applicationContext).set(ConnectionMode.SELF_HOSTED)
     settingsDataStore(context).saveLanguageCode("en")
     LocaleHelper.applyLocale(context.applicationContext, "en")
     settingsDataStore(context).saveLastSelectedCarId(101)
     // These data-page tests do not qualify the separate first-run permission dialog.
     // Mark only the app's prompt state; never grant or change the OS permission.
     settingsDataStore(context).saveNotificationPermissionAsked()
+    // The isolated legacy fixture has no readiness endpoint: its real repository
+    // compatibility result is version 0 for car 101. Mark ONLY that exact current
+    // account/origin/car explanation as seen, before the asynchronous dashboard read.
+    // A new capability, another vehicle, or an unexpected dialog must still fail.
+    val readinessStore = DataReadinessStore(
+        context.applicationContext,
+        JourVoltSessionStore(context.applicationContext),
+        ConnectionModeStore(context.applicationContext),
+        settingsDataStore(context)
+    )
+    val readiness = compatibilityDataReadiness(101)
+    readinessStore.markSeen(readiness, 101)
+    check(readinessStore.hasSeen(readiness, 101)) { "Synthetic readiness explanation was not initialized" }
+    // Other UI qualification cases exercise page controls, not the one-time explanation.
+    context.getSharedPreferences("history_notice_acknowledgements", Context.MODE_PRIVATE)
+        .edit().putBoolean("charge_estimate_v1", true).commit()
     // The navigation shell reads SettingsRepository, not SettingsDataStore.lastSelectedCarId.
     // Both must identify a car actually returned by the synthetic /cars response.
     SettingsRepository(context).setMockMode(false)
@@ -138,7 +160,10 @@ internal fun ComposeTestRule.navigateToSettings(context: Context) {
     scrollMoreTo(context.getString(R.string.settings_title))
     onNodeWithText(context.getString(R.string.settings_title), useUnmergedTree = true)
         .performClick()
-    onNodeWithTag("advancedNetworkSection").performClick()
+    // The settings title is also visible while its DataStore-backed content loads.
+    waitForTag("advancedNetworkSection")
+    onNodeWithTag("advancedNetworkSection").performScrollTo().performClick()
+    waitForTag("serverAddressInput")
     onNodeWithTag("serverAddressInput").assertExists()
 }
 
@@ -184,16 +209,15 @@ private fun ComposeTestRule.scrollMoreTo(text: String) {
 /** Choose a real UI date range that includes the fixed July 18 synthetic history. */
 internal fun ComposeTestRule.selectFixtureHistoryWindow(context: Context) {
     val label = context.getString(R.string.filter_all_time)
-    val dateRow = if (onAllNodesWithTag("drive_date_filters", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()) {
-        onNodeWithTag("drive_date_filters", useUnmergedTree = true)
-    } else if (onAllNodesWithTag("charge_date_filters", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()) {
-        onNodeWithTag("charge_date_filters", useUnmergedTree = true)
-    } else {
-        val horizontal = hasScrollAction() and SemanticsMatcher.keyIsDefined(SemanticsProperties.HorizontalScrollAxisRange)
-        waitUntil(15_000) { onAllNodes(horizontal, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
-        onAllNodes(horizontal, useUnmergedTree = true)[0]
+    val vertical = hasScrollAction() and SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange)
+    onNode(vertical, useUnmergedTree = true).performScrollToIndex(0)
+    waitUntil(15_000) {
+        onAllNodesWithTag("drive_date_filters", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() ||
+            onAllNodesWithTag("charge_date_filters", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
     }
-    dateRow.performScrollToNode(hasText(label))
+    val tag = if (onAllNodesWithTag("drive_date_filters", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty())
+        "drive_date_filters" else "charge_date_filters"
+    onNodeWithTag(tag, useUnmergedTree = true).performClick()
     waitForIdle()
     onNodeWithText(label).performClick()
     waitForIdle()

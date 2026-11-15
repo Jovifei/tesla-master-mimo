@@ -379,18 +379,14 @@ private fun CountrySummaryCard(
             ) {
                 StatChip(
                     icon = Icons.Default.Route,
-                    value = UnitFormatter.formatDistance(country.totalDistanceKm, units, 0),
+                    value = geoDistanceText(country.qualifiedDistanceKm, units),
                     palette = palette,
                     modifier = Modifier.weight(1f)
                 )
 
                 StatChip(
                     icon = Icons.Default.ElectricBolt,
-                    value = if (country.totalChargeEnergyKwh > 999) {
-                        "%.1f MWh".format(country.totalChargeEnergyKwh / 1000)
-                    } else {
-                        "%.0f kWh".format(country.totalChargeEnergyKwh)
-                    },
+                    value = geoEnergyText(country.qualifiedChargeEnergyKwh),
                     palette = palette,
                     modifier = Modifier.weight(1f)
                 )
@@ -820,18 +816,14 @@ private fun RegionCard(
             ) {
                 StatChip(
                     icon = Icons.Default.Route,
-                    value = UnitFormatter.formatDistance(region.totalDistanceKm, units, 0),
+                    value = geoDistanceText(region.qualifiedDistanceKm, units),
                     palette = palette,
                     modifier = Modifier.weight(1f)
                 )
 
                 StatChip(
                     icon = Icons.Default.ElectricBolt,
-                    value = if (region.totalChargeEnergyKwh > 999) {
-                        "%.1f MWh".format(region.totalChargeEnergyKwh / 1000)
-                    } else {
-                        "%.0f kWh".format(region.totalChargeEnergyKwh)
-                    },
+                    value = geoEnergyText(region.qualifiedChargeEnergyKwh),
                     palette = palette,
                     modifier = Modifier.weight(1f)
                 )

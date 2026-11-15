@@ -39,11 +39,12 @@ import java.util.Locale
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VampireScreen(
+    carId: Int,
     onNavigateBack: () -> Unit = {},
     viewModel: VampireViewModel = hiltViewModel()
 ) {
-    LaunchedEffect(Unit) {
-        viewModel.load()
+    LaunchedEffect(carId) {
+        viewModel.load(carId)
     }
 
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()

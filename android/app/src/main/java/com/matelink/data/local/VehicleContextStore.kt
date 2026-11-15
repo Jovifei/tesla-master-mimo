@@ -5,6 +5,8 @@ import android.content.SharedPreferences
 import com.matelink.data.api.models.CarData
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.security.MessageDigest
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -14,6 +16,16 @@ import javax.inject.Singleton
  */
 @Singleton
 class VehicleContextStore internal constructor(private val preferences: SharedPreferences) {
+    private val _verifiedMappingChanges = MutableStateFlow<Map<String, Long>>(emptyMap())
+    internal val verifiedMappingChanges = _verifiedMappingChanges.asStateFlow()
+
+    internal fun verifiedMappingVersion(accountNamespace: String, apiOrigin: String, remoteApiCarId: Int): Long {
+        val account = accountNamespace.trim()
+        if (account.isEmpty() || remoteApiCarId < 0) return 0L
+        val key = originCloudRemoteKey(account, requireSelfHostedServerIdentity(apiOrigin), remoteApiCarId)
+        return _verifiedMappingChanges.value[key] ?: 0L
+    }
+
     @Inject constructor(@ApplicationContext context: Context) : this(
         context.getSharedPreferences("vehicle_history_identity", Context.MODE_PRIVATE)
     )
@@ -77,9 +89,15 @@ class VehicleContextStore internal constructor(private val preferences: SharedPr
         check(verifiedStableIdentity.startsWith(expectedPrefix)) { "cloud vehicle identity does not match its account and origin" }
         val remoteKey = originCloudRemoteKey(account, origin, remoteApiCarId)
         val digest = sha256Hex(verifiedStableIdentity)
+        val changed = preferences.getInt(remoteKey, Int.MIN_VALUE) != localHistoryCarId ||
+            preferences.getString("$remoteKey:verified-identity", null) != digest
         check(preferences.edit().putInt(remoteKey, localHistoryCarId)
             .putString("$remoteKey:verified-identity", digest).commit()) {
             "unable to persist origin-scoped history mapping"
+        }
+        if (changed) {
+            val versions = _verifiedMappingChanges.value
+            _verifiedMappingChanges.value = versions + (remoteKey to ((versions[remoteKey] ?: 0L) + 1L))
         }
     }
 

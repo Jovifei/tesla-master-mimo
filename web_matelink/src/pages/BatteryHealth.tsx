@@ -19,13 +19,15 @@ export default function BatteryHealth({ carId }: { carId: number }) {
   if (error) return <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-700 dark:border-red-900 dark:bg-red-900/20 dark:text-red-200">TeslaMate battery health unavailable: {error}</div>;
   if (loading) return <div className="animate-pulse text-gray-400">Loading battery health...</div>;
 
-  const latest = healthData[healthData.length - 1];
-  const original = healthData[0];
+  const validHealthData = healthData.filter(point => Number.isFinite(point.rated_range_km) && point.rated_range_km > 0);
+  const latest = validHealthData[validHealthData.length - 1];
+  const original = validHealthData[0];
 
-  if (!latest || !original) return <div>No battery health data</div>;
+  if (!latest || !original) return <div className="rounded-xl border border-gray-200 dark:border-gray-700 p-6 text-center text-sm text-gray-500">No valid battery health data</div>;
 
-  const healthPercent = ((latest.rated_range_km / original.rated_range_km) * 100).toFixed(1);
-  const degradation = (100 - Number(healthPercent)).toFixed(1);
+  const healthRatio = latest.rated_range_km / original.rated_range_km;
+  const healthPercent = (Number.isFinite(healthRatio) ? Math.min(100, Math.max(0, healthRatio * 100)) : 0).toFixed(1);
+  const degradation = Math.max(0, 100 - Number(healthPercent)).toFixed(1);
 
   return (
     <div className="space-y-6">
@@ -80,7 +82,7 @@ export default function BatteryHealth({ carId }: { carId: number }) {
       <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm">
         <h2 className="font-semibold mb-4">Degradation Trend</h2>
         <ResponsiveContainer width="100%" height={250}>
-          <LineChart data={healthData}>
+          <LineChart data={validHealthData}>
             <XAxis dataKey="date" />
             <YAxis domain={[400, 550]} />
             <Tooltip />

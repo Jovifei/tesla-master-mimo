@@ -141,17 +141,17 @@ fun AnnualReportPDFScreen(
                             (coverage?.chargeEnergySampleCount ?: qs.totalCharges) > 0
                         Text(
                             "${stringResource(R.string.pdf_report_total_distance)} " +
-                                if (hasDistance) "${String.format(java.util.Locale.US, "%,.0f", qs.totalDistanceKm)} km" else noData
+                                if (hasDistance) ("${String.format(java.util.Locale.US, "%,.0f", qs.totalDistanceKm)} km" + reportCoverageSuffix(coverage?.driveDistanceSampleCount, qs.totalDrives)) else noData
                         )
                         Text("${stringResource(R.string.pdf_report_total_drives)} ${qs.totalDrives}")
                         Text(
                             "${stringResource(R.string.pdf_report_energy_used)} " +
-                                if (hasEnergy && qs.totalEnergyConsumedKwh != null) "${String.format(java.util.Locale.US, "%,.1f", qs.totalEnergyConsumedKwh)} kWh" else noData
+                                if (hasEnergy && qs.totalEnergyConsumedKwh != null) ("${String.format(java.util.Locale.US, "%,.1f", qs.totalEnergyConsumedKwh)} kWh" + reportCoverageSuffix(coverage?.driveEnergySampleCount, qs.totalDrives)) else noData
                         )
                         Text("${stringResource(R.string.pdf_report_charges_label)} ${qs.totalCharges}")
                         Text(
                             "${stringResource(R.string.pdf_report_avg_efficiency)} " +
-                                if (hasDistance && hasEnergy && (qs.avgEfficiencyWhKm ?: 0.0) > 0.0) {
+                                if (hasDistance && hasEnergy && qs.avgEfficiencyWhKm?.isFinite() == true) {
                                     "${String.format(java.util.Locale.US, "%.0f", qs.avgEfficiencyWhKm)} Wh/km"
                                 } else {
                                     noData
@@ -159,7 +159,7 @@ fun AnnualReportPDFScreen(
                         )
                         Text(
                             "${stringResource(R.string.pdf_report_energy_added_label)} " +
-                                if (hasChargeEnergy) "${String.format(java.util.Locale.US, "%,.1f", qs.totalEnergyAddedKwh)} kWh" else noData
+                                if (hasChargeEnergy) ("${String.format(java.util.Locale.US, "%,.1f", qs.totalEnergyAddedKwh)} kWh" + reportCoverageSuffix(coverage?.chargeEnergySampleCount, qs.totalCharges)) else noData
                         )
                     }
                 }
@@ -321,14 +321,14 @@ private class PdfBuilder(private val context: Context) {
         text(context.getString(R.string.annual_report_summary), h2Paint, 28f)
         text(
             "${context.getString(R.string.pdf_report_total_distance)} " +
-                if (hasDistance) "${String.format(java.util.Locale.US, "%,.0f", qs.totalDistanceKm)} km"
+                if (hasDistance) ("${String.format(java.util.Locale.US, "%,.0f", qs.totalDistanceKm)} km" + reportCoverageSuffix(coverage?.driveDistanceSampleCount, qs.totalDrives))
                 else context.getString(R.string.analysis_no_records),
             bodyPaint
         )
         text("${context.getString(R.string.pdf_report_total_drives)} ${qs.totalDrives}", bodyPaint)
         text(
             "${context.getString(R.string.pdf_report_energy_used)} " +
-                if (hasEnergy && qs.totalEnergyConsumedKwh != null) "${String.format(java.util.Locale.US, "%,.1f", qs.totalEnergyConsumedKwh)} kWh"
+                if (hasEnergy && qs.totalEnergyConsumedKwh != null) ("${String.format(java.util.Locale.US, "%,.1f", qs.totalEnergyConsumedKwh)} kWh" + reportCoverageSuffix(coverage?.driveEnergySampleCount, qs.totalDrives))
                 else context.getString(R.string.analysis_no_records),
             bodyPaint
         )
@@ -344,7 +344,7 @@ private class PdfBuilder(private val context: Context) {
         text("${context.getString(R.string.pdf_report_charges_label)} ${qs.totalCharges}", bodyPaint)
         text(
             "${context.getString(R.string.pdf_report_energy_added_label)} " +
-                if (hasChargeEnergy) "${String.format(java.util.Locale.US, "%,.1f", qs.totalEnergyAddedKwh)} kWh"
+                if (hasChargeEnergy) ("${String.format(java.util.Locale.US, "%,.1f", qs.totalEnergyAddedKwh)} kWh" + reportCoverageSuffix(coverage?.chargeEnergySampleCount, qs.totalCharges))
                 else context.getString(R.string.analysis_no_records),
             bodyPaint
         )
@@ -437,10 +437,8 @@ private class PdfBuilder(private val context: Context) {
 
         doc.finishPage(currentPage)
 
-        // Save (clean up previous version first)
-        val fileName = "matelink_annual_report_${year}.pdf"
-        val file = File(context.cacheDir, fileName)
-        if (file.exists()) file.delete()
+        // Every published URI keeps the exact report it originally represented.
+        val file = File.createTempFile("matelink_annual_report_${year}_", ".pdf", context.cacheDir)
         try {
             FileOutputStream(file).use { doc.writeTo(it) }
         } finally {
@@ -461,3 +459,7 @@ fun generatePdf(
 ): String {
     return PdfBuilder(context).build(stats, year, monthlyDrives, monthlyCharges, currencySymbol)
 }
+
+/** Coverage belongs to the frozen cohort; the same suffix is used in preview and file. */
+internal fun reportCoverageSuffix(samples: Int?, records: Int): String =
+    if (samples != null && records > 0 && samples < records) " · $samples/$records" else ""

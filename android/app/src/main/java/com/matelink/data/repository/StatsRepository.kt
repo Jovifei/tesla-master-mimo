@@ -24,6 +24,7 @@ import kotlin.coroutines.CoroutineContext
 import com.matelink.data.api.models.ChargeData
 import com.matelink.data.local.entity.SchemaVersion
 import com.matelink.data.sync.SyncManager
+import com.matelink.data.sync.withQualifiedCanonicalTemperatures
 import com.matelink.domain.model.CarStats
 import com.matelink.domain.model.ChargePowerRecord
 import com.matelink.domain.model.ChargeTempRecord
@@ -290,12 +291,14 @@ class StatsRepository @Inject constructor(
             deepStats = deepStats,
             syncProgress = syncProgress,
             recommendations = analysis.recommendations,
-            analysisCoverage = analysis.coverage
+            analysisCoverage = analysis.coverage,
+            currencyCode = selectedCurrencyCode
         )
         return ComputedStats(stats, cohort, request.carId, request.zone, selectedCurrencyCode, request::verify)
     }
 
-    private suspend fun captureStatsRoomSnapshot(request: StatsRead, yearFilter: YearFilter): StatsRoomSnapshot =
+    private suspend fun captureStatsRoomSnapshot(request: StatsRead, yearFilter: YearFilter,
+                                                includeCostRecords: Boolean = true): StatsRoomSnapshot =
         request.read {
             database.withTransaction {
                 request.verify()
@@ -310,10 +313,10 @@ class StatsRepository @Inject constructor(
                     }
                 }
                 request.verify()
-                val overrides = chargeCostOverrideStore.readAllRecordsAfterMigration()
-                    .filter { it.carId == historyCarId }
-                val firstDriveDate = driveSummaryDao.firstDriveDate(historyCarId)
-                val firstChargeDate = chargeSummaryDao.firstChargeDate(historyCarId)
+                val overrides = if (includeCostRecords) chargeCostOverrideStore.readAllRecordsAfterMigration()
+                    .filter { it.carId == historyCarId } else emptyList()
+                val firstDriveDate = if (includeCostRecords) driveSummaryDao.firstDriveDate(historyCarId) else null
+                val firstChargeDate = if (includeCostRecords) chargeSummaryDao.firstChargeDate(historyCarId) else null
                 val driveAggregates = drives.map { it.driveId }.chunked(400).flatMap { ids ->
                     aggregateDao.getDriveAggregatesForStats(historyCarId, ids).also { request.verify() }
                 }
@@ -382,7 +385,7 @@ class StatsRepository @Inject constructor(
                             distanceKm = it.distanceKm,
                             energyKwh = it.netEnergyKwh,
                             averageSpeedKmh = it.speedAvgKmh,
-                            outsideTemperatureC = it.outsideTempAvg,
+                            outsideTemperatureC = it.outsideTempC,
                             observedAt = localHistoryDate(it.startDate, request.zone)?.toString()
                         )
                     },
@@ -554,8 +557,8 @@ class StatsRepository @Inject constructor(
     ): DeepStats? {
         val driveRows = cohort.drives.associateBy { it.first.driveId }
         val chargeRows = cohort.charges.associateBy { it.first.chargeId }
-        val drives = capturedDrives.filter { it.carId == request.carId && it.driveId in driveRows }
-        val charges = capturedCharges.filter { it.carId == request.carId && it.chargeId in chargeRows }
+        val drives = capturedDrives.filter { it.carId == request.carId && it.driveId in driveRows }.map { it.withQualifiedCanonicalTemperatures() }
+        val charges = capturedCharges.filter { it.carId == request.carId && it.chargeId in chargeRows }.map { it.withQualifiedCanonicalTemperatures() }
         if (drives.isEmpty() && charges.isEmpty()) return null
         fun <T> extreme(rows: List<T>, minimum: Boolean = false, value: (T) -> Double?): T? {
             val known = rows.mapNotNull { row -> value(row)?.takeIf(Double::isFinite)?.let { row to it } }
@@ -572,10 +575,12 @@ class StatsRepository @Inject constructor(
         val modes = charges.associate { aggregate ->
             aggregate.chargeId to statsChargeMode(chargeRows.getValue(aggregate.chargeId).second, aggregate)
         }
-        fun energy(mode: StatsChargeMode): Double = charges.asSequence()
+        fun energy(mode: StatsChargeMode): List<Double> = charges.asSequence()
             .filter { modes[it.chargeId] == mode }
             .mapNotNull { chargeRows[it.chargeId]?.second?.batteryInputKwh?.takeIf { value -> value.isFinite() && value >= 0.0 } }
-            .sum()
+            .toList()
+        val acEnergy = energy(StatsChargeMode.AC)
+        val dcEnergy = energy(StatsChargeMode.DC)
         val allTime = yearFilter is YearFilter.AllTime
         fun driveDate(id: Int): String? = driveRows[id]?.second?.startDate
         fun chargeDate(id: Int): String? = chargeRows[id]?.second?.startDate
@@ -606,11 +611,13 @@ class StatsRepository @Inject constructor(
             chargeWithMaxPower = maxPower?.let { ChargePowerRecord(it.chargeId, it.maxChargerPower, chargeDate(it.chargeId)) },
             acChargeCount = modes.values.count { it == StatsChargeMode.AC },
             dcChargeCount = modes.values.count { it == StatsChargeMode.DC },
-            acChargeEnergyKwh = energy(StatsChargeMode.AC),
-            dcChargeEnergyKwh = energy(StatsChargeMode.DC),
+            acChargeEnergyKwh = acEnergy.sum(),
+            dcChargeEnergyKwh = dcEnergy.sum(),
             countriesVisitedCount = drives.mapNotNull { it.startCountryCode }.distinct().size.takeIf { it > 0 },
             driveDetailsProcessed = drives.size,
-            chargeDetailsProcessed = charges.size
+            chargeDetailsProcessed = charges.size,
+            acEnergySampleCount = acEnergy.size,
+            dcEnergySampleCount = dcEnergy.size
         )
     }
 
@@ -706,92 +713,102 @@ class StatsRepository @Inject constructor(
         }
     }
 
-    /**
-     * Get countries visited with aggregated data.
-     */
-    suspend fun getCountriesVisited(carId: Int, yearFilter: YearFilter): List<CountryRecord> {
-        val historyCarId = resolveHistoryCarId(carId)
-        val results = when (yearFilter) {
-            is YearFilter.AllTime -> aggregateDao.getCountriesVisited(historyCarId)
-            is YearFilter.Year -> {
-                val startDate = "${yearFilter.year}-01-01T00:00:00"
-                val endDate = "${yearFilter.year + 1}-01-01T00:00:00"
-                aggregateDao.getCountriesVisitedInRange(historyCarId, startDate, endDate)
-            }
+    internal val geoScopeChanges: Flow<Unit> get() = vehicleContextRepository.historyScopeChanges.map { Unit }
+
+    internal suspend fun captureGeoIdentity(carId: Int): GeoStatsIdentity {
+        val request = beginStatsRead(carId)
+        return GeoStatsIdentity(request.scope, request.context, request.zone) {
+            vehicleContextRepository.isHistoryContextCurrentNow(request.scope, request.context) &&
+                ZoneId.systemDefault() == request.zone
         }
-        return results.map { it.toCountryRecord() }
     }
 
-    /**
-     * Get regions visited within a specific country with aggregated data.
-     */
-    suspend fun getRegionsVisited(carId: Int, countryCode: String, yearFilter: YearFilter): List<RegionRecord> {
-        val historyCarId = resolveHistoryCarId(carId)
-        val results = when (yearFilter) {
-            is YearFilter.AllTime -> aggregateDao.getRegionsVisited(historyCarId, countryCode)
-            is YearFilter.Year -> {
-                val startDate = "${yearFilter.year}-01-01T00:00:00"
-                val endDate = "${yearFilter.year + 1}-01-01T00:00:00"
-                aggregateDao.getRegionsVisitedInRange(historyCarId, countryCode, startDate, endDate)
+    /** Header, region totals and markers are projections of exactly one qualified Room cohort. */
+    internal suspend fun getGeoSnapshot(carId: Int, yearFilter: YearFilter, countryCode: String? = null,
+                                        identity: GeoStatsIdentity? = null): GeoStatsSnapshot {
+        val proof = identity ?: captureGeoIdentity(carId)
+        val scope = proof.scope ?: throw HistoryIdentityUnavailableException()
+        val vehicle = proof.vehicle ?: throw HistoryIdentityUnavailableException()
+        if (vehicle.remoteApiCarId != carId || !proof.isCurrent()) throw HistoryIdentityUnavailableException()
+        val request = StatsRead(scope, vehicle, proof.zone, currentCoroutineContext())
+        request.verify()
+        val room = captureStatsRoomSnapshot(request, yearFilter, includeCostRecords = false)
+        return withContext(Dispatchers.Default) {
+            val cohort = selectStatsCohort(request, yearFilter, room.drives, room.charges)
+            val driveAggregates = room.driveAggregates.associateBy { it.driveId }
+            val chargeAggregates = room.chargeAggregates.associateBy { it.chargeId }
+            fun code(raw: String?): String? = raw?.trim()?.uppercase(java.util.Locale.ROOT)
+                ?.takeIf { it.length == 2 && it.all { char -> char in 'A'..'Z' } }
+            val drives = cohort.drives.mapNotNull { (_, data) ->
+                driveAggregates[data.driveId]?.takeIf { it.carId == request.carId && code(it.startCountryCode) != null }
+                    ?.let { it to data }
             }
-        }
-        return results.map { it.toRegionRecord() }
-    }
-
-    /**
-     * Observe geocoding progress for a car.
-     * Returns null when geocoding is complete or hasn't started.
-     */
-    fun observeGeocodeProgress(carId: Int): Flow<GeocodeProgressInfo?> {
-        return flow { emitAll(geocodingRepository.observeGeocodeProgress(resolveHistoryCarId(carId))) }
-    }
-
-    /**
-     * Get all charge locations for a specific country (for map display).
-     */
-    suspend fun getChargeLocationsForCountry(
-        carId: Int,
-        countryCode: String,
-        yearFilter: YearFilter
-    ): List<ChargeLocation> {
-        val historyCarId = resolveHistoryCarId(carId)
-        val results = when (yearFilter) {
-            is YearFilter.AllTime -> aggregateDao.getChargeLocationsForCountry(historyCarId, countryCode)
-            is YearFilter.Year -> {
-                val startDate = "${yearFilter.year}-01-01T00:00:00"
-                val endDate = "${yearFilter.year + 1}-01-01T00:00:00"
-                aggregateDao.getChargeLocationsForCountryInRange(historyCarId, countryCode, startDate, endDate)
+            val charges = cohort.charges.mapNotNull { (_, data) ->
+                chargeAggregates[data.chargeId]?.takeIf { it.carId == request.carId && code(it.countryCode) != null }
+                    ?.let { it to data }
             }
+            fun distances(rows: List<Pair<DriveDetailAggregate, DriveData>>) =
+                rows.mapNotNull { it.second.distanceKm?.takeIf { value -> value.isFinite() && value >= 0.0 } }
+            fun energies(rows: List<Pair<ChargeDetailAggregate, ChargeData>>) =
+                rows.mapNotNull { it.second.batteryInputKwh?.takeIf { value -> value.isFinite() && value >= 0.0 } }
+            fun visits(rows: List<Pair<DriveDetailAggregate, DriveData>>) = rows.mapNotNull { it.second.startDate }
+                .sortedWith(compareBy { geoVisitInstant(it, request.zone) })
+            val countries = drives.groupBy { code(it.first.startCountryCode)!! }.map { (country, rows) ->
+                val matchingCharges = charges.filter { code(it.first.countryCode) == country }
+                val distance = distances(rows); val energy = energies(matchingCharges); val dates = visits(rows)
+                CountryRecord(country, rows.mapNotNull { it.first.startCountryName?.trim()?.takeIf(String::isNotEmpty) }
+                    .firstOrNull() ?: country, countryCodeToFlag(country), dates.first(), dates.last(), rows.size,
+                    distance.sum(), energy.sum(), matchingCharges.size, distance.size, energy.size)
+            }.sortedWith(compareBy { geoVisitInstant(it.firstVisitDate, request.zone) })
+            val requestedCountry = code(countryCode)
+            val regions = if (requestedCountry == null) emptyList() else drives
+                .filter { code(it.first.startCountryCode) == requestedCountry && !it.first.startRegionName.isNullOrBlank() }
+                .groupBy { it.first.startRegionName!!.trim() }.map { (region, rows) ->
+                    val matchingCharges = charges.filter { code(it.first.countryCode) == requestedCountry && it.first.regionName?.trim() == region }
+                    val distance = distances(rows); val energy = energies(matchingCharges); val dates = visits(rows)
+                    RegionRecord(region, requestedCountry, dates.first(), dates.last(), rows.size, distance.sum(),
+                        energy.sum(), matchingCharges.size, distance.size, energy.size)
+                }.sortedWith(compareBy { geoVisitInstant(it.firstVisitDate, request.zone) })
+            val chargeLocations = if (requestedCountry == null) emptyList() else charges.mapNotNull { (aggregate, data) ->
+                if (code(aggregate.countryCode) != requestedCountry) return@mapNotNull null
+                val latitude = data.latitude ?: return@mapNotNull null
+                val longitude = data.longitude ?: return@mapNotNull null
+                if (!validGeoCoordinates(latitude, longitude)) return@mapNotNull null
+                val mode = statsChargeMode(data, aggregate)
+                ChargeLocation(data.chargeId, latitude, longitude, data.batteryInputKwh ?: 0.0,
+                    data.startDate!!, mode == StatsChargeMode.DC, data.address.orEmpty(),
+                    when (mode) { StatsChargeMode.AC -> "ac"; StatsChargeMode.DC -> "dc"; StatsChargeMode.UNKNOWN -> null })
+            }.sortedWith(compareByDescending { geoVisitInstant(it.date, request.zone) })
+            val driveLocations = if (requestedCountry == null) emptyList() else drives.mapNotNull { (aggregate, data) ->
+                if (code(aggregate.startCountryCode) != requestedCountry) return@mapNotNull null
+                val latitude = aggregate.startLatitude ?: return@mapNotNull null
+                val longitude = aggregate.startLongitude ?: return@mapNotNull null
+                if (!validGeoCoordinates(latitude, longitude)) return@mapNotNull null
+                DriveLocation(data.driveId, latitude, longitude, data.distanceKm ?: 0.0,
+                    data.startDate!!, data.startAddress.orEmpty())
+            }.sortedWith(compareByDescending { geoVisitInstant(it.date, request.zone) })
+            request.verify()
+            if (!proof.isCurrent()) throw HistoryIdentityUnavailableException()
+            GeoStatsSnapshot(countries, regions, chargeLocations, driveLocations, request.zone)
         }
-        return results.map { it.toChargeLocation() }
     }
 
-    /**
-     * Get country boundary polygon for map overlay.
-     */
-    suspend fun getCountryBoundary(countryCode: String): CountryBoundary? {
-        return geocodingRepository.getCountryBoundary(countryCode)
-    }
+    suspend fun getCountriesVisited(carId: Int, yearFilter: YearFilter): List<CountryRecord> =
+        getGeoSnapshot(carId, yearFilter).countries
 
-    /**
-     * Get all drive start locations for a specific country (for map display).
-     */
-    suspend fun getDriveLocationsForCountry(
-        carId: Int,
-        countryCode: String,
-        yearFilter: YearFilter
-    ): List<DriveLocation> {
-        val historyCarId = resolveHistoryCarId(carId)
-        val results = when (yearFilter) {
-            is YearFilter.AllTime -> aggregateDao.getDriveLocationsForCountry(historyCarId, countryCode)
-            is YearFilter.Year -> {
-                val startDate = "${yearFilter.year}-01-01T00:00:00"
-                val endDate = "${yearFilter.year + 1}-01-01T00:00:00"
-                aggregateDao.getDriveLocationsForCountryInRange(historyCarId, countryCode, startDate, endDate)
-            }
-        }
-        return results.map { it.toDriveLocation() }
-    }
+    suspend fun getRegionsVisited(carId: Int, countryCode: String, yearFilter: YearFilter): List<RegionRecord> =
+        getGeoSnapshot(carId, yearFilter, countryCode).regions
+
+    fun observeGeocodeProgress(carId: Int): Flow<GeocodeProgressInfo?> =
+        flow { emitAll(geocodingRepository.observeGeocodeProgress(resolveHistoryCarId(carId))) }
+
+    suspend fun getChargeLocationsForCountry(carId: Int, countryCode: String, yearFilter: YearFilter): List<ChargeLocation> =
+        getGeoSnapshot(carId, yearFilter, countryCode).chargeLocations
+
+    suspend fun getCountryBoundary(countryCode: String): CountryBoundary? = geocodingRepository.getCountryBoundary(countryCode)
+
+    suspend fun getDriveLocationsForCountry(carId: Int, countryCode: String, yearFilter: YearFilter): List<DriveLocation> =
+        getGeoSnapshot(carId, yearFilter, countryCode).driveLocations
 
     // === Monthly Aggregation ===
 
@@ -829,48 +846,6 @@ fun countryCodeToFlag(countryCode: String): String {
     val second = 0x1F1E6 - 'A'.code + secondChar.code
     return String(intArrayOf(first, second), 0, 2)
 }
-
-private fun com.matelink.data.local.dao.CountryVisitResult.toCountryRecord() = CountryRecord(
-    countryCode = countryCode,
-    countryName = countryName,
-    flagEmoji = countryCodeToFlag(countryCode),
-    firstVisitDate = firstVisitDate,
-    lastVisitDate = lastVisitDate,
-    driveCount = driveCount,
-    totalDistanceKm = totalDistanceKm,
-    totalChargeEnergyKwh = totalChargeEnergyKwh,
-    chargeCount = chargeCount
-)
-
-private fun com.matelink.data.local.dao.RegionVisitResult.toRegionRecord() = RegionRecord(
-    regionName = regionName,
-    countryCode = countryCode,
-    firstVisitDate = firstVisitDate,
-    lastVisitDate = lastVisitDate,
-    driveCount = driveCount,
-    totalDistanceKm = totalDistanceKm,
-    totalChargeEnergyKwh = totalChargeEnergyKwh,
-    chargeCount = chargeCount
-)
-
-private fun com.matelink.data.local.dao.ChargeLocationResult.toChargeLocation() = ChargeLocation(
-    chargeId = chargeId,
-    latitude = latitude,
-    longitude = longitude,
-    energyAddedKwh = energyAdded,
-    date = startDate,
-    isDcCharge = isFastCharger,
-    address = address
-)
-
-private fun com.matelink.data.local.dao.DriveLocationResult.toDriveLocation() = DriveLocation(
-    driveId = driveId,
-    latitude = latitude,
-    longitude = longitude,
-    distanceKm = distance,
-    date = startDate,
-    address = address
-)
 
 private fun com.matelink.domain.model.SyncPhase.isProcessing(): Boolean {
     return this == com.matelink.domain.model.SyncPhase.SYNCING_SUMMARIES ||

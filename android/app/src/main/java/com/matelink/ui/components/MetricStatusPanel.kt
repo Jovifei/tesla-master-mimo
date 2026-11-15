@@ -101,7 +101,9 @@ fun MetricStatusPanel(
 fun HistoryStatusPanel(
     reason: NoDataReason?,
     emptyBody: String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    actionLabel: String? = null,
+    onAction: (() -> Unit)? = null
 ) {
     val (kind, title, body) = when (reason) {
         NoDataReason.COLLECTING -> Triple(
@@ -134,7 +136,9 @@ fun HistoryStatusPanel(
         kind = kind,
         title = title,
         body = body,
-        modifier = modifier
+        modifier = modifier,
+        actionLabel = actionLabel,
+        onAction = onAction
     )
 }
 

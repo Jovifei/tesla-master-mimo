@@ -2,6 +2,7 @@ package com.matelink.domain.history
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -15,7 +16,9 @@ internal class LatestHistoryLoad {
     fun launch(scope: CoroutineScope, block: suspend Request.() -> Unit) {
         job?.cancel()
         val request = Request(++generation)
-        job = scope.launch { request.block() }
+        val next = scope.launch(start = CoroutineStart.LAZY) { request.block() }
+        job = next
+        next.start()
     }
 
     fun invalidate() {

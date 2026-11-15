@@ -39,6 +39,25 @@ fun findChargeCostOverride(
     else candidates.singleOrNull { it.currencyCode?.trim()?.uppercase(Locale.ROOT) == currency }
 }
 
+/**
+ * Finds one saved amount for the same local car and numeric charge when the
+ * current response cannot prove the exact session identity. The caller may
+ * show it as pending/unbound evidence, but must not count it as qualified cost.
+ */
+fun findPendingChargeCostOverride(
+    records: List<ChargeCostOverride>, localHistoryCarId: Int, charge: ChargeData,
+    selectedCurrencyCode: String
+): ChargeCostOverride? {
+    if (charge.sourceRecordIdentity.conflicted) return null
+    val currency = selectedCurrencyCode.trim().uppercase(Locale.ROOT)
+    val candidates = records.filter {
+        it.carId == localHistoryCarId && it.chargeId == charge.chargeId &&
+            !it.deleted && it.currencyCode?.trim()?.uppercase(Locale.ROOT) == currency
+    }
+    return findChargeCostOverride(records, localHistoryCarId, charge, selectedCurrencyCode)
+        ?: candidates.singleOrNull()
+}
+
 /** A saved amount in another currency is visible as evidence, never silently converted. */
 fun findOtherCurrencyChargeCostOverride(
     records: List<ChargeCostOverride>, localHistoryCarId: Int, charge: ChargeData,
@@ -78,7 +97,9 @@ fun projectEffectiveChargeCost(
     selectedCurrencyCode: String,
     freeSupercharging: Boolean = false,
     isDcCharge: Boolean = false,
-    defaultPricePerKwh: Double? = null
+    defaultPricePerKwh: Double? = null,
+    sessionFreeVerified: Boolean = false,
+    tariffEstimate: ChargeTariffEstimate? = null
 ): EffectiveChargeCost {
     if (charge.sourceRecordIdentity.conflicted) return unavailable("source_record_conflict")
     val currency = selectedCurrencyCode.trim().uppercase(Locale.ROOT)
@@ -94,9 +115,6 @@ fun projectEffectiveChargeCost(
             sourceInstanceVerified = reason == null
         )
     }
-    if (freeSupercharging && isDcCharge) {
-        return EffectiveChargeCost(0.0, ChargeCostSource.FREE, currency, "explicit_free")
-    }
     val sourceCost = charge.cost?.takeIf { it.isFinite() && it > 0.0 }
     if (sourceCost != null) {
         if (charge.source.isNullOrBlank()) return unavailable("source_unverified")
@@ -109,10 +127,18 @@ fun projectEffectiveChargeCost(
         if (sourceCurrency == null) return unavailable("currency_unverified")
         return unavailable("currency_mismatch")
     }
-    val estimated = manualChargeAmount(defaultPricePerKwh, charge.batteryInputKwh)
+    // A current vehicle entitlement is not evidence about every historic DC
+    // session. An observed bill (including non-energy fees) takes precedence.
+    if (freeSupercharging && isDcCharge && sessionFreeVerified) {
+        return EffectiveChargeCost(0.0, ChargeCostSource.FREE, currency, "verified_session_free")
+    }
+    val partialEnergy = charge.partialBatteryInputKwh
+    val estimated = (if (tariffEstimate != null) tariffEstimate.amount else
+        manualChargeAmount(defaultPricePerKwh, charge.batteryInputKwh ?: partialEnergy))
         ?.takeIf(Double::isFinite)
     if (estimated != null) return EffectiveChargeCost(estimated, ChargeCostSource.ESTIMATE,
-        currency, "estimate")
+        currency, if (charge.batteryInputKwh == null && partialEnergy != null)
+            "estimate_partial_counter" else tariffEstimate?.reason ?: "estimate")
     return unavailable(if (charge.cost == 0.0) "provider_zero_unverified" else "price_unavailable")
 }
 

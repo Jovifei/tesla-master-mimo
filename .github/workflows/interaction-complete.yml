@@ -1,0 +1,39 @@
+name: Complete interaction stage verification
+on:
+  push:
+    branches: [codex/app-interaction-complete-20261106]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: interaction-complete-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  source:
+    if: github.repository == 'Jovifei/tesla-master-mimo'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Inspect exact source and all actual visual consumers
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = Jovifei/tesla-master-mimo
+          git merge-base --is-ancestor fc812ff8505dc72f6002023bc93c041d5de92b75 HEAD
+          mkdir -p complete-evidence
+          git rev-parse HEAD HEAD^{tree} HEAD^ | tee complete-evidence/source.txt
+          git diff --check fc812ff8505dc72f6002023bc93c041d5de92b75 HEAD
+          git grep -n -B 6 -A 10 'ConnectionVisual(' -- android/app/src/main | tee complete-evidence/connection-consumers.txt
+          git grep -n -E 'TpmsVehicleVisual|RouteInteractionVisual|VehicleOpeningsVisual|RecordedChargeRail|EmptyHistoryVisual' -- android/app/src/main | tee complete-evidence/visual-consumers.txt
+          git grep -n -E 'InteractionVisual|testInstrumentationRunnerArguments|connectedDebugAndroidTest' -- .github/workflows tools/interaction-stage tools/data-foundation | tee complete-evidence/test-entrypoints.txt
+          git archive --format=zip --output=complete-evidence/source.zip HEAD
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: complete-source-and-consumers
+          path: complete-evidence/
+          retention-days: 14

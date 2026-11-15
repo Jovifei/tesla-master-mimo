@@ -81,6 +81,25 @@ class VehicleStatusStoreScopeTest {
         assertEquals("2026-10-23T01:00:00Z", reopened.getCachedPosition(scope, car)!!.observedAt)
     }
 
+    @Test fun sparseReceiptCannotBorrowUnitsTimeFlagsOrReplaceValidZero() {
+        val scope = cloudScope("alice", "https://one.example")
+        val car = vehicle(-1)
+        store.saveStatus(scope, car, CarStatus(odometer = 50.0,
+            carStatus = com.matelink.data.api.models.CarStatusDetails(locked = true),
+            batteryDetails = com.matelink.data.api.models.BatteryDetails(batteryLevel = 80)),
+            "2026-10-23T01:00:00Z", units = com.matelink.data.api.models.Units(unitOfLength = "km"), source = "fleet")
+        val current = store.reconcileAndSave(scope, car, CarStatus(odometer = 0.0,
+            carStatus = com.matelink.data.api.models.CarStatusDetails(locked = false),
+            batteryDetails = com.matelink.data.api.models.BatteryDetails(batteryLevel = 0)), null)
+        assertEquals(0.0, current.odometer!!, 0.0)
+        assertEquals(false, current.carStatus!!.locked)
+        assertEquals(0, current.batteryDetails!!.batteryLevel)
+        val receipt = store.getCachedReceipt(scope, car)!!
+        assertNull(receipt.units)
+        assertNull(receipt.observedAt)
+        assertNull(receipt.source)
+    }
+
     @Test fun positionWithoutObservationTimeIsNotHistoricalProof() {
         val scope = cloudScope("alice", "https://one.example")
         val car = vehicle(-1)

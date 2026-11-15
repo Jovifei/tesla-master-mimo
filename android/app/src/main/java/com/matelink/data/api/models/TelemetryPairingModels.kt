@@ -12,6 +12,8 @@ data class TelemetryPairingResponse(
 @JsonClass(generateAdapter = true)
 data class TelemetryPairingStatus(
     @Json(name = "status") val status: String = "unknown",
+    /** Server-graded onboarding phase (design §8); null on older backends. */
+    @Json(name = "phase") val phase: String? = null,
     @Json(name = "virtual_key_url") val virtualKeyUrl: String? = null,
     @Json(name = "updated_at") val updatedAt: String? = null,
     @Json(name = "config_synced") val configSynced: Boolean? = null,

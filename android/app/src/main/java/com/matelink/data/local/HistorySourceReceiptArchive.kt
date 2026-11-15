@@ -15,6 +15,8 @@ import com.matelink.util.parseIsoInstant
  * it is never eligible as detail points, a live Fleet event, or a current summary.
  * Original raw envelope bytes are retained without guessing any missing UID.
  */
+internal class HistorySourceArchiveException(reason: String) : IllegalStateException(reason)
+
 internal object HistorySourceReceiptArchive {
     const val CHARGE_KIND = "archived_charge_source"
     const val DRIVE_KIND = "archived_drive_source"
@@ -68,9 +70,9 @@ internal object HistorySourceReceiptArchive {
     ): HistoryDetailReceipt? {
         // A source switch must never silently destroy the only old summary
         // when an old schema has no raw receipt. Roll back its enclosing Room txn.
-        check(!original.isNullOrBlank()) { "history_conflict_original_receipt_missing" }
+        if (original.isNullOrBlank()) throw HistorySourceArchiveException("history_conflict_original_receipt_missing")
         val bytes = original.toByteArray(Charsets.UTF_8)
-        check(bytes.size <= 512 * 1024) { "history_conflict_receipt_oversize" }
+        if (bytes.size > 512 * 1024) throw HistorySourceArchiveException("history_conflict_receipt_oversize")
         // Input framed to eliminate ambiguous string concatenation and keep accounts isolated.
         val identity = sha256Framed("source-conflict-v1".toByteArray(Charsets.UTF_8), listOf(
             localCar.toString(), kind, recordId.toString(), source.orEmpty(),

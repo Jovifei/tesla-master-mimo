@@ -35,7 +35,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.collect
+import java.time.Clock
 import java.time.LocalDate
 import com.matelink.util.parseIsoInstant
 import javax.inject.Inject
@@ -82,16 +84,21 @@ internal interface RangePageSource {
     val scopeChanges: Flow<Unit>
     suspend fun identity(carId: Int): RangePageIdentity
     suspend fun history(carId: Int): ApiResult<AnalysisHistorySnapshot>
+    suspend fun loadCached(carId: Int): ApiResult<AnalysisHistorySnapshot>? = null
     suspend fun health(carId: Int): ApiResult<BatteryHealth>
     suspend fun status(carId: Int): ApiResult<CarStatusWithUnits>
 }
 
 @HiltViewModel
-class RangeViewModel internal constructor(private val source: RangePageSource) : ViewModel() {
+class RangeViewModel internal constructor(
+    private val source: RangePageSource,
+    private val clock: Clock = Clock.systemDefaultZone()
+) : ViewModel() {
     @Inject constructor(
         historyRepository: AnalysisHistoryRepository,
         teslamateRepository: TeslamateRepository,
-        vehicleContexts: VehicleContextRepository
+        vehicleContexts: VehicleContextRepository,
+        clock: Clock
     ) : this(object : RangePageSource {
         override val scopeChanges = vehicleContexts.historyScopeChanges.map { Unit }
         override suspend fun identity(carId: Int): RangePageIdentity {
@@ -100,10 +107,11 @@ class RangeViewModel internal constructor(private val source: RangePageSource) :
                 ?: throw HistoryIdentityUnavailableException()
             return RangePageIdentity(context) { vehicleContexts.isHistoryContextCurrentNow(scope, context) }
         }
-        override suspend fun history(carId: Int) = historyRepository.load(carId)
+        override suspend fun history(carId: Int) = historyRepository.loadDrives(carId)
+        override suspend fun loadCached(carId: Int) = historyRepository.loadCachedDrives(carId)
         override suspend fun health(carId: Int) = teslamateRepository.getBatteryHealth(carId)
         override suspend fun status(carId: Int) = teslamateRepository.getCarStatus(carId)
-    })
+    }, clock)
 
     private val _uiState = MutableStateFlow(RangeUiState())
     val uiState: StateFlow<RangeUiState> = _uiState.asStateFlow()
@@ -123,6 +131,7 @@ class RangeViewModel internal constructor(private val source: RangePageSource) :
     private var loadGeneration = 0L
     private var loadJob: Job? = null
     private var activeIdentity: RangePageIdentity? = null
+    private var publishedHistoryIdentity: RangePageIdentity? = null
 
     init {
         viewModelScope.launch {
@@ -178,6 +187,7 @@ class RangeViewModel internal constructor(private val source: RangePageSource) :
     }
 
     private fun clearHistory() {
+        publishedHistoryIdentity = null
         allDrives = emptyList()
         allTrips = emptyList()
         historyRecordCount = 0
@@ -200,56 +210,115 @@ class RangeViewModel internal constructor(private val source: RangePageSource) :
                 if (generation != loadGeneration || carId != id || identity?.stillCurrent() != true)
                     throw HistoryIdentityUnavailableException()
             }
+            // Publish a history projection. Callers decide freshness: cached is always STALE,
+            // a verified remote result carries its own freshness.
+            fun publishHistory(snapshot: AnalysisHistorySnapshot, freshness: HistoryFreshness, refreshComplete: Boolean = false) {
+                requireCurrent()
+                if (snapshot.context != identity!!.context) throw HistoryIdentityUnavailableException()
+                val drives = snapshot.drives
+                val trips = drives.mapNotNull { it.toRangeTrip() }.sortedByDescending { it.startDate }
+                requireCurrent()
+                allDrives = drives
+                historyRecordCount = drives.size
+                historyReason = snapshot.coverage.reason
+                allTrips = trips
+                publishedHistoryIdentity = identity
+                _uiState.update { it.copy(historyFreshness = freshness, error = null,
+                    isRefreshing = if (refreshComplete) false else it.isRefreshing) }
+                recalculate(_uiState.value.selectedWindow)
+            }
+            // Optional enhancement after the freshest history is visible. Bounded: a health or
+            // status failure must never block or erase already-published history, and must not
+            // cross into another vehicle's identity.
+            fun publishEnhancement() {
+                requireCurrent()
+                _uiState.update { it.copy(isLoading = false, isRefreshing = false, error = null) }
+            }
             try {
-                if (!_uiState.value.isRefreshing) _uiState.update { it.copy(isLoading = true) }
+                if (!_uiState.value.isRefreshing && _uiState.value.trips.isEmpty()) _uiState.update { it.copy(isLoading = true) }
                 val proof = source.identity(id)
                 identity = proof
                 requireCurrent()
+                val published = publishedHistoryIdentity
+                if (published != null && (published.context != proof.context || !published.stillCurrent())) {
+                    clearHistory()
+                    _uiState.value = RangeUiState(selectedWindow = _uiState.value.selectedWindow,
+                        isRefreshing = _uiState.value.isRefreshing)
+                }
                 activeIdentity = proof
+                var cachedPublished = false
+                // A corrupt/unreadable Room snapshot must not prevent a valid remote load for the
+                // same verified identity; cancellation remains fatal.
+                val saved = try { source.loadCached(id) }
+                    catch (e: CancellationException) { throw e }
+                    catch (_: Exception) { null }
+                requireCurrent()
+                if (saved is ApiResult.Success) {
+                    publishHistory(saved.data, HistoryFreshness.STALE)
+                    cachedPublished = true
+                }
                 val result = source.history(id)
                 requireCurrent()
                 when (result) {
                     is ApiResult.Success -> {
                         // A history response can discover a replacement vehicle under the same remote ID.
                         if (result.data.context != proof.context) throw HistoryIdentityUnavailableException()
+                        publishHistory(result.data, result.data.freshness, refreshComplete = true)
                         val health = try {
-                            (source.health(id) as? ApiResult.Success)?.data
+                            withTimeoutOrNull(5_000L) {
+                                (source.health(id) as? ApiResult.Success)?.data
+                            }
                         } catch (e: CancellationException) { throw e }
                         catch (_: Exception) { null }
                         requireCurrent()
                         val status = try {
-                            (source.status(id) as? ApiResult.Success)?.data
+                            withTimeoutOrNull(5_000L) {
+                                (source.status(id) as? ApiResult.Success)?.data
+                            }
                         } catch (e: CancellationException) { throw e }
                         catch (_: Exception) { null }
                         requireCurrent()
                         val current = rangeStatusInputs(status)
-                        // Commit private caches and visible state together only after all awaited reads qualify.
-                        val drives = result.data.drives
-                        val trips = drives.mapNotNull { it.toRangeTrip() }.sortedByDescending { it.startDate }
                         requireCurrent()
-                        allDrives = drives
-                        historyRecordCount = drives.size
-                        historyReason = result.data.coverage.reason
-                        allTrips = trips
                         usableEnergyKwh = health?.currentCapacity?.takeIf { it.isFinite() && it > 0.0 }
                         ratedRangeKm = current.ratedRangeKm?.takeIf { it.isFinite() && it > 0.0 }
-                        currentTemperatureC = status?.status?.outsideTemp
+                        currentTemperatureC = current.temperatureC
                         currentSpeedKmh = current.speedKmh
                         recalculate(_uiState.value.selectedWindow)
-                        requireCurrent()
-                        _uiState.update { it.copy(isRefreshing = false, error = null, historyFreshness = result.data.freshness) }
+                        publishEnhancement()
                     }
-                    is ApiResult.Error -> _uiState.update {
-                        it.copy(isLoading = false, isRefreshing = false, error = result.message)
+                    is ApiResult.Error -> {
+                        // A transient network failure keeps the same-identity cached projection; an
+                        // identity/vehicle failure invalidates the screen regardless of cache.
+                        if (result.message == com.matelink.data.repository.HISTORY_IDENTITY_UNAVAILABLE) {
+                            clearHistory()
+                            _uiState.value = RangeUiState(isLoading = false,
+                                selectedWindow = _uiState.value.selectedWindow, noDataReason = NoDataReason.SOURCE_UNAVAILABLE)
+                        } else {
+                            // If a same-identity cached projection is already visible, a network failure
+                            // keeps it on screen without an error; only a cold start (no cache) surfaces
+                            // the failure.
+                            _uiState.update {
+                                if (cachedPublished) it.copy(isLoading = false, isRefreshing = false)
+                                else it.copy(isLoading = false, isRefreshing = false, error = result.message,
+                                    noDataReason = NoDataReason.SOURCE_UNAVAILABLE)
+                            }
+                        }
                     }
                 }
             } catch (e: CancellationException) {
                 throw e
-            } catch (_: Exception) {
+            } catch (e: Exception) {
                 if (generation == loadGeneration && execution.isActive) {
-                    clearHistory()
-                    _uiState.value = RangeUiState(isLoading = false,
-                        selectedWindow = _uiState.value.selectedWindow, noDataReason = NoDataReason.SOURCE_UNAVAILABLE)
+                    val published = publishedHistoryIdentity
+                    if (e !is HistoryIdentityUnavailableException && published != null &&
+                        published.context == identity?.context && published.stillCurrent() && identity?.stillCurrent() == true) {
+                        _uiState.update { it.copy(isLoading = false, isRefreshing = false) }
+                    } else {
+                        clearHistory()
+                        _uiState.value = RangeUiState(isLoading = false,
+                            selectedWindow = _uiState.value.selectedWindow, noDataReason = NoDataReason.SOURCE_UNAVAILABLE)
+                    }
                 }
             }
         }
@@ -264,7 +333,7 @@ class RangeViewModel internal constructor(private val source: RangePageSource) :
             return
         }
         val dated = allTrips.mapNotNull { trip -> parseDate(trip.startDate)?.let { DatedRangeTrip(it, trip) } }
-        val selected = selectWindow(dated, window, LocalDate.now(), customStart, customEnd).map { it.trip }
+        val selected = selectWindow(dated, window, LocalDate.now(clock), customStart, customEnd).map { it.trip }
         val noDataReason = when {
             selected.isNotEmpty() -> null
             historyRecordCount == 0 -> historyReason ?: NoDataReason.NO_RECORDS
@@ -276,8 +345,8 @@ class RangeViewModel internal constructor(private val source: RangePageSource) :
         val personalized = buildPersonalizedRangeEstimate()
         val deviation = avg(selected)
         val distance = selected.sumOf { it.actualDistanceKm }
-        val summer = avg(selectWindow(dated, AnalysisWindow.SUMMER, LocalDate.now()).map { it.trip })
-        val winter = avg(selectWindow(dated, AnalysisWindow.WINTER, LocalDate.now()).map { it.trip })
+        val summer = avg(selectWindow(dated, AnalysisWindow.SUMMER, LocalDate.now(clock)).map { it.trip })
+        val winter = avg(selectWindow(dated, AnalysisWindow.WINTER, LocalDate.now(clock)).map { it.trip })
         if (activeIdentity?.stillCurrent() != true) {
             clearHistory()
             _uiState.value = RangeUiState(isLoading = false, selectedWindow = window,
@@ -304,7 +373,7 @@ class RangeViewModel internal constructor(private val source: RangePageSource) :
 
     private fun parseDate(value: String?): java.time.LocalDate? = value?.let {
 		runCatching { java.time.LocalDate.parse(it) }.getOrNull()
-			?: parseIsoInstant(it)?.atZone(java.time.ZoneId.systemDefault())?.toLocalDate()
+			?: parseIsoInstant(it)?.atZone(clock.zone)?.toLocalDate()
 	}
 
     private data class DatedRangeTrip(
@@ -326,7 +395,7 @@ class RangeViewModel internal constructor(private val source: RangePageSource) :
             usableEnergyKwh = usableEnergyKwh,
             currentTemperatureC = currentTemperatureC,
             currentSpeedKmh = currentSpeedKmh,
-            asOf = LocalDate.now()
+            asOf = LocalDate.now(clock)
         )
     }
 }
@@ -348,14 +417,14 @@ internal fun DriveData.toRangeTrip(): RangeTrip? {
         estimatedRangeKm = estimated,
         actualDistanceKm = distance,
         speedAvgKmh = speedAvgKmh,
-        outsideTempC = outsideTempAvg,
+        outsideTempC = outsideTempC,
         energyConsumedKwh = netEnergyKwh,
         deviationPercent = deviation
     )
 }
 
 internal fun DriveData.toPersonalizedRangeSample(date: LocalDate): PersonalizedRangeSample =
-    PersonalizedRangeSample(date, distanceKm, netEnergyKwh, speedAvgKmh, outsideTempAvg)
+    PersonalizedRangeSample(date, distanceKm, netEnergyKwh, speedAvgKmh, outsideTempC)
 
 internal fun rangeSpeedDeviations(trips: List<RangeTrip>): Pair<Double?, Double?> {
     fun average(items: List<RangeTrip>) = items.takeIf { it.isNotEmpty() }?.map { it.deviationPercent }?.average()
@@ -364,11 +433,12 @@ internal fun rangeSpeedDeviations(trips: List<RangeTrip>): Pair<Double?, Double?
     return average(low) to average(high)
 }
 
-internal data class RangeStatusInputs(val speedKmh: Double?, val ratedRangeKm: Double?)
+internal data class RangeStatusInputs(val speedKmh: Double?, val ratedRangeKm: Double?, val temperatureC: Double? = null)
 
 /** The current-condition consumer retains the status response's own units. */
 internal fun rangeStatusInputs(response: CarStatusWithUnits?): RangeStatusInputs {
     val unit = response?.units?.unitOfLength?.trim()?.lowercase() ?: ""
     return RangeStatusInputs(driveDistanceKm(response?.status?.speed, unit),
-        driveDistanceKm(response?.status?.ratedBatteryRangeKm, unit))
+        driveDistanceKm(response?.status?.ratedBatteryRangeKm, unit),
+        com.matelink.domain.analytics.canonicalTemperatureC(response?.status?.outsideTemp, response?.units?.unitOfTemperature))
 }

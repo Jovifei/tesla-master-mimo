@@ -9,6 +9,7 @@ import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
 import androidx.work.WorkManager
 import com.matelink.data.sync.TpmsPressureWorker
+import com.matelink.data.sync.ChargingNotificationWorker
 import com.matelink.locale.LocaleHelper
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
@@ -36,6 +37,7 @@ class MateLinkApplication : Application(), Configuration.Provider {
         // restart-safe without launching an immediate vehicle request.
         if (shouldScheduleTpmsWorker(packageName, currentProcessName())) {
             TpmsPressureWorker.schedulePeriodicWork(this)
+            ChargingNotificationWorker.ensureScheduled(this)
         }
     }
 

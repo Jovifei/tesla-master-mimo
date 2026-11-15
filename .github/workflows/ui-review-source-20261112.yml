@@ -1,0 +1,45 @@
+name: UI pinned three-platform source 20261112
+on:
+  push:
+    branches: [codex/ui-product-app-20261109]
+    paths: ['.github/workflows/ui-review-source-20261112.yml']
+permissions:
+  contents: read
+jobs:
+  source:
+    if: github.repository == 'Jovifei/tesla-master-mimo'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Export complete tracked text at verified source heads
+        run: |
+          set -euo pipefail
+          mkdir -p source-evidence
+          python3 - <<'PY'
+          import subprocess,tarfile,io,json
+          from pathlib import Path
+          refs={'app':'94efb9217f1f7a349900a2c4efad4e2cfaf54bf3','mini':'1a8cdbede3799a9d4f2bab39620e4c9b7e023fa6','web':'9cece6f0ff5d9b24f6c026a7f6d5331becac41c3'}
+          suffixes={'.kt','.kts','.java','.swift','.go','.mod','.sum','.tsx','.ts','.js','.mjs','.mts','.cjs','.json','.scss','.css','.xml','.md','.yml','.yaml','.sh','.py','.properties','.toml','.sql','.html','.txt'}
+          manifest={}
+          for name,sha in refs.items():
+              paths=subprocess.check_output(['git','ls-tree','-r','--name-only',sha],text=True).splitlines()
+              chosen=[p for p in paths if Path(p).suffix in suffixes and not p.endswith('Tesla_MateLink_UI_Full_Handoff.html') and not p.startswith(('docs/ui-evidence/','docs/ui-design/','docs/assets/'))]
+              with tarfile.open('source-evidence/'+name+'.tgz','w:gz') as t:
+                  for p in chosen:
+                      data=subprocess.check_output(['git','show',sha+':'+p])
+                      if len(data)>4000000: continue
+                      info=tarfile.TarInfo(p);info.size=len(data);t.addfile(info,io.BytesIO(data))
+              manifest[name]={'sha':sha,'tree':subprocess.check_output(['git','rev-parse',sha+'^{tree}'],text=True).strip(),'parents':subprocess.check_output(['git','show','-s','--format=%P',sha],text=True).strip()}
+              Path('source-evidence/'+name+'-log.txt').write_bytes(subprocess.check_output(['git','log','-50','--oneline',sha]))
+          Path('source-evidence/manifest.json').write_text(json.dumps(manifest,indent=2))
+          Path('source-evidence/charge-history.txt').write_bytes(subprocess.check_output(['git','log','--all','-100','--oneline','--regexp-ignore-case','--grep=charge\\|charging\\|heatmap\\|calendar\\|充电']))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ui-three-platform-source-20261112
+          path: source-evidence/
+          retention-days: 7
+          if-no-files-found: error

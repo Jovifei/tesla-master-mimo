@@ -57,6 +57,23 @@ class VerifiedHistoryContextStoreTest {
         assertTrue(memory.strings.keys.none { it.contains("account-a") || it.contains("api.example") || it.contains("provider-a") })
         assertTrue(memory.strings.values.all { it.matches(Regex("[0-9a-f]{64}")) })
     }
+    @Test fun verifiedMappingVersionIsScopedAndChangesForActualRemapIncludingAba() {
+        val store = VehicleContextStore(MemoryPreferences().preferences)
+        fun version() = store.verifiedMappingVersion("account-a", "https://api.example", 7)
+        val initial = version()
+        store.resolveVerifiedHistoryCar(car, "account-a", source, "cloud", "https://api.example")
+        val first = version()
+        assertEquals(initial + 1, first)
+        store.resolveVerifiedHistoryCar(car, "account-a", source, "cloud", "https://api.example/")
+        store.resolveVerifiedHistoryCar(car.copy(carId = 8), "account-a", source, "cloud", "https://api.example")
+        store.resolveVerifiedHistoryCar(car, "account-b", source, "cloud", "https://api.example")
+        assertEquals(first, version())
+        store.resolveVerifiedHistoryCar(car.copy(vehicleUid = "provider-b"), "account-a", source, "cloud", "https://api.example")
+        assertEquals(first + 1, version())
+        store.resolveVerifiedHistoryCar(car, "account-a", source, "cloud", "https://api.example")
+        assertEquals(first + 2, version())
+    }
+
     @Test fun originsAccountsAndUidsCannotShareTheVerifiedNamespace() {
         val store = VehicleContextStore(MemoryPreferences().preferences)
         val first = store.resolveVerifiedHistoryCar(car, "account-a", source, "cloud", "https://api.example")

@@ -1,5 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="archive_enrollment_title">Renew archive connection</string>
+    <string name="archive_enrollment_loading">Checking this request…</string>
+    <string name="archive_enrollment_compare">Only approve if this code matches the archive helper you just opened. This renews the existing connection for this vehicle and source.</string>
+    <string name="archive_enrollment_vehicle">Vehicle: %1$s</string>
+    <string name="archive_enrollment_source">Source: %1$s</string>
+    <string name="archive_enrollment_fingerprint">Source fingerprint: %1$s</string>
+    <string name="archive_enrollment_expires">Request expires: %1$s</string>
+    <string name="archive_enrollment_approve">Codes match · Approve</string>
+    <string name="archive_enrollment_reject">Reject</string>
+    <string name="archive_enrollment_cancel">Cancel</string>
+    <string name="archive_enrollment_close">Close</string>
+    <string name="archive_enrollment_submitting">Sending your choice…</string>
+    <string name="archive_enrollment_approved">Approved. Continue in the archive helper to finish renewing the connection.</string>
+    <string name="archive_enrollment_rejected">Request rejected.</string>
+    <string name="archive_enrollment_identity_changed">Your account, source, session or selected vehicle changed. Open a fresh request after checking your current vehicle.</string>
+    <string name="archive_enrollment_expired">This request expired. Start a new request in the archive helper.</string>
+    <string name="archive_enrollment_forbidden">This request cannot renew your current vehicle’s existing archive connection.</string>
+    <string name="archive_enrollment_invalid">This archive request is invalid. Start again in the archive helper.</string>
+    <string name="archive_enrollment_unavailable">The request could not be confirmed. Check your connection and open the request again.</string>
     <string name="energy_capacity_description">SOC estimate · %1$.1f kWh · %2$s</string>
     <string name="energy_capacity_model_trim">model/trim assumption</string>
     <string name="energy_capacity_model">model assumption</string>
@@ -12,10 +31,10 @@
     <string name="history_detail_waiting_for_summary">This detail cannot be matched to a saved session yet. Refresh the history list and try again.</string>
     <string name="history_detail_points_missing">Detail points could not be saved. The chart may be unavailable offline.</string>
     <string name="history_detail_cache_corrupt">Saved detail points failed the integrity check. Showing the summary without a chart.</string>
-    <string name="history_detail_source_unverified">Received detail points are saved, but their source instance or record ID is unverified; the provider total is also unknown.</string>
-    <string name="history_detail_total_unverified">Received detail points are saved. The provider has not supplied a total count to verify full coverage.</string>
-    <string name="history_detail_cached_source_unverified">Showing saved detail points offline. Their source instance or record ID and full provider coverage remain unverified.</string>
-    <string name="history_detail_cached_total_unverified">Showing saved detail points offline. Full provider coverage remains unverified.</string>
+    <string name="history_detail_source_unverified">Details need verification</string>
+    <string name="history_detail_total_unverified">Details may be incomplete</string>
+    <string name="history_detail_cached_source_unverified">Showing cached details; verification pending</string>
+    <string name="history_detail_cached_total_unverified">Showing cached details; they may be incomplete</string>
     <string name="energy_source_api_reported">API reported</string>
     <string name="energy_source_energy_remaining_delta">Remaining Energy Delta</string>
     <string name="energy_source_soc_estimate">Capacity Estimate</string>
@@ -25,6 +44,10 @@
     <string name="trip_notification_metrics">%1$.1f km · %2$d min</string>
     <string name="default_charge_price">Default charging rate</string>
     <string name="default_charge_price_hint">Used to estimate costs without a bill. Individual amounts take priority.</string>
+    <string name="charge_partial_energy">Recorded energy</string>
+    <string name="charge_reference_energy">Reference energy</string>
+    <string name="charge_reference_cost">Reference cost</string>
+    <string name="charge_estimate_once_notice">Without an entered amount, cost is estimated from energy and your rate. Partial energy covers recorded intervals only. Tap the amount to edit it.</string>
     <string name="charge_cost_estimate">Estimated cost</string>
     <string name="amap_settings_section">Map services</string>
     <string name="amap_settings_title">AMap</string>
@@ -162,7 +185,7 @@
     <string name="dashboard_error_service_title">Vehicle service unavailable</string>
     <string name="dashboard_error_service_body">The vehicle service is temporarily unavailable. Refresh later; no live value is being invented.</string>
     <string name="dashboard_error_network_title">Cannot reach vehicle service</string>
-    <string name="dashboard_error_network_body">Check the network connection and refresh. Any value still shown is the last confirmed snapshot.</string>
+    <string name="dashboard_error_network_body">The selected data source is unreachable. Check the network; cloud accounts should confirm the source in Settings, then refresh. Shown values remain the last confirmed snapshot.</string>
     <string name="dashboard_error_generic_title">Live status unavailable</string>
     <string name="dashboard_error_generic_body">Live vehicle status could not be loaded. Refresh to try again.</string>
     <string name="dashboard_partial_status_body">MateLink can read this vehicle from TeslaMate. Battery, location, lock, climate, and TPMS cards need the live status endpoint to return a snapshot.</string>
@@ -185,6 +208,15 @@
     <string name="climate_off">Climate OFF</string>
     <string name="sentry_armed">Sentry ARMED</string>
     <string name="sentry_off">Sentry OFF</string>
+    <string name="media_now_playing">Now playing: %s</string>
+    <string name="software_update_downloading">Downloading update · %d%%</string>
+    <string name="software_update_installing">Installing update · %d%%</string>
+    <string name="software_update_in_progress">Software update in progress</string>
+    <string name="scheduled_charging_start">Scheduled charging at %s</string>
+    <string name="scheduled_departure">Scheduled departure at %s</string>
+    <string name="valet_mode_on">Valet mode is on</string>
+    <string name="speed_limit_on">Speed limit %d km/h</string>
+    <string name="climate_target">Climate target %s°</string>
     <string name="high_soc_warning" formatted="false">High charge level – consider reducing to 80–90% for daily use</string>
     <string name="tire_pressure">Tire Pressure</string>
     <string name="battery_trend">7-Day Battery Trend</string>
@@ -193,7 +225,7 @@
     <string name="battery_charge_summary">Current %1$d%% · charge target %2$d%%</string>
     <string name="battery_open_tesla_app">Open Tesla App to adjust</string>
     <string name="battery_health_collecting">Battery health data is still being collected.</string>
-    <string name="battery_health_unsupported">Battery health is not supported by this data source.</string>
+    <string name="battery_health_unsupported">Measured battery capacity is not provided by this data source.</string>
     <string name="battery_health_load_error">Battery health could not be loaded. Check the connection and try again.</string>
     <string name="vehicle">Vehicle</string>
     <string name="lock">Lock</string>
@@ -261,15 +293,15 @@
 
     <!-- Timeline -->
     <string name="timeline_title">Timeline</string>
-    <string name="timeline_empty">暂无事件</string>
-    <string name="timeline_drive">行驶</string>
-    <string name="timeline_charge">充电</string>
+    <string name="timeline_empty">No events yet</string>
+    <string name="timeline_drive">Drive</string>
+    <string name="timeline_charge">Charge</string>
     <string name="timeline_distance_value">%.1f km</string>
     <string name="timeline_battery_end">%d%%</string>
     <string name="timeline_energy_added">%.1f kWh</string>
     <string name="timeline_cost_value">%1$s%2$.2f</string>
-    <string name="timeline_unknown_route">未知路线</string>
-    <string name="timeline_unknown_location">未知地点</string>
+    <string name="timeline_unknown_route">Unknown route</string>
+    <string name="timeline_unknown_location">Unknown location</string>
 
     <!-- Drives -->
     <string name="drives_title">Drive History</string>
@@ -338,6 +370,14 @@
     <string name="loading">Loading…</string>
     <string name="loading_more_history">Loading more history…</string>
     <string name="history_choose_date">Choose date</string>
+    <string name="history_chart_partial_data">Some records have missing data</string>
+    <string name="history_last_week">Last week</string>
+    <string name="history_last_month">Last month</string>
+    <string name="history_last_three_months">Last 3 months</string>
+    <string name="history_last_year">Last year</string>
+    <string name="history_drive_type">Trip type</string>
+    <string name="history_charge_type">Charge type</string>
+    <string name="history_clear_location">Clear locations</string>
     <string name="history_show_earlier">Show earlier history</string>
     <string name="no_data">No data available</string>
     <string name="offline">Offline - showing cached data</string>
@@ -393,6 +433,7 @@
     <string name="metric_state_insufficient_body">Records exist, but the fields required for this analysis are missing or incomplete.</string>
     <string name="metric_state_filter_empty_title">No records in this range</string>
     <string name="metric_state_filter_empty_body">Try another time range or choose All.</string>
+    <string name="history_clear_filters">Clear filters</string>
     <string name="metric_state_collecting_title">History collection is in progress</string>
     <string name="metric_state_collecting_body">The data source has started collecting records. Analysis will appear as new history arrives.</string>
     <string name="metric_state_unavailable_title">History is unavailable</string>
@@ -423,7 +464,7 @@
     <string name="cost_average_kwh">Average/kWh</string>
     <string name="cost_average_kwh_hint">Effective cost</string>
     <string name="cost_recorded_manual_total">Recorded and manual totals</string>
-    <string name="cost_default_rate_estimate">Default-rate estimate</string>
+    <string name="cost_default_rate_estimate">Estimated charging cost</string>
     <string name="cost_paired_battery_unit">Cost per battery kWh (paired)</string>
     <string name="cost_coverage_counts">Priced %1$d/%2$d · energy %3$d/%2$d · paired %4$d</string>
     <string name="cost_estimate_coverage">Estimated %1$d sessions</string>
@@ -732,6 +773,11 @@
     <string name="temperature_min_outside">Min Outside</string>
     <string name="temperature_min_inside">Min Cabin</string>
     <string name="temperature_cabin_diff">Max Temp Diff</string>
+    <string name="temperature_insights_title">Temperature &amp; Climate Insights</string>
+    <string name="temperature_insights_solar_gain">Cabin Solar Heat Gain</string>
+    <string name="temperature_insights_solar_desc">Cabin temperature rises quickly under direct sunlight. Consider enabling Cabin Overheat Protection or pre-cooling before driving.</string>
+    <string name="temperature_insights_climate_good">Climate Performance</string>
+    <string name="temperature_insights_climate_good_desc">Cabin temperature remained in comfortable range during drives with efficient climate regulation.</string>
     <string name="tpms_pressure_unit">bar</string>
     <string name="settings_tpms_entry_subtitle">Target pressure &amp; alert thresholds per car</string>
     <string name="tpms_profile_title">Per-car cold tire-pressure profile</string>
@@ -875,6 +921,8 @@
     <string name="external_action_unavailable">No app is available to open this link.</string>
     <string name="charge_cost_actual">Actual record</string>
     <string name="charge_cost_manual">Manual total</string>
+    <string name="charge_cost_pending_short">Pending verification</string>
+    <string name="charge_cost_currency_pending_short">Currency unconfirmed</string>
     <string name="edit_charge_cost">Modify total amount</string>
     <string name="charge_total_amount">Session total</string>
     <string name="charge_cost_legacy_pending">Previous manual amount %1$.2f has unconfirmed currency and session. Enter and save a value to bind this charge in the selected currency.</string>
@@ -906,7 +954,7 @@
     <string name="ideal_range">Ideal Range</string>
     <string name="ideal_range_subtitle">Reported ideal range</string>
     <string name="estimated_total_capacity_title">Estimated Total Capacity</string>
-    <string name="estimated_total_capacity_message">Based on charging data analysis.</string>
+    <string name="estimated_total_capacity_message">At %1$d%% SOC, this is a linear estimate from rated range, not a measured battery capacity.</string>
     <string name="estimated_total_capacity">Estimated Total Capacity</string>
     <string name="capacity_kwh">Capacity (kWh)</string>
     <string name="capacity_percent">Capacity (%)</string>
@@ -1041,19 +1089,20 @@
     <string name="energy">Energy</string>
     <string name="energy_added">Energy Added</string>
     <string name="energy_added_header">Energy Added</string>
-    <string name="estimated_range_description">Based on recent driving patterns</string>
+    <string name="estimated_range_description">Estimated from current SOC and rated range</string>
     <string name="expand">Expand</string>
     <string name="filter_all">All</string>
-    <string name="filter_commute_km">Commute (&lt; 50km)</string>
-    <string name="filter_commute_mi">Commute (&lt; 30mi)</string>
-    <string name="filter_day_trip_km">Day Trip (50–200km)</string>
-    <string name="filter_day_trip_mi">Day Trip (30–125mi)</string>
+    <string name="filter_commute_km">Commute (&lt; 10 km)</string>
+    <string name="filter_commute_mi">Commute (&lt; approx. 6.2 mi)</string>
+    <string name="filter_day_trip_km">Day Trip (10–&lt;100 km)</string>
+    <string name="filter_day_trip_mi">Day Trip (approx. 6.2–&lt;62.1 mi)</string>
     <string name="filter_last_30_days">Last 30 Days</string>
     <string name="filter_last_7_days">Last 7 Days</string>
     <string name="filter_last_90_days">Last 90 Days</string>
     <string name="filter_location">Location</string>
-    <string name="filter_road_trip_km">Road Trip (200km+)</string>
-    <string name="filter_road_trip_mi">Road Trip (125mi+)</string>
+    <string name="filter_location_all">All locations</string>
+    <string name="filter_road_trip_km">Road Trip (100 km+)</string>
+    <string name="filter_road_trip_mi">Road Trip (approx. 62.1 mi+)</string>
     <string name="filter_today">Today</string>
     <plurals name="format_charges_on_map">
         <item quantity="one">%1$d on map</item>
@@ -1087,8 +1136,8 @@
     <string name="max_speed">Max Speed</string>
     <string name="maximum">Maximum</string>
     <string name="mileage_avg_month">Avg/Month</string>
-    <string name="mileage_avg_year">Avg/Year</string>
-    <string name="mileage_avg_year_message">Average distance per year</string>
+    <string name="mileage_avg_year">Annualized distance</string>
+    <string name="mileage_avg_year_message">Annualized from the first valid drive to today; it is not a calendar-year total.</string>
     <string name="mileage_avg_year_title">Average Per Year</string>
     <string name="mileage_by_day">By Day</string>
     <string name="mileage_by_month">By Month</string>
@@ -1185,18 +1234,14 @@
     <string name="settings_release_notes_close">Got it</string>
     <string name="settings_switch_to_cloud">Switch to MateLink Cloud</string>
     <string name="settings_switch_to_self_hosted">Switch to local TeslaMate</string>
-<string name="settings_release_notes_body" formatted="false">• Qualified charge detail can be saved safely; a weak list refresh no longer erases its energy. Edit the total inside the right-side fee cell.\n• Temperature history uses real observations only. Tire-pressure history reuses existing status responses without automatic periodic Fleet data requests. Sentry history uses verified local vehicle identity.\n• Annual and cost statistics separate unknown, real zero and signed recovery; unknown monthly values are not zero bars. Timeline dates use local time.\n• History now opens with the summary and recent records; compact filters and the original monthly charts remain above the history list.\n• Four-column summaries and charging history, larger numbers and compact date filters.\n• Drive history metrics now fit a compact single row; details retain their full panels and enlarged text can scroll without truncation.
-• Automatic history syncing and cached history now preserve validated vehicle identity and observed data evidence across refreshes.
-• Driving and charging energy display keeps real zero, signed recovery and unknown distinct; estimated values are explicitly labeled, never upgraded to measurements.
-• AC charging loss and efficiency require complete matching observed AC-only mode and counter windows; unknown or mixed-mode charging remains unavailable.
-• Parking energy, late updates and notifications retain their source and quality limits. New natural Fleet events and passive background delivery still require independent device validation.</string>
+<string name="settings_release_notes_body" formatted="false">• Improved weak-network startup: saved history can appear automatically before refresh completes.\n• Corrected charging costs, drive energy, temperature units and chart timing. Time-of-use prices provide estimated costs and never replace a known bill.\n• Unknown values, real zero and sampled data stay distinct; missing history is not invented.\n• Account and vehicle changes isolate old data; alerts are deduplicated from real observations.\n• Summary, report-year and export consistency are corrected while existing page layouts are retained.\n• Partial estimates remain separate from bills. Independent history reads, automatic local fee updates and cold-to-live same-vehicle analytics improve page responsiveness without resetting saved data.</string>
     <string name="settings_resync_button">Resync</string>
     <string name="settings_resync_confirm">Confirm Resync</string>
-    <string name="settings_resync_dialog_text_delete">This will delete all local data.</string>
-    <string name="settings_resync_dialog_text_prefix">Resync will</string>
-    <string name="settings_resync_dialog_text_suffix">and re-download from server.</string>
+    <string name="settings_resync_dialog_text_delete">keep existing data</string>
+    <string name="settings_resync_dialog_text_prefix">Resync will\u0020</string>
+    <string name="settings_resync_dialog_text_suffix">\u0020and check the server for missing history.</string>
     <string name="settings_resync_dialog_title">Resync Data</string>
-    <string name="settings_resync_hint">Force full data resync</string>
+    <string name="settings_resync_hint">Recheck history and keep existing data</string>
     <string name="settings_resyncing">Resyncing…</string>
     <string name="settings_save">Save</string>
     <string name="settings_secondary_server">Secondary API</string>
@@ -1209,10 +1254,10 @@
     <string name="settings_root_url_hint">Use the API root URL, for example https://teslamate-api.example.com. Do not use Grafana or TeslaMate Web UI, and do not add /api/v1.</string>
     <string name="settings_save_untested_warning">Connection has not been verified. Tap Save again to save anyway, or test the connection first.</string>
     <string name="settings_server_url_placeholder">https://teslamate-api.example.com</string>
-    <string name="settings_short_dialog_text">Are you sure?</string>
-    <string name="settings_short_dialog_title">Confirm</string>
-    <string name="settings_show_short_hint">Show abbreviated values</string>
-    <string name="settings_show_short_label">Short Values</string>
+    <string name="settings_short_dialog_text">When off, hide trips under 1 minute or 0.2 km and charges of 0.1 kWh or less. Records with unknown or incomplete data are not filtered out.</string>
+    <string name="settings_short_dialog_title">Short Records</string>
+    <string name="settings_show_short_hint">Turn off to hide short trips and small charges</string>
+    <string name="settings_show_short_label">Show Short Records</string>
     <string name="settings_test_connection">Test Connection</string>
     <string name="settings_enter_app">Enter App</string>
     <string name="show_password">Show Password</string>
@@ -1493,7 +1538,7 @@
 
     <!-- ViewModel errors -->
     <string name="error_save_settings">Failed to save settings</string>
-    <string name="resync_started">Full resync started. All cached data cleared. Check the Stats screen for progress.</string>
+    <string name="resync_started">History resync started. Existing data will be kept.</string>
     <string name="error_resync">Failed to start resync: %1$s</string>
     <string name="debug_tpms_simulated">Simulated TPMS warning for %1$s</string>
     <string name="debug_sentry_simulated">Simulated sentry event #%1$d</string>
@@ -1608,6 +1653,76 @@
     <string name="distance_profile">Distance Profile</string>
     <string name="telemetry_setup_pending_title">Connecting your vehicle automatically</string>
     <string name="telemetry_setup_pending_body">The service is checking and completing data setup. It recovers automatically when the vehicle wakes or a service becomes available. A confirmation is shown only when Tesla requires the owner’s action. Your history remains available; new records appear when actually received.</string>
+    <string name="telemetry_setup_configuring_title">Syncing your vehicle configuration</string>
+    <string name="telemetry_setup_configuring_body">Your Tesla key is confirmed. MateLink is pushing the data configuration to the vehicle; this finishes automatically once the vehicle responds. There is nothing you need to do.</string>
+    <string name="telemetry_setup_awaiting_title">Waiting for your vehicle’s first data</string>
+    <string name="telemetry_setup_awaiting_body">Configuration is complete. New trips and charges appear as soon as the vehicle sends its first data — usually on the next drive or charge. Your history remains available in the meantime.</string>
+    <string name="cmd_group_locks">Doors &amp; Security</string>
+    <string name="cmd_group_climate">Climate</string>
+    <string name="cmd_group_charging">Charging</string>
+    <string name="cmd_group_windows">Windows &amp; Sentry</string>
+    <string name="remote_controls_title">Vehicle controls</string>
+    <string name="remote_reauth_title">Additional authorization needed</string>
+    <string name="remote_reauth_body">Vehicle controls need additional Tesla permission scopes. Re-authorize once to enable them; your password is only ever entered on Tesla’s own page.</string>
+    <string name="remote_reauth_action">Re-authorize</string>
+    <string name="cmd_lock">Lock</string>
+    <string name="cmd_unlock">Unlock</string>
+    <string name="cmd_flash">Flash lights</string>
+    <string name="cmd_honk">Honk</string>
+    <string name="cmd_climate_on">Climate on</string>
+    <string name="cmd_climate_off">Climate off</string>
+    <string name="cmd_set_climate_temp">Set temperature</string>
+    <string name="cmd_charge_port_open">Open charge port</string>
+    <string name="cmd_charge_port_close">Close charge port</string>
+    <string name="cmd_charge_start">Start charging</string>
+    <string name="cmd_charge_stop">Stop charging</string>
+    <string name="cmd_set_charge_limit">Set charge limit</string>
+    <string name="cmd_windows_vent">Vent windows</string>
+    <string name="cmd_windows_close">Close windows</string>
+    <string name="cmd_sentry_on">Sentry on</string>
+    <string name="cmd_sentry_off">Sentry off</string>
+    <string name="cmd_generic">Command</string>
+    <string name="cmd_accepted">%1$s — done and confirmed.</string>
+    <string name="cmd_accepted_unverified">%1$s — the vehicle accepted the command, but its state could not be confirmed. Please check the vehicle.</string>
+    <string name="cmd_err_commands_disabled">Vehicle controls are not enabled yet.</string>
+    <string name="cmd_err_scope_missing">Missing Tesla authorization scopes — please re-authorize.</string>
+    <string name="cmd_err_confirmation_required">This command needs confirmation first.</string>
+    <string name="cmd_err_rate_limited">Daily command limit reached. Try again tomorrow.</string>
+    <string name="cmd_err_vehicle_moving">The vehicle is moving, so this command cannot run.</string>
+    <string name="cmd_err_not_plugged_in">The vehicle is not plugged in.</string>
+    <string name="cmd_err_key_not_paired">The virtual key is not paired with the vehicle.</string>
+    <string name="cmd_err_invalid_params">Invalid command parameters.</string>
+    <string name="cmd_err_generic">Command failed — please try again later.</string>
+    <string name="cmd_unlock_confirm_title">Unlock the vehicle?</string>
+    <string name="cmd_unlock_confirm_body">Unlocking is a sensitive action. Make sure the vehicle is in a safe place before confirming.</string>
+    <string name="cmd_confirm">Confirm</string>
+    <string name="cmd_cancel">Cancel</string>
+    <string name="cmd_climate_dialog_title">Set climate temperature</string>
+    <string name="cmd_driver_temp">Driver</string>
+    <string name="cmd_passenger_temp">Passenger</string>
+    <string name="cmd_charge_limit_dialog_title">Set charge limit</string>
+    <string name="cmd_executing">Executing…</string>
+    <string name="sentry_mode">Sentry Mode</string>
+    <string name="nearby_title">Nearby charging</string>
+    <string name="nearby_load">Load</string>
+    <string name="nearby_hint">Superchargers and destination chargers near the vehicle, loaded on demand.</string>
+    <string name="nearby_empty">No chargers to show near the vehicle.</string>
+    <string name="nearby_failed">Couldn’t load nearby chargers — try again.</string>
+    <string name="nearby_supercharger">Supercharger</string>
+    <string name="nearby_destination">Destination charging</string>
+    <string name="nearby_closed">Closed</string>
+    <string name="nearby_cached">Data from cache</string>
+    <string name="nearby_distance">%.1f km</string>
+    <string name="nearby_unnamed">Charging site</string>
+    <string name="places_title">My places</string>
+    <string name="places_empty">No saved places yet. Save the vehicle’s current location to name it.</string>
+    <string name="places_failed">Couldn’t load places — try again.</string>
+    <string name="places_add_here">Save current location as a place</string>
+    <string name="places_no_position">No vehicle position yet, so places can’t be added right now.</string>
+    <string name="places_name_label">Place name</string>
+    <string name="places_radius">Radius %1$d m</string>
+    <string name="places_delete_confirm">Delete place “%1$s”?</string>
+    <string name="places_add">Save</string>
     <string name="telemetry_recheck">Check setup again</string>
     <string name="vehicle_model_pending">Vehicle model not yet identified</string>
     <string name="history_sync_cached">Cloud history could not be refreshed. Showing this device’s saved history; pull to refresh to retry.</string>
@@ -1705,4 +1820,33 @@
     <string name="temperature_no_trip_history">No eligible saved drives in this period. Live temperature does not create historical samples.</string>
     <string name="temperature_no_qualified_trip_samples">Saved drives exist, but their temperatures lack qualified source/time evidence. Import or record real drives; no values were generated.</string>
     <string name="battery_cached_scope_notice">Saved status and history are offline records, not live vehicle measurements. Battery health capacity stays unknown without qualified evidence.</string>
+    <string name="parked_map_title">Parked Location</string>
+    <string name="trip_save_failed">Trip could not be saved. Your draft is kept; try again.</string>
+    <string name="temperature_observed_pair_delta_title">Drive mean temperature difference</string>
+    <string name="temperature_observed_pair_delta_note">Difference of recorded means from the same drive, not evidence of A/C performance.</string>
+    <string name="usable_percent_unavailable">Usable (—)</string>
+    <string name="parked_receipt_source_unverified">Verified local boundaries and window; upstream source instance remains unverified.</string>
+    <string name="parked_receipt_save_failed">Detail could not be saved; earlier cached history is preserved offline.</string>
+    <string name="drive_detail_sample_maximum">Sample maximum</string>
+    <string name="drive_detail_sample_minimum">Sample minimum</string>
+    <string name="history_read_incomplete_title">History is not fully available</string>
+    <string name="history_read_retry_hint">Check the connection, then return to this page to retry.</string>
+    <string name="diagnostic_fleet_available">All official reads completed</string>
+    <string name="diagnostic_fleet_partial">Some official reads unavailable</string>
+    <string name="diagnostic_fleet_yes">Yes</string>
+    <string name="diagnostic_fleet_no">No</string>
+    <string name="diagnostic_fleet_read_ok">Read succeeded</string>
+    <string name="diagnostic_fleet_read_error">Read failed</string>
+    <string name="diagnostic_fleet_not_attempted">Not attempted</string>
+    <string name="diagnostic_fleet_matches">Matches</string>
+    <string name="diagnostic_fleet_mismatch">Does not match</string>
+    <string name="diagnostic_fleet_errors_present">Errors reported</string>
+    <string name="diagnostic_fleet_no_errors">No errors reported</string>
+    <string name="diagnostic_fleet_summary">Official Fleet reads: %1$s. Vehicle status: %2$s; configuration: %3$s; recent errors: %4$s. These reads do not configure or wake the vehicle.</string>
+    <string name="diagnostic_fleet_vehicle">Virtual key paired: %1$s; streaming enabled: %2$s. Unknown values remain unconfirmed.</string>
+    <string name="diagnostic_fleet_config">Configuration synced: %1$s. Desired service target: %2$s; fields: %3$s; CA: %4$s. Recent errors: %5$s. Configuration and streaming are not proof of received telemetry.</string>
+    <string name="charge_unit_price">Avg Electricity Price</string>
+    <string name="charge_avg_energy">Avg per Session</string>
+    <string name="charge_unit_cost_label">Unit Price</string>
+    <string name="charge_avg_power_label">Avg Power</string>
 </resources>

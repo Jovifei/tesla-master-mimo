@@ -130,7 +130,7 @@ export const api = {
     const mockStatus = mockData.statuses[String(carId) as keyof typeof mockData.statuses];
     const mock: CarStatus = {
       ...mockStatus,
-      battery_level: Math.min(100, Math.max(10, mockStatus.battery_level + ((Math.random() - 0.5) * 2 | 0))),
+      battery_level: Math.min(100, Math.max(10, (mockStatus?.battery_level ?? 0) + ((Math.random() - 0.5) * 2 | 0))),
     } as CarStatus;
     return fetchJson(`/api/v1/cars/${carId}/status`, mock, body => body?.data?.status ?? body);
   },
@@ -138,8 +138,14 @@ export const api = {
   getDrives: async (carId: number): Promise<Drive[]> =>
     fetchCompleteHistory(carId, 'drives', mockData.drives as Drive[]),
 
+  getDrive: async (carId: number, driveId: number): Promise<Drive | undefined> =>
+    (await fetchCompleteHistory(carId, 'drives', mockData.drives as Drive[])).find(drive => drive.id === driveId),
+
   getCharges: async (carId: number): Promise<Charge[]> =>
     fetchCompleteHistory(carId, 'charges', mockData.charges as Charge[]),
+
+  getCharge: async (carId: number, chargeId: number): Promise<Charge | undefined> =>
+    (await fetchCompleteHistory(carId, 'charges', mockData.charges as Charge[])).find(charge => charge.id === chargeId),
 
   getBatteryHealth: async (carId: number): Promise<BatteryHealth[]> =>
     fetchJson(`/api/v1/cars/${carId}/battery-health`, mockData.battery_health.filter(h => h.car_id === carId) as BatteryHealth[], body => body?.data?.battery_health ?? body?.data?.batteryHealth ?? []),

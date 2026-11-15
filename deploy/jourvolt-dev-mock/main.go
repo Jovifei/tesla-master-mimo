@@ -15,6 +15,7 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -135,6 +136,14 @@ ALTER TABLE jourvolt_auth_transactions ADD COLUMN IF NOT EXISTS privacy_version 
 		return nil, err
 	}
 	if err := ensureSummarySchema(ctx, pool); err != nil {
+		pool.Close()
+		return nil, err
+	}
+	if err := ensureCommandSchema(ctx, pool); err != nil {
+		pool.Close()
+		return nil, err
+	}
+	if err := ensurePlaceSchema(ctx, pool); err != nil {
 		pool.Close()
 		return nil, err
 	}
@@ -340,9 +349,54 @@ type vehicleStatus struct {
 	InsideTemp                 *float64
 	OutsideTemp                *float64
 	IsPreconditioning          *bool
-	ProviderIdentity           string
-	Source                     string
-	FieldSources               map[string]string
+	// Extended display fields (design 2026-11-05 §4.1). Nil means the vehicle
+	// did not report the value; serializers must keep nil as JSON null.
+	ValetMode                      *bool
+	SoftwareUpdateStatus           *string
+	SoftwareDownloadPercent        *int
+	SoftwareInstallPercent         *int
+	SoftwareUpdateExpectedSec      *int
+	SpeedLimitActive               *bool
+	SpeedLimitCurrentKMH           *int
+	SpeedLimitPinRequired          *bool
+	MediaState                     *string
+	MediaTitle                     *string
+	MediaArtist                    *string
+	MediaAlbum                     *string
+	DriverTempSetting              *float64
+	PassengerTempSetting           *float64
+	FanStatus                      *int
+	FrontDefrosterOn               *bool
+	RearDefrosterOn                *bool
+	SeatHeaterLeft                 *int
+	SeatHeaterRight                *int
+	SeatHeaterRearLeft             *int
+	SeatHeaterRearCenter           *int
+	SeatHeaterRearRight            *int
+	SteeringWheelHeater            *bool
+	DefrostMode                    *int
+	ClimateKeeperMode              *string
+	CabinOverheatProtection        *string
+	CabinOverheatProtectionCooling *bool
+	SideMirrorHeaters              *bool
+	ConnChargeCable                *string
+	FastChargerBrand               *string
+	FastChargerType                *string
+	ChargePortLatch                *string
+	BatteryHeaterOn                *bool
+	ScheduledChargingStartTime     *time.Time
+	ScheduledDepartureTime         *time.Time
+	MinutesToFullCharge            *int
+	ChargeRangeAddedRated          *float64
+	ChargeRangeAddedIdeal          *float64
+	// CommandScopesMissing lists which command scopes the user's current
+	// Tesla token lacks (design 2026-11-05 §6 P3). Nil means "not evaluated"
+	// (non-Fleet provider or token unavailable) and the serializer omits the
+	// block; an empty slice means all command scopes are granted.
+	CommandScopesMissing []string
+	ProviderIdentity     string
+	Source               string
+	FieldSources         map[string]string
 }
 
 type mockProvider struct{}
@@ -414,6 +468,17 @@ type app struct {
 	mockHistoryEnabled bool
 	mode               string
 	telemetry          *telemetryService
+	// Nearby-charging response cache (design 2026-11-05 §5), 10-minute TTL.
+	nearbyMu    sync.Mutex
+	nearbyCache map[string]nearbyCacheEntry
+	// Vehicle commands (design 2026-11-05 §6): kill switch + gray list are
+	// operator-controlled via env; both default to fully disabled.
+	commandsEnabled   bool
+	commandsGrayUsers map[string]bool
+	commandLimiter    *commandRateLimiter
+	commandExecutor   vehicleCommandExecutor
+	// Named places (geofence-lite, design §7); nil means use a.store.
+	places vehiclePlacesStore
 }
 
 func (a *app) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -461,6 +526,10 @@ func (a *app) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.Method == http.MethodDelete && r.URL.Path == "/v1/account" {
 		a.deleteAccount(w, r)
+		return
+	}
+	if batteryTrendImportPath(r.URL.Path) {
+		a.batteryTrendArchiveImport(w, r)
 		return
 	}
 	if archiveImportPath(r.URL.Path) {
@@ -705,6 +774,15 @@ func (a *app) carResource(w http.ResponseWriter, r *http.Request, userID, path s
 		a.archiveBindingResource(w, r, userID)
 		return
 	}
+	if len(parts) >= 2 && parts[1] == "battery-trend" {
+		canonical := "/api/v1/cars/" + strconv.Itoa(carID) + "/battery-trend/evidence"
+		if r.Method != http.MethodGet || carID <= 0 || carID > 1<<31-1 || len(parts) != 3 || parts[2] != "evidence" || r.URL.Path != canonical || r.URL.EscapedPath() != canonical {
+			a.json(w, http.StatusNotFound, map[string]string{"error": "not_found"})
+			return
+		}
+		a.batteryTrendEvidenceList(w, r, userID, carID)
+		return
+	}
 	if !a.requireVehicle(w, r, userID, carID) {
 		return
 	}
@@ -735,6 +813,20 @@ func (a *app) carResource(w http.ResponseWriter, r *http.Request, userID, path s
 			return
 		}
 		a.status(w, r, userID, carID, false)
+	case "nearby-charging-sites":
+		if r.Method != http.MethodGet {
+			a.json(w, http.StatusNotFound, map[string]string{"error": "not_found"})
+			return
+		}
+		a.nearbyChargingSites(w, r, userID, carID)
+	case "commands":
+		if r.Method != http.MethodPost || len(parts) != 3 {
+			a.json(w, http.StatusNotFound, map[string]string{"error": "not_found"})
+			return
+		}
+		a.executeVehicleCommand(w, r, userID, carID, parts[2])
+	case "places":
+		a.vehiclePlacesResource(w, r, userID, carID, parts)
 	case "data-readiness":
 		if r.Method != http.MethodGet {
 			a.json(w, http.StatusNotFound, map[string]string{"error": "not_found"})
@@ -877,6 +969,15 @@ func (a *app) status(w http.ResponseWriter, r *http.Request, userID string, carI
 		a.providerError(w, err)
 		return
 	}
+	// Geofence-lite (design §7): the name of the user's place the
+	// vehicle is currently inside, when named places exist and the
+	// vehicle reports a position.
+	var geofence any
+	if providerStatus.Latitude != nil && providerStatus.Longitude != nil {
+		if name := a.matchedPlaceName(r.Context(), userID, carID, *providerStatus.Latitude, *providerStatus.Longitude); name != "" {
+			geofence = name
+		}
+	}
 	status := map[string]any{
 		"display_name": providerStatus.DisplayName,
 		"state":        providerStatus.State,
@@ -888,11 +989,26 @@ func (a *app) status(w http.ResponseWriter, r *http.Request, userID string, carI
 			"doors_open": providerStatus.DoorsOpen, "trunk_open": providerStatus.TrunkOpen,
 			"frunk_open": providerStatus.FrunkOpen, "is_user_present": providerStatus.IsUserPresent,
 			"center_display_state": providerStatus.CenterDisplayState,
+			"valet_mode":           providerStatus.ValetMode,
+			"speed_limit_mode": map[string]any{
+				"active": providerStatus.SpeedLimitActive, "current_limit_kmh": providerStatus.SpeedLimitCurrentKMH,
+				"pin_code_required": providerStatus.SpeedLimitPinRequired,
+			},
+			"media_info": map[string]any{
+				"media_state": providerStatus.MediaState, "title": providerStatus.MediaTitle,
+				"artist": providerStatus.MediaArtist, "album": providerStatus.MediaAlbum,
+			},
 		},
 		"car_geodata": map[string]any{
-			"geofence": nil, "latitude": providerStatus.Latitude, "longitude": providerStatus.Longitude,
+			"geofence": geofence, "latitude": providerStatus.Latitude, "longitude": providerStatus.Longitude,
 		},
-		"car_versions": map[string]any{"version": providerStatus.Version, "update_available": nil, "update_version": nil},
+		"car_versions": map[string]any{
+			"version": providerStatus.Version, "update_available": nil, "update_version": nil,
+			"software_update": map[string]any{
+				"status": providerStatus.SoftwareUpdateStatus, "download_percent": providerStatus.SoftwareDownloadPercent,
+				"install_percent": providerStatus.SoftwareInstallPercent, "expected_duration_sec": providerStatus.SoftwareUpdateExpectedSec,
+			},
+		},
 		"driving_details": map[string]any{
 			"shift_state": providerStatus.ShiftState, "power": providerStatus.Power,
 			"speed": providerStatus.Speed, "heading": providerStatus.Heading, "elevation": nil,
@@ -900,6 +1016,15 @@ func (a *app) status(w http.ResponseWriter, r *http.Request, userID string, carI
 		"climate_details": map[string]any{
 			"is_climate_on": providerStatus.IsClimateOn, "inside_temp": providerStatus.InsideTemp,
 			"outside_temp": providerStatus.OutsideTemp, "is_preconditioning": providerStatus.IsPreconditioning,
+			"driver_temp_setting": providerStatus.DriverTempSetting, "passenger_temp_setting": providerStatus.PassengerTempSetting,
+			"fan_status": providerStatus.FanStatus, "is_front_defroster_on": providerStatus.FrontDefrosterOn,
+			"is_rear_defroster_on": providerStatus.RearDefrosterOn, "seat_heater_left": providerStatus.SeatHeaterLeft,
+			"seat_heater_right": providerStatus.SeatHeaterRight, "seat_heater_rear_left": providerStatus.SeatHeaterRearLeft,
+			"seat_heater_rear_center": providerStatus.SeatHeaterRearCenter, "seat_heater_rear_right": providerStatus.SeatHeaterRearRight,
+			"steering_wheel_heater": providerStatus.SteeringWheelHeater, "defrost_mode": providerStatus.DefrostMode,
+			"climate_keeper_mode": providerStatus.ClimateKeeperMode, "cabin_overheat_protection": providerStatus.CabinOverheatProtection,
+			"cabin_overheat_protection_actively_cooling": providerStatus.CabinOverheatProtectionCooling,
+			"side_mirror_heaters":                        providerStatus.SideMirrorHeaters,
 		},
 		"battery_details": map[string]any{
 			"battery_level": providerStatus.BatteryLevel, "usable_battery_level": providerStatus.UsableBatteryLevel,
@@ -916,9 +1041,19 @@ func (a *app) status(w http.ResponseWriter, r *http.Request, userID string, carI
 			"charge_port_door_open":  providerStatus.ChargePortDoorOpen,
 			"charger_actual_current": providerStatus.ChargerActualCurrent, "charger_phases": providerStatus.ChargerPhases,
 			"charger_power": providerStatus.ChargerPower, "charger_voltage": providerStatus.ChargerVoltage,
-			"charge_current_request":     providerStatus.ChargeCurrentRequest,
-			"charge_current_request_max": providerStatus.ChargeCurrentRequestMax,
-			"time_to_full_charge":        providerStatus.TimeToFullCharge,
+			"charge_current_request":        providerStatus.ChargeCurrentRequest,
+			"charge_current_request_max":    providerStatus.ChargeCurrentRequestMax,
+			"time_to_full_charge":           providerStatus.TimeToFullCharge,
+			"conn_charge_cable":             providerStatus.ConnChargeCable,
+			"fast_charger_brand":            providerStatus.FastChargerBrand,
+			"fast_charger_type":             providerStatus.FastChargerType,
+			"charge_port_latch":             providerStatus.ChargePortLatch,
+			"battery_heater_on":             providerStatus.BatteryHeaterOn,
+			"scheduled_charging_start_time": timePointerRFC3339(providerStatus.ScheduledChargingStartTime),
+			"scheduled_departure_time":      timePointerRFC3339(providerStatus.ScheduledDepartureTime),
+			"minutes_to_full_charge":        providerStatus.MinutesToFullCharge,
+			"charge_range_added_rated":      providerStatus.ChargeRangeAddedRated,
+			"charge_range_added_ideal":      providerStatus.ChargeRangeAddedIdeal,
 		},
 		"tpms_details": map[string]any{
 			"tpms_pressure_fl": providerStatus.TPMSPressureFL, "tpms_pressure_fr": providerStatus.TPMSPressureFR,
@@ -926,6 +1061,12 @@ func (a *app) status(w http.ResponseWriter, r *http.Request, userID string, carI
 			"tpms_soft_warning_fl": providerStatus.TPMSSoftWarningFL, "tpms_soft_warning_fr": providerStatus.TPMSSoftWarningFR,
 			"tpms_soft_warning_rl": providerStatus.TPMSSoftWarningRL, "tpms_soft_warning_rr": providerStatus.TPMSSoftWarningRR,
 		},
+	}
+	if providerStatus.CommandScopesMissing != nil {
+		status["command_authorization"] = map[string]any{
+			"ready":          len(providerStatus.CommandScopesMissing) == 0,
+			"missing_scopes": providerStatus.CommandScopesMissing,
+		}
 	}
 	for key, value := range tpmsPressureEvidence(providerStatus) {
 		status["tpms_details"].(map[string]any)[key] = value
@@ -967,6 +1108,15 @@ func emptyAsNil(value string) any {
 		return nil
 	}
 	return value
+}
+
+// timePointerRFC3339 renders an optional time the way the status contract
+// expects timestamps (RFC 3339 string) and keeps absence as JSON null.
+func timePointerRFC3339(value *time.Time) any {
+	if value == nil {
+		return nil
+	}
+	return value.Format(time.RFC3339)
 }
 
 func bearerToken(r *http.Request) string {
@@ -1132,6 +1282,15 @@ func main() {
 	a := &app{
 		store: store, mock: mock, provider: dataProvider, oauth: oauth, wechat: wechat,
 		mockEnabled: enableMock, mockHistoryEnabled: enableMockHistory, mode: mode, telemetry: telemetry,
+		// Vehicle commands stay off until the operator enables them
+		// (design §6.5 kill switch + gray release). The gray list, when
+		// non-empty, restricts commands to the listed user IDs.
+		commandsEnabled:   os.Getenv("JOURVOLT_COMMANDS_ENABLED") == "true",
+		commandsGrayUsers: parseUserIDSet(os.Getenv("JOURVOLT_COMMANDS_GRAY_USERS")),
+		commandLimiter:    newCommandRateLimiter(),
+	}
+	if telemetry != nil {
+		a.commandExecutor = telemetry
 	}
 	if telemetry != nil {
 		telemetry.startFinalizer(ctx)

@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "scope": "presentational-only",
+  "primary": "#157A86",
+  "background": "#F5F7F9",
+  "body": "#1F2937",
+  "muted": "#6B7280",
+  "warning": "#B45309",
+  "vehicleViewport": [
+    240,
+    460
+  ],
+  "wheelOrder": [
+    "fl",
+    "fr",
+    "rl",
+    "rr"
+  ],
+  "wheelAnchors": {
+    "fl": [
+      0.205,
+      0.31
+    ],
+    "fr": [
+      0.795,
+      0.31
+    ],
+    "rl": [
+      0.205,
+      0.77
+    ],
+    "rr": [
+      0.795,
+      0.77
+    ]
+  },
+  "transitionMs": 220,
+  "maximumConnectionPulseMs": 1200,
+  "livePressureMaxAgeMs": 900000,
+  "routeMeaning": "endpoints_schematic_not_actual_track",
+  "openingMeaning": "aggregate_category_not_individual_door",
+  "dataWrites": false,
+  "providerRequests": false,
+  "sessionWrites": false,
+  "realVehicleArtwork": "reuse_existing_packaged_car_images",
+  "topViewArtwork": "neutral_position_schematic_not_vehicle_model_identification"
+}

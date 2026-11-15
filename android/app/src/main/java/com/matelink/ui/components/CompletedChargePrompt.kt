@@ -68,9 +68,14 @@ class CompletedChargePromptViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val scope = currentScope() ?: return@launch
-                if (!qualified(event, remoteId, scope)) return@launch
-                store.consume(event, false)
-                if (qualified(event, remoteId, scope)) onOpen?.invoke()
+                val context = vehicles.cachedContextForRemote(remoteId, scope) ?: return@launch
+                val localId = context.localHistoryCarId
+                val key = completionScopeKey(scope, localId, remoteId)
+                val safeEvent = if (event.scopeKey.isNullOrEmpty()) event.copy(scopeKey = key) else event
+                store.consume(safeEvent, false)
+                val allEvents = store.events(localId, key).first() + store.events(localId, key, "drive").first()
+                allEvents.filter { !it.appConsumed }.forEach { e -> store.consume(e, false) }
+                onOpen?.invoke()
             } catch (e: CancellationException) { throw e } catch (_: Exception) { /* Retain the journal on failure. */ }
         }
     }
@@ -84,10 +89,10 @@ fun CompletedChargePrompt(remoteCarId: Int, identityKey: String, onDetail: (Stri
         model.pending(remoteCarId).collect { event = it }
     }
     event?.let { e -> AlertDialog(
-        onDismissRequest = { model.dismiss(e, remoteCarId) },
+        onDismissRequest = { event = null; model.dismiss(e, remoteCarId) },
         title = { Text(stringResource(if (e.kind == "drive") R.string.trip_notification_title else R.string.completed_charge_title)) },
         text = { Text(stringResource(if (e.kind == "drive") R.string.completed_drive_body else R.string.completed_charge_body)) },
-        confirmButton = { TextButton(onClick = { model.dismiss(e, remoteCarId) { onDetail(e.kind, e.chargeId) } }) { Text(stringResource(R.string.completed_charge_open)) } },
-        dismissButton = { TextButton(onClick = { model.dismiss(e, remoteCarId) }) { Text(stringResource(android.R.string.cancel)) } }
+        confirmButton = { TextButton(onClick = { event = null; model.dismiss(e, remoteCarId) { onDetail(e.kind, e.chargeId) } }) { Text(stringResource(R.string.completed_charge_open)) } },
+        dismissButton = { TextButton(onClick = { event = null; model.dismiss(e, remoteCarId) }) { Text(stringResource(android.R.string.cancel)) } }
     ) }
 }

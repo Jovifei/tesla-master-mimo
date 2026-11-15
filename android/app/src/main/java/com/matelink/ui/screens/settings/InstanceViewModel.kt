@@ -79,11 +79,10 @@ class InstanceViewModel @Inject constructor(
         }
     }
 
-    /** Switch the active instance. Cancels running sync, clears cached data, and triggers resync. */
+    /** Switch the active instance while retaining each source's scoped Room data. */
     fun switchInstance(instanceId: String) {
         viewModelScope.launch {
-            // Cancel any running sync to prevent it from writing stale data
-            // after we clear the tables
+            // Cancel running sync before switching its source.
             val workManager = WorkManager.getInstance(context)
             workManager.cancelUniqueWork(DataSyncWorker.WORK_NAME)
 
@@ -98,13 +97,7 @@ class InstanceViewModel @Inject constructor(
                 }
             }
 
-            // Set active instance first, then clear tables — prevents stale reads
-            // during the window between clear and active switch
             instanceDataStore.setActiveInstance(instanceId)
-
-            withContext(Dispatchers.IO) {
-                statsDatabase.clearAllTables()
-            }
 
             // Update legacy settings so ApiClient picks up the change
             val instance = _uiState.value.instances.find { it.id == instanceId }
@@ -284,7 +277,7 @@ class InstanceViewModel @Inject constructor(
             val wasActive = _uiState.value.activeInstanceId == instanceId
             instanceDataStore.removeInstance(instanceId)
             if (wasActive) {
-                // Cancel any running sync before clearing data
+                // Cancel running sync before applying the next active source.
                 val workManager = WorkManager.getInstance(context)
                 workManager.cancelUniqueWork(DataSyncWorker.WORK_NAME)
                 withContext(Dispatchers.IO) {
@@ -300,9 +293,6 @@ class InstanceViewModel @Inject constructor(
                 // Update legacy settings for the new active instance
                 val newActiveId = instanceDataStore.getActiveInstanceId()
                 if (!newActiveId.isNullOrEmpty()) {
-                    withContext(Dispatchers.IO) {
-                        statsDatabase.clearAllTables()
-                    }
                     // Read fresh instance list from DataStore (not stale _uiState)
                     val freshInstances = instanceDataStore.instances.first()
                     val instance = freshInstances.find { it.id == newActiveId }

@@ -10,6 +10,15 @@
 
 > **核心纪律**：任何提交必须有完整的参数流档与真实模拟器/真机截图佐证。严禁在未亲眼确认界面正常渲染的情况下声称“已上线或已通过测试”。
 
+## Current authority files
+
+- Read `docs/AI-RULES.md` before any code/config change, build, server inspection, package installation, or production diagnosis.
+- Read `docs/CURRENT-PRODUCTION-CONFIG.md` before any Release build or production-link check. It overrides historical docs and build defaults.
+- Read `docs/EXECUTION-PLAYBOOK.md` before every commit, Release build, compile-error fix, or production-link diagnosis.
+- Follow the token-consumption control section in `docs/EXECUTION-PLAYBOOK.md` for every long task: fresh session per stage, bounded screenshot/output budgets, filtered tool outputs, and no multi-thousand-turn threads.
+- The cloud API is `https://api.teslalink.joviluma.com/`; never build a current Release with `https://api.jourvolt.com/`.
+- MateLink services run on the production server. Do not use Jovi's local Docker as the assumed production backend.
+
 <!-- BEGIN:codex-token-efficiency -->
 ## Token-efficient navigation
 

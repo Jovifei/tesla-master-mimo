@@ -10,6 +10,35 @@ import org.junit.Test
 
 class TripsHistoryRefresherTest {
     @Test
+    fun cachedReadPublishesLocalTripsWithoutTouchingRemoteHistory() = runTest {
+        val calls = mutableListOf<String>()
+        val refresher = TripsHistoryRefresher(
+            refreshHistory = {
+                calls += "remote:$it"
+                ApiResult.Error("must not run")
+            },
+            resolveCachedLocalId = {
+                calls += "resolve:$it"
+                701
+            },
+            loadTrips = {
+                calls += "trips:$it"
+                emptyList()
+            },
+            loadDcChargeIds = {
+                calls += "charges:$it"
+                setOf(41)
+            }
+        )
+
+        val result = refresher.cached(7)
+
+        assertEquals(701, result?.localHistoryCarId)
+        assertEquals(setOf(41), result?.dcChargeIds)
+        assertEquals(listOf("resolve:7", "trips:701", "charges:701"), calls)
+    }
+
+    @Test
     fun refreshesRemoteHistoryBeforeReadingTripsFromTheScopedLocalVehicle() = runTest {
         val calls = mutableListOf<String>()
         val context = VehicleContext(

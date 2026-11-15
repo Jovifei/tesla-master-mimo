@@ -11,6 +11,13 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TripRouteRequestBudgetTest {
+    @Test fun failedMiddleDriveRetainsItsSlotForTheWeatherConsumer() = runTest {
+        val result = fetchBoundedTripRoute(listOf(11, 22, 33), { true }) { id ->
+            if (id == 22) null else id
+        }
+        assertEquals(listOf(11, null, 33), result)
+    }
+
     @Test fun moreThanTwelveUncachedDrivesNeverStartAProviderDetailRequest() = runTest {
         var calls = 0
         val result = fetchBoundedTripRoute((1..13).toList(), { true }) { id ->

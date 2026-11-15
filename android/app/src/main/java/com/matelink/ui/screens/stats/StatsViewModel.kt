@@ -69,7 +69,10 @@ internal fun StatsUiState.publishStats(result: StatsLoadResult): StatsUiState = 
     isLoading = false, isRefreshing = false, isUpdating = false,
     carStats = result.stats, availableYears = result.years,
     deepSyncProgress = result.progress, syncProgress = result.stats?.syncProgress,
-    error = null
+    error = null,
+    currencySymbol = result.stats?.currencyCode?.let { code ->
+        Currency.entries.firstOrNull { it.code.equals(code, ignoreCase = true) }?.symbol ?: code
+    } ?: currencySymbol
 )
 
 internal data class StatsIdentityProof(
@@ -176,7 +179,7 @@ class StatsViewModel @Inject constructor(
         viewModelScope.launch {
             val settings = settingsDataStore.settings.first()
             val currency = Currency.findByCode(settings.currencyCode)
-            _uiState.update { it.copy(currencySymbol = currency.symbol) }
+            _uiState.update { if (it.carStats == null) it.copy(currencySymbol = currency.symbol) else it }
         }
     }
 
@@ -353,11 +356,6 @@ class StatsViewModel @Inject constructor(
      * Uses KEEP policy to avoid interrupting a running sync.
      */
     fun triggerSync() {
-        // Skip if sync is already running
-        if (syncManager.syncStatus.value.isAnySyncing) {
-            return
-        }
-
         val constraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
             .build()

@@ -1,5 +1,27 @@
 # MateLink 变更与版本索引
 
+## 2026-10-29 当天行程缺失排查（尚未发布）
+
+- 10 月 28 日实机为 2.1.55/build74；经源库与云端只读核对，当天反馈的三次行程缺少原始记录。个人归档绑定 22:05 过期，Fleet 尚无首事件。
+- App 源码提交 `4e9d5cb4`，独立服务端源码提交 `1d4fdb58`；两者均未安装或部署，不修改小程序和页面布局参数。
+- 干净源码树 Debug/Release 各 1,592 项 0 失败（Release 8 跳过），双 lint 0 错误；提交后关键回归 34 项通过；服务端全量 tests/vet 与隔离 PostgreSQL 16 集成测试通过。[问题、日期、版本、未解决事项(data-history/RPT-2026-10-28-missing-drives.md)。
+
+## 2026-10-27 显示验收续查（2.1.55 / build74候选）
+
+- 发现于build73：新ticket失败误用旧session导航、缺电压丢电流、年详情漏计无行程月份费用。
+- 只修三处数据消费者与版本元信息，页面布局参数不改。21项回归先7失败后全通过；最终全量、签名、提交与设备状态见[本轮验收记录](releases/2026-10-27-display-acceptance.md)。
+- 版本台账追加ACC-AUTH-01/HUD-01/MILEAGE-01三条，保留原build73的84条历史。真实手机未连接，尚未取得安装版本或逐页显示证据；不视为上线通过。
+
+## 2026-10-27 App数据链路修复候选（2.1.54 / build73）
+
+- 发现基准为2.1.53/build72已审候选；本轮在E盘 `matelink-release-data-audit-20261026`、App分支 `codex/app-release-data-fixes-20261027` 实施，原候选基线提交 `e53a2d01`。
+- [逐问题版本台账](APP-ISSUE-VERSIONS.md)保存发现日期、版本、改法、验证与提交；[批次记录](releases/2026-10-27-app-data-fixes.md)及F1–F7分组记录对应来源→资格/计算→持久化→展示链。
+- 本轮只修数据、元信息、计算、并发及现有位置formatter/路由绑定；保持原页面参数排列、尺寸、字体、间距与既有颜色。
+- **代码提交**：`161d77cea4d110aac93b52956644ab3ea5603733`。Debug/Release各1556方法0fail/0error（Release8既有skip），双lint0error，AndroidTest源码编译、两个Go模块tests/vet和R8通过。
+- **签名候选**：`com.matelink` 73/2.1.54，debuggable=false，证书与既有包一致；APK SHA256 `425072A9A5C46DD9F54901FEE07170A6FEAE3C1DA2C6BFE3A48214B68A726482`。包内GIT_SHA=161d77ce，文件位于批准下载目录。安装、provider和生产验收分别保留待验。
+- 软件修复不等于真实历史补采；未曾采集的旧样本、未提供的来源实例/事件脉冲保持明确边界。本轮未安装手机或部署生产，Hub当前拒绝连接未成功上报。
+
+
 本页把**源码提交、Android 包、测试和手机安装**分别绑定。Git 提交历史是逐提交的完整事实；本页为近期关键变更提供可检索入口，不能用旧 SHA 的绿色 CI 为新提交背书。Bug 根因与复发检查见 [BUG-REGISTER.md](BUG-REGISTER.md)，Android 旧版本详情见 [ANDROID-RELEASE-LOG.md](ANDROID-RELEASE-LOG.md)。更新日期：2026-10-25。
 
 ## 已安装检查点与正在开发的版本

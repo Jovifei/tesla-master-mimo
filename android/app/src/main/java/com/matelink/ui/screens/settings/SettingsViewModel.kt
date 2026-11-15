@@ -14,9 +14,13 @@ import androidx.work.OutOfQuotaPolicy
 import androidx.work.WorkManager
 import com.matelink.R
 import com.matelink.data.api.UrlSecurity
+import com.matelink.data.api.models.validHistoryVehicleUid
 import com.matelink.data.local.SettingsDataStore
 import com.matelink.data.local.ConnectionMode
 import com.matelink.data.local.ConnectionModeStore
+import com.matelink.data.local.HistoryConnectionSource
+import com.matelink.data.local.HistoryIdentityUnavailableException
+import com.matelink.data.local.VehicleContext
 import com.matelink.data.local.TirePosition
 import com.matelink.data.local.TpmsAlertProfile
 import com.matelink.data.repository.ApiResult
@@ -37,6 +41,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -112,25 +121,43 @@ class SettingsViewModel @Inject constructor(
     private val syncManager: SyncManager,
     private val tpmsStateRepository: TpmsStateRepository,
     private val sentryStateRepository: SentryStateRepository,
-    private val sentryNotificationManager: SentryNotificationManager
+    private val sentryNotificationManager: SentryNotificationManager,
+    private val vehicleContexts: com.matelink.data.local.VehicleContextRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SettingsUiState())
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
+    private var tpmsBinding: TpmsProfileBinding? = null
+    private var settingsLoadGeneration = 0L
 
     init {
         loadSettings()
+        viewModelScope.launch {
+            kotlinx.coroutines.flow.combine(vehicleContexts.historyScopeChanges, settingsRepository.currentCarId) { scope, car -> scope to car }
+                .drop(1).collect {
+                    tpmsBinding = null
+                    _uiState.value = _uiState.value.copy(tpmsProfileEnabled = false,
+                        tpmsTargetBar = "2.9", tpmsLowBar = "2.6", tpmsHighBar = "3.4")
+                    loadSettings()
+                }
+        }
     }
 
     private fun loadSettings() {
+        val generation = ++settingsLoadGeneration
         viewModelScope.launch {
             val settings = settingsDataStore.settings.first()
             val mockMode = settingsRepository.mockMode.first()
             val connectionMode = connectionModeStore.mode.first()
                 ?: if (settings.serverUrl.isBlank()) ConnectionMode.TESLA_CLOUD else ConnectionMode.SELF_HOSTED
             val tpmsCarId = settingsRepository.currentCarId.first()
-            val tpmsProfile = settingsDataStore.getTpmsAlertProfile(tpmsCarId)
+            val binding = runCatching { resolveTpmsProfileBinding(tpmsCarId, vehicleContexts) }.getOrNull()
+            val savedProfile = binding?.let { settingsDataStore.getTpmsAlertProfile(tpmsProfileStorageKey(it)) }
+            val tpmsProfile = savedProfile
                 ?: TpmsAlertProfile.modelYSuggestion
+            if (generation != settingsLoadGeneration || (binding != null &&
+                    !vehicleContexts.isHistoryContextCurrentNow(binding.scope, binding.vehicle))) return@launch
+            tpmsBinding = binding
             _uiState.value = _uiState.value.copy(
                 serverUrl = if (connectionMode == ConnectionMode.TESLA_CLOUD && settings.serverUrl.isBlank()) {
                     ""
@@ -148,7 +175,7 @@ class SettingsViewModel @Inject constructor(
                 tpmsTargetBar = tpmsProfile.targetBar.toDisplayString(),
                 tpmsLowBar = tpmsProfile.lowBar.toDisplayString(),
                 tpmsHighBar = tpmsProfile.highBar.toDisplayString(),
-                tpmsProfileEnabled = settingsDataStore.getTpmsAlertProfile(tpmsCarId)?.enabled == true,
+                tpmsProfileEnabled = savedProfile?.enabled == true,
                 isFirstRunSetup = !settings.isConfigured && !mockMode && connectionMode == ConnectionMode.SELF_HOSTED,
                 isLoading = false
             )
@@ -281,6 +308,7 @@ class SettingsViewModel @Inject constructor(
     /** Explicitly saves and enables the per-car App custom reminder profile. */
     fun saveTpmsAlertProfile() {
         val current = _uiState.value
+        val capturedBinding = tpmsBinding
         val target = current.tpmsTargetBar.toDoubleOrNull()
         val low = current.tpmsLowBar.toDoubleOrNull()
         val high = current.tpmsHighBar.toDoubleOrNull()
@@ -295,10 +323,10 @@ class SettingsViewModel @Inject constructor(
 
         viewModelScope.launch {
             runCatching {
-                settingsDataStore.saveTpmsAlertProfile(
-                    carId = current.tpmsCarId,
-                    profile = TpmsAlertProfile(target, low, high, enabled = true)
-                )
+                val binding = checkNotNull(capturedBinding) { "history_identity_unavailable" }
+                check(binding.vehicle.remoteApiCarId == current.tpmsCarId)
+                saveBoundTpmsProfile(settingsDataStore, vehicleContexts, binding,
+                    TpmsAlertProfile(target, low, high, enabled = true))
             }.onSuccess {
                 _uiState.value = _uiState.value.copy(
                     tpmsProfileEnabled = true,
@@ -447,16 +475,39 @@ class SettingsViewModel @Inject constructor(
 
     fun forceResync() {
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isResyncing = true, error = null)
+            _uiState.value = _uiState.value.copy(isResyncing = true, error = null, successMessage = null)
             try {
-                // Get all cars and do a full reset (delete all cached data) for each
-                when (val result = repository.getCars()) {
+                val capturedScope = vehicleContexts.captureReadScope()
+                suspend fun requireCurrent(vehicle: VehicleContext? = null) {
+                    currentCoroutineContext().ensureActive()
+                    if (vehicleContexts.captureReadScope() != capturedScope ||
+                        (vehicle != null && (vehicle.localHistoryCarId >= 0 ||
+                            !vehicleContexts.isHistoryContextCurrentNow(capturedScope, vehicle)))) {
+                        throw HistoryIdentityUnavailableException()
+                    }
+                }
+                val result = repository.getCars()
+                requireCurrent()
+                when (result) {
                     is ApiResult.Success -> {
-                        for (car in result.data) {
-                            syncManager.fullResetSync(car.carId)
+                        val cars = result.data
+                        if (cars.any { it.carId <= 0 } || cars.map { it.carId }.distinct().size != cars.size ||
+                            (capturedScope.source == HistoryConnectionSource.CLOUD &&
+                                (cars.any { !validHistoryVehicleUid(it.vehicleUid) } ||
+                                    cars.map { it.vehicleUid }.distinct().size != cars.size))) {
+                            throw HistoryIdentityUnavailableException()
                         }
-                        // Trigger immediate sync via WorkManager
+                        // This fresh authenticated list authorizes only its captured vehicle namespaces.
+                        val vehicles = cars.map { vehicleContexts.resolve(it, capturedScope) }
+                        for (vehicle in vehicles) {
+                            requireCurrent(vehicle)
+                            syncManager.fullResetSync(vehicle.localHistoryCarId)
+                            requireCurrent(vehicle)
+                        }
+                        requireCurrent()
                         triggerImmediateSync()
+                        for (vehicle in vehicles) requireCurrent(vehicle)
+                        requireCurrent()
                         _uiState.value = _uiState.value.copy(
                             isResyncing = false,
                             successMessage = context.getString(R.string.resync_started)
@@ -469,6 +520,9 @@ class SettingsViewModel @Inject constructor(
                         )
                     }
                 }
+            } catch (e: CancellationException) {
+                _uiState.value = _uiState.value.copy(isResyncing = false)
+                throw e
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     isResyncing = false,

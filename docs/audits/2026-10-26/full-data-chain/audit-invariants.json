@@ -1,0 +1,69 @@
+{
+  "counts": {
+    "name": "com.matelink.releaseaudit.ReleaseDataChainAuditTest",
+    "tests": "11",
+    "skipped": "0",
+    "failures": "8",
+    "errors": "0",
+    "timestamp": "2026-10-26T14:40:34",
+    "hostname": "JOVI",
+    "time": "3.916"
+  },
+  "cases": [
+    {
+      "name": "profileSavedUnderTheUiCarKeyMustBeReadableUnderTheWorkerKey",
+      "result": "FAIL",
+      "message": "java.lang.AssertionError: expected:<TpmsAlertProfile(targetBar=2.9, lowBar=2.6, highBar=3.4, enabled=true)> but was:<null>"
+    },
+    {
+      "name": "powerOnlyArchivePointMustNotBecomeObservedACAfterAggregation",
+      "result": "FAIL",
+      "message": "java.lang.AssertionError: Processed is not affirmative AC evidence expected:<UNKNOWN> but was:<AC>"
+    },
+    {
+      "name": "sourceTokenEmittedByTheBackendMustNotBeClassifiedUnavailable",
+      "result": "FAIL",
+      "message": "java.lang.AssertionError: Values should be different. Actual: UNAVAILABLE"
+    },
+    {
+      "name": "peakTariffInputMustRejectNonFiniteNumbers",
+      "result": "FAIL",
+      "message": "java.lang.AssertionError: A displayed/saved rate must be finite"
+    },
+    {
+      "name": "roundTripMustKeepTheActualReturnToItsStart",
+      "result": "FAIL",
+      "message": "java.lang.AssertionError: expected:<[(30.3, 120.1), (30.31, 120.12), (30.3, 120.1)]> but was:<[(30.3, 120.1), (30.31, 120.12)]>"
+    },
+    {
+      "name": "expiredSessionAfterLoginFromColdLoginDestinationMustRedirect",
+      "result": "FAIL",
+      "message": "java.lang.AssertionError"
+    },
+    {
+      "name": "controlKnownFleetSourceWithTimestampIsLive",
+      "result": "PASS",
+      "message": ""
+    },
+    {
+      "name": "equalIntegerSocWithoutEnergySamplesMustNotInvent145WhPerKm",
+      "result": "FAIL",
+      "message": "java.lang.AssertionError: No energy/counter/power observation supports a numeric energy expected null, but was:<0.116>"
+    },
+    {
+      "name": "controlProviderBillWithoutFreeFlagRemainsTwelve",
+      "result": "PASS",
+      "message": ""
+    },
+    {
+      "name": "controlInvalidCoordinatesCannotInventARoute",
+      "result": "PASS",
+      "message": ""
+    },
+    {
+      "name": "vehicleFreeFlagMustNotEraseAnObservedThirdPartyBill",
+      "result": "FAIL",
+      "message": "java.lang.AssertionError: Known paid session must not become free from a vehicle-wide flag expected:<12.0> but was:<0.0>"
+    }
+  ]
+}

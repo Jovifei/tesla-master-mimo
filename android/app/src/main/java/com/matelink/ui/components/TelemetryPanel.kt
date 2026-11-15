@@ -73,7 +73,7 @@ fun TelemetryPanel(
     Surface(
         modifier = modifier,
         shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceContainer,
+        color = MaterialTheme.colorScheme.surface,
         tonalElevation = 0.dp,
         shadowElevation = 1.dp,
         border = BorderStroke(
@@ -195,7 +195,7 @@ private fun TelemetryMetricCell(
     ) {
         Box(
             modifier = Modifier
-                .size(if (compact) 22.dp else if (adaptive) 30.dp else 26.dp)
+                .size(if (compact) 26.dp else if (adaptive) 30.dp else 26.dp)
                 .clip(CircleShape)
                 .background(metric.tint.copy(alpha = 0.12f)),
             contentAlignment = Alignment.Center
@@ -204,15 +204,16 @@ private fun TelemetryMetricCell(
                 imageVector = metric.icon,
                 contentDescription = null,
                 tint = metric.tint,
-                modifier = Modifier.size(if (compact) 13.dp else if (adaptive) 18.dp else 15.dp)
+                modifier = Modifier.size(if (compact) 16.dp else if (adaptive) 18.dp else 15.dp)
             )
         }
         if (compact) {
+            val baseSize = metric.valueFontSize ?: 18.sp
             val calcFontSize = when {
-                number.length >= 7 -> 12.sp
-                number.length >= 6 -> 13.5.sp
-                number.length >= 5 -> 14.5.sp
-                else -> metric.valueFontSize ?: 16.sp
+                number.length >= 9 -> (baseSize.value - 3f).sp
+                number.length >= 8 -> (baseSize.value - 2f).sp
+                number.length >= 7 -> (baseSize.value - 1f).sp
+                else -> baseSize
             }
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -565,11 +566,6 @@ fun RouteIndicator(
                 overflow = TextOverflow.Ellipsis
             )
         }
-        Icon(
-            imageVector = Icons.Default.DirectionsCar,
-            contentDescription = null,
-            tint = accent.copy(alpha = 0.55f),
-            modifier = Modifier.size(18.dp)
-        )
+
     }
 }

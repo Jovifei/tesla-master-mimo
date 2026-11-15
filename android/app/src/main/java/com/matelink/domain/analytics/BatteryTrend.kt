@@ -17,6 +17,16 @@ data class BatteryTrendSample(
     val temperatureC: Double?
 )
 
+/** The SOC, range and timestamp must come from one observed drive boundary. */
+fun qualifiedBatteryTrendSample(
+    date: LocalDate?, socPercent: Double?, ratedRangeKm: Double?, temperatureC: Double?
+): BatteryTrendSample? {
+    if (date == null || socPercent == null || !socPercent.isFinite() || socPercent !in MIN_SOC..MAX_SOC ||
+        ratedRangeKm == null || !ratedRangeKm.isFinite() || ratedRangeKm <= 0.0 ||
+        temperatureC == null || !temperatureC.isFinite() || temperatureC !in MIN_TEMPERATURE_C..MAX_TEMPERATURE_C) return null
+    return BatteryTrendSample(date, socPercent, ratedRangeKm, temperatureC)
+}
+
 data class BatteryTrendPoint(
     val date: LocalDate,
     val normalizedRangeKm: Double

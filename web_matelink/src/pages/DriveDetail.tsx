@@ -1,20 +1,29 @@
 import { useParams, Link } from 'react-router-dom';
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
-import mockData from '../mock_data.json';
+import { useEffect, useState } from 'react';
+import { api, getApiErrorMessage } from '../api/client';
+import { useStore } from '../store';
+import type { Drive } from '../api/types';
 
 export default function DriveDetail() {
   const { id } = useParams();
-  const drive = mockData.drives.find(d => d.id === Number(id));
+  const carId = useStore(s => s.currentCarId);
+  const [drive, setDrive] = useState<Drive | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  if (!drive) return <div>Drive not found</div>;
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setError('');
+    api.getDrive(carId, Number(id))
+      .then(value => { if (active) { setDrive(value ?? null); setLoading(false); } })
+      .catch(err => { if (active) { setError(getApiErrorMessage(err)); setLoading(false); } });
+    return () => { active = false; };
+  }, [carId, id]);
 
-  // Generate mock position data for chart
-  const chartData = Array.from({ length: 30 }, (_, i) => ({
-    time: `${i}min`,
-    speed: 30 + Math.random() * 60,
-    power: -20 + Math.random() * 150,
-    elevation: 5 + Math.random() * 20,
-  }));
+  if (loading) return <div className="animate-pulse text-gray-400">Loading drive detail...</div>;
+  if (error) return <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-700 dark:border-red-900 dark:bg-red-900/20 dark:text-red-200">TeslaMate drive detail unavailable: {error}</div>;
+  if (!drive) return <div className="rounded-xl border border-gray-200 dark:border-gray-700 p-6 text-center text-sm text-gray-500">Drive not found for this vehicle.</div>;
 
   return (
     <div className="space-y-6">
@@ -84,20 +93,13 @@ export default function DriveDetail() {
             </button>
           ))}
         </div>
-        <ResponsiveContainer width="100%" height={250}>
-          <LineChart data={chartData}>
-            <XAxis dataKey="time" />
-            <YAxis />
-            <Tooltip />
-            <Line type="monotone" dataKey="speed" stroke="#1E88E5" strokeWidth={2} dot={false} />
-          </LineChart>
-        </ResponsiveContainer>
+        <div className="h-48 flex items-center justify-center text-sm text-gray-400">Drive telemetry samples are not available for this trip.</div>
       </div>
 
       {/* Weather */}
       <div className="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm">
         <div className="text-sm text-gray-500">Weather Along The Way</div>
-        <div className="font-medium">🌡️ {drive.outside_temp_avg}°C Sunny</div>
+        <div className="font-medium">🌡️ {drive.outside_temp_avg}°C</div>
       </div>
     </div>
   );

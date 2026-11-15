@@ -61,14 +61,16 @@ data class ParkedDetailData(
     @Json(name = "peak_power_kw") val peakPowerKw: Double? = null,
     @Json(name = "inside_temp_average") val insideTempAverage: Double? = null,
     @Json(name = "outside_temp_average") val outsideTempAverage: Double? = null,
-    @Json(name = "sample_count") val sampleCount: Int = 0,
-    @Json(name = "coverage_seconds") val coverageSeconds: Long = 0,
-    @Json(name = "coverage_ratio") val coverageRatio: Double = 0.0,
+    @Json(name = "sample_count") val sampleCount: Int? = null,
+    @Json(name = "coverage_seconds") val coverageSeconds: Long? = null,
+    @Json(name = "coverage_ratio") val coverageRatio: Double? = null,
     @Json(name = "linked_charge") val linkedCharge: LinkedCharge? = null,
     @Json(name = "linked_charges") val linkedCharges: List<LinkedCharge>? = null,
     @Json(name = "charge_sessions_complete") val chargeSessionsComplete: Boolean? = null,
     @Json(name = "source") val source: String,
-    @Json(name = "energy_contract") val energyContract: EnergyContract? = null
+    @Json(name = "energy_contract") val energyContract: EnergyContract? = null,
+    @Json(name = "car_id") val carId: Int? = null,
+    @Json(name = "source_instance_id") val sourceInstanceId: String? = null
 ) {
     // Adjacent SOC is not a battery-side kWh measurement. Only explicit,
     // source-observed endpoints with evidence of no intervening activity qualify.

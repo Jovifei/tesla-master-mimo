@@ -248,6 +248,8 @@ internal object HistorySummaryEvidenceCodec {
         val previous = decodeDrive(prior) ?: return null
         val current = decodeDrive(e.rawJson) ?: return null
         return prior.takeIf { previous.driveId == current.driveId && previous.source == current.source &&
+            sameChargeSourceInstance(previous.sourceInstanceId, previous.sourceRecordIdentity,
+                current.sourceInstanceId, current.sourceRecordIdentity) &&
             sameEvidenceInstant(previous.startDate, current.startDate) &&
             sameEvidenceInstant(previous.endDate, current.endDate) }
     }
@@ -256,14 +258,16 @@ internal object HistorySummaryEvidenceCodec {
     fun retainPriorDriveReceipt(currentEvidence: String?, cachedEvidence: String?, carId: Int): String? {
         val receipt = sourceJson(currentEvidence) ?: return currentEvidence
         val current = decodeDrive(receipt) ?: return currentEvidence
-        val previousReceipt = sourceJson(cachedEvidence) ?: return currentEvidence
+        val previousReceipt = sourceEvidence(cachedEvidence) ?: return currentEvidence
         val previous = decodeDrive(previousReceipt) ?: return currentEvidence
         if (previous.driveId != current.driveId || previous.source != current.source ||
+            !sameChargeSourceInstance(previous.sourceInstanceId, previous.sourceRecordIdentity,
+                current.sourceInstanceId, current.sourceRecordIdentity) ||
             !sameEvidenceInstant(previous.startDate, current.startDate) ||
             !sameEvidenceInstant(previous.endDate, current.endDate)) return currentEvidence
         val archived = priorDriveSourceJson(cachedEvidence, carId)
             ?: previousReceipt.takeIf { current.energyContract?.netEnergy?.quality == "unknown" &&
-                previous.energyConsumedNet != null && previousReceipt != receipt }
+                previous.energyConsumedNet != null && previousReceipt != sourceEvidence(currentEvidence) }
             ?: return currentEvidence
         val e = envelope(currentEvidence) ?: LocalHistoryEvidenceEnvelope(1, receipt)
         return envelopeAdapter.toJson(e.copy(priorDriveRawJson = archived, priorDriveScopeCarId = carId))
@@ -276,8 +280,13 @@ internal object HistorySummaryEvidenceCodec {
         val old = decodeDrive(detailEvidence ?: return null) ?: return null
         val next = decodeDrive(rawEvidence ?: return null) ?: return null
         if (old.driveId != next.driveId || old.source != next.source ||
+            !sameChargeSourceInstance(old.sourceInstanceId, old.sourceRecordIdentity,
+                next.sourceInstanceId, next.sourceRecordIdentity) ||
             !sameEvidenceInstant(old.startDate, next.startDate) || !sameEvidenceInstant(old.endDate, next.endDate)) return null
-        val updated = detail.copy(rawJson = receipt, rawDriveLengthUnit = next.lengthUnit)
+        // A new provider contract supersedes only the energy claim, not other verified fields.
+        val sourceContractChanged = next.energyContract != null && next.energyContract != old.energyContract
+        val updated = detail.copy(rawJson = receipt, rawDriveLengthUnit = next.lengthUnit,
+            derivedContract = if (sourceContractChanged) next.energyContract else detail.derivedContract)
         val presentation = detail.detailDrivePresentation?.copy(lengthUnit = detail.detailDriveLengthUnit)
             ?: return envelopeAdapter.toJson(updated)
         // Sparse list fields do not erase independently persisted detail inputs.
@@ -285,6 +294,9 @@ internal object HistorySummaryEvidenceCodec {
         fun <T> changed(value: T?, previous: T?): T? = value?.takeIf { it != previous }
         fun <T> changedLength(value: T?, previous: T?): T? =
             if (!com.matelink.data.api.models.sameDriveLengthUnit(next.lengthUnit, old.lengthUnit)) value else changed(value, previous)
+        fun changedTemperature(value: Double?, previous: Double?): Double? =
+            if (!com.matelink.data.api.models.sameHistoryTemperatureUnit(next.temperatureUnit, next.source,
+                    old.temperatureUnit, old.source)) value else changed(value, previous)
         // Repeated summary values are not corrections to richer detail.
         val changes = next.copy(
             startAddress = changed(next.startAddress, old.startAddress),
@@ -315,8 +327,8 @@ internal object HistorySummaryEvidenceCodec {
             speedAvg = changedLength(next.speedAvg, old.speedAvg),
             powerMax = changed(next.powerMax, old.powerMax),
             powerMin = changed(next.powerMin, old.powerMin),
-            outsideTempAvg = changed(next.outsideTempAvg, old.outsideTempAvg),
-            insideTempAvg = changed(next.insideTempAvg, old.insideTempAvg))
+            outsideTempAvg = changedTemperature(next.outsideTempAvg, old.outsideTempAvg),
+            insideTempAvg = changedTemperature(next.insideTempAvg, old.insideTempAvg))
         val corrected = com.matelink.data.repository.UnifiedHistoryRepository.mergeDrivesRaw(
             listOf(changes), listOf(presentation)
         ).single().copy(energyConsumedNet = null, consumptionNet = null, energyContract = null,
@@ -325,7 +337,7 @@ internal object HistorySummaryEvidenceCodec {
         val distanceChanged = presentation.odometerDetails != corrected.odometerDetails || !com.matelink.data.api.models.sameDriveLengthUnit(presentation.lengthUnit, corrected.lengthUnit)
         val rangeChanged = presentation.rangeIdeal != corrected.rangeIdeal || presentation.rangeRated != corrected.rangeRated
         val powerChanged = presentation.powerMax != corrected.powerMax || presentation.powerMin != corrected.powerMin || presentation.durationMin != corrected.durationMin
-        if (!batteryChanged && !distanceChanged && !powerChanged && !rangeChanged) {
+        if (sourceContractChanged || (!batteryChanged && !distanceChanged && !powerChanged && !rangeChanged)) {
             return envelopeAdapter.toJson(updated.copy(detailDrivePresentation = corrected,
                 detailDriveLengthUnit = corrected.lengthUnit))
         }

@@ -45,6 +45,32 @@ abstract class SavedTripDao {
         return tripId
     }
 
+    /** Resolve and recheck membership inside the same transaction as insertion. */
+    @Transaction
+    open suspend fun insertValidatedTripWithLegs(
+        trip: SavedTrip,
+        resolveLegs: suspend () -> List<Pair<String, Int>>?,
+        isCurrent: () -> Boolean
+    ): Long? {
+        if (!isCurrent()) return null
+        val refs = resolveLegs() ?: return null
+        if (!isCurrent()) return null
+        val tripId = insertTrip(trip)
+        insertLegs(refs.mapIndexed { position, ref ->
+            SavedTripLeg(tripId, position, ref.first, ref.second)
+        })
+        check(isCurrent()) { "history_identity_unavailable" }
+        return tripId
+    }
+
+    @Transaction
+    open suspend fun mutateIfCurrent(isCurrent: () -> Boolean, action: suspend () -> Unit): Boolean {
+        if (!isCurrent()) return false
+        action()
+        check(isCurrent()) { "history_identity_unavailable" }
+        return true
+    }
+
     @Query("DELETE FROM saved_trips WHERE id = :tripId")
     abstract suspend fun deleteTrip(tripId: Long)
 

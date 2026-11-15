@@ -62,16 +62,19 @@ class TariffConfigViewModel @Inject constructor(
     }
 
     fun updatePeakPrice(price: Double) {
+        if (!price.isFinite() || price < 0.0) return
         _uiState.value = _uiState.value.copy(peakPrice = price)
         saveConfig()
     }
 
     fun updateFlatPrice(price: Double) {
+        if (!price.isFinite() || price < 0.0) return
         _uiState.value = _uiState.value.copy(flatPrice = price)
         saveConfig()
     }
 
     fun updateValleyPrice(price: Double) {
+        if (!price.isFinite() || price < 0.0) return
         _uiState.value = _uiState.value.copy(valleyPrice = price)
         saveConfig()
     }
@@ -92,7 +95,7 @@ class TariffConfigViewModel @Inject constructor(
     }
 
     fun resetToDefaults() {
-        _uiState.value = TariffConfigUiState()
+        _uiState.value = TariffConfigUiState(currencySymbol = _uiState.value.currencySymbol)
         viewModelScope.launch { settingsDataStore.saveDefaultChargePrice(1.14) }
         saveConfig()
     }

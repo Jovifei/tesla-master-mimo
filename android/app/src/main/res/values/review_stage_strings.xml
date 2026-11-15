@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="parked_detail_title">Parking details</string>
+    <string name="cost_partial_observation_estimate">Observed-part estimate</string>
+    <string name="cost_partial_observation_coverage">Observed part of %1$d charging sessions; not whole-session bills and excluded from full energy and bill averages.</string>
+</resources>

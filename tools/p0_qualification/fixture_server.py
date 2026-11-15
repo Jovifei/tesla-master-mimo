@@ -206,7 +206,8 @@ def body_for(path: str, scenario: str):
                     "sample_count": 0,
                     "coverage_seconds": 0,
                     "coverage_ratio": 0.0,
-                    "source": "fixture-missing",
+                    # Partial telemetry belongs to the same historical source as normal.
+                    "source": "fixture" if scenario == "parked_partial" else "fixture-missing",
                 }
             }
         return {

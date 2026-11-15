@@ -1,6 +1,8 @@
 package com.matelink.ui.screens.readiness
 
+import androidx.compose.material3.TextButton
 import android.content.Intent
+import android.content.ActivityNotFoundException
 import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -62,7 +64,6 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.matelink.R
 import com.matelink.data.api.models.DataReadiness
 import com.matelink.data.api.models.DataReadinessItem
-import com.matelink.ui.components.launchExternalIntentSafely
 import com.matelink.ui.components.MateLinkLoadingPlaceholder
 
 private val readinessKeys = listOf(
@@ -398,6 +399,8 @@ fun DataReadinessScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     var showMigrationDialog by remember { mutableStateOf(false) }
     var showBindingDialog by remember { mutableStateOf(false) }
+    var showCapabilities by remember(carId) { mutableStateOf(false) }
+    var showSetup by remember(carId) { mutableStateOf(false) }
     LaunchedEffect(carId) { viewModel.setCarId(carId) }
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -437,26 +440,39 @@ fun DataReadinessScreen(
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 ReadinessDiagnosticCards(uiState.diagnosticFacts)
+                TextButton(onClick = { showCapabilities = !showCapabilities }, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.diagnostic_server_capabilities) + if (showCapabilities) " −" else " +")
+                }
+                if (showCapabilities) {
                 Text(stringResource(R.string.diagnostic_server_capabilities), style = MaterialTheme.typography.titleMedium)
                 ReadinessOverview(uiState.data)
                 uiState.data?.let { DataReadinessRows(it) } ?: Text(
                     text = stringResource(R.string.data_readiness_load_error),
                     color = MaterialTheme.colorScheme.error
                 )
+                }
+                TextButton(onClick = { showSetup = !showSetup }, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.ui_authorization_details) + if (showSetup) " −" else " +")
+                }
+                if (showSetup || uiState.telemetryErrorCode != null) {
                 FleetTelemetryCard(
                     state = uiState,
                     onOpenVirtualKey = {
-                        val officialUrl = officialTeslaVirtualKeyUrlOrNull(uiState.pairing?.virtualKeyUrl)
-                        if (officialUrl == null) {
-                            viewModel.reportPairingLinkUnavailable()
-                        } else {
-                            viewModel.reportExternalPairingFlowLaunched()
-                            context.launchExternalIntentSafely(Intent(Intent.ACTION_VIEW, Uri.parse(officialUrl)))
+                        viewModel.openExternalPairing { officialUrl ->
+                            try {
+                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(officialUrl)))
+                                true
+                            } catch (_: ActivityNotFoundException) {
+                                false
+                            } catch (_: SecurityException) {
+                                false
+                            }
                         }
                     },
                     onConfigure = viewModel::configureTelemetry,
                     onReauthorize = onReauthorize
                 )
+                }
                 if (uiState.migrationBindingRequired) {
                     OutlinedButton(
                         onClick = { showBindingDialog = true },

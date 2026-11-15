@@ -104,7 +104,7 @@ class DriveListEnergyConsumerTest {
         assertEquals(DriveDetailEnergySource.SOC_CAPACITY_ESTIMATE, card.source)
     }
 
-    @Test fun listCardShortTripWithUnchangedSocResolvesEstimatedEnergy() {
+    @Test fun unchangedIntegerSocWithoutEnergyEvidenceRemainsUnknown() {
         val shortTrip = DriveData(
             driveId = 103,
             startDate = "2026-10-13T08:49:00+08:00",
@@ -116,8 +116,8 @@ class DriveListEnergyConsumerTest {
             energyConsumedNet = null
         )
         val card = shortTrip.historyEnergy(metrics = null, batteryCapacityKwh = 60.0)
-        assertEquals(0.116, card.energyKwh ?: Double.NaN, 1e-4)
-        assertEquals(145.0, card.efficiencyWhKm ?: Double.NaN, 1e-1)
-        assertEquals(DriveDetailEnergySource.SOC_CAPACITY_ESTIMATE, card.source)
+        assertNull(card.energyKwh)
+        assertNull(card.efficiencyWhKm)
+        assertNull(card.source)
     }
 }

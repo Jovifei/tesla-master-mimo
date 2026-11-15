@@ -1,0 +1,3523 @@
+[
+  {
+    "report": "01-auth-home.md",
+    "section": "2.1 登录、账号与首次车辆配置",
+    "position": "登录：条款勾选",
+    "row": "| 登录：条款勾选 | 本地 `termsAccepted`；consent current version | 独立 checkbox；当前 consent 可恢复勾选 | rememberSaveable；JourVoltConsentStore | L:91,108-111,233 | false 不启动授权 | T1 `loginRequiresSeparatePublishedTermsAndPrivacyBeforeCloudAuthorization` | SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.1 登录、账号与首次车辆配置",
+    "position": "登录：隐私勾选",
+    "row": "| 登录：隐私勾选 | 本地 `privacyAccepted`；consent current version | 同上，独立状态 | 同上 | L:92,247 | false 不启动授权 | T1 同测试 | SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.1 登录、账号与首次车辆配置",
+    "position": "条款/隐私链接、登录按钮 enabled",
+    "row": "| 条款/隐私链接、登录按钮 enabled | PublicInfoLinks + BuildConfig；`GET v1/auth/tesla/start` X-JourVolt-Terms/Privacy-Version | URL合法 + 两项已勾 + 非Loading | consent记录；请求generation | L:82-90,281-288；LV:167-206；TeslaAuthApi.kt:13-17 | 未配置/未勾选进入明确错误 | T1:119；T2:9-18 | SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.1 登录、账号与首次车辆配置",
+    "position": "授权浏览器/回调",
+    "row": "| 授权浏览器/回调 | authorization_url；callback `/oauth/callback?ticket=` | 授权 Tesla HTTPS endpoint/redirect/scope校验；callback配置host校验 | VM ticket inFlight/handled，非持久 | LV:196-205,219-270；NG:431-435 | 空ticket不exchange；callback error用有限本地化映射 | T3 endpoint/redirect否定组；T4 ticket去重 | SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.1 登录、账号与首次车辆配置",
+    "position": "授权加载/错误",
+    "row": "| 授权加载/错误 | HTTP映射或 caught exception.message | HTTP及callback分类本地化；异常消息直接给Error | VM uiState | LV:207-213,322-330；L:291 | 空异常消息有通用fallback | T2覆盖HTTP/callback，未覆盖网络异常UI内容 | UNVERIFIED（transport异常文案/脱敏仍需检查） |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.1 登录、账号与首次车辆配置",
+    "position": "账号/session是否已登录",
+    "row": "| 账号/session是否已登录 | exchange access_token/refresh_token/expires_in/user.id | `session != null`；不以过期时间直接清登录 | AUTH；LV:97-101 | L:94-99；NG:303 | 缺session进入登录；合法refresh401/403才清 | T5 late refresh/new login；T6导航条件 | SOURCE_OK（导航例外H04） |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.1 登录、账号与首次车辆配置",
+    "position": "token刷新",
+    "row": "| token刷新 | `POST v1/session/refresh`；same-account rotation | 单飞Mutex；只重试一次 `X-JourVolt-Retry` | AUTH，expected session + generation原子compare | RF:40-89；NetworkModule.kt:268-285 | 401/403清当前；传输/5xx保留；空token/expiry<=0拒绝 | T5 `concurrentOldRequestsCanUseOnlyTheSameRefreshRotation`、late unauthorized/success/cancel/redirect | SOURCE_OK（refresh store消费者，不涵盖logout H05） |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.1 登录、账号与首次车辆配置",
+    "position": "本地退出",
+    "row": "| 本地退出 | `POST v1/session/logout`，当前Bearer | 等最多3秒后比较整个旧session再clear | AUTH；请求generation | LV:360-383；SettingsScreen消费回调 | 远端失败仍拟清本地；并发rotation会直接return | T5只测refresher，不测真实logout；静态路径H05 | BUG H05 |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.1 登录、账号与首次车辆配置",
+    "position": "重新授权/取消",
+    "row": "| 重新授权/取消 | 现有session + 新OAuth ticket | 保留旧会话，invalidate旧request；cancel不清session | AUTH + VM generation/commitLock | LV:387-409,294-321 | 取消保留原账号，迟到exchange不应覆盖 | T7 `loginViewModelPreservesSessionWhenPairingIsCancelled`为源码合同；缺真实VM竞态 | UNVERIFIED（关键逻辑可见，真实VM取消/commit竞态待跑） |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.1 登录、账号与首次车辆配置",
+    "position": "首次配置：正在检查/待收集/就绪",
+    "row": "| 首次配置：正在检查/待收集/就绪 | `/cars`，telemetry pairing status config_synced/status/updated_at | bounded自动观察，非车主确认的configSynced不伪造配对动作 | onboarding store按accountId；VM generation | LV:611-633,698-751；L:142-205 | 无车blocked；临时错误pending；owner action不自动重试 | T8 `delayedConfirmationCompletesWithoutAnotherTap`、`explicitOwnerActionsAreNeverRetriedAutomatically` | SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.1 登录、账号与首次车辆配置",
+    "position": "首次配置：实际选中的车辆",
+    "row": "| 首次配置：实际选中的车辆 | `/cars` row.car_id | 旧selected匹配否则取first配对，但未保存first | SR `current_car_id` 全局，默认1 | LV:627-633；SD:48-49；DV:289-305 | 旧ID不存在时Dashboard拒绝显示；多车没有可调用selector | 全main精确搜索：switchCar只有定义；H01完整触发链 | BUG H01 |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.1 登录、账号与首次车辆配置",
+    "position": "配对“打开Tesla”/返回",
+    "row": "| 配对“打开Tesla”/返回 | pairing_required + virtual_key_url + updated_at | 只接受官方虚拟钥匙URL；launchPending；首次返回最多一次configure | TeslaOnboardingStateStore account/car/url/retryUsed/launchPending | L:328-365；LV:412-437,646-680,722-729 | 非官方/空URL不用任意链接；跳过保留登录pending | T7、T8；官方URL策略在readiness | SOURCE_OK（生产钥匙确认未观察） |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.1 登录、账号与首次车辆配置",
+    "position": "权限不足/计费/服务阻断与继续",
+    "row": "| 权限不足/计费/服务阻断与继续 | pairing/errorClass finite state | 本地化有限panel；continue允许pending首页 | onboarding store + AUTH | LV:771-800；L:370-412 | 不把未收集当0或注销；可重试 | T7:11-31、76-81；T8 transport bounded | SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.1 登录、账号与首次车辆配置",
+    "position": "进程重开起始页",
+    "row": "| 进程重开起始页 | connectionMode + session + persisted onboarding account | SELF_HOSTED→Dashboard；cloud pending→Login；其余session→Dashboard | settings/instance/mode/AUTH/onboarding | SD:51-77 | 空session→Login，错account onboarding不使用 | T7源码合同；无本次设备重开证据 | UNVERIFIED（源码合理，设备恢复待证） |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.1 登录、账号与首次车辆配置",
+    "position": "登录后session失效路由",
+    "row": "| 登录后session失效路由 | session flow + initial startDestination | only initial Dashboard才redirect，fresh-login不满足 | startDestination为一次赋值 | NG:250-260,437-445,467-485 | cold-start Login→后续Dashboard→失效未导航 | T6所有正例startDashboard；H04 | BUG H04 |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.2 首页基本信息、实时位置与状态",
+    "position": "顶部车名",
+    "row": "| 顶部车名 | `/cars` CarData.name→displayName；缺则model/Tesla | 去空白fallback；未用status.display_name | LIVE，cars当前请求 | D:215-221；CM:29-32 | null显示fallback，不填别车名称 | T9 selected metadata/UID rebound | SOURCE_OK，受H01选车门约束 |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.2 首页基本信息、实时位置与状态",
+    "position": "车型/性能/长续航副标题",
+    "row": "| 车型/性能/长续航副标题 | car_details.model/trim_badging→hero profile/vehicleTrimFor | 仅已知3/Y/S/X与trim信号映射 | LIVE | D:185-196,222-229,905-919 | unknown不冒充Model3/特定trim | T10四车型与未知；T11:86 | SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.2 首页基本信息、实时位置与状态",
+    "position": "车色/轮毂/车型默认车图",
+    "row": "| 车色/轮毂/车型默认车图 | car_exterior.exterior_color/wheel_type + model/trim | resolveVehicleHeroProfile→VehicleHeroImage | LIVE，无实车图证据 | D:368-380 | 未知模型generic fallback | T10 model3Performance...、unknownModel... | SOURCE_OK（示意外观资源，不是实拍） |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.2 首页基本信息、实时位置与状态",
+    "position": "自定义车图选择/重置",
+    "row": "| 自定义车图选择/重置 | Android photo picker inputStream→PH | scoped staged save/reset，不认领旧unscoped图 | PHOTO；DV activePhotoProof + current scope | D:106-118,374-380；DV:518-553 | 无照片用默认图；失scope丢弃迟到结果 | T12 同numeric不同账号/UID；rename recovery；failed staged retains prior | SOURCE_OK；真实picker重开未执行 |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.2 首页基本信息、实时位置与状态",
+    "position": "车辆状态标签",
+    "row": "| 车辆状态标签 | status.state | finite vehicleStateLabel | LIVE/CACHE | D:353-364,1125-1132 | null不画；unknown本地化 | T11驾驶state gate；无现场状态枚举证据 | SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.2 首页基本信息、实时位置与状态",
+    "position": "来源/新鲜度badge",
+    "row": "| 来源/新鲜度badge | snapshot.source/observed_at/field_sources→SnapshotEvidence | 120秒/未来5秒fence；mixed标记；UI将RECENT/503当asleep | LIVE/CACHE | D:234-237,1035-1052；SE:31-36 | telemetry_mqtt未识别；RECENT误称休眠 | T13只覆盖live_mqtt/teslamate/mixed，漏cloud source与badge消费者 | BUG H06/H07 |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.2 首页基本信息、实时位置与状态",
+    "position": "顶部观测时间",
+    "row": "| 顶部观测时间 | snapshot.observed_at；cache observed_at | 设备时区MM-dd HH:mm | LIVE/CACHE | D:250-257；VP:114-117 | 空/不可解析隐藏；legacy status无时间 | T13 freshness（未测时区UI） | SOURCE_OK（时间是快照/receipt，不是全部字段传感器时间） |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.2 首页基本信息、实时位置与状态",
+    "position": "主卡SOC数字",
+    "row": "| 主卡SOC数字 | battery_details.battery_level Int? | 直接百分号 | LIVE/CACHE；FP:312；BG:881-885 | D:440-466 | null `--`；真实0保留；数值显示未做0..100验证 | T14 JSON null/0/false；T15 SOC端点 | SOURCE_OK（上游非法域仍需负面测试） |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.2 首页基本信息、实时位置与状态",
+    "position": "SOC进度条",
+    "row": "| SOC进度条 | 同上 | coerceIn(0,100)/100f | LIVE/CACHE | D:489-496 | null不画；真实0空条 | T14只DTO；未测实际Compose值 | SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.2 首页基本信息、实时位置与状态",
+    "position": "续航数字/单位",
+    "row": "| 续航数字/单位 | rated_battery_range→ideal→est | null优先回退；API已经preferred，不二转 | LIVE/CACHE；FP:314-316 cloud→km | D:432,474-485 | 三者null `--`；真实0保留 | T15 canonicalStoredMetrics...；H02 cache单位 | BUG H02（缓存回退）；在线SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.2 首页基本信息、实时位置与状态",
+    "position": "当前SOC→目标SOC文案",
+    "row": "| 当前SOC→目标SOC文案 | battery_level / charge_limit_soc | classifyBatteryCharge，缺current显示limit | LIVE/CACHE | D:498-511 | 缺target不算百分比目标；真实0需保留 | T14 null/0；未找到完整UI消费者证据 | UNVERIFIED（classify/渲染完整组合待验） |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.2 首页基本信息、实时位置与状态",
+    "position": "锁状态",
+    "row": "| 锁状态 | car_status.locked Boolean? | nullable三态，图标+文案 | LIVE/CACHE；FP:308；BG:863 | D:518-527 | true已锁/false解锁/null未知 | T14 JSON 0/false/null；T11 flags | SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.2 首页基本信息、实时位置与状态",
+    "position": "插枪状态",
+    "row": "| 插枪状态 | charging_details.plugged_in | nullable三态；cloud由非Disconnected charging_state推导 | LIVE/CACHE；FP:360-363；BG:887 | D:528-537 | true/false/null分开 | T14；无实车多种charging_state样本 | SOURCE_OK（cloud推导口径需上游样本确认） |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.2 首页基本信息、实时位置与状态",
+    "position": "空调状态",
+    "row": "| 空调状态 | climate_details.is_climate_on | nullable三态 | LIVE/CACHE；FP:336；BG:878 | D:538-547 | on/off/unknown分开 | T14 null/false | SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.2 首页基本信息、实时位置与状态",
+    "position": "哨兵状态",
+    "row": "| 哨兵状态 | car_status.sentry_mode | nullable三态 | LIVE/CACHE；FP:309；BG:864 | D:548-557 | armed/off/unknown分开 | T14 null/false | SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.2 首页基本信息、实时位置与状态",
+    "position": "车门开启提醒",
+    "row": "| 车门开启提醒 | car_status.doors_open | only true→openVehicleOpenings.DOORS | LIVE/CACHE；FP:347 anyOpen | D:560-561,923-929；VP:81-87 | null/false不报开启，不声明已关闭 | T11 openingPanelContainsOnlyTheFourAllowedOpenings | SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.2 首页基本信息、实时位置与状态",
+    "position": "车窗开启提醒",
+    "row": "| 车窗开启提醒 | car_status.windows_open | only true→WINDOWS | LIVE/CACHE；BG:864；Fleet mapper未赋WindowsOpen | D:560-561；VP:84 | null不画；cloud provider无对应赋值，不能推断关闭 | T11允许WINDOWS；无上游观测 | SOURCE_DATA_MISSING（当前Fleet路径结构性未接入；生产实际未知） |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.2 首页基本信息、实时位置与状态",
+    "position": "前备箱开启提醒",
+    "row": "| 前备箱开启提醒 | car_status.frunk_open | only true→FRUNK | LIVE/CACHE；FP:348；BG:866 | D:560-561；VP:85 | null/false不报开启 | T11四opening | SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.2 首页基本信息、实时位置与状态",
+    "position": "后备箱开启提醒",
+    "row": "| 后备箱开启提醒 | car_status.trunk_open | only true→TRUNK | LIVE/CACHE；FP:349；BG:865 | D:560-561；VP:86 | 同上 | T11四opening | SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.2 首页基本信息、实时位置与状态",
+    "position": "总里程",
+    "row": "| 总里程 | status.odometer | preferred-unit直格式化 | LIVE/CACHE；FP:311 miles→km；BG:861 | D:573-580 | null `--`；0保留；不拿历史和替代 | T15 raw preferred单位；H02 | BUG H02（缓存单位）；在线SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.2 首页基本信息、实时位置与状态",
+    "position": "位置文本：围栏",
+    "row": "| 位置文本：围栏 | car_geodata.geofence | 优先trim非空geofence | LIVE/CACHE；cloud BG:870显式nil | D:584-593；VP:102-121 | 缺围栏用地址/坐标；不伪造住址 | T11 location precedence；无生产围栏观测 | SOURCE_DATA_MISSING（cloud无围栏为可选能力，fallback正常） |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.2 首页基本信息、实时位置与状态",
+    "position": "位置文本：地址",
+    "row": "| 位置文本：地址 | live经验证GPS→Amap reverse，再本地geocoding cache | addr→城市/区域/国家组合 | geocoding cache按坐标；发布再检查scope/vehicle/generation | DV:374-380,595-620；D:584-593 | 无地址用坐标；不复用旧车位置 | T16 snapshot identity谓词；无真实挂起geocode VM测试 | UNVERIFIED（源码fence可见，真实消费者竞态待验） |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.2 首页基本信息、实时位置与状态",
+    "position": "位置文本：经纬度/配置提示",
+    "row": "| 位置文本：经纬度/配置提示 | car_geodata.latitude/longitude | 4位坐标；无GPS提示readiness/未配Amap提示setup | LIVE/CACHE | D:583-607；VP:107-111 | UI只检查非null；geocoder有合法域/0,0过滤 | T13 sentinelCoordinateRejected只测helper；未测试此UI旁路 | UNVERIFIED（0,0/越界UI旁路须补负面用例） |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.2 首页基本信息、实时位置与状态",
+    "position": "首页地图点",
+    "row": "| 首页地图点 | 同一status latitude/longitude | AmapPointView直接消费 | LIVE/CACHE | D:678-687 | 任意非null都挂载；合法域检查未在本页调用 | T13 helper；map真实SDK未运行 | UNVERIFIED（上游严格过滤与UI防御需联合验证） |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.2 首页基本信息、实时位置与状态",
+    "position": "车内温度",
+    "row": "| 车内温度 | climate_details.inside_temp | preferred °C/°F格式化1位 | LIVE/CACHE；FP:337；BG:878 | D:614-620 | null等待车端；真实0保留 | T14 DTO；T15 raw不二转；H02 | BUG H02（缓存单位）；在线SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.2 首页基本信息、实时位置与状态",
+    "position": "车外温度",
+    "row": "| 车外温度 | climate_details.outside_temp | 同上 | LIVE/CACHE；FP:338；BG:879 | D:622-628 | 同上；不造温度趋势点 | 同上 | BUG H02（缓存单位）；在线SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.2 首页基本信息、实时位置与状态",
+    "position": "左前胎压",
+    "row": "| 左前胎压 | tpms_details.tpms_pressure_fl | preferred pressure→1位 | LIVE/CACHE；FP:350；BG:901 | D:642-648 | null readiness占位；0显示真实0 | T11 pressureFormattingUsesTheReportedUnit；T17 raw collector | BUG H02（缓存单位）；在线SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.2 首页基本信息、实时位置与状态",
+    "position": "右前胎压",
+    "row": "| 右前胎压 | tpms_pressure_fr | 同上 | LIVE/CACHE；FP:351；BG:901 | D:650-656 | 同上 | T11、T17 partialPressureChange... | BUG H02（缓存单位）；在线SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.2 首页基本信息、实时位置与状态",
+    "position": "左后胎压",
+    "row": "| 左后胎压 | tpms_pressure_rl | 同上 | LIVE/CACHE；FP:352；BG:902 | D:658-664 | 同上 | T11、T17 | BUG H02（缓存单位）；在线SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.2 首页基本信息、实时位置与状态",
+    "position": "右后胎压",
+    "row": "| 右后胎压 | tpms_pressure_rr | 同上 | LIVE/CACHE；FP:353；BG:902 | D:666-672 | 同上 | T11、T17 | BUG H02（缓存单位）；在线SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.2 首页基本信息、实时位置与状态",
+    "position": "左前胎压警告",
+    "row": "| 左前胎压警告 | tpms_soft_warning_fl | only true→warning tint | LIVE/CACHE；warning独立receipt不借pressure receipt | D:647；VP:93 | false/null不告警，不推导压力阈值 | T11 tpmsWarningsRemainSeparate...；T17独立warning时钟 | SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.2 首页基本信息、实时位置与状态",
+    "position": "右前胎压警告",
+    "row": "| 右前胎压警告 | tpms_soft_warning_fr | 同上 | 同上 | D:655；VP:94 | 同上 | T11、T17 | SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.2 首页基本信息、实时位置与状态",
+    "position": "左后胎压警告",
+    "row": "| 左后胎压警告 | tpms_soft_warning_rl | 同上 | 同上 | D:663；VP:95 | 同上 | T11、T17 | SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.2 首页基本信息、实时位置与状态",
+    "position": "右后胎压警告",
+    "row": "| 右后胎压警告 | tpms_soft_warning_rr | 同上 | 同上 | D:671；VP:96 | 同上 | T11、T17 | SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.2 首页基本信息、实时位置与状态",
+    "position": "胎压/温度历史入口",
+    "row": "| 胎压/温度历史入口 | selected carId + exteriorColor route | 不拿当前温度或压力造趋势；只导航 | route使用当前numeric car | D:613,636-640 | 历史为空与当前有值可共存 | T18轮询不写伪历史；T17当前原始TPMS有资格时保存独立receipt | SOURCE_OK（历史详情交由对应审计） |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.2 首页基本信息、实时位置与状态",
+    "position": "数据就绪引导/胎压缺值说明",
+    "row": "| 数据就绪引导/胎压缺值说明 | getDataReadiness(effectiveCarId) | 有verified UID才读取/显示；hasSeen current readiness | DataReadinessStore account/server/car/vehicle/source/collection identity | DV:406-427；D:132-160,645 | 请求失败不填0；缺pressure readiness文案 | T17无额外HTTP；无当前readiness endpoint样本 | UNVERIFIED（endpoint实证未取） |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.3 驾驶/充电、刷新与空态",
+    "position": "驾驶HUD显示门槛/折叠",
+    "row": "| 驾驶HUD显示门槛/折叠 | state==driving OR speed>0；isHudDismissed | state/speed判断；折叠仅改VM布尔 | LIVE/CACHE，VM保留 | D:264-275,282-314 | 驾驶state可在speed null时进入 | T11仅测主卡helper非HUD；H03 | BUG H03（门槛可达缺速分支） |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.3 驾驶/充电、刷新与空态",
+    "position": "驾驶HUD速度",
+    "row": "| 驾驶HUD速度 | driving_details.speed | formatSpeed preferred，null→0.0 | LIVE/CACHE | D:1230 | 缺失被伪装0 km/h/mph | T14只DTO；H03具体反例 | BUG H03 |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.3 驾驶/充电、刷新与空态",
+    "position": "主卡驾驶速度",
+    "row": "| 主卡驾驶速度 | 同一speed，要求state=driving | 非null才加指标strip | LIVE/CACHE | D:383-393；VP:45-53 | null隐藏；真实0保留 | T11 drivingMetricsAppearOnly... | SOURCE_OK（受H02缓存单位影响） |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.3 驾驶/充电、刷新与空态",
+    "position": "HUD/主卡挡位",
+    "row": "| HUD/主卡挡位 | driving_details.shift_state | trim uppercase D/R/N/P→本地化 | LIVE/CACHE；FP:340；BG:874 | D:411-424,1242-1269 | unknown/null不伪造P | T11 shiftState/驾驶telemetry | SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.3 驾驶/充电、刷新与空态",
+    "position": "HUD/主卡功率、回收方向/颜色",
+    "row": "| HUD/主卡功率、回收方向/颜色 | driving_details.power signed kW | abs显示，正consuming/负regenerating/0steady | LIVE/CACHE；FP:341；BG:874 | D:395-408,1273-1288 | null隐藏，真实0保留，负号由回收文案表达 | T11负功率/0；T14 DTO | SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.3 驾驶/充电、刷新与空态",
+    "position": "充电HUD显示/折叠",
+    "row": "| 充电HUD显示/折叠 | charging_details.charging_state==charging | 忽略大小写派生isCharging；驾驶HUD优先 | LIVE/CACHE | D:265-281 | null不伪装充电；可真实charging但其他字段null | T14；H03 | SOURCE_OK（子字段H03） |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.3 驾驶/充电、刷新与空态",
+    "position": "充电HUD功率",
+    "row": "| 充电HUD功率 | charger_power Double? | 1位kW，优先Double accessor | LIVE/CACHE；FP:331；BG:895 | D:1338-1344 | null隐藏；0保留 | T14 chargingSnapshotKeepsDecimalValues... | SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.3 驾驶/充电、刷新与空态",
+    "position": "充电HUD充入电量",
+    "row": "| 充电HUD充入电量 | charge_energy_added Double? | 1位kWh，null→0.0 | LIVE/CACHE；FP:318；BG:888 | D:1364-1366 | 缺失伪0；底部卡却显示-- | T14精度/JSON不覆盖HUD；H03 | BUG H03 |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.3 驾驶/充电、刷新与空态",
+    "position": "充电HUD电压",
+    "row": "| 充电HUD电压 | charger_voltage Double?→rounded Int accessor | roundToInt V | LIVE/CACHE；FP:332；BG:895 | D:1378-1383；CM:116-117 | null整列不画；0保留；小数电压舍入 | T14原值精度；真实HUD精度未验 | SOURCE_OK（显示整数为当前规格） |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.3 驾驶/充电、刷新与空态",
+    "position": "充电HUD电流",
+    "row": "| 充电HUD电流 | charger_actual_current Double?→rounded Int | null→0 Int，与电压配对显示 | LIVE/CACHE；FP:329；BG:894 | D:1379-1383；CM:118-119 | 有电压无电流会显示0A | T14不覆盖消费者；H03 | BUG H03 |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.3 驾驶/充电、刷新与空态",
+    "position": "充电HUD剩余时间",
+    "row": "| 充电HUD剩余时间 | time_to_full_charge hours Double? | hours*60取整，>=60拆h/m | LIVE/CACHE；FP:335；BG:898 | D:1395-1407 | null隐藏；0m可真实0；<1min截断0m | T14模型字段；未找到时长边界测试 | SOURCE_OK（负值/极端值待上游负面验证） |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.3 驾驶/充电、刷新与空态",
+    "position": "底部充电卡功率",
+    "row": "| 底部充电卡功率 | charger_power | 1位kW | LIVE/CACHE | D:725-753 | null `--`；真实0保留 | T14小数精度 | SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.3 驾驶/充电、刷新与空态",
+    "position": "底部充电卡充入电量",
+    "row": "| 底部充电卡充入电量 | charge_energy_added | 直接Double kWh | LIVE/CACHE | D:756-758 | null `--`；真实0保留，与HUD H03冲突 | T14 DTO | SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.3 驾驶/充电、刷新与空态",
+    "position": "底部充电卡剩余时间",
+    "row": "| 底部充电卡剩余时间 | time_to_full_charge | 原hours+`h` | LIVE/CACHE | D:760-762 | null `--`；0保留，与HUD时分是格式差异 | T14 DTO；无双卡快照比较测试 | SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.3 驾驶/充电、刷新与空态",
+    "position": "电池趋势入口",
+    "row": "| 电池趋势入口 | selected carId/exteriorColor→Stats | 只导航，不画模拟电量历史 | route，无合成缓存 | D:691-723 | 缺历史不会用当前SOC合成曲线 | T18轮询不合成历史 | SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.3 驾驶/充电、刷新与空态",
+    "position": "部分数据页车名/车型/trim/车色/轮毂",
+    "row": "| 部分数据页车名/车型/trim/车色/轮毂 | 当前/cars元数据；status=null | 显示metadata + localized error category | LIVE，getCars失败car=null | D:772-859,861-871 | 缺字段 `-`；无状态不填实时0 | T9 metadata；T19 error映射 | SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.3 驾驶/充电、刷新与空态",
+    "position": "部分数据页总行程/总充电",
+    "row": "| 部分数据页总行程/总充电 | teslamate_stats.total_drives/total_charges | 整数直传 | LIVE，当前cars row | D:874-883 | null `-`；真实0保留 | 无真实云端统计输出样本 | UNVERIFIED（上游可选统计） |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.3 驾驶/充电、刷新与空态",
+    "position": "部分数据页来源/刷新/设置",
+    "row": "| 部分数据页来源/刷新/设置 | 本地化静态source说明、refresh/loadDashboard | 不把ping/readyz成功当状态成功 | VM触发网络/worker | D:887-899 | 不拼接任意服务端error正文 | T19 unknownFailureUsesSafeGenericCopy | SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.3 驾驶/充电、刷新与空态",
+    "position": "手动刷新",
+    "row": "| 手动刷新 | refresh→triggerDataSync + loadDashboard | generation++；unique worker KEEP | LIVE；CACHE仅qualifiedUID | D:120-129；DV:274-443,564-592 | status unavailable 可用同scope已存状态；cars失败不能读缓存 | T16身份谓词；T20 scoped cache；见下节限制 | UNVERIFIED（离线优先/真实并发刷新未跑） |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.3 驾驶/充电、刷新与空态",
+    "position": "轮询更新/失败保留",
+    "row": "| 轮询更新/失败保留 | snapshot→legacy fallback；8/15/60/10秒 | raw status直接替换，不merge旧GPS，不写snapshot历史 | LIVE；请求scope/generation/currentcar fence | DV:448-515 | failure保留当前status但下调freshness；不制造0 | T18源码合同；T16纯谓词；缺真实VM轮询竞态 | SOURCE_OK（source mapping见H06） |",
+    "historical_removed": false
+  },
+  {
+    "report": "01-auth-home.md",
+    "section": "2.3 驾驶/充电、刷新与空态",
+    "position": "身份变化清空旧UI",
+    "row": "| 身份变化清空旧UI | VC.historyScopeChanges，含session generation | 清StateFlow、照片proof、++generation、reload | LIVE+scopedCACHE | DV:195-205 | 新身份不可保留旧车字段；无session时会卡defaultLoading见H04 | T16 delayedAlice...为抽取策略测试；T20 cache跨账号 | BUG H04；跨账号scope隔离源码基本正确 |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "列表、筛选、摘要、统计图（25行）",
+    "position": "列表：默认日期/今天/7/30/90/365/全部",
+    "row": "| 列表：默认日期/今天/7/30/90/365/全部 | start_date；DateFilter；clock zone | start=now-(days-1)，end次日排除；按会话开始归窗 | SavedStateHandle 筛选；Room同车全缓存再过滤 | CS502-540；CVM357-374,615-618 | 无开始时间在有界窗被排除；ALL保留 | ChargeHistoryWindowTest；ChargesRoomCostConsumerTest | SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "列表、筛选、摘要、统计图（25行）",
+    "position": "列表：自定义/更早历史",
+    "row": "| 列表：自定义/更早历史 | customStart/End，API start/end | loadMore向前30日，转CUSTOM；摘要/列表/图表同窗 | SavedStateHandle；UHR page50 | CS250-275,450-469；CVM377-413 | 空页不删除既有缓存；ALL不继续自动延窗 | Charge64PageRoomConsumerTest；旧日Room消费者 | SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "列表、筛选、摘要、统计图（25行）",
+    "position": "列表：AC/DC筛选与标签",
+    "row": "| 列表：AC/DC筛选与标签 | energy_contract mode，或AggregateDao index | 显式合同优先；legacy processed非DC→AC | Room aggregate同car/charge，未保留UNKNOWN | CS563-610,941-964；CVM968-988 | UNKNOWN不进入AC/DC；legacy误判见01 | ChargeModeListContractTest仅消费者 | BUG CHG-P1-01 |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "列表、筛选、摘要、统计图（25行）",
+    "position": "列表：有/无费用筛选",
+    "row": "| 列表：有/无费用筛选 | EffectiveChargeCost | >0为有；null/0（含已知免费）归无 | 同币种会话费用投影 | CS617-661；CVM183-187,667-683 | “无费用”混合未填、0、免费，源码明确 | ChargeSummaryMetricTest；投影合同 | SOURCE_OK（语义有限） |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "列表、筛选、摘要、统计图（25行）",
+    "position": "列表：地点选项/搜索/选中数",
+    "row": "| 列表：地点选项/搜索/选中数 | ChargeData.address | visible窗口内distinct/sort；选中地址精确比较 | 同车当前窗，SavedStateHandle选中集 | CS1159-1248；CVM649-659 | null地址不入选项；空集合=全部 | 源码核查；未找到全UI地点组合回归 | SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "列表、筛选、摘要、统计图（25行）",
+    "position": "列表：短充电隐藏",
+    "row": "| 列表：短充电隐藏 | batteryInputKwh+showShort | ≤0.1kWh合格会话隐藏；unknown仍可见 | 列表母集不同于summary | CS399-450；CVM626-647 | 真0可被设置隐藏；不是未知 | 源码核查 | BUG CHG-P2-03 |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "列表、筛选、摘要、统计图（25行）",
+    "position": "卡片：地点/地址",
+    "row": "| 卡片：地点/地址 | address -> toChineseDisplayAddress | 显示格式化 | raw/presentation同车会话 | CS830-842；CM21 | null/blank→unknown location | 源码核查；真实地址未读 | SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "列表、筛选、摘要、统计图（25行）",
+    "position": "卡片：开始日期时间/排序",
+    "row": "| 卡片：开始日期时间/排序 | start_date String | formatEditorialDate；列表按字符串降序；is24Hour固定true | Room raw/presentation | CS836-837,796；CVM718 | 未解析日期formatter fallback；不同offset字串排序不保证Instant序 | 窗口测试覆盖筛选；排序/12h无消费者覆盖 | UNVERIFIED（排序与24h偏好） |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "列表、筛选、摘要、统计图（25行）",
+    "position": "卡片：时长",
+    "row": "| 卡片：时长 | duration_str / duration_min | string优先，min fallback，未校验负值/冲突 | nullable raw receipt | CS854-857 | null→N/A；真0显示0m | 源码核查 | BUG CHG-P2-01 |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "列表、筛选、摘要、统计图（25行）",
+    "position": "卡片：电池输入kWh",
+    "row": "| 卡片：电池输入kWh | charge_energy_added或energy_contract.battery_input | qualified batteryInputKwh；一位小数 | raw与合格投影分开 | CS786,860-864；CM49,132-143 | unknown合同不复活raw；真实0保留 | ChargeQualifiedEnergyFlowTest；ChargeEnergyPresentationTest | SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "列表、筛选、摘要、统计图（25行）",
+    "position": "卡片：SOC起/止",
+    "row": "| 卡片：SOC起/止 | battery_details.start/end_battery_level | formatSocRange检查0..100 | raw/presentation；跨窗预合并风险 | CS787-788,873-877 | 单侧缺失保持单侧未知；0合法 | UnitFormatter；rawmerge缺实际消费者回归 | BUG CHG-P1-03（绑定） |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "列表、筛选、摘要、统计图（25行）",
+    "position": "卡片：费用值/免费/≈",
+    "row": "| 卡片：费用值/免费/≈ | cost、manual、free、default price | CP同一投影；优先manual/free/source/estimate | ChargeCostOverride Room + source session | CS790-794,866-870 | null不当0；手动0是已知；免费范围过宽 | ChargesRoomCostConsumerTest；CP合同 | BUG CHG-P1-02/03 |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "列表、筛选、摘要、统计图（25行）",
+    "position": "卡片：估算来源说明/费用编辑入口",
+    "row": "| 卡片：估算来源说明/费用编辑入口 | 当前effectiveCost.source、onEditCost | ≈与估算文字、编辑按钮；旧pending/其他币种/实例说明已被外部变更移除 | 底层证据仍保留，但当前列表不再渲染这些旧说明 | 冻结CS888–935 | 不把旧未渲染说明计当前字段；费用根因不因删除文字关闭 | 源码冻结复核；旧测试是否仍匹配UNVERIFIED | SOURCE_OK（估算/编辑入口）；历史说明不计当前可见覆盖 |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "列表、筛选、摘要、统计图（25行）",
+    "position": "卡片：费用编辑/保存/清除",
+    "row": "| 卡片：费用编辑/保存/清除 | 用户总金额；Currency setting | finite且≥0；版本冲突拒绝；clear tombstone | source/window/instance/record/currency会话键 | CS294-337,882-884；CVM901-927 | 无有效币种不能保存；旧legacy不自动绑定 | ChargeListCostEditContractTest；ChargePriceOverrideTest | SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "列表、筛选、摘要、统计图（25行）",
+    "position": "摘要：充电次数",
+    "row": "| 摘要：充电次数 | analysis-eligible filtered charges | charges.size | 当前同车日期/类型/地址/费用筛选；含短充电 | CS701-706；CVM622-647,940-947 | incomplete列表可见但不计分析；空集合0 | ChargeSummaryMetricTest | SOURCE_OK（母集见P2-03） |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "列表、筛选、摘要、统计图（25行）",
+    "position": "摘要：总能量kWh/MWh",
+    "row": "| 摘要：总能量kWh/MWh | 每会话batteryInputKwh | mapNotNull finite≥0后sum | 相同filtered stats set | CS711-718；CVM934-935 | 全未知→N/A；部分未知只求已知和，无覆盖提示 | ChargeSummaryMetricTest | BUG CHG-P2-03 |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "列表、筛选、摘要、统计图（25行）",
+    "position": "摘要：总费用/≈",
+    "row": "| 摘要：总费用/≈ | 与卡片相同EffectiveChargeCost | 合格finite≥0求和；有estimate前缀≈ | 同币种；coveredCost集合 | CS723-731；CVM171-179,937 | 无covered→null；真0总计保留 | ChargesRoomCostConsumerTest | BUG CHG-P1-02/03（来源） |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "列表、筛选、摘要、统计图（25行）",
+    "position": "摘要：平均每次费用",
+    "row": "| 摘要：平均每次费用 | same projected costs | total / coveredCount，非全部会话数 | 同币种已知费用分母 | CS736-740；CVM177,945 | 无样本→N/A；不会除0 | ChargeSummaryMetricTest；Room消费者 | SOURCE_OK（来源受P1影响） |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "列表、筛选、摘要、统计图（25行）",
+    "position": "摘要：费用覆盖/估算数",
+    "row": "| 摘要：费用覆盖/估算数 | count有效投影/ESTIMATE | covered/total，estimatedCount | 同筛选同币种 | CS749-755；CVM162-163 | estimated0仍为覆盖；unknown不覆盖 | ChargeSummaryMetricTest | SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "列表、筛选、摘要、统计图（25行）",
+    "position": "摘要：平均能量（未渲染）",
+    "row": "| 摘要：平均能量（未渲染） | avgEnergyPerCharge状态 | totalKnownEnergy / energyValues.size | 计算存在，无当前UI分支 | CVM944；CS697-742未消费 | 不应宣称页面已显示此指标 | 源码字段 inventory | SOURCE_OK（未显示） |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "列表、筛选、摘要、统计图（25行）",
+    "position": "图：日/周/月标签与分桶",
+    "row": "| 图：日/周/月标签与分桶 | start_date -> Instant -> clock.zone | ≤30差值日、≤90周、其他月；Locale周首 | 当前筛选；非UTC日期口径 | CS1049-1063；CVM731-854 | 缺开始点不分桶；空charges无图 | ChargeHistoryWindowTest覆盖日期；周月组合未实跑 | SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "列表、筛选、摘要、统计图（25行）",
+    "position": "图：总kWh及AC/DC/未知段",
+    "row": "| 图：总kWh及AC/DC/未知段 | batteryInputKwh+historyChargeType | 分组已知和，coverage>0显示；未知类型单独段 | 当前窗/过滤集 | CS1091-1103；CVM865-872,897 | 无合格能量显示N/A；图数值内部0不等于观测0 | energy-flow测试；类型生产链缺口 | BUG CHG-P1-01 / P2-03 |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "列表、筛选、摘要、统计图（25行）",
+    "position": "图：总费用及AC/DC/未知段",
+    "row": "| 图：总费用及AC/DC/未知段 | same projected cost | 分段sum；有estimate前缀≈ | 同币种 | CS1105-1118；CVM874-896 | 全未知N/A；空桶内部0 | ChargesRoomCostConsumerTest | BUG CHG-P1-01/02/03 |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "列表、筛选、摘要、统计图（25行）",
+    "position": "图：次数及AC/DC/未知段",
+    "row": "| 图：次数及AC/DC/未知段 | charges count/type | count.size；三段和=count | eligible filtered set | CS1120-1129；CVM878-894 | 空桶0；unknown不是AC | ChargeModeListContractTest | BUG CHG-P1-01 |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "列表、筛选、摘要、统计图（25行）",
+    "position": "列表：历史/离线/部分数据notice",
+    "row": "| 列表：历史/离线/部分数据notice | UHR chargesSyncError、identity、archive pending | 20s超时保留缓存；identity失效清空 | scopeChanges监听；LatestHistoryLoad | CS121-146,239-254；CVM255-279,468-603 | 可验证同身份缓存才显示；空库错误不同于0记录 | ChargesRoomCostConsumerTest；64-page Room消费者 | SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "历史充电详情（24行）",
+    "position": "详情：记录/车辆/窗口身份",
+    "row": "| 详情：记录/车辆/窗口身份 | data.car.car_id、charge_id、source/instance/record/start/end | repository ID校验+Room identity exact匹配 | verified history context；HDP事务 | DS103-167；DVM230-321 | 无summary拒接详情；不凭numeric ID借点 | ChargeDetailResponseIdentityTest；ChargeSourceInstanceAdmissionTest | SOURCE_OK（持续已显示scope变更未验证） |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "历史充电详情（24行）",
+    "position": "详情：地址",
+    "row": "| 详情：地址 | ChargeDetail.address | Chinese display | nullable wire；detail presentation snapshot | DS532-534 | unknown location；不自动用实时地址冒充历史 | ChargeDetailLocalPersistenceTest | SOURCE_OK（rawmerge风险） |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "历史充电详情（24行）",
+    "position": "详情：开始/结束时间",
+    "row": "| 详情：开始/结束时间 | start_date/end_date | formatMonthDayTime本地格式 | 同会话receipt | DS552-560 | null→unknown | static；等价Instant持久化测试 | SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "历史充电详情（24行）",
+    "position": "详情：header时长/电池区时长",
+    "row": "| 详情：header时长/电池区时长 | duration_min/string | header min优先；stats取min≥0 | online raw；offline重建scalar0 | DS563-566,298；DVM374-375 | raw缺失可被offline伪0；负值header无过滤 | 源码核查；offline point测试未覆盖nullable时长 | BUG CHG-P2-01 |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "历史充电详情（24行）",
+    "position": "详情：header电池输入kWh",
+    "row": "| 详情：header电池输入kWh | batteryInputKwh | qualified amount 2 decimals | detail energy contract或legacy兼容 | DS588-601；DVM287；CM127 | finite非负；unknown不借raw；0保留 | ChargeQualifiedEnergyFlowTest | SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "历史充电详情（24行）",
+    "position": "详情：能量added",
+    "row": "| 详情：能量added | batteryInputKwh | Calc106 | battery input物理侧；非SOC×容量 | DS285 | 不证明DC柜侧输入；缺合同→N/A | ChargeEnergyBalanceTest；flow测试 | SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "历史充电详情（24行）",
+    "position": "详情：能量used",
+    "row": "| 详情：能量used | inputEnergyKwh -> ac_input | Calc107；仅合格AC session | ac_charger_input侧，绝不当电池输入 | DS286 | archive桥没此字段；DC/混合AC拒绝 | ChargeQualifiedEnergyFlowTest | SOURCE_DATA_MISSING（部分源） |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "历史充电详情（24行）",
+    "position": "详情：效率",
+    "row": "| 详情：效率 | AC input与battery input同窗/源/time_basis | battery/input×100，input>0，0≤battery≤input | EB15-33；不可用legacy两scalar证明 | DS287；Calc109-111 | 0/0或DC/不同窗→N/A；battery0/input>0→0% | ChargeEnergyBalanceTest | SOURCE_OK（源可能缺） |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "历史充电详情（24行）",
+    "position": "详情：首/末观测SOC",
+    "row": "| 详情：首/末观测SOC | sorted unique in-window点；无任何SOC点才summary fallback | Calc81-98；单点按end/start资格分侧 | 原点Room+summary raw | DS295-296 | 0合法；冲突/out-window不复活summary | ChargeStatsCalculatorTest单点/冲突/零 | SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "历史充电详情（24行）",
+    "position": "详情：观测SOC变化",
+    "row": "| 详情：观测SOC变化 | 首末有效SOC | end-start，允许负 | 相同series | DS297 | 缺任一侧→N/A；不估电量 | ChargeStatsCalculatorTest | SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "历史充电详情（24行）",
+    "position": "详情：SOC曲线/单点",
+    "row": "| 详情：SOC曲线/单点 | point.date、battery_level | Calc.project排序、同刻唯一、0..100、会话闭区间 | HDR points/chunks | DS301-310,1046-1068 | ≥2曲线；1真实点；0无曲线 | ChargeSingleObservationTest（instrumented源码） | SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "历史充电详情（24行）",
+    "position": "详情：功率max/min/avg",
+    "row": "| 详情：功率max/min/avg | point.charger_details.charger_power Double kW | 合格点极值取Int；avg算术样本平均，不是时间加权 | Calc43,57-61 | DS314-333 | 无点整节不显示；真0保留；非finite/负排除 | ChargeStatsCalculatorTest | SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "历史充电详情（24行）",
+    "position": "详情：功率曲线/单点",
+    "row": "| 详情：功率曲线/单点 | 同power合格series | 与统计完全同一series，保留时刻 | 原始点缓存 | DS324-333,959-975 | 不从能量/时长生成曲线 | stats/series一致性测试 | SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "历史充电详情（24行）",
+    "position": "详情：电压max/min/avg",
+    "row": "| 详情：电压max/min/avg | charger_details.charger_voltage V | 非负finite；max/minInt；样本mean | Calc44,63-66 | DS345-347 | 当前archive桥丢此字段，不是UI计算失败 | stats calculator测试；bridge模型 | SOURCE_DATA_MISSING |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "历史充电详情（24行）",
+    "position": "详情：电流max/min/avg",
+    "row": "| 详情：电流max/min/avg | charger_details.charger_actual_current A | 非负finite；max/minInt；样本mean | Calc45,68-71 | DS348-350 | 当前archive桥/历史session模型无电流 | stats calculator测试；bridge模型 | SOURCE_DATA_MISSING |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "历史充电详情（24行）",
+    "position": "详情：电压/电流曲线/单点",
+    "row": "| 详情：电压/电流曲线/单点 | 各自qualified time/value pairs | 独立信号时间，≥2曲线，1点 | 同receipt；不靠AC/DC决定可否显示 | DS353-373,979-1015 | 有哪一项显示哪项；两者均无整节省略 | ChargeStatsCalculatorTest | SOURCE_OK（源缺字段） |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "历史充电详情（24行）",
+    "position": "详情：温度max/min/avg",
+    "row": "| 详情：温度max/min/avg | outside_temp点；fallback outside_temp_avg | 样本极值/mean；仅所有点都无temp才fallback均值 | raw温度无单位receipt；status.units后取 | DS378-400；Calc73-79 | summary均值不伪造min/max；0/负温保留 | temperature/stats测试 | BUG CHG-P2-01（单位）；SOURCE_DATA_MISSING（bridge丢温度） |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "历史充电详情（24行）",
+    "position": "详情：温度曲线/单点",
+    "row": "| 详情：温度曲线/单点 | qualified outside_temp series | ≥2/1/0分支；仅贴API单位无二次转换 | HDR raw points | DS389-400,1019-1042 | 旧bridge不保留outside_temp；无点不造曲线 | ChargeStatsCalculatorTest | BUG CHG-P2-01（单位绑定） |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "历史充电详情（24行）",
+    "position": "详情：费用总额/来源/≈",
+    "row": "| 详情：费用总额/来源/≈ | CP投影 | actual/manual/free/estimate/unavailable映射 | same source/window/currency | DS200-212,404-418,615-630 | provider0不自动免费；实例缺失有提示 | ChargeDetailCostPresentationTest；CP合同 | BUG CHG-P1-02/03 |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "历史充电详情（24行）",
+    "position": "详情：每kWh价格",
+    "row": "| 详情：每kWh价格 | same projected cost / batteryInputKwh | only energy finite>0，三位小数 | 当前币种 / **电池输入**kWh | DS405-409,417 | energy0/unknown→N/A；这是电池侧有效价，不能证明电表电价 | ChargeDetailCostPresentationTest；源码 | SOURCE_OK（口径有限） |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "历史充电详情（24行）",
+    "position": "详情：手动金额dialog/遗留/外币/clear",
+    "row": "| 详情：手动金额dialog/遗留/外币/clear | bound override+legacy+other currency | validManualChargeTotal finite≥0；version CAS | ChargeCostOverrideStore/DAO；source/window/currency绑定 | DS663-731；DVM449-488 | 外币不转汇；手动0不等于missing | ManualChargeAmountTest；CP合同 | SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "历史充电详情（24行）",
+    "position": "详情：地图/打开地图",
+    "row": "| 详情：地图/打开地图 | latitude/longitude；缺失时邻接drive fallback | Amap usableCoordinate；外部geoURI | 同car；回退未证实同停车窗 | DS735-829；DVM492-529 | 缺点显示no-position，但可能错误回退；轴0丢失 | offline point测试未覆盖稀疏邻接位置 | BUG CHG-P2-02 |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "历史充电详情（24行）",
+    "position": "详情：所属行程/移除",
+    "row": "| 详情：所属行程/移除 | TripRepository.findTripContaining(localCar,TYPE_CHARGE,id) | 保存行程名称/leg reference | 同localHistoryCarId；remove前后context check | DS235-242；DVM266-268,532-541 | 无所属行程不显示；不是实时推断 | 源码核查；本轮未读真实行程 | SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "历史充电详情（24行）",
+    "position": "详情：缓存/完整性/来源提示",
+    "row": "| 详情：缓存/完整性/来源提示 | receipt sourceInstance/sourceId/providerTotalVerified/reason | response delivery与完整覆盖分离 | HDR/HDP limits、chunk、complete receipt | DS225；DVM315-320,407-416 | no points/损坏/总数未验证有notice；不造raw曲线 | ChargeDetailOfflinePointConsumerTest；ChargeDetailRoomAndroidTest | SOURCE_OK（实际provider总点数UNVERIFIED） |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "当前充电（18行）",
+    "position": "当前：loading/starting/unsupported/no-active",
+    "row": "| 当前：loading/starting/unsupported/no-active | current endpoint outcome + status.isCharging | 30s轮询；starting4s；404停止 | 仅内存；DC marker DataStore | LS128-191；LVM85-117,199-265 | status失败应未知；已有detail会遮蔽starting | 后端单snapshot测试；无VM消费者测试 | BUG CHG-P1-04 |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "当前充电（18行）",
+    "position": "当前：LIVE/recent/history/mixed badge",
+    "row": "| 当前：LIVE/recent/history/mixed badge | adapter source/observedAt/fieldSources；legacy teslamate_api | snapshotEvidence freshness | 只描述status，非charge receipt | LS107-110,196-214；LVM270-293 | 失败unavailable；可能与保留旧detail混在一起 | SnapshotEvidence相关源码 | BUG CHG-P1-04（绑定） |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "当前充电（18行）",
+    "position": "当前：开始SOC",
+    "row": "| 当前：开始SOC | battery_details.start_battery_level | 直接显示，不验证0..100 | current response；后端merge覆盖 | LS512,537-544 | backend有session值仍被删；unknown不伪0 | backend static | BUG CHG-P1-04 |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "当前充电（18行）",
+    "position": "当前：当前SOC",
+    "row": "| 当前：当前SOC | current_battery_level ?: end_battery_level | 直接显示 | current detail；无raw point资格核验 | LS513,562-570 | null unknown；非法整数未过滤 | 无当前消费者测试 | BUG CHG-P1-04 |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "当前充电（18行）",
+    "position": "当前：目标SOC/进度条",
+    "row": "| 当前：目标SOC/进度条 | status.chargeLimitSoc | all nonnull才进度；start/current/target | status与detail无同会话证明 | LS514,581-602；LVM123 | null不画；范围/0目标未在消费者筛 | 无当前消费者测试 | BUG CHG-P1-04 |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "当前充电（18行）",
+    "position": "当前：已充SOC delta",
+    "row": "| 当前：已充SOC delta | current-start | \"+%d%%\"；负差会显示\"+-N%\" | 同header输入 | LS694-698 | 缺侧unknown；0为+0% | 源码核查 | BUG CHG-P1-04 |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "当前充电（18行）",
+    "position": "当前：已充kWh",
+    "row": "| 当前：已充kWh | raw charge_energy_added | finite≥0 两位小数；绕过合同/source conflict | 内存raw current detail | LS699-704 | unknown合同仍可显示raw；0保留 | flow测试仅历史卡片/详情，未覆盖此消费 | BUG CHG-P1-04 |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "当前充电（18行）",
+    "position": "当前：瞬时功率",
+    "row": "| 当前：瞬时功率 | last chronologicalPoint.chargerPower Int | roundToInt后显示；未用detail.chargerPower | VM reverse原数组 | LS508-510,672-674 | 最后点缺power隐藏；top-level有值也不fallback | ChargePointMqttPrecisionTest仅DTO Double | BUG CHG-P1-04 |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "当前充电（18行）",
+    "position": "当前：AC/DC badge",
+    "row": "| 当前：AC/DC badge | status.chargerPhases优先，否则Calc.detectChargeType | 0 DC/1..3 AC；status冲突未与contract核验 | current status + current detail | LS681,723-746；LVM131-136,181 | unknown有第三态；非空status phase压过合同 | ChargePresentationTest只phase helper | BUG CHG-P1-04 |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "当前充电（18行）",
+    "position": "当前：elapsed",
+    "row": "| 当前：elapsed | detail.start_date | 每秒now-start | 内存，无session start可信度 | LS631-634,807-855 | null unknown；snapshot时刻误作起点，finished还增长 | 无实际current elapsed测试 | BUG CHG-P1-04 |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "当前充电（18行）",
+    "position": "当前：预计完成时刻/剩余时长",
+    "row": "| 当前：预计完成时刻/剩余时长 | status.timeToFullCharge hours | now+round(hours×60) | status本次值；未用observedAt校正 | LS639-649,965-974；LVM122 | ≤0隐藏；无过期字段资格/finite上界 | 无当前ETA消费者测试 | BUG CHG-P1-04（freshness绑定） |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "当前充电（18行）",
+    "position": "当前：充电口开/关",
+    "row": "| 当前：充电口开/关 | status.chargingDetails.chargePortDoorOpen | Boolean已知才显示 | status字段 | LS422-426；LVM124,145 | null省略，false是已知关闭 | ChargePresentationTest相关helper有限 | SOURCE_OK（scope见P1-04） |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "当前充电（18行）",
+    "position": "当前：充电相位类型",
+    "row": "| 当前：充电相位类型 | status.chargerPhases | 0 DC/1 single/2或3 three | status字段 | LS429-438；ChargePresentation14-19 | unknown相位不显示 | ChargePresentationTest | SOURCE_OK（scope见P1-04） |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "当前充电（18行）",
+    "position": "当前：电压/实际电流/请求电流/最大请求电流",
+    "row": "| 当前：电压/实际电流/请求电流/最大请求电流 | status charger_voltage / charger_actual_current / charge_current_request / max | formatChargeMetric仅过滤非finite，保留一位小数 | 本次status，失败清instant fields | LS440-450；LVM126-129,139-155 | null/非finite省略；真0显示；负电压/请求电流也会显示 | ChargePresentationTest（未拒绝负值） | BUG CHG-P1-04（资格）；数值边界P2 |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "当前充电（18行）",
+    "position": "当前：计划充电开始",
+    "row": "| 当前：计划充电开始 | status.scheduledChargingStartTime | parseable ISO才显示本地时间 | status字段 | LS452-453；LVM130 | null/不可解析省略 | ChargePresentationTest | SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "当前充电（18行）",
+    "position": "当前：功率/SOC曲线与不足样本数",
+    "row": "| 当前：功率/SOC曲线与不足样本数 | chronologicalPoints各自mapNotNull | ≥2曲线；否则samples insufficient；x按总点索引 | 不落Room；reverse不保证排序 | LS301-338,370-395,903-945 | 缺值时x错配；SOC不校验；数值先取整 | 无当前曲线消费者测试 | BUG CHG-P1-04 |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "当前充电（18行）",
+    "position": "当前：AC电压+电流双轴曲线",
+    "row": "| 当前：AC电压+电流双轴曲线 | raw chargerDetails voltage/current Int | isDcCharge==false才画；两组≥2 | 各自过滤但共用全部point的时间 | LS341-367 | 有一侧不足不画；DC不显示此图；两侧不同缺值错位 | 无当前双轴消费者测试 | BUG CHG-P1-04 |",
+    "historical_removed": false
+  },
+  {
+    "report": "02-charging.md",
+    "section": "当前充电（18行）",
+    "position": "当前：DC充完未拔提醒/完成时刻",
+    "row": "| 当前：DC充完未拔提醒/完成时刻 | status.isChargeCompletePluggedIn + persisted wasLastSessionDc + stateSince | bool合取；插枪/拔枪更新marker | ChargeSessionStateDataStore按localCar；未存sessionID | LS286-289,859-895；LVM159-169,212-224 | 冷启未观察过DC可能无marker；未知状态不伪完成 | ChargingNotificationIdentityTest非此VM完整路径 | UNVERIFIED（会话marker生命周期） |",
+    "historical_removed": false
+  },
+  {
+    "report": "03-driving-parked.md",
+    "section": "DrivesScreen",
+    "position": "日期按钮、定制起止、向前加载",
+    "row": "| 日期按钮、定制起止、向前加载 | DS:268-280,507-570 → DV:395-451,468-471；近7天为今天至前6天；自定义闭日历区间按本地 zone 起点含/末日后一天不含（DV:95-99） | SavedStateHandle 保存筛选；DV:512-530 每窗口重新读本地，更多扩展7天并切 CUSTOM；DV:684,692,702 给列表/摘要/图同窗过滤 | SOURCE_OK；提供方跨午夜/时区/自然历史完整性 UNVERIFIED，T1 |",
+    "historical_removed": false
+  },
+  {
+    "report": "03-driving-parked.md",
+    "section": "DrivesScreen",
+    "position": "距离筛选",
+    "row": "| 距离筛选 | DS:572-598 → DV:87-91；按规范化 km `[0,10)`, `[10,100)`, `[100,+∞)` | 未知距离仅 ALL 保留；长度同响应 mi 转 km 后筛，不借后来 status | SOURCE_OK；英里文案阈值取近似6/60而实际6.214/62.137，边界文案精度问题，T1 |",
+    "historical_removed": false
+  },
+  {
+    "report": "03-driving-parked.md",
+    "section": "DrivesScreen",
+    "position": "摘要总次数",
+    "row": "| 摘要总次数 | DS:635-641 → DV:700-706,873-885；`eligibleRoutes.size` | 与当前短行程/日期/距离筛选一致；observed/derived 才入统计；空时 UI 显示 unavailable，而非0；非隔离 incomplete 卡可能可见但不入统计 | SOURCE_OK（是合格统计次数，非所有可见非隔离卡数）；T1 |",
+    "historical_removed": false
+  },
+  {
+    "report": "03-driving-parked.md",
+    "section": "DrivesScreen",
+    "position": "摘要总距离、总时长、最大速度",
+    "row": "| 摘要总距离、总时长、最大速度 | DS:643-665 → DV:876-892；有限非负 distanceKm 求和，非负分钟 Long 求和并防 Int overflow；最大规范化 speedKmh | 每指标独立 sample count，部分合计保留且 DS:673-680 标覆盖；未知不补0；summary 单位按偏好从 km/kmh 转显示 | SOURCE_OK；T1 |",
+    "historical_removed": false
+  },
+  {
+    "report": "03-driving-parked.md",
+    "section": "DrivesScreen",
+    "position": "四类日/周/月柱图，点选值/轴单位",
+    "row": "| 四类日/周/月柱图，点选值/轴单位 | DS:887-1105 → DV:724-841,897-907；COUNT/TIME/DISTANCE/TOP_SPEED 均来自同合格集合 | count 空桶0可表达记录数；未知距离/时长/最大速度不画假零柱；已知真零保留；覆盖比例同时出现在桶提示和图下方 | SOURCE_OK；T1。缺日无柱压缩日历间距属表示边界，不能看成等距真实时间线 |",
+    "historical_removed": false
+  },
+  {
+    "report": "03-driving-parked.md",
+    "section": "DrivesScreen",
+    "position": "行程时间/起止地址",
+    "row": "| 行程时间/起止地址 | DS:725-747 → DV:645-653,846-869；startDate 格式化，两侧地址各自独立 nullable；缺地址仅用各自坐标反查 | history receipt 保存原地址；反查结果此 VM 内存展示；异步结果 checkProof；无值unknown不冒充另一端 | SOURCE_OK；T2 |",
+    "historical_removed": false
+  },
+  {
+    "report": "03-driving-parked.md",
+    "section": "DrivesScreen",
+    "position": "卡片右侧 SOC",
+    "row": "| 卡片右侧 SOC | DS:706-707,719-740 → DTO:58-59 → HM:108-134；UF:142-146 检查0..100 | 每侧独立 nullable，真0可见，双未知不显示，单侧未知保留“—” | SOURCE_OK；T2 |",
+    "historical_removed": false
+  },
+  {
+    "report": "03-driving-parked.md",
+    "section": "DrivesScreen",
+    "position": "卡片能耗",
+    "row": "| 卡片能耗 | DS:704-705,758-767 → DV:179-242；合格Wh/km÷10，以固定 kWh/100km显示 | receipt 指标先做源/窗口匹配；但同整数SOC且无任何能量证据会进入固定145Wh/km兜底，且卡片无估算标识，见 D01 | BUG；T3 **当前锁定了该错误行为** |",
+    "historical_removed": false
+  },
+  {
+    "report": "03-driving-parked.md",
+    "section": "DrivesScreen",
+    "position": "卡片距离/最高速/分钟",
+    "row": "| 卡片距离/最高速/分钟 | DS:769-796 → DTO:53-57；原同响应长度/速度直接显示，单位 `drivePresentationUnits` | 有限非负距离、非负速度/时长，缺值unavailable，真零保留；单卡不再次按当前偏好转换原值 | SOURCE_OK；T1/T2 |",
+    "historical_removed": false
+  },
+  {
+    "report": "03-driving-parked.md",
+    "section": "DrivesScreen",
+    "position": "驻车卡时间、时长、地址、SOC",
+    "row": "| 驻车卡时间、时长、地址、SOC | DS:429-499,814-867；相邻 older.end → newer.start；正分钟间隙；要求两端同source/instance且≥0.5km，隐藏中间行程应阻断；SOC源是相邻行程，绝非当前SOC | list 数据内同位置/边界证据；但本地首读 DAO:179 排除 quarantined，使“完整序列”缺失隔离中间行程，见 D07 | BUG（Room-first列表边界）；T4 有纯函数/详情查询覆盖，但不能证明列表真实入参完整 |",
+    "historical_removed": false
+  },
+  {
+    "report": "03-driving-parked.md",
+    "section": "DrivesScreen",
+    "position": "loading、无数据、错误/旧缓存提醒",
+    "row": "| loading、无数据、错误/旧缓存提醒 | DS:142-151,308-330,354-402 → DV:553-575,655-668 | timeout20s保留缓存；identity unavailable清空。普通 `else -> error`可直接显示未经本地化的错误字符串；本轮未查所有错误常量路径 | SOURCE_OK（缓存保留）；错误文案端到端 UNVERIFIED |",
+    "historical_removed": false
+  },
+  {
+    "report": "03-driving-parked.md",
+    "section": "DriveDetailScreen 与实际路线图",
+    "position": "地图点、起终点标记、折线",
+    "row": "| 地图点、起终点标记、折线 | DD:230,478-527 → AR:22-48 → AN:92-107,171-191；只吃 `drive_details` 实际经纬点，不从地址文本构造 A/B | DTO:167-176 → receipt/chunks；不足2个可用不同点显示明确数量。全局 distinct 抹去闭环终点，见 D05；原始顺序/大缺口未经时间投影 | BUG；T5只证明点回放/点不足，provider真实轨迹 UNVERIFIED |",
+    "historical_removed": false
+  },
+  {
+    "report": "03-driving-parked.md",
+    "section": "DriveDetailScreen 与实际路线图",
+    "position": "WGS/GCJ、SDK加载/失败",
+    "row": "| WGS/GCJ、SDK加载/失败 | AR:37-48 → AN:83,92-100 → AT:15-23；默认原始WGS84，中国内转GCJ一次；相同 native view渲染markers/line | AG:35-54 有15秒失败、未配置/未同意/未验证/需重启/渲染异常反馈；AN:111-124,214-222清生命周期 | SOURCE_OK（约定链）；DTO没有 coordinate_system 字段，实际提供方WGS契约、真Key、图块、实机路线均 UNVERIFIED；T5 |",
+    "historical_removed": false
+  },
+  {
+    "report": "03-driving-parked.md",
+    "section": "DriveDetailScreen 与实际路线图",
+    "position": "路线起止地址",
+    "row": "| 路线起止地址 | DD:416-422 → DM:279-290；优先原地址，再各自边界/首末点反查 | DD 将未知一侧复制另一侧，详情和曲线可将“未知→B”变成“B→B”，见 D08；不代表地图合成坐标 | BUG；T2只覆盖列表，未证明详情 |",
+    "historical_removed": false
+  },
+  {
+    "report": "03-driving-parked.md",
+    "section": "DriveDetailScreen 与实际路线图",
+    "position": "起止时间/头部时长",
+    "row": "| 起止时间/头部时长 | DD:432-446 → DTO:119-125；日期格式化，durationMin否则durationStr | 原 receipt 可恢复；格式坏显示—。头部 durationMin没有与stats同样的>=0门，负值可能与指标栏不一致 | BUG（D13范围）；T6 |",
+    "historical_removed": false
+  },
+  {
+    "report": "03-driving-parked.md",
+    "section": "DriveDetailScreen 与实际路线图",
+    "position": "距离/时长/按距离平均速度",
+    "row": "| 距离/时长/按距离平均速度 | DD:261-262,280 → DX:120-141；已知长度原单位；平均=同单位distance÷精确正秒×3600（无有效端点时用正分钟） | 距离≥0/有限；durationMin≥0；不除0；真0保留，未知显示unavailable | SOURCE_OK；T6 |",
+    "historical_removed": false
+  },
+  {
+    "report": "03-driving-parked.md",
+    "section": "DriveDetailScreen 与实际路线图",
+    "position": "效率/总净能量",
+    "row": "| 效率/总净能量 | DD:263-269,303-308 → DM:174-205 → EB/ER → DX:25-53；kWh；Wh/km÷10 → kWh/100km，负值recovered | 合格receipt及源/窗口；已知能量和距离独立；真实0、负净回收均保留；不凭当前SOC还原过去耗电 | SOURCE_OK；T3/T6 |",
+    "historical_removed": false
+  },
+  {
+    "report": "03-driving-parked.md",
+    "section": "DriveDetailScreen 与实际路线图",
+    "position": "能量来源、覆盖/秒数、容量假设说明",
+    "row": "| 能量来源、覆盖/秒数、容量假设说明 | DD:309-343；reported/power/endpoints/SOC capacity；容量额定/默认/车型假设明示；端点覆盖不冒充时间覆盖 | DM:235-265 optional容量只在验证当前车后细化；DAO:51-77以最新同窗重新算；receipt保存计算合同及basis | SOURCE_OK（静态链）；API reported不等于物理电池净计量；原始/提供方覆盖仍待自然证据，T3/T6 |",
+    "historical_removed": false
+  },
+  {
+    "report": "03-driving-parked.md",
+    "section": "DriveDetailScreen 与实际路线图",
+    "position": "最高速、报告/样本均速、距离均速",
+    "row": "| 最高速、报告/样本均速、距离均速 | DD:278-280 → DX:93,129-131,141；原收据速度单位，样本均值为算术mean | 样本不要求整窗覆盖；只要任一样本就覆盖summary最高速，可能降低真实max，见 D09。报告speedAvg可能实际是后端样本均值但标签变“平均”，见 D14 | BUG；T6 |",
+    "historical_removed": false
+  },
+  {
+    "report": "03-driving-parked.md",
+    "section": "DriveDetailScreen 与实际路线图",
+    "position": "最大加速/最小回收/平均功率",
+    "row": "| 最大加速/最小回收/平均功率 | DD:289-291 → DX:94,133-135；有限功率样本max/min/算术mean，fallback reported extrema；kW，负回收保留 | 平均明确“样本均值”标签（DX:88-89），空样本mean未知；部分样本极值同样覆盖全程reported极值，D09 | BUG（极值）；算术mean标签 SOURCE_OK，T6 |",
+    "historical_removed": false
+  },
+  {
+    "report": "03-driving-parked.md",
+    "section": "DriveDetailScreen 与实际路线图",
+    "position": "起止SOC/使用百分点",
+    "row": "| 起止SOC/使用百分点 | DD:300-302 → DX:97-139；优先明确0..100端点，否则靠边界最近样本，容差max30s/min5min/时长十分之一；used=start-end，仅非负使用 | exact同一时刻冲突拒绝；超容差拒绝；同距离但不同SOC的近邻平局仍任意选首个（D15）；SOC升高“使用量”未知，净回收能量独立 | SOURCE_OK（范围与缺失）；BUG（近邻平局），T6 |",
+    "historical_removed": false
+  },
+  {
+    "report": "03-driving-parked.md",
+    "section": "DriveDetailScreen 与实际路线图",
+    "position": "海拔最大/最小/爬升/下降",
+    "row": "| 海拔最大/最小/爬升/下降 | DD:349-358 → DX:95-96,136-137,147-155；相邻已知elevation差，正差gain、负差loss；Long累加防Int overflow | 部分/失序/缺日期样本无coverage门，删除null后桥接缺口；不能声称整程爬升准确；whole-card无elevation则隐藏 | BUG（D03的缺口/顺序问题）；来源高度单位合同 SOURCE_DATA_MISSING |",
+    "historical_removed": false
+  },
+  {
+    "report": "03-driving-parked.md",
+    "section": "DriveDetailScreen 与实际路线图",
+    "position": "内外平均温度",
+    "row": "| 内外平均温度 | DD:363-369 → DX:142-143 → DTO:133-134；finite summary平均，UF仅附当前温度单位 | header receipt保存数字；只从后来status加载温度单位（DM:231-233），DTO同响应units未完整保留温标。离线偏好变更/非C源的单位证明不足；无summary温度则隐藏，即使point climate有值也不重算 | UNVERIFIED（同响应温标）；CM:77-102给后端样本均值；T6 |",
+    "historical_removed": false
+  },
+  {
+    "report": "03-driving-parked.md",
+    "section": "DriveDetailScreen 与实际路线图",
+    "position": "内联速度曲线、点选时间",
+    "row": "| 内联速度曲线、点选时间 | DD:198-218,375-384,709-727；全positions时间+过滤后speed数组 | mi收据速度再次×0.621371（D04）；未知length也画km/h；mapNotNull破坏时间对应（D03）；无2个speed则整个图消失 | BUG；独立曲线测试T7不覆盖此函数 |",
+    "historical_removed": false
+  },
+  {
+    "report": "03-driving-parked.md",
+    "section": "DriveDetailScreen 与实际路线图",
+    "position": "沿途天气表：时间/里程/温度/图标",
+    "row": "| 沿途天气表：时间/里程/温度/图标 | DD:387-393 → DM:294-306 → WR:96-121,127-148,253-305 → WC:193-224；实际GPS累计haversine里程，按行程距离选查询点；历史天气API，不是车内外温度曲线 | 临时内存，无Room。WC:304-310将OpenMeteo C按偏好转F，UF仅附标，未二次转换；天气码缺失默认0晴天（D16）；查询未显式timezone且DTO无timezone/units，小时对齐 UNVERIFIED | BUG（缺码晴天）；时间/实际天气 provider UNVERIFIED；无当前天气替代历史的代码证据 |",
+    "historical_removed": false
+  },
+  {
+    "report": "03-driving-parked.md",
+    "section": "DriveDetailScreen 与实际路线图",
+    "position": "所属旅程/分离、曲线跳转",
+    "row": "| 所属旅程/分离、曲线跳转 | DD:235-242,258-259 → DM:225-229,316-324；按scoped local car查询包含关系；NavGraph.kt:746-768带原car/drive跳曲线 | 操作前后proof检查；关联持久化在TripRepository，本页不独立验证Trip消费 | SOURCE_OK（当前入口）；旅程子链由后续审计负责 |",
+    "historical_removed": false
+  },
+  {
+    "report": "03-driving-parked.md",
+    "section": "DriveDetailScreen 与实际路线图",
+    "position": "初载/失败/冷重开/前台刷新",
+    "row": "| 初载/失败/冷重开/前台刷新 | DD:112-120,151-174 → DM:106-110,134-171 | 先请求远端才读Room；每次load清数据，既有缓存可被长网络请求挡住；失败仅snackbar而内容为空；曲线页更无错误显示。见 D12 | BUG；T5只覆盖立即返回错误/损坏缓存，未证明慢网缓存先显 |",
+    "historical_removed": false
+  },
+  {
+    "report": "03-driving-parked.md",
+    "section": "DriveCurvesScreen",
+    "position": "标题距离/时长、副标题路线",
+    "row": "| 标题距离/时长、副标题路线 | DC:96-107,285-290；DM同详情load；receipt长度单位直接显示 | 标题负duration未过滤；两侧地址交叉fallback同D08；数据来自同detail receipt | BUG（D08/D13） |",
+    "historical_removed": false
+  },
+  {
+    "report": "03-driving-parked.md",
+    "section": "DriveCurvesScreen",
+    "position": "KPI距离/最高速/已使用/平均",
+    "row": "| KPI距离/最高速/已使用/平均 | DC:305-329；distance原单位；max优先detail报告再stats；used优先SOC百分点否则kWh；平均是stats.powerAvg | 真0可见；invalid distance/speed拒绝；used名下可能显示两种不同物理量，单位已随数值显示；power样本mean此处仅标“平均”（D14） | SOURCE_OK（数值/单位）；BUG（均值语义），T7 |",
+    "historical_removed": false
+  },
+  {
+    "report": "03-driving-parked.md",
+    "section": "DriveCurvesScreen",
+    "position": "速度曲线",
+    "row": "| 速度曲线 | DC:195-202,366-379；finite非负speed，原同响应km/h或mph，不再次转换 | detail未知length时隐藏；2个有效speed才画；point/chunk可恢复。时间映射仍D03 | SOURCE_OK（单位）；BUG（时间），T7 |",
+    "historical_removed": false
+  },
+  {
+    "report": "03-driving-parked.md",
+    "section": "DriveCurvesScreen",
+    "position": "距离曲线",
+    "row": "| 距离曲线 | DC:205-214,392-419；用sum(speed)占比分配总里程；无有效速度时线性分配；标题“估算” | 未用实际delta-time，missing speed当0，第一点非零，失去物理累计距离含义；D10。点序/缺口同D03 | BUG；T7只验证末值10mi/10km，未验中间时间 |",
+    "historical_removed": false
+  },
+  {
+    "report": "03-driving-parked.md",
+    "section": "DriveCurvesScreen",
+    "position": "功率/动能回收曲线",
+    "row": "| 功率/动能回收曲线 | DC:216-223,434-447；power.toFloat，kW，零线 | null删除并桥接；负值保留正确；NaN/∞或Float overflow不拒绝，D13；时间D03 | BUG；T6只覆盖stats而非曲线非法值 |",
+    "historical_removed": false
+  },
+  {
+    "report": "03-driving-parked.md",
+    "section": "DriveCurvesScreen",
+    "position": "电量曲线",
+    "row": "| 电量曲线 | DC:225-232,459-481；batteryLevel.toFloat，% | 不拒绝-1/101；固定范围按错误值外扩；缺样本后时间轴错配，D03/D13 | BUG；T6的端点范围测试不覆盖此曲线 |",
+    "historical_removed": false
+  },
+  {
+    "report": "03-driving-parked.md",
+    "section": "DriveCurvesScreen",
+    "position": "海拔曲线",
+    "row": "| 海拔曲线 | DC:235-242,493-505；实际elevation整数，m | null删除、timestamp未排序/未按时间加权，D03；数据缺失则不显示；来源单位和实际采样覆盖不足以确认整程 | BUG（轴）；SOURCE_DATA_MISSING（高度源合同） |",
+    "historical_removed": false
+  },
+  {
+    "report": "03-driving-parked.md",
+    "section": "DriveCurvesScreen",
+    "position": "五图共用X/时间提示/空态",
+    "row": "| 五图共用X/时间提示/空态 | DC:155-175,193-265,567-579 → LC:107-115,137-147,222-239 → CD:68-82 | X按压缩数组index均匀排；时间来自未按该变量过滤的positions，downsample也不保留原索引。positions>2但所有指标<2会无图且不进“无样本”空态；恰好2个真实点全部拒绝页级绘图 | BUG（D03）；测试T7只用等距、无日期、无缺口的3点 |",
+    "historical_removed": false
+  },
+  {
+    "report": "03-driving-parked.md",
+    "section": "ParkedDetailScreen",
+    "position": "头部地址、绝对起止、总时长",
+    "row": "| 头部地址、绝对起止、总时长 | PS:179-191,246-267 → PV:137-164,255-313；历史older.end→newer.start，Duration秒级，0/不足1分钟单独格式 | local receipt proof要求同车/源/实例/原窗；DAO intervening查询含所有质量阻断。remote只核对pair ID未核对window/source（D06）；本地address直接读primitive列 | SOURCE_OK（local窗）；BUG（remote窗），T4/T8 |",
+    "historical_removed": false
+  },
+  {
+    "report": "03-driving-parked.md",
+    "section": "ParkedDetailScreen",
+    "position": "头部增/降/不变badge",
+    "row": "| 头部增/降/不变badge | PS:193-204,272-281；end-start，起止未知时用有界server battery_delta；有记录charge且正增才写充电 | 未借当前SOC；单scalar没有观察时刻，不等于可追溯边界；本地primitive SOC占位导致假0与假差（D02） | BUG（D02）；T8 |",
+    "historical_removed": false
+  },
+  {
+    "report": "03-driving-parked.md",
+    "section": "ParkedDetailScreen",
+    "position": "起止SOC/变化pp",
+    "row": "| 起止SOC/变化pp | PS:344-385 → PV:292-302；0..100且变化[-100,100]；变化是百分点不当kWh | UI门正确，但PV直接从Room非空SOC列取值，绕过nullable receipt。已知值/未知/真0不能保持（D02） | BUG；T8当前fixture receipt未含SOC |",
+    "historical_removed": false
+  },
+  {
+    "report": "03-driving-parked.md",
+    "section": "ParkedDetailScreen",
+    "position": "无充电证据时整体SOC pp/h",
+    "row": "| 无充电证据时整体SOC pp/h | PS:206-209,387-410,616-624；`(end-start)/精确小时`，gain/drain用符号及绝对值 | 缺任一SOC/非正时长不出率；有charge/invalid session时禁止整体速率冒充非充电耗电；无complete archive时“无charge证据”并非没有自然充电 | SOURCE_OK（单位和门）；SOURCE_DATA_MISSING（自然全活动证明），T9 |",
+    "historical_removed": false
+  },
+  {
+    "report": "03-driving-parked.md",
+    "section": "ParkedDetailScreen",
+    "position": "逐次充电：次数、每次时间/时长/kWh/kWh/h、跳转",
+    "row": "| 逐次充电：次数、每次时间/时长/kWh/kWh/h、跳转 | PS:418-423,528-575 → PV:152-186 → PB:85-130；每session唯一ID，时间排序；energy≥0有限；rate=energy/该次正小时 | server list优先，legacy single保留；一次最多展示3可展开，cap100；不足完整标记。local按相同source/instance筛选，但不带SOC观察时刻，因此不产生已证非充电SOC率 | SOURCE_OK（多次分开/空不补0）；后端CP最多64并标incomplete；T10 |",
+    "historical_removed": false
+  },
+  {
+    "report": "03-driving-parked.md",
+    "section": "ParkedDetailScreen",
+    "position": "已记录充电时长、其外时长",
+    "row": "| 已记录充电时长、其外时长 | PS:577-587 → PB:132-139,167-182；与停车窗相交区间取union，outside=parked-union | 重叠不双计；open session已记录时长未知。名称明确“记录外”，不把它等同所有非充电自然时间 | SOURCE_OK；T10 |",
+    "historical_removed": false
+  },
+  {
+    "report": "03-driving-parked.md",
+    "section": "ParkedDetailScreen",
+    "position": "非充电SOC变化率",
+    "row": "| 非充电SOC变化率 | PS:589-610 → PB:140-153,156-164；`[(end-start)-ΣchargeSOC变化] / outsideHours`，消费符号反向 | 要server sessions完整、所有session端点SOC及观察时间5分钟内、无重叠/截断、正outside；仅SOC pp/h，文字明确非kWh。provider完整性只是已存会话非物理全采 | SOURCE_OK（严格区分）；真实活动覆盖 UNVERIFIED，T10 |",
+    "historical_removed": false
+  },
+  {
+    "report": "03-driving-parked.md",
+    "section": "ParkedDetailScreen",
+    "position": "停车能量/每小时",
+    "row": "| 停车能量/每小时 | PS:437-446,649-663 → AD:75-92；只接受EnergyRemaining exact-window端点合同、nominal remaining、estimated、明确no-driving/no-charge；kWh / hours | 拒绝SOC容量乘法和raw energy_kwh/average_power_kw；有任何charge证据立即拒绝。当前CP:169-173与HOME:30-51不发此energy_contract，因此通常合法空态 | SOURCE_OK（资格/零/负值）；SOURCE_DATA_MISSING（当前源合同），T9 |",
+    "historical_removed": false
+  },
+  {
+    "report": "03-driving-parked.md",
+    "section": "ParkedDetailScreen",
+    "position": "内外温度",
+    "row": "| 内外温度 | PS:448-451,662-663 → AD:62-63 → HOME:359,440-466；finite采样均值，°C | local fallback明确null；CP:170明确null；HOME可有值但此次未用真实provider验证；不借当前车温度，也无温度曲线/逐点Room | SOURCE_DATA_MISSING（cloud/local历史）；SOURCE_OK（nullable投影），T9 |",
+    "historical_removed": false
+  },
+  {
+    "report": "03-driving-parked.md",
+    "section": "ParkedDetailScreen",
+    "position": "覆盖率/样本数/缺失说明/来源说明",
+    "row": "| 覆盖率/样本数/缺失说明/来源说明 | PS:453-475,655-658；有限coverage[0,1]×100；sampleCount≥0；local_room不把0当实测 | CP明确0样本/0覆盖，UI允许显示真实查询0；DTO字段缺键默认0无法证明“明确报告0”；coverage是power时间段比例，不是所有温度或活动覆盖 | SOURCE_OK（local空态）；SOURCE_DATA_MISSING（字段独立覆盖证明），T9 |",
+    "historical_removed": false
+  },
+  {
+    "report": "03-driving-parked.md",
+    "section": "ParkedDetailScreen",
+    "position": "[历史已移除] 驻车地图坐标/外部地图",
+    "row": "| [历史已移除] 驻车地图坐标/外部地图 | 旧PS:687–772分支在冻结快照已不存在，按后附复核为准 | VM旧坐标旁路仍在，但当前Screen不消费，不能说用户当前看见该地图 | HISTORICAL_REMOVED；不计当前可见字段或当前阻断 |",
+    "historical_removed": true
+  },
+  {
+    "report": "03-driving-parked.md",
+    "section": "ParkedDetailScreen",
+    "position": "加载、离线fallback、错误和scope改变",
+    "row": "| 加载、离线fallback、错误和scope改变 | PS:100-159 → PV:111-135,168-210；Room先显，20s timeout，generation+scope检查；safe error label PS:667-669 | 新scope取消并清UI；late remote检查identity。成功server parked详情/会话/温度/coverage没有任何保存调用，重开退回邻接summary（D17） | SOURCE_OK（迟到guard）；BUG（持久化与D11），T8 |",
+    "historical_removed": false
+  },
+  {
+    "report": "04-analysis.md",
+    "section": "Battery（11位置）",
+    "position": "B01 Battery 健康可用态/错误/收集中",
+    "row": "| B01 Battery 健康可用态/错误/收集中 | `BS:148-170,349-354` → `BV:86-102,300-349` → `REP:649-684` → `API:114-122`、`BAT:18-24` | 正容量字段才 AVAILABLE；readiness 区分 unsupported/collecting | health 无独立 Room；R 只提供趋势 | 空 health 不造容量；404不自动当unsupported；cloud `CLOUD:775-782` 明确 null+unsupported | T1/T3，**SOURCE_OK**；实际测量容量 **SOURCE_DATA_MISSING**，不能把 unsupported 当客户端算错 |",
+    "historical_removed": false
+  },
+  {
+    "report": "04-analysis.md",
+    "section": "Battery（11位置）",
+    "position": "B02 Battery 当前/原始容量、健康%、损失kWh/%",
+    "row": "| B02 Battery 当前/原始容量、健康%、损失kWh/% | `BS:227-292,734-849` → `BV:372-400` → BAT、REP health | current/max kWh；health 优先 API 0…100，否则 current/max×100；loss=max−current 下限0 | 仅当前 VM health；无观测容量持久收据 | 缺任一正容量不显示容量卡；max 是接口字段，未证明是出厂实测基线；真负容量拒绝 | T1/T3；nullable门 **SOURCE_OK**；容量/基线 provenance **UNVERIFIED**；云端无容量是源缺失 |",
+    "historical_removed": false
+  },
+  {
+    "report": "04-analysis.md",
+    "section": "Battery（11位置）",
+    "position": "B03 Battery 当前SOC/进度",
+    "row": "| B03 Battery 当前SOC/进度 | `BS:1073-1153` → `BV:378,439` → S 的 battery_details.battery_level | %，进度SOC/100 | CACHE 同scope；未存单位问题不影响SOC量纲 | hasBatteryStatus基于 observed nullable，真0仍显示；未把缺SOC的内部primitive0画出来 | T2，**SOURCE_OK**；未跑真实状态 |",
+    "historical_removed": false
+  },
+  {
+    "report": "04-analysis.md",
+    "section": "Battery（11位置）",
+    "position": "B04 Battery 可用SOC",
+    "row": "| B04 Battery 可用SOC | `BS:1078,1158-1166` → `BV:379,433` → CAR.usableBatteryLevel | % | 同S/CACHE | 缺usable被batteryLevel代填，现有UI无 observed 标记 | T2只检查主要SOC存在性，未测此回退；**BUG AN-02** |",
+    "historical_removed": false
+  },
+  {
+    "report": "04-analysis.md",
+    "section": "Battery（11位置）",
+    "position": "B05 Battery 估计/额定/理想续航",
+    "row": "| B05 Battery 估计/额定/理想续航 | `BS:1174-1251` → `BV:380-382,440-442` → S/CAR battery_details | raw API距离+原响应单位 | CACHE；旧receipt单位遗失归H02 | 单项null显示不可用；真0保留；没有用另一个range替代缺项 | T2，在线 **SOURCE_OK**；缓存 **BUG(shared 01 H02)** |",
+    "historical_removed": false
+  },
+  {
+    "report": "04-analysis.md",
+    "section": "Battery（11位置）",
+    "position": "B06 Battery 100%续航外推",
+    "row": "| B06 Battery 100%续航外推 | `BS:280-285,1056-1058,1307-1385` → `BV:384-389` → 同一次S SOC和rated range | rated/SOC×100；是续航外推，非实测kWh | VM；缓存仍受H02 | 仅SOC≥10且range>0；低SOC/缺值不除0；未用SOC×名义容量造能量 | T3有不发明fallback的源码检查；**SOURCE_OK**公式；采样同刻性 **UNVERIFIED** |",
+    "historical_removed": false
+  },
+  {
+    "report": "04-analysis.md",
+    "section": "Battery（11位置）",
+    "position": "B07 Battery 新/当前最大续航、续航损失",
+    "row": "| B07 Battery 新/当前最大续航、续航损失 | `BS:304-305,892-969` → `BV:403-411` → BAT.max_range/current_range + B06 → `BatteryRangeMetrics.kt` | loss=max−current下限0；单项API range或B06 | health无Room；S缓存有scope | 真0范围保留，负/非finite由BatteryRangeMetrics拒绝；缺max时不造损失 | T1的BatteryRangeMetricsTest；**SOURCE_OK**nullable/公式；health range单位及历史最大基线 **UNVERIFIED** |",
+    "historical_removed": false
+  },
+  {
+    "report": "04-analysis.md",
+    "section": "Battery（11位置）",
+    "position": "B08 Battery 趋势样本/按日中位点",
+    "row": "| B08 Battery 趋势样本/按日中位点 | `BS:371-445,501-560` → `BV:295-324,446-452` → H/R → BT:62-95 | rated range / (SOC/100)，km；同日中位数 | 原始历史R；趋势每次重算，缓存标STALE | SOC70…100、温度15…30、range有限正；但SOC与range独立首尾fallback可错配 | T4测试纯BT，未覆盖VM配对；**BUG AN-03** |",
+    "historical_removed": false
+  },
+  {
+    "report": "04-analysis.md",
+    "section": "Battery（11位置）",
+    "position": "B09 Battery 趋势current/baseline/degradation/置信度/覆盖/日期",
+    "row": "| B09 Battery 趋势current/baseline/degradation/置信度/覆盖/日期 | `BS:448-485` → BV → `BT:97-145,160-174` | ≥10样本、≥30天；recent末30日中位数；baseline首30日且必须早于recent；(base−current)/base×100；confidence算法上限95 | R，scope证明后重算 | 不足门槛UNAVAILABLE；无独立baseline为TREND_ONLY不出衰减；负衰减保留；规范km被raw formatter附mi | T4；资格公式 **SOURCE_OK**，显示 **BUG AN-04**，输入受AN-03 |",
+    "historical_removed": false
+  },
+  {
+    "report": "04-analysis.md",
+    "section": "Battery（11位置）",
+    "position": "B10 Battery lifetime kWh / 终身循环次数 / 剩余能量kWh",
+    "row": "| B10 Battery lifetime kWh / 终身循环次数 / 剩余能量kWh | 当前 `BatteryStats BV:147-169`、`BAT:18-24` 无这些字段；`BS:1015-1067` 详情仅SOC/range | 没有终身累计或cycle公式；B06不是容量/剩余能量 | 无对应持久字段/本页消费者 | 不从有限历史补成lifetime、不从SOC造实测kWh；TC:33-65无EnergyRemaining | **SOURCE_DATA_MISSING**；属于未提供字段/非当前UI位置，不能宣称已有能力或登记虚构显示bug |",
+    "historical_removed": false
+  },
+  {
+    "report": "04-analysis.md",
+    "section": "Battery（11位置）",
+    "position": "B11 Battery Room先读/身份/刷新/旧结果",
+    "row": "| B11 Battery Room先读/身份/刷新/旧结果 | `BS:160-163,220-223` → `BV:226-238,274-299,326-338` → R/CACHE → scoped loader | 同scope cached status/trend先发；网络后更新 | CACHE以origin/account/local ID/stable identity哈希；cloud须UIDdigest | account/origin/ABA更换重置；历史缓存有banner；health非持久；cached status没有units仍受H02 | T3 scoped helper与源码检查；**SOURCE_OK**身份代码；冷启动/整页runtime **UNVERIFIED** |",
+    "historical_removed": false
+  },
+  {
+    "report": "04-analysis.md",
+    "section": "Efficiency（9位置）",
+    "position": "E01 Efficiency 头部平均效率",
+    "row": "| E01 Efficiency 头部平均效率 | `ES:130` → `EV:223-235,266,317-318` → H → WE:23-44 | 同一合格子集 Σnet kWh / Σkm ×1000，Wh/km；不是行程ratio均值 | R | 正有限距离+有限能量；真0与净负能量保留，缺一对两边都不贡献 | T5/T6；公式 **SOURCE_OK**；上游SOC估算资格 **BUG(shared 03 D01)** 会污染此页，不重复记 |",
+    "historical_removed": false
+  },
+  {
+    "report": "04-analysis.md",
+    "section": "Efficiency（9位置）",
+    "position": "E02 Efficiency 样本数/总距离",
+    "row": "| E02 Efficiency 样本数/总距离 | `ES:147-153` → `EV:271-272` → WE | count合格能量/距离对；Σ合格km | R重算，非全车辆终身里程 | 缺能量行程不计距离分母；内部0只在driveCount>0才当指标显示 | T5，**SOURCE_OK**；这是合格子集统计，不表示全部来源完整 |",
+    "historical_removed": false
+  },
+  {
+    "report": "04-analysis.md",
+    "section": "Efficiency（9位置）",
+    "position": "E03 Efficiency ALL/90日/夏冬/自定义窗口",
+    "row": "| E03 Efficiency ALL/90日/夏冬/自定义窗口 | `ES:180-189` → `EV:199-222` → WIN:86-106 | 最近90日含今日89日前；夏6…8月/冬12,1,2跨所有年份；custom两端闭区间 | R按startDate日期重算 | 缺日期不入分组；FILTER_EMPTY/INSUFFICIENT_COVERAGE与NO_RECORDS分开 | T5/T12；**SOURCE_OK**；时区按设备LocalDate，provider实车日期 **UNVERIFIED** |",
+    "historical_removed": false
+  },
+  {
+    "report": "04-analysis.md",
+    "section": "Efficiency（9位置）",
+    "position": "E04 Efficiency 90日/夏/冬对照卡",
+    "row": "| E04 Efficiency 90日/夏/冬对照卡 | `ES:199-209` → `EV:254-256,279-285` → H/WE/WIN | 每卡独立固定窗口、各自ΣE/ΣD；Wh/km | R | 不依赖当前选中窗口；缺数据null；净负/真0仍有效 | T5/T6；公式 **SOURCE_OK**，上游D01同E01 |",
+    "historical_removed": false
+  },
+  {
+    "report": "04-analysis.md",
+    "section": "Efficiency（9位置）",
+    "position": "E05 Efficiency 月趋势",
+    "row": "| E05 Efficiency 月趋势 | `ES:168-175,408-433` → `EV:306-315` → H/WE | 年月分组、同合格对加权；点有sampleCount，按年月排序 | R，无合成月样本 | 空月份没有伪0；无日期不出点，负净能耗保留 | T6 monthlyTrendWeightsTheSameQualifiedPairsAndKeepsNetRecovery；**SOURCE_OK**；完整自然月数据 **UNVERIFIED** |",
+    "historical_removed": false
+  },
+  {
+    "report": "04-analysis.md",
+    "section": "Efficiency（9位置）",
+    "position": "E06 Efficiency 速度分组柱图",
+    "row": "| E06 Efficiency 速度分组柱图 | `ES:277-295,436-450` → `EV:298-304` → DR.speedAvgKmh、WE | 20km/h箱；各箱ΣE/ΣD；规范km/h/Wh/km | R保留原lengthUnit再规范化 | 速度必须正有限；缺/未知单位不编0箱；净负/0能耗在signed chart上保留 | T6速度单位消费者与signedScale；**SOURCE_OK**；provider speed_avg样本均值语义承接03 D14，无新增计数 |",
+    "historical_removed": false
+  },
+  {
+    "report": "04-analysis.md",
+    "section": "Efficiency（9位置）",
+    "position": "E07 Efficiency 个人分位/min/median/max",
+    "row": "| E07 Efficiency 个人分位/min/median/max | `ES:213-235` → `EV:228-240` → DR.efficiencyWhKm/PCT:14-30 | 当前加权效率放入本车同窗行程效率分布；min/lower-middle median/max，rank0…100 | R当前选窗 | 只比有限样本；空返回null；无公共车群分布 | T5/PCT现存测试；**SOURCE_OK**本车位置；不能称车队排名 |",
+    "historical_removed": false
+  },
+  {
+    "report": "04-analysis.md",
+    "section": "Efficiency（9位置）",
+    "position": "E08 Efficiency 四分位桶/最近20条行程/百分位条",
+    "row": "| E08 Efficiency 四分位桶/最近20条行程/百分位条 | `ES:236-271,352-406` → `EV:237-250` → H/PCT | <25/<50/<75/其余各桶计数；全合格分布算rank，行程按日期倒序，UI仅取20条 | R；展示限制不截断底层分布 | 无qualifying能量对不造位置；正负效率都可比较；公开benchmark显示不可用 | T5/T6，**SOURCE_OK**源码；未挂载图表runtime |",
+    "historical_removed": false
+  },
+  {
+    "report": "04-analysis.md",
+    "section": "Efficiency（9位置）",
+    "position": "E09 Efficiency cache/错误/同ID换身份",
+    "row": "| E09 Efficiency cache/错误/同ID换身份 | `ES:66-110` → `EV:119-194,213-218,257-261` → AH/R | Room先发STALE→远端；身份代次、cancellation、同context发布栅栏 | R；旧账号投影清除 | unreadable Room允许同身份remote恢复；网络失败可保留同身份cache；非数据0空态 | T5真实VM的合成source测试存在；**SOURCE_OK**现有修复；本次未运行 |",
+    "historical_removed": false
+  },
+  {
+    "report": "04-analysis.md",
+    "section": "Range（10位置）",
+    "position": "R01 Range 总偏离百分比",
+    "row": "| R01 Range 总偏离百分比 | `RS:358-413` → `RV:329-341,398-416` → H/DR → RD:7-14 | 单程abs(额定range下降−实际km)/额定下降×100；再按行程算术mean | R | 额定下降>0、实际distance有限≥0；缺端点排除；该量不是预测准确率 | T7 RangeDeviationTest；**SOURCE_OK**公式；未将额定下降称实测电能 |",
+    "historical_removed": false
+  },
+  {
+    "report": "04-analysis.md",
+    "section": "Range（10位置）",
+    "position": "R02 Range 合格行程数/总距离",
+    "row": "| R02 Range 合格行程数/总距离 | `RS:439-446` → `RV:341,354-356` → H/toRangeTrip | count有效额定端点行程、Σactual km | R | 真0实际distance可入；无trip显示无记录，不画0统计；不是全部历史里程 | T7；**SOURCE_OK** |",
+    "historical_removed": false
+  },
+  {
+    "report": "04-analysis.md",
+    "section": "Range（10位置）",
+    "position": "R03 Range 窗口/空态/缓存提示",
+    "row": "| R03 Range 窗口/空态/缓存提示 | `RS:156-175` → `RV:170-181,329-335` → WIN/H | ALL/90日/夏冬/custom与E03相同 | R first/STALE | 区分源无记录、过滤为空、字段覆盖不足；缺range端点不以当前range回填 | T7/T12；**SOURCE_OK** |",
+    "historical_removed": false
+  },
+  {
+    "report": "04-analysis.md",
+    "section": "Range（10位置）",
+    "position": "R04 Range 夏/冬/低速/高速偏离",
+    "row": "| R04 Range 夏/冬/低速/高速偏离 | `RS:195-200` → `RV:338,342-343,423-427` → H/DR.speedAvgKmh | 夏/冬全历史固定季节；低速≤40km/h、高速>40；各自mean偏离 | R | speed缺/未知不入箱，真0属低速；季节对照不随当前窗截断 | T7 RangeSpeedUnitsConsumerTest；**SOURCE_OK**；来源speed样本均值含义承接03 D14 |",
+    "historical_removed": false
+  },
+  {
+    "report": "04-analysis.md",
+    "section": "Range（10位置）",
+    "position": "R05 Range 每程起终/地址/预计与实际距离/偏离",
+    "row": "| R05 Range 每程起终/地址/预计与实际距离/偏离 | `RS:219-220,471起RangeTripCard` → `RV:398-417` → H/DR | 预计=起点额定−终点额定，实际=规范km；percent同R01 | R含原始首尾，地址为已验证投影 | 缺任一range端点或distance排除，不用理想range代替；nullable地址有空态 | T7；**SOURCE_OK**；自然行程完整性 **UNVERIFIED** |",
+    "historical_removed": false
+  },
+  {
+    "report": "04-analysis.md",
+    "section": "Range（10位置）",
+    "position": "R06 Range 个性化模型分组/效率/预测续航",
+    "row": "| R06 Range 个性化模型分组/效率/预测续航 | `RS:227-306` → `RV:380-393,420-421` → H + S + health → PR:65-113 | 固定近90日；同温度/速度组≥5次且≥100km，否则全局≥10次且≥300km；容量kWh×1000/Wh/km | 样本R；health/status仅VM，无预测receipt | 模型只接受正能量/正距离（有意不把回收行程当全电池续航模型）；无测得容量不发数字；current_capacity是总可用容量，不是当前剩余电能 | T8；容量缺失 **SOURCE_DATA_MISSING**，资格 **SOURCE_OK**；能量输入承接03 D01 |",
+    "historical_removed": false
+  },
+  {
+    "report": "04-analysis.md",
+    "section": "Range（10位置）",
+    "position": "R07 Range 当前温度/速度条件标签与分组",
+    "row": "| R07 Range 当前温度/速度条件标签与分组 | `RS:234-249,342-348` → `RV:276-281,433-436` → S/PR:116-133 | 温度<10/10…25/>25 °C；速度<50/50…90/>90 km/h；当前speed按原lengthUnit规范化 | 当前S不持久 | 速度unknown不造；温度直接取raw outsideTemp却当C，F源会错分组 | T7 status/speed单位测试仅长度；**BUG AN-05**温度；速度修复 **SOURCE_OK** |",
+    "historical_removed": false
+  },
+  {
+    "report": "04-analysis.md",
+    "section": "Range（10位置）",
+    "position": "R08 Range 模型sampleCount/distance/confidence/insufficient文案",
+    "row": "| R08 Range 模型sampleCount/distance/confidence/insufficient文案 | `RS:312-337` → RV → PR:85-110,147-152 | 合格模型confidence由样本/距离算50…95；不足门槛时也应报告实际候选覆盖 | R重算 | 当前未达门槛selected.second=null，sampleCount/distance均归0，存在样本仍走no_recent_data | T8未断言不足门槛候选计数；**BUG AN-06** |",
+    "historical_removed": false
+  },
+  {
+    "report": "04-analysis.md",
+    "section": "Range（10位置）",
+    "position": "R09 Range 无容量时当前额定range后备",
+    "row": "| R09 Range 无容量时当前额定range后备 | `RS:298-306` → `RV:279,358,433-436` → S/CAR | raw status同响应unit→规范km，明确额定range后备，不伪装个性化预测 | VM，无health/units跨次借用 | 有合格模型但无容量，才显示此fallback；无status字段不造0 | T7 RangeStatusUnitsConsumerTest；**SOURCE_OK**；cloud容量unsupported属源缺失 |",
+    "historical_removed": false
+  },
+  {
+    "report": "04-analysis.md",
+    "section": "Range（10位置）",
+    "position": "R10 Range Room-first/离线/异常/身份栅栏",
+    "row": "| R10 Range Room-first/离线/异常/身份栅栏 | `RS:123-138,162-168` → `RV:196-318,321-348` → AH/R | history先发布；health/status各5秒可选增强，不能阻塞或擦除历史 | R、publishedHistoryIdentity/activeIdentity/generation | unreadable/nullcache、抛异常、error、刷新spinner、ABA/换车、取消皆有分支；身份错误必须清旧投影 | T7新增RangeRoomFirstRegressionTest当前18个@Test；**SOURCE_OK**源码，未重新打开旧Room-first问题；18个源码存在不等于本执行者跑过18项 |",
+    "historical_removed": false
+  },
+  {
+    "report": "04-analysis.md",
+    "section": "Vampire（9位置）",
+    "position": "V01 Vampire 选中车辆/加载/刷新/换身份",
+    "row": "| V01 Vampire 选中车辆/加载/刷新/换身份 | `NAV:228,1020-1024` → `VS:41-46` → `VV:95-124` → settings.currentCarId → REP | route.carId未使用，VM另读全局ID；load并发未取消/无generation/scope publish guard | allWindows仅VM，换scope无订阅清除 | 旧direct Success在新账号后仍能发布；旧allWindows也不在load/error前清掉 | T9测试fallback/helper和字符串，不覆盖VM身份；**BUG AN-01(P1)** |",
+    "historical_removed": false
+  },
+  {
+    "report": "04-analysis.md",
+    "section": "Vampire（9位置）",
+    "position": "V02 Vampire 7/30/365日/ALL/custom及资格",
+    "row": "| V02 Vampire 7/30/365日/ALL/custom及资格 | `VS:128,365起selector` → `VV:149-184,198-218` → SW:55-74,110-120 | 以窗口开始日期过滤；≥2h、已知下降SOC才eligible；能量/功率另需coverage≥80% | direct无Room；fallback经UH/R | charge overlap本地SH:27排除；SOC不降/未知不编耗电；无样本不造0W/kWh | T9/T10；**SOURCE_OK**资格；date offset取记录本地日，跨日整窗归起始日属口径 |",
+    "historical_removed": false
+  },
+  {
+    "report": "04-analysis.md",
+    "section": "Vampire（9位置）",
+    "position": "V03 Vampire 总SOC损失/合格小时/窗口数/稳定结论",
+    "row": "| V03 Vampire 总SOC损失/合格小时/窗口数/稳定结论 | `VS:155-189,218` → `VV:171-194` → SW:85-97 | −ΣSOC delta，百分点；Σeligible小时；稳定≥5窗且≥20h | direct仅VM；fallbackR邻接SOC | 显示的总SOC是百分点和，可>100，不是当前剩余电量；selected数与eligible数分开 | T10；**SOURCE_OK**；不等于观测kWh；继承V01 |",
+    "historical_removed": false
+  },
+  {
+    "report": "04-analysis.md",
+    "section": "Vampire（9位置）",
+    "position": "V04 Vampire 总能量",
+    "row": "| V04 Vampire 总能量 | `VS:224` → `VV:188` → SW:89,95 → AD.energy_kwh → HOME:547-587 | 合格有覆盖窗口energy求和，kWh；未知窗不补0 | direct无Room；本地SH:39明确null | UI:134提示部分energy缺失；已有0W且coverage>0的direct producer把真实0kWh留null | T9/T10不覆盖HOME真零；**BUG AN-08**；本地没有驻车功率则 **SOURCE_DATA_MISSING** |",
+    "historical_removed": false
+  },
+  {
+    "report": "04-analysis.md",
+    "section": "Vampire（9位置）",
+    "position": "V05 Vampire 平均功率/每日平均",
+    "row": "| V05 Vampire 平均功率/每日平均 | `VS:212,421` → `VV:189,248` → SW:88,96 / HOME:589-593 | 当前是窗口平均功率的算术mean；W。单窗HOME=积分kWh×1000/已覆盖小时 | direct仅VM | 无合格功率保持null，真0W保留；跨不同窗时长不是总能量/总时长功率 | T10未验证不同持续时长；数值来源 **SOURCE_OK**，标题是否承诺时间加权均值 **UNVERIFIED**；不擅自把mean改成另一口径 |",
+    "historical_removed": false
+  },
+  {
+    "report": "04-analysis.md",
+    "section": "Vampire（9位置）",
+    "position": "V06 Vampire 每日kWh柱/每日总SOC/周期数",
+    "row": "| V06 Vampire 每日kWh柱/每日总SOC/周期数 | `VS:230-246,478-510` → `VV:241-253` → SW/AD | 按startDate日期分组；已知kWh求和，SOC百分点求和，periodCount；最多365个日桶 | allWindows内存/SH来源R | 全未知日能量null，图跳过；0kWh若传到UI保留；不是每午夜切分的自然日积分 | T9/T10；**SOURCE_OK**现有口径；原始0丢失承接AN-08 |",
+    "historical_removed": false
+  },
+  {
+    "report": "04-analysis.md",
+    "section": "Vampire（9位置）",
+    "position": "V07 Vampire 最近10个窗口时间/时长/位置/SOC/W",
+    "row": "| V07 Vampire 最近10个窗口时间/时长/位置/SOC/W | `VS:272,278,406-451` → `VV:178,222-237` → AD/SW | start时间、duration秒/3600小时、loss百分点、W；位置原window地址 | direct仅VM；fallbackR邻接地址 | 缺位置unknown；missing power unknown；显示前eligible保证SOC已知 | T9/T10；nullable **SOURCE_OK**；HOME倒序、SH升序而UI直接take10，**BUG AN-09** |",
+    "historical_removed": false
+  },
+  {
+    "report": "04-analysis.md",
+    "section": "Vampire（9位置）",
+    "position": "V08 Vampire 原因/置信度/建议",
+    "row": "| V08 Vampire 原因/置信度/建议 | `VS:296,449-451` → `VV:212-217,224,234-237` → AD climate counts | any climateActive>0即CLIMATE，confidence=1f否则0；UI同时固定detected_unknown文案 | direct counts内存；fallback无climate样本 | 有开空调观测不证明全部损失由空调造成，100%不是统计置信区间；HOME active_count实际是any-active布尔1（603-605），不能当完整活跃样本计数 | T9未验证原因消费者；**UNVERIFIED**因果/置信口径；保留未知，不用功率阈值猜哨兵 |",
+    "historical_removed": false
+  },
+  {
+    "report": "04-analysis.md",
+    "section": "Vampire（9位置）",
+    "position": "V09 Vampire direct/fallback/冷重开持久性",
+    "row": "| V09 Vampire direct/fallback/冷重开持久性 | `VS:71-115` → `VV:127-146` → `API:55-58` `/api/matelink/v1/cars/{carId}/standby` → AD:120-136 / SH:14-49 | 非空direct优先；404/空direct用同源历史邻接窗；SH仅SOC边界、无energy/power/temps | direct结果仅allWindows，无写Room；fallback从UH/R重新推导 | 直接能量/覆盖/climate信息冷重开离线不能从R恢复；SH不造功率/能量 | T9真实fallback resolution+源码检查；fallback **SOURCE_OK**；remote receipt离线持久完整性 **UNVERIFIED**，不能宣称全页Room-first通过 |",
+    "historical_removed": false
+  },
+  {
+    "report": "04-analysis.md",
+    "section": "TemperatureTrend（8位置）",
+    "position": "T01 TemperatureTrend 当前内/外温度",
+    "row": "| T01 TemperatureTrend 当前内/外温度 | `TS:145-165` → `TV:139-159` → S/CAR.climate_details | 当前status值；UI固定°C，VM丢弃S.units | 当前值只VM，不写历史 | 缺/null不画0；有限0和负温度保留；无逐字段verified sample time，明确当前快照非历史 | T11 currentApiSnapshotNeverBecomesHistoryOrHistoricalExtremum；**BUG AN-05**仅温标处理，当前snapshot分离 **SOURCE_OK** |",
+    "historical_removed": false
+  },
+  {
+    "report": "04-analysis.md",
+    "section": "TemperatureTrend（8位置）",
+    "position": "T02 TemperatureTrend 历史内/外点与真实时间轴",
+    "row": "| T02 TemperatureTrend 历史内/外点与真实时间轴 | `TS:227,269-280,356-367` → `TV:65-107,137` → DD/DS → HM.decodeDrive → H原始receipt | 行程均温锚定drive_start Instant，按实际时间排序/绘点；非停车连续trace | R原始apiEvidence；不信旧scalar温度标签 | 同drive ID、起止Instant一致、正时长、end≤now、可信source/quality；finite0/负值可入；缺单侧不代填 | T11；**SOURCE_OK**观察资格；历史原响应温标未随DriveData保存，legacy F/C资格 **UNVERIFIED**，不假定当前C源证明所有源 |",
+    "historical_removed": false
+  },
+  {
+    "report": "04-analysis.md",
+    "section": "TemperatureTrend（8位置）",
+    "position": "T03 TemperatureTrend 7/30日窗口",
+    "row": "| T03 TemperatureTrend 7/30日窗口 | `TS:101-111` → `TV:30-31,68-71,261-263` | now−7/30×24h 至now，Instant闭区间，不是7/30个自然日 | R，切窗重读 | future/超窗拒绝；缺时间不补当前时间 | T11；**SOURCE_OK** |",
+    "historical_removed": false
+  },
+  {
+    "report": "04-analysis.md",
+    "section": "TemperatureTrend（8位置）",
+    "position": "T04 TemperatureTrend 历史最高内/外温度",
+    "row": "| T04 TemperatureTrend 历史最高内/外温度 | `TS:216-222` → `TV:175-178` → qualified historical points | 各自max，四舍五入1位；VM也算min，但当前UI没有显示min卡 | R重算，不用当前snapshot补极值 | 每侧空为null；负值max不被0顶替；只有一侧仍显示已有侧 | T11；**SOURCE_OK**；未把VM未调用的min当已显示参数 |",
+    "historical_removed": false
+  },
+  {
+    "report": "04-analysis.md",
+    "section": "TemperatureTrend（8位置）",
+    "position": "T05 TemperatureTrend 合格样本/总行程/末次观测",
+    "row": "| T05 TemperatureTrend 合格样本/总行程/末次观测 | `TS:177-188` → `TV:149-162,180-182` → DD/DS | 分母=窗内非quarantined Room行程，分子=至少一侧合格温度points；last=末次drive_start | R，按localHistoryCarId | N/M是行程覆盖，不是逐秒覆盖或温度传感器样本数；无点时间隐藏 | T11；**SOURCE_OK**口径；自然采样覆盖 **UNVERIFIED** |",
+    "historical_removed": false
+  },
+  {
+    "report": "04-analysis.md",
+    "section": "TemperatureTrend（8位置）",
+    "position": "T06 TemperatureTrend 空态/离线/身份/重试",
+    "row": "| T06 TemperatureTrend 空态/离线/身份/重试 | `TS:123-138,192-204` → `TV:130-165,197-215,242-267` | scope先后核验，token+取消抑制旧响应；Room历史与可选status分离 | R；网络status异常可保留history，但source先resolveRemote | current无值不会抹历史；history全空分no_history/no_qualified；换账号清所有可见值 | T11 scoped/controller测试；**SOURCE_OK**源码；冷启动resolveRemote是否可离线及时完成 **UNVERIFIED** |",
+    "historical_removed": false
+  },
+  {
+    "report": "04-analysis.md",
+    "section": "TemperatureTrend（8位置）",
+    "position": "T07 TemperatureTrend solar gain数值",
+    "row": "| T07 TemperatureTrend solar gain数值 | `TS:228,439-462` → `TV:175-178` → 两个独立历史max | 当前max(inside)−max(outside)，°C；不是同一观测的max(inside−outside) | 两个极值来自R，可不同时间甚至无任何配对 | 各自非null且insideMax>outsideMax就报+Δ；没有配对门 | T11不覆盖insights；**BUG AN-07** |",
+    "historical_removed": false
+  },
+  {
+    "report": "04-analysis.md",
+    "section": "TemperatureTrend（8位置）",
+    "position": "T08 TemperatureTrend 空调表现/forecast",
+    "row": "| T08 TemperatureTrend 空调表现/forecast | `TS:228,469-489` → 无对应VM证据字段；TV:43-59只有温度/覆盖 | “空调表现良好”固定资源，无运行时计算；六页无天气预报API消费者 | 无forecast/AC性能持久收据 | 任意一个历史温度点即可进insights；无climate-on、目标设温、冷却速率/环境控制也下结论 | T11未覆盖固定insight；**BUG AN-07**同根因，不另计；天气预报能力 **SOURCE_DATA_MISSING** |",
+    "historical_removed": false
+  },
+  {
+    "report": "04-analysis.md",
+    "section": "TpmsTrend（8位置）",
+    "position": "P01 TpmsTrend 左前压力/曲线",
+    "row": "| P01 TpmsTrend 左前压力/曲线 | `PS:166,202-295,343-354` → `PV:191-194` → TA:47-57 → TH:79-86 → TD:79-85 → TP | bar；原始collector_received_at毫秒为X，非手机poll时间 | TP主键(localHistoryCarId,observedAt)，只查verified collector | `TO:13-28` 要bar+telemetry_mqtt+collector时间；pressure有限0…15，真0有效、负拒绝；缺此轮不借其它轮时间 | T12 TO/analyzer/controller测试；**SOURCE_OK**，自然车辆样本 **UNVERIFIED** |",
+    "historical_removed": false
+  },
+  {
+    "report": "04-analysis.md",
+    "section": "TpmsTrend（8位置）",
+    "position": "P02 TpmsTrend 右前压力/曲线",
+    "row": "| P02 TpmsTrend 右前压力/曲线 | 同P01，wire `CAR:268,280` pressure_fr/observed_at_fr → TO:25 → TA:55 | bar、此轮独立时间 | 同P01，equal instant才合并 | 异步轮事件不补0、不强行同刻；legacy poll行不晋升verified | T12；**SOURCE_OK** |",
+    "historical_removed": false
+  },
+  {
+    "report": "04-analysis.md",
+    "section": "TpmsTrend（8位置）",
+    "position": "P03 TpmsTrend 左后压力/曲线",
+    "row": "| P03 TpmsTrend 左后压力/曲线 | 同P01，`CAR:269,281` → TO:26 → TA:56 | bar、此轮独立时间 | 同P01 | 同P02 | T12；**SOURCE_OK** |",
+    "historical_removed": false
+  },
+  {
+    "report": "04-analysis.md",
+    "section": "TpmsTrend（8位置）",
+    "position": "P04 TpmsTrend 右后压力/曲线",
+    "row": "| P04 TpmsTrend 右后压力/曲线 | 同P01，`CAR:270,282` → TO:27 → TA:57 | bar、此轮独立时间 | 同P01 | 同P02 | T12；**SOURCE_OK** |",
+    "historical_removed": false
+  },
+  {
+    "report": "04-analysis.md",
+    "section": "TpmsTrend（8位置）",
+    "position": "P05 TpmsTrend 每轮首末变化/coverage",
+    "row": "| P05 TpmsTrend 每轮首末变化/coverage | `PS:339,343-354` → `PV:288-296` → TA:59-65 | 每轮最后−最初，bar；至少2个非null才有delta；coverage.sampleCount=receipt行数，非四轮完整次数 | TP/TD same window | 单点delta=null，不把缺失当0；coverageByWheel在VM存在但当前摘要只显示总receipt数；时间间距不均仍按真实X | T12；**SOURCE_OK**；不能用总行数宣称每轮都有相同覆盖 |",
+    "historical_removed": false
+  },
+  {
+    "report": "04-analysis.md",
+    "section": "TpmsTrend（8位置）",
+    "position": "P06 TpmsTrend 7/30日窗口/空态/retry/身份",
+    "row": "| P06 TpmsTrend 7/30日窗口/空态/retry/身份 | `PS:95-135,158-170` → `PV:71-88,106-123,256-284` → TH/TD | now−7/30×24h 至now（DAO上界now+1排他） | TH按确认负local ID读取TP/DS，同scope前后verify | generation/token/cancel；空/未验证压力不产生曲线；scope变化清旧结果；last retry固定原request.now | T12 identity recovery真实controller合成测试；**SOURCE_OK**资格；无新HTTP采集，打开页不保证自然新增样本 |",
+    "historical_removed": false
+  },
+  {
+    "report": "04-analysis.md",
+    "section": "TpmsTrend（8位置）",
+    "position": "P07 TpmsTrend ambient/highway/parking可能因素与冷态检查",
+    "row": "| P07 TpmsTrend ambient/highway/parking可能因素与冷态检查 | `PS:366-420` → `PV:213-221` → TA:84-120 | ambient需两条同刻四轮完整且有温度；highway四轮升压+≤6h内≥90km/h drive；parking相邻完整receipt≥24h且单轮相对其余下跌≥0.2bar | TP+DS；`TO:21-27`当前verified writer不带outsideTempC；novel helper TH:138还置null | 证据不足明确INSUFFICIENT_EVIDENCE；分轮不同时间不合成完整行；missing环境配对合法不足；规则仅可能因素非诊断 | T12 analyzer人工complete fixtures存在；pressure曲线 **SOURCE_OK**；ambient自然联证 **SOURCE_DATA_MISSING**；parking仅长间隔并未证明期间真的停车、highway使用DS.speedMax而非raw单位证明，因果资格 **UNVERIFIED** |",
+    "historical_removed": false
+  },
+  {
+    "report": "04-analysis.md",
+    "section": "TpmsTrend（8位置）",
+    "position": "P08 TpmsTrend 来源/警告/自定义提醒边界",
+    "row": "| P08 TpmsTrend 来源/警告/自定义提醒边界 | `PS:170,419-420` → PV；采集 `DashboardViewModel.kt:65-98` / `TW:278-326` → TO/TH | warning true/false有独立collector收据，不从压力推Tesla警告；本页无target/low/high编辑控件 | pressure已验证收据TP；rule/profile有独立store | SYS-04旧profile正remote key/负local key错配不证明曲线错误；新 `settings/TpmsChangeSettingsCard.kt:22-30,42`按local ID保存 | T12与父08 specimen；**SOURCE_OK**新rule键；**BUG(shared 07 SYS-04)**旧profile，仅此处交叉引用，不新增计数 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Stats",
+    "position": "ST01 全部/年度筛选",
+    "row": "| ST01 全部/年度筛选 | YearFilter、getAvailableYears；同local日year cohort | StatsViewModel:391以后；StatsRepository:273–365；StatsScreen:263–274,1108以后 | SOURCE_OK主路径，旧请求filter/proof复核；不是SQL截年捷径 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Stats",
+    "position": "ST02 无记录/收集中/不支持",
+    "row": "| ST02 无记录/收集中/不支持 | historyMetadata+hasData+coverage | StatsScreen:244–259；StatsViewModel requestStats | SOURCE_OK分状态；真实provider进度UNVERIFIED |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Stats",
+    "position": "ST03 记录来源数量",
+    "row": "| ST03 记录来源数量 | summary.sourceRecordCount | StatsScreen:762–767；AnalysisSummary.buildAnalysisSummary | SOURCE_OK记录基数，不代表每字段有观测 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Stats",
+    "position": "ST04 合格总距离",
+    "row": "| ST04 合格总距离 | coverage.qualifiedDistanceTotalKm；已知非负km求和 | R/StatsRepository:273–310；StatsScreen:718–721 | SOURCE_OK，用formatDistanceKm转换；缺样本不填0 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Stats",
+    "position": "ST05 合格平均能耗",
+    "row": "| ST05 合格平均能耗 | 同drive合格净kWh/合格distance配对→Wh/km | A/WeightedEfficiency；StatsScreen:724、1356 | SOURCE_OK，真0/负回收可保留，estimated单列证据 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Stats",
+    "position": "ST06 驾驶能量",
+    "row": "| ST06 驾驶能量 | qualified netEnergy总量，有估算样本则ESTIMATED | AnalysisSummary:61以后；StatsScreen:736–737 | SOURCE_OK字段级证据，未知非0 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Stats",
+    "position": "ST07 充入电池能量",
+    "row": "| ST07 充入电池能量 | batteryInputKwh合格样本和，kWh/MWh | coverage及QuickStats；StatsScreen:742–743,1396 | SOURCE_OK；不能当电表AC输入 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Stats",
+    "position": "ST08 已记录/手工总费用",
+    "row": "| ST08 已记录/手工总费用 | projectStatsChargeCosts同source/session/currency的有效金额 | R/StatsRepository:365以后；StatsScreen:754–755 | SOURCE_OK金额投影；货币符号重载边界S06待验证 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Stats",
+    "position": "ST09 平均行程距离",
+    "row": "| ST09 平均行程距离 | 合格距离和/距离样本数 | AnalysisSummary:101以后；StatsScreen:804–805 | SOURCE_OK不用总行程数稀释已知样本 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Stats",
+    "position": "ST10 平均每驾驶日距离",
+    "row": "| ST10 平均每驾驶日距离 | 合格距离和/相同已知distance本地日数 | AnalysisSummary；StatsScreen:881–882 | SOURCE_OK公式；需自然历史数据 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Stats",
+    "position": "ST11 平均每次充入",
+    "row": "| ST11 平均每次充入 | 合格batteryInput总量/对应样本数 | AnalysisSummary；StatsScreen:810–811 | SOURCE_OK，未知记录不当0样本 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Stats",
+    "position": "ST12 费用/距离",
+    "row": "| ST12 费用/距离 | totalCost/规范km×100 | StatsScreen:1309–1314,1362–1363；AnalysisSummary.costPer100Km | S02(P2)说明问题：实际资源literal为“费用/距离”，未明确每100km；不是已证100mi误贴 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Stats",
+    "position": "ST13 充电损耗百分比",
+    "row": "| ST13 充电损耗百分比 | 同会话qualifiedAcEnergyBalance，(AC输入-电池输入)/AC输入×100 | AnalysisSummary:101以后；StatsScreen结论区 | SOURCE_OK，输入>0且>=电池能量；不借全部充电/驾驶比例 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Stats",
+    "position": "ST14 充电/驾驶总能量比例",
+    "row": "| ST14 充电/驾驶总能量比例 | 两组独立活动，无闭合能量平衡 | AnalysisSummary明确MetricState.Unavailable | SOURCE_OK拒绝无资格比值，不为填满而算 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Stats",
+    "position": "ST15 总行程次数",
+    "row": "| ST15 总行程次数 | 选中cohort行数 | QuickStats.totalDrives；StatsScreen:1326 | SOURCE_OK记录计数；0时overview用no_records而非新观测 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Stats",
+    "position": "ST16 驾驶天数",
+    "row": "| ST16 驾驶天数 | cohort有资格日期的本地日去重 | QuickStats.totalDrivingDays；StatsScreen:1332 | SOURCE_OK；缺日期样本未知 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Stats",
+    "position": "ST17 平均行程时长",
+    "row": "| ST17 平均行程时长 | 合法时长样本平均 | QuickStats.avgDriveMinutes；StatsScreen结论区 | SOURCE_OK，时长不是结束时间占位 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Stats",
+    "position": "ST18 最大速度",
+    "row": "| ST18 最大速度 | 合格speedMaxKmh，formatSpeedKmh | QuickStats.maxSpeedKmh；StatsScreen:909、1498 | SOURCE_OK规范km/h→展示单位；上游速度点UNVERIFIED |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Stats",
+    "position": "ST19 充电次数/平均时长/每kWh价格",
+    "row": "| ST19 充电次数/平均时长/每kWh价格 | 选中合格charges；known平均；同会话cost-energy对 | QuickStats；StatsScreen:1391–1411、900 | SOURCE_OK paired分母，不用全部能量稀释已知费用 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Stats",
+    "position": "ST20 距离覆盖",
+    "row": "| ST20 距离覆盖 | distanceSampleCount/driveRecordCount×100 | AnalysisCoverage；StatsScreen:938–940 | SOURCE_OK，分母0未知/收集中，不伪100% |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Stats",
+    "position": "ST21 驾驶能量覆盖",
+    "row": "| ST21 驾驶能量覆盖 | driveEnergySampleCount/driveRecordCount | StatsScreen:944–946 | SOURCE_OK；估算/观察分开说明 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Stats",
+    "position": "ST22 充入能量覆盖",
+    "row": "| ST22 充入能量覆盖 | chargeEnergySampleCount/chargeRecordCount | StatsScreen:956–958 | SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Stats",
+    "position": "ST23 费用覆盖",
+    "row": "| ST23 费用覆盖 | chargeCostSampleCount/chargeRecordCount | StatsScreen:962–964 | SOURCE_OK同币种资格 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Stats",
+    "position": "ST24 AC输入覆盖",
+    "row": "| ST24 AC输入覆盖 | chargeEnergyUsedSampleCount/chargeRecordCount | StatsScreen:974–976 | SOURCE_OK，缺AC测点保持未知 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Stats",
+    "position": "ST25 损耗配对覆盖",
+    "row": "| ST25 损耗配对覆盖 | chargeLossSampleCount/chargeRecordCount | StatsScreen:980–982 | SOURCE_OK，不把DC充入当AC输入 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Stats",
+    "position": "ST26 观测期起止/天数",
+    "row": "| ST26 观测期起止/天数 | 合格日期min/max与local日范围 | StatsScreen:986–1000；AnalysisCoverage | SOURCE_OK，范围不证明持续完整采样 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Stats",
+    "position": "ST27 推荐标题/值/证据与建议",
+    "row": "| ST27 推荐标题/值/证据与建议 | buildRecommendationEvidence→buildRecommendations，明确采样与heuristic | StatsRepository:365–415；StatsScreen:467–475,595–637 | SOURCE_OK来源可追；不是车辆诊断/实车结论，缺样本保持collecting |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Stats",
+    "position": "ST28 快速/深入完成度及日志",
+    "row": "| ST28 快速/深入完成度及日志 | SyncManager progress、scoped metadata、geocode progress | StatsViewModel:254以后；StatsScreen:257–270及同步区 | SOURCE_OK本机处理状态；不等于提供方全量完整 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Stats",
+    "position": "ST29 最远行程/日期/跳详情",
+    "row": "| ST29 最远行程/日期/跳详情 | qualified record的distance、driveId、startDate | StatsScreen:1495–1496；QuickStats.longestDrive | SOURCE_OK字段资格主路径；日期take(10)标签有原时区边界S04 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Stats",
+    "position": "ST30 最高速度行程/日期",
+    "row": "| ST30 最高速度行程/日期 | qualified record maxSpeed，km/h规范格式 | StatsScreen:1498–1499 | SOURCE_OK；不能由均速估峰值 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Stats",
+    "position": "ST31 最节能行程/能耗/日期",
+    "row": "| ST31 最节能行程/能耗/日期 | 合格同记录效率，允许净回收 | StatsScreen:1501–1502 | SOURCE_OK主路径；不把list固定145当观察，参03-D01 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Stats",
+    "position": "ST32 最长连续驾驶/最忙日/国家数",
+    "row": "| ST32 最长连续驾驶/最忙日/国家数 | local日连续/次数、已解析startCountryCode distinct | StatsScreen:1504–1511；Quick/DeepStats | SOURCE_OK计算；国家仅已解析起点近似，SOURCE_DATA_MISSING全足迹 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Stats",
+    "position": "ST33 最大充电SOC增/驾驶SOC降/起止SOC",
+    "row": "| ST33 最大充电SOC增/驾驶SOC降/起止SOC | nullable qualified历史端点 | StatsScreen:1516–1520；QuickStats battery records | SOURCE_OK只在端点证据充分时出现；不拿当前SOC补历史 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Stats",
+    "position": "ST34 最大单次充入/峰值功率/日期",
+    "row": "| ST34 最大单次充入/峰值功率/日期 | qualifiedChargeEnergy/详情峰值，kWh/kW | StatsScreen:1522–1526；StatsRepository:548–611 | SOURCE_OK，但功率峰依赖采样密度，不声称物理全时峰 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Stats",
+    "position": "ST35 最贵充电/最贵每kWh/日期",
+    "row": "| ST35 最贵充电/最贵每kWh/日期 | 有效手工/记录费用；cost/正battery energy | StatsScreen:1528–1536；StatsChargeCostProjection | SOURCE_OK记录对应金额；若只免费记录可无付费纪录卡 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Stats",
+    "position": "ST36 最高海拔/最多爬升/热冷行程与充电",
+    "row": "| ST36 最高海拔/最多爬升/热冷行程与充电 | nullable detail aggregates，max/min，海拔m→ft | StatsScreen:1544以后；StatsRepository:548–611 | SOURCE_DATA_MISSING详细点；源码路径可追，云配置未见海拔字段 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Stats",
+    "position": "ST37 车外/车内最高最低温度四值",
+    "row": "| ST37 车外/车内最高最低温度四值 | detail nullable max/min | StatsScreen:1791–1837；DetailAggregateMapper | SOURCE_OK值源；历史温度的单位必须同receipt，跨单位缓存参H02 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Stats",
+    "position": "ST38 AC/DC能量/占比/次数/未知模式数",
+    "row": "| ST38 AC/DC能量/占比/次数/未知模式数 | 主StatsChargeMode正确保留UNKNOWN；合格能量分别和 | StatsRepository:529–611；StatsScreen:1855–1975 | **BUG S03**：类型已知但能量全未知时empty.sum=0，仍画0kWh；未知mode计数本身正确 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Stats",
+    "position": "ST39 summary证据/样本/未知说明",
+    "row": "| ST39 summary证据/样本/未知说明 | MetricState OBSERVED/DERIVED/ESTIMATED/Collecting | StatsScreen:1045–1106 | SOURCE_OK明确层级，不能把source-ok视为实车通过 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "CountriesVisited",
+    "position": "CT01 国家列表/加载/排序",
+    "row": "| CT01 国家列表/加载/排序 | StatsRepo.getCountriesVisited→AggregateDao SQL→CountryRecord | CVM:54–104；CountriesVisitedScreen:130–209 | **BUG S01**无scope/请求代次/取消隔离；不是无Room数据 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "CountriesVisited",
+    "position": "CT02 国旗/国家名/跳地区",
+    "row": "| CT02 国旗/国家名/跳地区 | ISO code→本地化名与emoji，传countryCode+carId+year | Screen:203–209,247–256；StatsRepo:833 | SOURCE_OK元数据；非法code与外部geocoder可用性UNVERIFIED |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "CountriesVisited",
+    "position": "CT03 行程次数",
+    "row": "| CT03 行程次数 | 已geocode起点的observed/derived行COUNT | AggregateDao:475–543；Screen:269–277 | SOURCE_OK有限基数，未geocode行不覆盖，非全足迹 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "CountriesVisited",
+    "position": "CT04 总距离",
+    "row": "| CT04 总距离 | SUM(drives_summary.distance)，字段canonical km | CountryRecord.totalDistanceKm；Screen:303 | **BUG S02/S03**英制误贴单位；原始非空列旁路nullable receipt |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "CountriesVisited",
+    "position": "CT05 充入电量/MWh",
+    "row": "| CT05 充入电量/MWh | 对应country charge rows SUM energyAdded | AggregateDao左连接；Screen:311–314 | **BUG S03**未知/未配对字段被SUM/COALESCE成0，未复用qualifiedBatteryInput |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "CountriesVisited",
+    "position": "CT06 充电次数",
+    "row": "| CT06 充电次数 | 对应已geocode的charges COUNT | Screen:325–326；CountryRecord.chargeCount | SOURCE_OK记录计数；没有charge rows的0不等于每次energy有观察 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "CountriesVisited",
+    "position": "CT07 首次访问日期",
+    "row": "| CT07 首次访问日期 | MIN drive.startDate | CountryRecord.firstVisitDate；Screen country card | S04原字符串排序/日期截取；仅起点活动，非首次物理到访证明 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "CountriesVisited",
+    "position": "CT08 最近访问日期",
+    "row": "| CT08 最近访问日期 | MAX drive.startDate | CountryRecord.lastVisitDate；Screen country card | 同上；日期解析显示可追，coverage不足须说明 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "CountriesVisited",
+    "position": "CT09 距离/能量/次数/字母/首次排序",
+    "row": "| CT09 距离/能量/次数/字母/首次排序 | sortBy同一CountryRecord属性 | CountriesVisitedViewModel:97–110 | SOURCE_OK排序数学；S01旧集合可被迟到结果替换 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "CountriesVisited",
+    "position": "CT10 空列表/错误/单位",
+    "row": "| CT10 空列表/错误/单位 | Room/地理聚合，状态单位另取getCarStatus | CVM:59–80；Screen空态 | SOURCE_DATA_MISSING geocode/历史；S01错误仍保留旧列表、没有新身份清屏 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "RegionsVisited",
+    "position": "RG01 国家头部/区域列表",
+    "row": "| RG01 国家头部/区域列表 | 依次读countries、regions、charge locations、drive locations | RegionsVM:114–168；Screen:197–212 | **BUG S01**4次读取可跨scope/Room修订，未捕获统一请求 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "RegionsVisited",
+    "position": "RG02 国家头部次数/日期/距离/充电量/次数",
+    "row": "| RG02 国家头部次数/日期/距离/充电量/次数 | CountryRecord同CT03–08 | Screen:320–403 | 同S02/S03/S04；字段逐一沿用国家证据，非重新实车通过 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "RegionsVisited",
+    "position": "RG03 区域名/国别",
+    "row": "| RG03 区域名/国别 | Drive aggregate.startRegionName/startCountryCode | StatsRepo:728–738,845；Screen:787–798 | SOURCE_OK已解析起点元数据；跨境途中未单独观察地区不能补 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "RegionsVisited",
+    "position": "RG04 区域行程次数",
+    "row": "| RG04 区域行程次数 | SQL分组COUNT observed/derived | AggregateDao:545–612；Screen:798–807 | SOURCE_OK计数，保留缺地理样本说明 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "RegionsVisited",
+    "position": "RG05 区域距离",
+    "row": "| RG05 区域距离 | SQL SUM canonical distance | Screen:823 | **BUG S02/S03**错贴mi/字段未知丢失 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "RegionsVisited",
+    "position": "RG06 区域充入与次数",
+    "row": "| RG06 区域充入与次数 | charge aggregate region左连接SUM/COUNT | Screen:830–844 | **BUG S03**能量资格与0/null；次数源可追 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "RegionsVisited",
+    "position": "RG07 首次/最近访问",
+    "row": "| RG07 首次/最近访问 | SQL MIN/MAX startDate字符串 | 区域卡formatter与排序 | S04，offset跨日、混格式不以字典序证明时间 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "RegionsVisited",
+    "position": "RG08 地图充电/行程切换",
+    "row": "| RG08 地图充电/行程切换 | mapViewMode，本地选项 | RegionsVM:184–185；Screen:204 | SOURCE_OK交互，本身不是新数据 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "RegionsVisited",
+    "position": "RG09 地图年份/可用年份",
+    "row": "| RG09 地图年份/可用年份 | date.take(4)→Int，内存过滤 | RegionsVM:71–98,140–143,200；Screen:431–444 | **BUG S04**未按local Instant年，与主Stats不一致 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "RegionsVisited",
+    "position": "RG10 地图AC/DC/全部",
+    "row": "| RG10 地图AC/DC/全部 | ChargeLocation.isDcCharge布尔 | RegionsVM:82–86,188；StatsRepo:855–863 | 参02-CHG-P1-01，unknown被false当AC |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "RegionsVisited",
+    "position": "RG11 充电marker坐标/地址",
+    "row": "| RG11 充电marker坐标/地址 | AggregateDao.getChargeLocationsForCountry；date只用于过滤，能量/ID虽在DTO但未显示 | DAO:808–837；Screen:474–478地图分支 | **BUG S03**混合有效/隔离记录时可画quarantined点；仅隔离国家会先被空态挡住 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "RegionsVisited",
+    "position": "RG12 行程marker坐标/地址",
+    "row": "| RG12 行程marker坐标/地址 | aggregate.startLat/Lon；距离/ID虽在DTO但当前map不渲染 | DAO:841–870；StatsRepo:866；Screen:474–478 | **BUG S03**同混合状态；不把未渲染DTO列计可见字段 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "RegionsVisited",
+    "position": "RG13 国家边界/可见地图范围",
+    "row": "| RG13 国家边界/可见地图范围 | GeocodingRepository公开boundary cache+当前markers | RegionsVM:160–161；Screen地图 | SOURCE_OK公共几何源；S01迟到boundary可套旧country，SDK/真机UNVERIFIED |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "RegionsVisited",
+    "position": "RG14 排序/空态/错误",
+    "row": "| RG14 排序/空态/错误 | 原regions按first/name/count/distance/energy/charges | RegionsVM:174–220；Screen:189–197 | S01、S04；未知源应区分未解析而非真实无到访 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Cost",
+    "position": "CO01 默认/自定义窗口",
+    "row": "| CO01 默认/自定义窗口 | AnalysisWindow按本地date从同charges投影选取 | CostVM:304–338；CostScreen selector | SOURCE_OK，同scope本地窗口，不改UI标签暗扩窗 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Cost",
+    "position": "CO02 已记录/手动总额",
+    "row": "| CO02 已记录/手动总额 | effective source/currency/session合格known prices和 | CostVM:329–368；ChargeCostTotals:12–41；CostScreen:173以后 | SOURCE_OK，manual0保留；不是包含所有估算的账本 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Cost",
+    "position": "CO03 平均每次已知费用",
+    "row": "| CO03 平均每次已知费用 | knownTotal/known price count | calculateCostTotals.averageKnownCost；SummarySection | SOURCE_OK，分母为价格样本，不是全部次数 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Cost",
+    "position": "CO04 缺价默认单价估算额",
+    "row": "| CO04 缺价默认单价估算额 | 仅price缺失且batteryInput有效的records：rate×energy和 | ChargeCostTotals:25–28；Screen cost_default_rate_estimate | SOURCE_OK明确估算与覆盖，不是实际支付；峰平谷未接SYS-01 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Cost",
+    "position": "CO05 充入电池能量",
+    "row": "| CO05 充入电池能量 | qualified batteryInput有限>=0和 | CostVM totals；SummarySection energy card | SOURCE_OK，不能叫电表AC输入 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Cost",
+    "position": "CO06 有效每电池kWh价格",
+    "row": "| CO06 有效每电池kWh价格 | 同session price和positive battery energy配对再sum/sum | ChargeCostTotals:22–36；Screen cost_paired_battery_unit | SOURCE_OK，真0金额可得0，缺分母未知 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Cost",
+    "position": "CO07 费用/能量/配对/估算覆盖数",
+    "row": "| CO07 费用/能量/配对/估算覆盖数 | 各字段有效record基数 | CostVM:365–370；SummarySection footnotes | SOURCE_OK显式覆盖，不能把补价算观察 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Cost",
+    "position": "CO08 当前币种/来源说明",
+    "row": "| CO08 当前币种/来源说明 | 一次settings.currency+scope+override snapshot | CostVM:200–238；CostScreen currency assumption | SOURCE_OK不兑换旧金额；陌生币种不参与合计 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Cost",
+    "position": "CO09 月费用AC/DC/未知堆叠",
+    "row": "| CO09 月费用AC/DC/未知堆叠 | buildMonthlyCosts本地YearMonth+effective known prices | CostVM:72–94；CostScreen:130–159 | SOURCE_OK未知类型独立，未用processed非DC强推AC；月label跨年可读性需实机 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Cost",
+    "position": "CO10 地点费用排行/次数",
+    "row": "| CO10 地点费用排行/次数 | buildLocationCosts同known prices按address分组sum/count | CostVM:96以后；Screen LocationCard | SOURCE_OK；缺地址用未知组，不造地名 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Cost",
+    "position": "CO11 缓存banner/加载/失败",
+    "row": "| CO11 缓存banner/加载/失败 | AnalysisRepo.loadCached→load；cachedPublished，same-scope失败保留 | CostVM:171–279；Screen:cache/header | SOURCE_OK，已有CostRoomFirstViewModelTest真实Room消费者；本轮未重跑 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Cost",
+    "position": "CO12 无配对说明/暂无值",
+    "row": "| CO12 无配对说明/暂无值 | cost/energy各coverage判定，独立字段保留 | CostScreen:SummarySection | SOURCE_OK，已知单项不因缺另一项全抹掉；不强填0 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Mileage（含年/月/日）",
+    "position": "MI01 历年总距离",
+    "row": "| MI01 历年总距离 | TimedDrive.observedDistanceKm合格和 | MileageVM computeYearAggregation；Screen:276,1002 | SOURCE_OK，formatDistanceKm；不拿unknown当观测0显示 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Mileage（含年/月/日）",
+    "position": "MI02 平均每年距离/首次记录/说明天数",
+    "row": "| MI02 平均每年距离/首次记录/说明天数 | earliest local drive date到now的年化距离 | VM year aggregation；Screen:970以后dialog | SOURCE_OK所定义年化，不是“有数据年份平均”；未来日期/极稀疏自然覆盖UNVERIFIED |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Mileage（含年/月/日）",
+    "position": "MI03 行程次数",
+    "row": "| MI03 行程次数 | 当前允许记录数 | VM YearAggregation；Screen:1024附近 | SOURCE_OK计数与逐字段sampleCount分开 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Mileage（含年/月/日）",
+    "position": "MI04 已知净能量",
+    "row": "| MI04 已知净能量 | 合格netEnergy和，真0/负回收保留 | VM observedEnergyKwh；Screen:1049 | SOURCE_OK，energySampleCount0为— |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Mileage（含年/月/日）",
+    "position": "MI05 平均能耗/覆盖说明",
+    "row": "| MI05 平均能耗/覆盖说明 | buildMileageEvidence配对能量/距离→Wh/km，formatTelemetryEfficiency | Screen:938,1034；A/MileageEvidence | SOURCE_OK不以全里程稀释；明确样本均值 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Mileage（含年/月/日）",
+    "position": "MI06 费用总计/币种",
+    "row": "| MI06 费用总计/币种 | scoped local key/source/session/currency→manual/record projection和 | VM publish、projectMileageChargeCost:后半段；Screen:1043 | SOURCE_OK，读取失败费用未知但里程仍出；不借旧金额 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Mileage（含年/月/日）",
+    "position": "MI07 年柱图数值/tooltip",
+    "row": "| MI07 年柱图数值/tooltip | getYearlyChartData只发已观察distance年份 | VM charts；Screen:339–348 | SOURCE_OKkm规范转展示，未知不画假零 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Mileage（含年/月/日）",
+    "position": "MI08 年卡年号/距离/次数/能耗/费用",
+    "row": "| MI08 年卡年号/距离/次数/能耗/费用 | 同YearAggregation对象 | Screen:359–438 | SOURCE_OK同投影；不存在数据年不凭空造记录 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Mileage（含年/月/日）",
+    "position": "MI09 月层合计/平均每月/次数/能耗/费用",
+    "row": "| MI09 月层合计/平均每月/次数/能耗/费用 | computeMonthAggregation按local YearMonth；avgMonthly以有记录月份计 | VM aggregateByMonth；Screen:499–524,601–691 | SOURCE_OK分母定义应读既有info；旧选择/旧投影返回被拒绝 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Mileage（含年/月/日）",
+    "position": "MI10 月柱图/数值",
+    "row": "| MI10 月柱图/数值 | getMonthlyChartData已知distance月份 | Screen:581–590 | SOURCE_OK有限值；不是缺月=实际0 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Mileage（含年/月/日）",
+    "position": "MI11 月卡及日层头部",
+    "row": "| MI11 月卡及日层头部 | 同MonthlyMileage/Evidence；日期按local月 | Screen:719–938 | SOURCE_OK，距离均值分母为已知distance样本数 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Mileage（含年/月/日）",
+    "position": "MI12 日柱图/tooltip",
+    "row": "| MI12 日柱图/tooltip | 选择month内有真实distance的daily slot | VM getDailyChartData；Screen:1241–1250 | SOURCE_OK只发有观测日；不存在日不伪造 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Mileage（含年/月/日）",
+    "position": "MI13 日卡/日汇总/平均每次/次数/能量/费用",
+    "row": "| MI13 日卡/日汇总/平均每次/次数/能量/费用 | DailyMileage同样按合格单项，配对效率 | Screen:1261–1366,1499–1598 | SOURCE_OK；UI不把price null打印0 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Mileage（含年/月/日）",
+    "position": "MI14 单日行程地点/距离/SOC/详情入口",
+    "row": "| MI14 单日行程地点/距离/SOC/详情入口 | 当前daily.drives、nullable receipt | Screen:1640以后 | SOURCE_OK基础值，来源共享03数据合同；未采SOC不可补当前值 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Mileage（含年/月/日）",
+    "position": "MI15 offline缓存/STALE banner/刷新",
+    "row": "| MI15 offline缓存/STALE banner/刷新 | UnifiedRepo.loadCached/read proof→网络；same identity守护 | 当前VM两发布、Screen缓存提示 | SOURCE_OK当前修复；父上一阶段88聚焦/1356为继承，08不是这组的新测试 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Mileage（含年/月/日）",
+    "position": "MI16 切年/月/日与迟到聚合",
+    "row": "| MI16 切年/月/日与迟到聚合 | selectionGeneration+projectionVersion+current proof；整快照year/month/day同次发布 | 当前VM ensureSelectionContext、publish、aggregateByMonth/Day | SOURCE_OK已读源码与33新增回归来源；不重新登记旧缺口 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Timeline",
+    "position": "TL01 来源与加载",
+    "row": "| TL01 来源与加载 | settings.currentCarId→UHR.load→verifiedReadContext | TimelineVM:112–159；Screen:40–93 | SOURCE_OK身份/代次主要门；P2网络前置未loadCached，弱网等已有Room |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Timeline",
+    "position": "TL02 日期分组/时刻/顺序",
+    "row": "| TL02 日期分组/时刻/顺序 | parseIsoInstant→system zone；按Instant降序、type/id稳定tie | VM:180–211；Screen:117–120,183 | SOURCE_OK，不再把UTC原串当本地小时 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Timeline",
+    "position": "TL03 行程起/终地址",
+    "row": "| TL03 行程起/终地址 | nullable DTO start/end；缺单侧只显示已知侧 | VM:212–229；Screen:203–208 | SOURCE_OK，没有把一个地址复制到两端 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Timeline",
+    "position": "TL04 行程距离",
+    "row": "| TL04 行程距离 | DriveData.distanceKm规范km | VM:223；Screen:217–222 | SOURCE_OK，UI明确km；TimelineUnitsConsumerTest源码存在 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Timeline",
+    "position": "TL05 行程时长",
+    "row": "| TL05 行程时长 | DTO durationStr和durationMin均装入event | VM:224–225；Screen:224只消费str | **BUG S05(P2)**：有合法分钟但str缺时，已知时长被隐藏 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Timeline",
+    "position": "TL06 行程结束SOC/详情ID",
+    "row": "| TL06 行程结束SOC/详情ID | nullable endBatteryLevel和driveId | VM:226–228；Screen:231–237,click | SOURCE_OK来源；数值范围与历史证据应沿03准入，不能借当前SOC |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Timeline",
+    "position": "TL07 充电地点/记录ID/跳转",
+    "row": "| TL07 充电地点/记录ID/跳转 | charge.address、chargeId | VM:232–251；Screen:251–255,click | SOURCE_OK，不造地址 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Timeline",
+    "position": "TL08 充入能量",
+    "row": "| TL08 充入能量 | UHR→toAnalysisChargeData/withQualifiedEnergy已把chargeEnergyAdded替换为batteryInputKwh | UHR:329、HistorySummaryMapper:174、ChargeEnergyBinding:36–38；VM:243；Screen:262–265 | SOURCE_OK生产链已资格化，撤回仅凭字段名判断的S05能量P1 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Timeline",
+    "position": "TL09 充电费用/币种",
+    "row": "| TL09 充电费用/币种 | projectEffectiveChargeCost+bound override | VM:145–150,244–247；Screen:269–273 | SOURCE_OK有效费用；无qualified值不输出数字 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Timeline",
+    "position": "TL10 充电时长",
+    "row": "| TL10 充电时长 | durationStr/Min保存，UI仅Str | VM:248–249；Screen:276 | 同S05(P2)，有min缺str不展示 |",
+    "historical_removed": false
+  },
+  {
+    "report": "05-statistics.md",
+    "section": "Timeline",
+    "position": "TL11 无记录/缓存告警/异常",
+    "row": "| TL11 无记录/缓存告警/异常 | history sync warning本地化；events空与loading分支 | VM:153–175；Screen:69–79 | SOURCE_OK不伪造事件；当前没有freshness独立banner与Room先出，P2体验缺口 |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "1. Trips（TR01–TR12，12行）",
+    "position": "TR01 进入/返回刷新",
+    "row": "| TR01 进入/返回刷新 | TS:98,103-113 → TV:66-83,120-141 → TF:22-44先refreshHistory再用localHistoryCarId读TR.getTrips | 有正确local映射fallback；没有Room先显，网络可挡首屏；本次运行UNVERIFIED。SOURCE_OK（映射）/BUG N02（scope失效） |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "1. Trips（TR01–TR12，12行）",
+    "position": "TR02 自动发现规则及空态说明",
+    "row": "| TR02 自动发现规则及空态说明 | TS:153-198 → DT:31-35,43-126；≥2drive、≥1DC charge、总距≥300km；micro<1km先排除，drive→charge≤15m、charge→drive≤180m、drive→drive≤30m | TR.getTrips实际会autoPersist和删除“重复”saved trip，不是纯读取（N06）；负gap也满足上限，重叠合法性未检查。SOURCE_OK（实际规则），活动完整性UNVERIFIED |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "1. Trips（TR01–TR12，12行）",
+    "position": "TR03 年份/自定义日期",
+    "row": "| TR03 年份/自定义日期 | TS:259-271,584-640 → TV:91-108,145-155；按trip.startDate本地日期归属，全段不按窗裁切 | 筛选仅内存，未SavedState保存。仅availableYears>1显示整个筛选行；选空结果TS:153空态会隐藏返回筛选入口。BUG（筛选可达性），区间统计是“按开始日归属整旅途” |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "1. Trips（TR01–TR12，12行）",
+    "position": "TR04 摘要旅途数",
+    "row": "| TR04 摘要旅途数 | TS:277-283,357-360 → TV:160；filtered.size | 已保存引用+新检测旅途，非drive总数；空trip状态不显示摘要。SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "1. Trips（TR01–TR12，12行）",
+    "position": "TR05 摘要总距离",
+    "row": "| TR05 摘要总距离 | TS:364-365 → TV:161 → TA:34；Σtrip距离，canonical km再UF.formatDistanceKm转换显示mi | 实际legacy/缺失primitive0及非法sum旁路H1；没有距离样本覆盖。BUG（H1扩展） |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "1. Trips（TR01–TR12，12行）",
+    "position": "TR06 摘要行驶时间",
+    "row": "| TR06 摘要行驶时间 | TS:374-375 → TV:162 → TA:35；Σdrive.durationMin | Int.sum可能overflow，未知分钟placeholder0没有分母覆盖；相同leg若存在于多个保存trip也重复计。BUG（H1/成员集合边界） |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "1. Trips（TR01–TR12，12行）",
+    "position": "TR07 摘要已充电kWh",
+    "row": "| TR07 摘要已充电kWh | TS:381-382 → TV:163 → TA:48；Σcharge.energyAdded | Double非空，未知与真0无法区分，部分覆盖没说明；整数显示会舍掉小量，来源H1。BUG（H1扩展） |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "1. Trips（TR01–TR12，12行）",
+    "position": "TR08 单旅途日期/名字/路线/距离",
+    "row": "| TR08 单旅途日期/名字/路线/距离 | TS:454-475,679-699；名字优先手动，否则首末drive城市；canonical km转换 | name保存在SavedTrip；日期在归属日格式化；未知地址primitive空字符串经extractCity；距离H1。SOURCE_OK（绑定/名称），BUG（H1数据资格） |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "1. Trips（TR01–TR12，12行）",
+    "position": "TR09 指纹时间条及点选信息",
+    "row": "| TR09 指纹时间条及点选信息 | TS:437,481-485 → TB:24-70；drive/charge事件排序，≥5min间隙插parking；时长决定宽度，长停车/AC使用压缩权重 | 输入startDate先按字符串排，跨offset可能反序；未知类型被非DC→AC，N08/N10。SOURCE_OK（渲染真实成员），BUG（时间/分类） |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "1. Trips（TR01–TR12，12行）",
+    "position": "TR10 总历时/充电停靠次数",
+    "row": "| TR10 总历时/充电停靠次数 | TS:492-506 → TA:36-40,48；首drive.start至末drive.end，charges.size停靠数 | 手动leg可有区间外charge但总历时/起终点仍由drive决定（N08）；count是真实存储成员数不证明完整自然会话。BUG N08 |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "1. Trips（TR01–TR12，12行）",
+    "position": "TR11 总净能量和均耗/双覆盖",
+    "row": "| TR11 总净能量和均耗/双覆盖 | TS:524-566 → TA:41-47,72-75/WE:23-44；Σ有限净kWh；配对ΣkWh/Σ正km×1000，再÷10 kWh/100km；能量coverage与效率coverage独立 | 文案区分known/complete；真0、负回收保留；记录覆盖=valid pairs/all drives，距离覆盖=paired distance/所有已知正距离，不含未知距离。算式SOURCE_OK；输入资格仍H1 |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "1. Trips（TR01–TR12，12行）",
+    "position": "TR12 错误/旧缓存/迟到单位",
+    "row": "| TR12 错误/旧缓存/迟到单位 | TV:111-117,125-138把historySyncWarning/units放state；TS:204-223未传或显示warning | identity不可用/远端失败可被空态“尚无旅途”替代；同remote carId换账号无scope订阅，旧trip/units不清（N02）；旧row返回后generation同样有效。BUG N02 |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "2. CreateTrip（CR01–CR12，12行）",
+    "position": "CR01 路由/初始日选择",
+    "row": "| CR01 路由/初始日选择 | CS:74-88,157-162 → CV:56-81；day→无offset start00:00/end23:59:59，再候选窗口±1day | started布尔禁止同VM换car重新init；直接remote carId当Room key；N01。日期anchor仅草稿内存，不等于最后旅途严格窗口 |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "2. CreateTrip（CR01–CR12，12行）",
+    "position": "CR02 手动名称",
+    "row": "| CR02 手动名称 | CS:124-129 → CV:127-132；trim空为null，供TA预览与TR.createTrip | SavedTrip.name持久；不是手动输入里程/能量/费用。SOURCE_OK（绑定）；保存成功门N11 |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "2. CreateTrip（CR01–CR12，12行）",
+    "position": "CR03 预览名字/路线/日期",
+    "row": "| CR03 预览名字/路线/日期 | CS:178-206 → CV:148-156 → TA首末drive；标题manual或city→city | 不要求>=2drive/DC/300km；至少一个能resolve的drive才有preview；只有charge不允许点保存。SOURCE_OK（手动条件） |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "2. CreateTrip（CR01–CR12，12行）",
+    "position": "CR04 预览距离",
+    "row": "| CR04 预览距离 | CS:194-196使用UF.formatDistanceValue(preview.totalDistance,units) | preview.totalDistance是canonical km，UF:72-73只返回原值，mi偏好只换标签；160.9344km显示161mi，正确应100mi（N09）。BUG |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "2. CreateTrip（CR01–CR12，12行）",
+    "position": "CR05 预览总时长",
+    "row": "| CR05 预览总时长 | CS:198 → TA:36-40；首drive.start至末drive.end | charge在首drive前/末drive后仍入能量和列表却不入历时；跨offset字符串排序可改首末（N08）；输入缺失资格H1。BUG |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "2. CreateTrip（CR01–CR12，12行）",
+    "position": "CR06 添加/多选数量",
+    "row": "| CR06 添加/多选数量 | CS:165-172 → AL:63-100,123-141 → CV:84-118；eligible按未用leg ID与±1day查，draftSet去重 | selected保存在Compose内存；列表真实来自Room，非示例。调用未用scoped local key（N01）；选中后source/window是否更正未重新核准（N11） |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "2. CreateTrip（CR01–CR12，12行）",
+    "position": "CR07 候选drive：地址/时间/km/分钟",
+    "row": "| CR07 候选drive：地址/时间/km/分钟 | AL:263-282 → TR:303-315；primitive DriveSummary | 日期格式化，km固定；未知/真0被H1混合；不依据receipt单字段资格。BUG（H1）；固定km与预览偏好并不一致（N09） |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "2. CreateTrip（CR01–CR12，12行）",
+    "position": "CR08 候选charge：地址/时间/ACDC/kWh/分钟",
+    "row": "| CR08 候选charge：地址/时间/ACDC/kWh/分钟 | AL:299-342 → TR:303-320；primitive energyAdded/duration；DC IDs由AD查 | 未拿到DC aggregate就标AC，缺失charge energy被0，N10/H1；不显示有效费用。BUG |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "2. CreateTrip（CR01–CR12，12行）",
+    "position": "CR09 已选drive/删除",
+    "row": "| CR09 已选drive/删除 | CS:283-316 → CV:121-124；单项地址、`%.1f km`、durationMin及LegRef删除 | draft保存在state，重建resolve真实Room；异步remove/pick没有generation序列，旧rebuild可能后发布覆盖新draft，运行UNVERIFIED；输入资格H1 |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "2. CreateTrip（CR01–CR12，12行）",
+    "position": "CR10 已选charge/删除",
+    "row": "| CR10 已选charge/删除 | CS:319-354；AC/DC、+energyAdded、分钟；CV删除chargeRef | 同CR08；不将缺类型当AC（N10），不把unknown当0（H1）。BUG |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "2. CreateTrip（CR01–CR12，12行）",
+    "position": "CR11 草稿范围/先后顺序",
+    "row": "| CR11 草稿范围/先后顺序 | CV:92-96,148-150 → TR:305-319,343,397；dates.min/max和sortBy原字符串，候选比较也原字符串 | 跨offset/不同精度日期不是同instant排序，可能显示倒序或遗漏；N08。SOURCE_OK（实际算法），BUG（时间语义） |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "2. CreateTrip（CR01–CR12，12行）",
+    "position": "CR12 保存→新详情",
+    "row": "| CR12 保存→新详情 | CS:103-108,86-87 → CV:136-144 → TR:339-358 → SD:40-45 | 真实事务写SavedTrip+legs，但VM忽略返回null、无异常finally；TR只检查refs有drive类型，未保证该drive仍可resolve、未验证仍unused/同source/window。N01/N11。实际保存/冷重开UNVERIFIED |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "3. TripDetail（TD01–TD22，22行）",
+    "position": "TD01 详情身份/首显/冷重开",
+    "row": "| TD01 详情身份/首显/冷重开 | TD:121,193-206 → TM:277-346；cachedContext→scoped localCar；TC按startDate传内存trip，使用cost projection检查所有成员carId；否则readOnly saved重建 | TM:231-258主动scope失效清trip/route/weather，较列表完善；TR.getSavedTripsReadOnly不自动写/删。SOURCE_OK；实际Room重开UNVERIFIED |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "3. TripDetail（TD01–TD22，22行）",
+    "position": "TD02 标题/改名",
+    "row": "| TD02 标题/改名 | TD:143-149,266-271 → TM:488-516 → TR.renameTrip/getTripName | user name优先，空回路线名；编辑前后检查local context。SOURCE_OK（当前入口） |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "3. TripDetail（TD01–TD22，22行）",
+    "position": "TD03 地图日期/总距离贴片",
+    "row": "| TD03 地图日期/总距离贴片 | TD:305-310,1143-1155 → TA.start/end/totalDistance；formatTripDateRange，UF.formatDistanceKm | canonical单位换算正确；区间由drive边界决定，N08；缺失placeholder H1。SOURCE_OK（格式）；BUG（来源边界） |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "3. TripDetail（TD01–TD22，22行）",
+    "position": "TD04 每drive真实GPS/折线",
+    "row": "| TD04 每drive真实GPS/折线 | TM:674-715,767-778 → provider.getDriveDetail → raw positions lat/lon → simplifier → TD:1117-1140 flatten全部段 → AmapRouteView | 未验响应drive ID/source/window，也未读03的verified detail receipt；cache只ID集合，N04；段失败压缩槽位N05，flatten又跨缺段连线。BUG |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "3. TripDetail（TD01–TD22，22行）",
+    "position": "TD05 地图起终标记",
+    "row": "| TD05 地图起终标记 | TM:717-747用所有成功段first/last；TD:1139-1140用trip文字label | 首末drive失败时把中间/剩余段坐标标为全trip起终；对真实完整路线不能背书（N05）。默认WGS→GCJ沿03同renderer链，不新增该根因 |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "3. TripDetail（TD01–TD22，22行）",
+    "position": "TD06 地图充电站点击/预算/失败",
+    "row": "| TD06 地图充电站点击/预算/失败 | TM:172-188最多12drive、并发2，超限cachemiss延后；TM:731-737准备charge markers；TD:1090-1106明确预算文案 | TD:1136-1141只传start/end标题及line，没有传charge marker/回调；pendingChargeNav未被地图赋值，站点地图导航实际不可达。SOURCE_DATA_MISSING（当前连接）；SDK/Key/source失败反馈沿03 |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "3. TripDetail（TD01–TD22，22行）",
+    "position": "TD07 timeline起终城市/时刻",
+    "row": "| TD07 timeline起终城市/时刻 | TD:332-343 → TT:198-206,389-480；真实trip字段，country flags可跳国家页 | 图条是所选成员重建，不证明自然活动完整；按原字符串事件排序和charge外窗N08；city提取无位置证据不能当GPS。SOURCE_OK（绑定） |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "3. TripDetail（TD01–TD22，22行）",
+    "position": "TD08 timeline行驶/充电/总时间",
+    "row": "| TD08 timeline行驶/充电/总时间 | TD:317-319,340-342 → TT:234-261；Σdrive分钟、Σcharge分钟、首末drive elapsed | overlapping sessions不union，Int求和无overflow门，unknown→0来自H1；条宽对停车/AC刻意压缩不是真时间比例。BUG（H1/窗口口径） |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "3. TripDetail（TD01–TD22，22行）",
+    "position": "TD09 timeline单段点选",
+    "row": "| TD09 timeline单段点选 | TB:24-70 → TT:326-362；drive km/min、charge kWh/min、停车gap≥5min；序号与成员数 | 未知ACDC默认AC（N10）；gap只从所选集合产生，未看隐藏/隔离中间活动，不能把该parking当03已证自然驻车。BUG（分类/证明缺口） |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "3. TripDetail（TD01–TD22，22行）",
+    "position": "TD10 国家/地域旗标",
+    "row": "| TD10 国家/地域旗标 | TM:591-642：AggregateDao同localCar的drive边界+charge位置，geocodeCache经纬度*100取整查country；去重中间国TM:652-669 | 只保有cache命中的codes后再取first/last，起终点无cache时中间国可能被当起终国；country/route缓存key同N04不含证据revision。SOURCE_DATA_MISSING（端点国资格），实际地域UNVERIFIED |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "3. TripDetail（TD01–TD22，22行）",
+    "position": "TD11 费用总额/覆盖",
+    "row": "| TD11 费用总额/覆盖 | TD:346-355,578-590 → TM:130-155；同car+同session手动override/free/provider按所选currencyCode resolve；known finite costs求和 | 未知不补0；allPriced及priced/energy/paired计数；无任何cost时隐藏card。SOURCE_OK（有效费用投影），UI/提供方UNVERIFIED |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "3. TripDetail（TD01–TD22，22行）",
+    "position": "TD12 费用环图/分类",
+    "row": "| TD12 费用环图/分类 | TD:506-525,569-575；仅全部priced、energy已资格、type有证明才环图；cost>0切片 | 真免费0保留在总数/覆盖，但不出零角切片；全部免费走0.00文字。SOURCE_OK；与未修的energy-flow未知AC不同 |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "3. TripDetail（TD01–TD22，22行）",
+    "position": "TD13 每100距离费用",
+    "row": "| TD13 每100距离费用 | TD:595-607：allPriced且totalDistance>0才totalCost/totalDistance*100；unit来自偏好 | 分母是canonical km，mi仅变标签，无mile换算；费用/100mi错误（N09）。距离缺失/不全H1也可稀释/膨胀。BUG |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "3. TripDetail（TD01–TD22，22行）",
+    "position": "TD14 每kWh费用",
+    "row": "| TD14 每kWh费用 | TD:598,611-615 → TM:145-155；仅同一session有限cost/正qualified battery kWh配对Σcost/ΣkWh | 真0cost合法；energy缺失不进入分母；无正能量pair时null。SOURCE_OK；T3 |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "3. TripDetail（TD01–TD22，22行）",
+    "position": "TD15 展开逐次充电费用",
+    "row": "| TD15 展开逐次充电费用 | TD:621-665；每站address、同资格kWh或—、分钟、有效cost+同currency；点击chargeId | 费用已经projection，不直接用TA.totalChargeCost；分钟仍raw H1；不会用估算总费用按比例分摊伪造站费。SOURCE_OK（cost） |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "3. TripDetail（TD01–TD22，22行）",
+    "position": "TD16 电池充电总能量/DCAC分量",
+    "row": "| TD16 电池充电总能量/DCAC分量 | TD:724-727,783,987-1045；按dcChargeIds拆分，非DC全进AC，Σraw energyAdded | 无资格/coverage、unknown primitive0；真0用—隐藏；无aggregate已知DC/unknown也都作AC。BUG H1/N10 |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "3. TripDetail（TD01–TD22，22行）",
+    "position": "TD17 DCAC平均功率",
+    "row": "| TD17 DCAC平均功率 | TD:728-731,1023,1045；Σ组kWh*60/Σ组分钟，duration≤0直接0 | 未确保能量和时长来自同可用集合/真实物理输入点，unknown duration可造0kW；N10/H1。BUG |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "3. TripDetail（TD01–TD22，22行）",
+    "position": "TD18 已耗净kWh/效率及覆盖",
+    "row": "| TD18 已耗净kWh/效率及覆盖 | TD:732-735,1061-1069,769-770 → TA/TS CombinedTripEfficiencySummary | 能量真0负值保留，known/total、paired效率、双coverage与列表相同；算式SOURCE_OK，输入资格H1；负回收仍使用outflow配色语义待像素验收 |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "3. TripDetail（TD01–TD22，22行）",
+    "position": "TD19 leg数/展开drive卡",
+    "row": "| TD19 leg数/展开drive卡 | TD:399-421,1197-1215,1247-1263；drive/charge成员计数，地址、canonical km转显示mi、分钟，driveId导航 | 缺失SavedTripLeg被mapNotNull后不显示原缺项；可能完整标签以幸存成员为分母。BUG（H1/成员覆盖），跳转绑定SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "3. TripDetail（TD01–TD22，22行）",
+    "position": "TD20 展开charge卡",
+    "row": "| TD20 展开charge卡 | TD:1312,1320-1335；AC/DC、地址、raw+energyAdded、duration、chargeId导航 | 不能证明type/energy则当前仍AC/0，N10/H1。BUG；逐次费用卡比此旁路严格，需统一 |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "3. TripDetail（TD01–TD22，22行）",
+    "position": "TD21 添加/合并/删除/返回重算",
+    "row": "| TD21 添加/合并/删除/返回重算 | TD:237-272,469-473 → TM:415-537,554-576；先checkedLocalCarId再write，回流重读TR | 操作入口实际连接持久化；未在本轮执行；parent同scope逻辑总体SOURCE_OK，事务内换scope与被删除leg补偿仍UNVERIFIED；merge候选原range/km见MergeTripSheet.kt:122-141 |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "3. TripDetail（TD01–TD22，22行）",
+    "position": "TD22 旅途天气温度曲线",
+    "row": "| TD22 旅途天气温度曲线 | TD:476-479 → TM:757-761 → WR:370-404,413-442 → TW:63-76,119-135,178-180；每drive点按端点时间线性插时，3..12样本，摄氏按偏好转F | 点已丢timestamp/driveId；partial segment套错drive时间（N05），并非车辆真实温度采样曲线；TW按index等距，缺口问题引用03-D03；缺weathercode晴天引用03-D16。不重复计根因 |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "4. AnnualReport（AR01–AR16，16行）",
+    "position": "AR01 年份/路由标题",
+    "row": "| AR01 年份/路由标题 | AS:46-53,79-82 → AV:99-125,140-159；AY:4-8确保当前/前一年+真实历史 | VM切年清旧stats/months再load；年份不会靠固定2025伪造。SOURCE_OK；跳PDF仍传初始route.year（N03） |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "4. AnnualReport（AR01–AR16，16行）",
+    "position": "AR02 scope/Room/刷新状态",
+    "row": "| AR02 scope/Room/刷新状态 | AV:87-95,103-138,162-186 → SR:239-265；reportLoader核对scope/epoch/year，Stats snapshot单Room cohort | 页面有STALE banner AS:85-89，但freshness来自**另一次**后置AnalysisHistory.load；无standby结果也可能默认FRESH。不是当前snapshot来源时间证明；真实离线/首显UNVERIFIED |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "4. AnnualReport（AR01–AR16，16行）",
+    "position": "AR03 行程/充电次数",
+    "row": "| AR03 行程/充电次数 | AS:259-260,278-279 → SR:329-344,489-498；同scoped车、合格质量、以start本地年归属，跨年整session入开始年 | 空时no_records；不是所有历史raw行。SOURCE_OK；没有“年份中的有效自然采集天数”分母 |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "4. AnnualReport（AR01–AR16，16行）",
+    "position": "AR04 总距离",
+    "row": "| AR04 总距离 | AS:241-255 → SR:150-153/analysisCoverage；有限非负distanceKm求和，至少一份distance样本才显示km | 已知0可显；未知全体不显示fake0；partial仍标总距离无partial计数，N12。SOURCE_OK（计算），BUG（覆盖呈现） |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "4. AnnualReport（AR01–AR16，16行）",
+    "position": "AR05 总净能量",
+    "row": "| AR05 总净能量 | AS:242-267 → SR:152,492；Σqualified有限净kWh，距离缺失不影响能量资格 | 真0/负回收保留；partial显示全量标题，N12。SOURCE_OK（值） |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "4. AnnualReport（AR01–AR16，16行）",
+    "position": "AR06 平均能耗",
+    "row": "| AR06 平均能耗 | AS:271-272 → SR:153/WE；同合格energy+positive distance集合加权Wh/km | canonical Wh/km固定，不受mile偏好。零/负值在年度实际页可显示；无pair unknown；partial分母/估算来源未显示N12。SOURCE_OK（算式） |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "4. AnnualReport（AR01–AR16，16行）",
+    "position": "AR07 充电能量",
+    "row": "| AR07 充电能量 | AS:243-246,283-284 → SR:286/coverage；合格batteryInput≥0有限求和，至少一份energy样本 | unknown全体no_records，不借AC grid输入充电量；partial不解释N12。SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "4. AnnualReport（AR01–AR16，16行）",
+    "position": "AR08 有效充电费用",
+    "row": "| AR08 有效充电费用 | AS:290-291 → AV:56-60 → SR:119-143,287；manual/free/reported/estimated共用有效费用与所选currency | knownTotal非全未知才数值；不同币种不混；显示symbol未附完整code，跨币种metadata由snapshot保存code。SOURCE_OK（资格）；partial费用标题N12 |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "4. AnnualReport（AR01–AR16，16行）",
+    "position": "AR09 每kWh费用",
+    "row": "| AR09 每kWh费用 | AS:295-296 → SR:288/calculateCostTotals；相同charge cost+positive qualified batteryInput配对 | no正pair未知；不拿全charged总量稀释。SOURCE_OK；没有pairedCount说明N12 |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "4. AnnualReport（AR01–AR16，16行）",
+    "position": "AR10 待机kWh",
+    "row": "| AR10 待机kWh | AS:300-303 → AV:171-174 → AM:23-63；算法要求explicit有效容量、相邻不重叠chargeSOC下降且无drive重叠 | 实际AV未传容量，默认null使AM:30直接返回null；当前必走coverage insufficient。SOURCE_DATA_MISSING（容量/物理活动证明），不得补默认电池容量伪修 |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "4. AnnualReport（AR01–AR16，16行）",
+    "position": "AR11 月距离图",
+    "row": "| AR11 月距离图 | AS:498-506 → SR:180-195；按本地年月，Σ已知finite非负km，每month有distanceSampleCount | null不画，真0画小点；UI仅渲染存在记录的month，Jan/Dec被等距邻接，N13；partialcount被丢N12 |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "4. AnnualReport（AR01–AR16，16行）",
+    "position": "AR12 月次数折线",
+    "row": "| AR12 月次数折线 | AS:510-516 → SR:193；合格driveCount/月 | 只existing月份无12月槽，缺月被桥接N13；折线是计数非车辆采样时间线。SOURCE_OK（counts） |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "4. AnnualReport（AR01–AR16，16行）",
+    "position": "AR13 月充电能量柱图",
+    "row": "| AR13 月充电能量柱图 | AS:520-529 → SR:161-178；Σ同月qualified batteryInput | null不画、0点；月energySampleCount未显示；同N12/N13。SOURCE_OK（值） |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "4. AnnualReport（AR01–AR16，16行）",
+    "position": "AR14 平均时长/驾驶日/每天次数",
+    "row": "| AR14 平均时长/驾驶日/每天次数 | AS:651-660 → SR:444-448,495-496；已知非负duration样本mean；有合格drive的distinct本地date数；总driveCount/days | duration缺失不当0；平均样本覆盖未解释；days不是自然记录已全采日期数。SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "4. AnnualReport（AR01–AR16，16行）",
+    "position": "AR15 能耗评级/最高速",
+    "row": "| AR15 能耗评级/最高速 | AS:664-681 → SR:493-494；均耗>0按150/180/220Wh/km阈值；≤0显示真实均耗不评级；最高规范化kmh | 无source不得填max0；真实0max可显；阈值是产品规则非提供方测量，不能外推节能驾驶结论。SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "4. AnnualReport（AR01–AR16，16行）",
+    "position": "AR16 最繁忙日/单日最多距离/生成PDF",
+    "row": "| AR16 最繁忙日/单日最多距离/生成PDF | AS:685-691；SR:512选记录数最多，SR:446-448,513选已知距sum最大；AS:123 → NavGraph:965-966 | 全日distance都unknown时empty.sum=0可生出“最多距离0km”日，需同AR04保持未知；PDF跨页year错N03。BUG（N03/缺失日总量） |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "5. AnnualReportPDF（PF01–PF18，18行；同时审预览与文件）",
+    "position": "PF01 年份芯片/标题",
+    "row": "| PF01 年份芯片/标题 | PS:44-45,77,100-109 → PV:102-172；同snapshot年份 | 候选仅Stats真实年份；无数据指定年仍可加载空snapshot；VM generation保护完整。SOURCE_OK（页内）；Annual入口N03 |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "5. AnnualReportPDF（PF01–PF18，18行；同时审预览与文件）",
+    "position": "PF02 预览描述/vehicle summary",
+    "row": "| PF02 预览描述/vehicle summary | PS:120-126；year模板文案 | 描述不是实际PDF像素预览；文件标题PS:316-317是通用vehicle summary，未嵌具体车身份。SOURCE_OK（实际文案），不是已验证真实车辆标识 |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "5. AnnualReportPDF（PF01–PF18，18行；同时审预览与文件）",
+    "position": "PF03 预览距离/行程数",
+    "row": "| PF03 预览距离/行程数 | PS:133-146 → frozen stats.quickStats，distance sample>0门，km | 空计数直接0；distance全unknown显示no_records；部分合计没说明N12。SOURCE_OK（值） |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "5. AnnualReportPDF（PF01–PF18，18行；同时审预览与文件）",
+    "position": "PF04 预览净能量/平均能耗",
+    "row": "| PF04 预览净能量/平均能耗 | PS:147-158；kWh/Whkm | 净能量有限0负保留；效率额外`>0`使合格0/负均耗消失，而文件PS:337接受finite（N14）。BUG |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "5. AnnualReportPDF（PF01–PF18，18行；同时审预览与文件）",
+    "position": "PF05 预览充电次数/能量",
+    "row": "| PF05 预览充电次数/能量 | PS:151,160-162；count和qualified batteryInput total | chargeEnergy样本>0门、真0可见；partial无coverage N12。SOURCE_OK（绑定） |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "5. AnnualReportPDF（PF01–PF18，18行；同时审预览与文件）",
+    "position": "PF06 生成/分享/错误",
+    "row": "| PF06 生成/分享/错误 | PS:169-190,49-70 → PV:183-207冻结scope/year/snapshot、IO调用generatePdf，再校验发布path | 真生成路径已连接PdfDocument/FileProvider/ACTION_SEND；本轮未运行/未点share。分享错误仅log，不提供用户失败反馈；SOURCE_OK（可达源码），实际可用UNVERIFIED |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "5. AnnualReportPDF（PF01–PF18，18行；同时审预览与文件）",
+    "position": "PF07 文件标题/页尾",
+    "row": "| PF07 文件标题/页尾 | PS:313-318,433-436；year、通用vehicle summary、generated_by | 可翻页新Page，日期/车/source/版本不随文件输出；后续身份审查不能凭文件名认定车。SOURCE_DATA_MISSING（file-level provenance） |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "5. AnnualReportPDF（PF01–PF18，18行；同时审预览与文件）",
+    "position": "PF08 文件总距离/次数",
+    "row": "| PF08 文件总距离/次数 | PS:304-305,322-328；同冻结qs；km | noDistance sample为no_records；count0是0。与预览同snapshot，运行文件验证UNVERIFIED；partial缺覆盖N12 |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "5. AnnualReportPDF（PF01–PF18，18行；同时审预览与文件）",
+    "position": "PF09 文件净能量/平均能耗",
+    "row": "| PF09 文件净能量/平均能耗 | PS:306-307,329-342；qualified kWh与加权Wh/km | 0/负均耗finite可输出，correct；partial未注明N12；Wh/km固定不误用英里单位。SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "5. AnnualReportPDF（PF01–PF18，18行；同时审预览与文件）",
+    "position": "PF10 文件充电次数/能量/费用",
+    "row": "| PF10 文件充电次数/能量/费用 | PS:308-311,344-356；batteryInput kWh；knownTotal cost+currencySymbol；有cost sample且finite才打印cost行 | 真免费0可输出；全unknown费用行省略。手动/报告同币种pipeline保留；partial未说明N12。SOURCE_OK（计算） |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "5. AnnualReportPDF（PF01–PF18，18行；同时审预览与文件）",
+    "position": "PF11 最长drive纪录",
+    "row": "| PF11 最长drive纪录 | PS:361-365 → SR:426-428,502按qualified distanceKm选row，却输出原DriveSummary.distance | 选手与显示值可能分离；校正receipt100km但raw列10会输出10，H1扩展，需输出投影值/证据。BUG（H1） |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "5. AnnualReportPDF（PF01–PF18，18行；同时审预览与文件）",
+    "position": "PF12 最高速drive纪录",
+    "row": "| PF12 最高速drive纪录 | PS:367-368 → SR:503按qualified speedKmh选row，输出原speedMax+startDate | 同H1；record date是原字符串不带独立观测时间，物理max source合同沿03。BUG（H1扩展） |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "5. AnnualReportPDF（PF01–PF18，18行；同时审预览与文件）",
+    "position": "PF13 最节能drive纪录",
+    "row": "| PF13 最节能drive纪录 | PS:370-372 → SR:504选择positiveWh/km且distanceKm>5，回传row.efficiency | 合格0/负drive被产品纪录条件排除，显示值又绕投影H1；`N/A`仅缺raw efficiency。SOURCE_OK（实际选择规则），BUG（H1值绑定） |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "5. AnnualReportPDF（PF01–PF18，18行；同时审预览与文件）",
+    "position": "PF14 月距离图",
+    "row": "| PF14 月距离图 | PS:382-387：12个nullable槽，month1..12填qualified totalDistance | 比年度UI完整保留12月轴；null不画/0点；coverage sample count未写N12。SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "5. AnnualReportPDF（PF01–PF18，18行；同时审预览与文件）",
+    "position": "PF15 月净能量图",
+    "row": "| PF15 月净能量图 | PS:390-394：12槽qualified totalEnergy；PS:268-283允许负柱及0点 | 保留回收负值；不将unknown月份当0；月极大Double→Float溢出仍未独立finite gate，运行UNVERIFIED。SOURCE_OK（正常域） |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "5. AnnualReportPDF（PF01–PF18，18行；同时审预览与文件）",
+    "position": "PF16 月充电能量图",
+    "row": "| PF16 月充电能量图 | PS:398-405：12槽qualified totalEnergy batteryInput | 无整个monthly数据时PS:408-409明确no_monthly；仅有unknownmetric时coverage insufficient。SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "5. AnnualReportPDF（PF01–PF18，18行；同时审预览与文件）",
+    "position": "PF17 平均drive分钟/驾驶天/最高速/效率评级",
+    "row": "| PF17 平均drive分钟/驾驶天/最高速/效率评级 | PS:415-429 → 与AR14/AR15同quickStats | 文件没有年度页的busiest/most-distance-day，也没有地域图/完整充电表；不将源码其他统计字段冒充PDF已输出。SOURCE_OK（实际内容） |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "5. AnnualReportPDF（PF01–PF18，18行；同时审预览与文件）",
+    "position": "PF18 PDF布局/页数/保存文件",
+    "row": "| PF18 PDF布局/页数/保存文件 | PS:200-203 A4 595×842，PS:234-263按y空间翻页；PS:440-450写cacheDir固定`matelink_annual_report_YEAR.pdf` | 本轮没有生成文件，PDF实际页数未知、字体/行宽/图表像素均UNVERIFIED；同year覆盖跨车/跨账号文件身份风险N16。SOURCE_OK（生成调用存在）/BUG（文件身份） |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "6. Export（EX01–EX24，24行；含全部CSV/JSON列）",
+    "position": "EX01 格式CSV/JSON",
+    "row": "| EX01 格式CSV/JSON | ES:65-73 → EV:65-67 → DE:17-20,55-57 | 实际选择extension/MIME和writer，不是样例按钮；未运行。SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "6. Export（EX01–EX24，24行；含全部CSV/JSON列）",
+    "position": "EX02 数据类型drive/charge/both",
+    "row": "| EX02 数据类型drive/charge/both | ES:90-99 → EV:69-72,124-138 → DE:86-96,111-140 | BOTH CSV包含两张不同header的表，用空行分隔；不是一个统一8列关系表，接收者需按Type/section解析。SOURCE_OK（实际格式） |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "6. Export（EX01–EX24，24行；含全部CSV/JSON列）",
+    "position": "EX03 年份/AllTime",
+    "row": "| EX03 年份/AllTime | ES:114-128只列前5真实year → EV:74-84,121-122 | 仅年或alltime，没有任意日起止；年份来自SR scoped cohort，行数据却直接raw remote carId Room（N01）；无offset边界字符串比较N15 |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "6. Export（EX01–EX24，24行；含全部CSV/JSON列）",
+    "position": "EX04 预览drive/charge count",
+    "row": "| EX04 预览drive/charge count | ES:145-153 → EV:79-108 → DD:197-219/CD:127-149 | count只observed/derived；AllTime实际data getter允许所有非quarantine（N15），两者行数不一致；每次选择launch不cancel旧count（N15） |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "6. Export（EX01–EX24，24行；含全部CSV/JSON列）",
+    "position": "EX05 导出按钮/加载/错误",
+    "row": "| EX05 导出按钮/加载/错误 | ES:159-171,189-194 → EV:116-155；counts>0且!isExporting使button可用 | state.format/dataType/year先捕获，carId是可变实例字段；没有source/context校验或before/aftergeneration；N01。实际IO异常显示原message，运行UNVERIFIED |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "6. Export（EX01–EX24，24行；含全部CSV/JSON列）",
+    "position": "EX06 shareUri/MIME/接收方",
+    "row": "| EX06 shareUri/MIME/接收方 | ES:175-185 → DE:31-35；FileProvider URI/ACTION_SEND，read grant | share用**当前uiState.format**，可与正在生成的旧format不一致（N15）；scope换账号仍能发布旧URI（N01）。本次未分享 |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "6. Export（EX01–EX24，24行；含全部CSV/JSON列）",
+    "position": "EX07 文件路径/名称/保留",
+    "row": "| EX07 文件路径/名称/保留 | DE:49-64,152-157：cacheDir，秒级timestamp，导出前清>1h的matelink_export文件 | 非下载操作；没有写入用户Download。本轮未执行。秒级并发/相邻按钮可复用同URI并覆盖（N16）；不含车/source/windowmanifest |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "6. Export（EX01–EX24，24行；含全部CSV/JSON列）",
+    "position": "EX08 CSV drive `Type`",
+    "row": "| EX08 CSV drive `Type` | DE:87-89固定DRIVE；JSON用drives数组区分 | 类型固定是record kind，不是source。SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "6. Export（EX01–EX24，24行；含全部CSV/JSON列）",
+    "position": "EX09 CSV drive `Start Date`",
+    "row": "| EX09 CSV drive `Start Date` | DE:89直接d.startDate，csvEscape | 原Room字符串，可能offset/无offset混合，不转换/不附timezone说明。资格/窗口未验（N01/N15），H1 |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "6. Export（EX01–EX24，24行；含全部CSV/JSON列）",
+    "position": "EX10 CSV drive `End Date`",
+    "row": "| EX10 CSV drive `End Date` | DE:89直接d.endDate，csvEscape | Room非空字段；原missing可能空字符串而非明确null。H1 |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "6. Export（EX01–EX24，24行；含全部CSV/JSON列）",
+    "position": "EX11 CSV `Distance (km)`",
+    "row": "| EX11 CSV `Distance (km)` | DE:89直接d.distance，无nullable receipt/finite门 | canonical列声明km，正常数据无需英里偏好；缺失placeholder0变真实0、raw错值沿H1；invalid NaN/∞会写文本。BUG（H1） |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "6. Export（EX01–EX24，24行；含全部CSV/JSON列）",
+    "position": "EX12 CSV `Energy (kWh)`",
+    "row": "| EX12 CSV `Energy (kWh)` | DE:89直接d.energyConsumed，经csvEscape | null空cell，负数被通用公式防护加单引号（DE:73-74），变文本型而非可计算净kWh；未附method/quality/coverage。H1及typed-output缺口 |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "6. Export（EX01–EX24，24行；含全部CSV/JSON列）",
+    "position": "EX13 CSV `Efficiency (Wh/km)`",
+    "row": "| EX13 CSV `Efficiency (Wh/km)` | DE:89直接d.efficiency，经csvEscape | 没用qualified netEnergy/paired距离重算；null空、负数加apostrophe，同EX12；不输出依据/覆盖。BUG（H1扩展） |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "6. Export（EX01–EX24，24行；含全部CSV/JSON列）",
+    "position": "EX14 CSV `Max Speed (km/h)`",
+    "row": "| EX14 CSV `Max Speed (km/h)` | DE:89直接d.speedMax，经csvEscape | 非空primitive0无法表示unknown；不会按preferredstatus改单位，列是canonical kmh；H1 |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "6. Export（EX01–EX24，24行；含全部CSV/JSON列）",
+    "position": "EX15 CSV drive `Duration (min)`",
+    "row": "| EX15 CSV drive `Duration (min)` | DE:89直接d.durationMin | 原非空Int，missing/true0混合；invalid负值未排除；没有duration-str或sample覆盖。BUG（H1） |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "6. Export（EX01–EX24，24行；含全部CSV/JSON列）",
+    "position": "EX16 CSV charge `Energy Added (kWh)`",
+    "row": "| EX16 CSV charge `Energy Added (kWh)` | DE:94-96直接c.energyAdded，Type=CHARGE | 未走qualified batteryInputKwh，不能保证物理输入点；unknown0、不同质量行、旧未证energy都会导出。BUG（H1） |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "6. Export（EX01–EX24，24行；含全部CSV/JSON列）",
+    "position": "EX17 CSV charge `Cost`",
+    "row": "| EX17 CSV charge `Cost` | DE:96直接c.cost，csvEscape | 没用effective cost/manual/free/currency projection，没currency列，跨币种数字混表（N07）；null空，0保留。BUG |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "6. Export（EX01–EX24，24行；含全部CSV/JSON列）",
+    "position": "EX18 CSV charge `Duration (min)`",
+    "row": "| EX18 CSV charge `Duration (min)` | DE:96直接c.durationMin，csvEscape | 原primitive，未知0；inrange与alltime集合不一致N15；H1 |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "6. Export（EX01–EX24，24行；含全部CSV/JSON列）",
+    "position": "EX19 CSV `Start Battery %`",
+    "row": "| EX19 CSV `Start Battery %` | DE:96直接c.startBatteryLevel | 未重建nullable receipt，unknown写0%，也不拒绝-1/101；H1，不是当前SOC替历史 |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "6. Export（EX01–EX24，24行；含全部CSV/JSON列）",
+    "position": "EX20 CSV `End Battery %`",
+    "row": "| EX20 CSV `End Battery %` | DE:96直接c.endBatteryLevel | 与EX19相同；无边界observedAt，不可据此声称充电完整观测。BUG（H1） |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "6. Export（EX01–EX24，24行；含全部CSV/JSON列）",
+    "position": "EX21 JSON `exportDate`",
+    "row": "| EX21 JSON `exportDate` | DE:109：设备默认timezone格式yyyy-MM-dd'T'HH:mm:ss，无offset | 描述文件生成时刻，不是观测时刻；无car/window manifest，不能仅靠该字段重建来源。SOURCE_DATA_MISSING（timezone/provenance） |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "6. Export（EX01–EX24，24行；含全部CSV/JSON列）",
+    "position": "EX22 JSON drive全部键",
+    "row": "| EX22 JSON drive全部键 | DE:115-121：`startDate,endDate,distanceKm,energyKwh,efficiencyWhKm,maxSpeedKmh,durationMin` | 与EX09-15相同raw列；nullable energy/efficiency用JSONObject.put(key,null)会删除键而非显式JSON null（end/max显式NULL分支对非空列不可达）；nonfinite数值会抛错而CSV写文本。H1/两格式null语义不一致 |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "6. Export（EX01–EX24，24行；含全部CSV/JSON列）",
+    "position": "EX23 JSON charge全部键",
+    "row": "| EX23 JSON charge全部键 | DE:131-137：`startDate,endDate,energyAddedKwh,cost,durationMin,startBatteryPercent,endBatteryPercent` | cost显式JSONObject.NULL正确；energy/SOC依旧raw非空H1，cost无币种/override N07；不含chargeId/receipt/window proof |",
+    "historical_removed": false
+  },
+  {
+    "report": "06-trips-reports.md",
+    "section": "6. Export（EX01–EX24，24行；含全部CSV/JSON列）",
+    "position": "EX24 转义/排序/源字段缺口",
+    "row": "| EX24 转义/排序/源字段缺口 | DE:67-76,164-191：CSV引号/逗号/换行escape，JSON递归key排序且保数组顺序 | 无VIN/照片/credentials字段，这是源码结论；输出也无record ID、source、method、quality、currency、sample coverage。不能作可追溯完整备份或跨页面验收receipt，SOURCE_DATA_MISSING；CSV numeric与string应分类型处理 |",
+    "historical_removed": false
+  },
+  {
+    "report": "07-system.md",
+    "section": "",
+    "position": "More 数据状态标题/说明",
+    "row": "| More 数据状态标题/说明 | 静态strings，不读取车辆状态 | 明示统计需要积累历史，无实时成功断言 | S/more/MoreScreen.kt:136；values-zh/strings.xml:301 | SOURCE_OK，说明不是连接实测 |",
+    "historical_removed": false
+  },
+  {
+    "report": "07-system.md",
+    "section": "",
+    "position": "More 分析/报告/系统全部入口",
+    "row": "| More 分析/报告/系统全部入口 | NavGraph传入carId；回调转目标路由 | 无汇总计算；入口不是数据已就绪 | MoreScreen.kt:158–232；NavGraph.kt:1038 | 受01当前车辆绑定P1影响；不能默认ID=1 |",
+    "historical_removed": false
+  },
+  {
+    "report": "07-system.md",
+    "section": "",
+    "position": "Settings 账号授权/退出/配对",
+    "row": "| Settings 账号授权/退出/配对 | TeslaLoginViewModel/SessionStore | 用户/车辆确认状态，不以页面能进替事件成功 | SettingsScreen.kt:145的accountContent、01报告 | 交由01完整审核，不能重复算通过 |",
+    "historical_removed": false
+  },
+  {
+    "report": "07-system.md",
+    "section": "",
+    "position": "Settings 连接模式",
+    "row": "| Settings 连接模式 | ConnectionModeStore、配置推断 | CLOUD/SELF_HOSTED；无车数据数值 | SettingsViewModel.kt:129–146 | SOURCE_OK；云空自托管地址为正常非必填 |",
+    "historical_removed": false
+  },
+  {
+    "report": "07-system.md",
+    "section": "",
+    "position": "Settings 主服务器URL",
+    "row": "| Settings 主服务器URL | SettingsDataStore | 用户字符串，serverUrlForDisplay、URL校验 | SettingsViewModel.kt:89、135；SettingsScreen服务器区 | SOURCE_OK；不是固定默认服务器即成功 |",
+    "historical_removed": false
+  },
+  {
+    "report": "07-system.md",
+    "section": "",
+    "position": "Settings API Token",
+    "row": "| Settings API Token | SettingsDataStore/加密或既有存储合同 | 直接输入、密码样式，不参与统计 | SettingsViewModel.kt:140；SettingsScreen.kt:515 | SOURCE_OK(源码)，不读取/记录真实值 |",
+    "historical_removed": false
+  },
+  {
+    "report": "07-system.md",
+    "section": "",
+    "position": "Settings HTTP提示/连接测试/车辆数/首车名",
+    "row": "| Settings HTTP提示/连接测试/车辆数/首车名 | 显式testConnection请求，ServerTestResult | 连接成功只证明该次请求；显示车数和首名 | SettingsViewModel ServerTestResult:75–86、testConnection | UNVERIFIED真实服务；不等于完整历史或Fleet事件 |",
+    "historical_removed": false
+  },
+  {
+    "report": "07-system.md",
+    "section": "",
+    "position": "Settings 语言",
+    "row": "| Settings 语言 | SettingsDataStore.languageCode | 本地配置、重建UI | SettingsViewModel.kt:144、206 | SOURCE_OK |",
+    "historical_removed": false
+  },
+  {
+    "report": "07-system.md",
+    "section": "",
+    "position": "Settings 货币",
+    "row": "| Settings 货币 | SettingsDataStore.currencyCode | 只选币种，不等于汇率换算 | SettingsViewModel.kt:142、192；费用投影合同 | SOURCE_OK；金额资格另见02/05 |",
+    "historical_removed": false
+  },
+  {
+    "report": "07-system.md",
+    "section": "",
+    "position": "Settings 短行程/短充显示开关",
+    "row": "| Settings 短行程/短充显示开关 | SettingsDataStore.showShortDrivesCharges | 控制列表过滤，不删除历史 | SettingsViewModel.kt:143、199 | SOURCE_OK，过滤空态不是源丢数据 |",
+    "historical_removed": false
+  },
+  {
+    "report": "07-system.md",
+    "section": "",
+    "position": "Settings Mock开关/调试项",
+    "row": "| Settings Mock开关/调试项 | SettingsRepository.mockMode；构建条件 | 模拟来源与正式来源需隔离 | SettingsViewModel.kt:128、223；Screen调试分支 | UNVERIFIED正式候选逐分支实机，不能把模拟数计真实 |",
+    "historical_removed": false
+  },
+  {
+    "report": "07-system.md",
+    "section": "",
+    "position": "Settings 同步状态/重同步按钮/成功错误",
+    "row": "| Settings 同步状态/重同步按钮/成功错误 | 同步服务及本地状态 | 不从本机行数推定上游完整；确认交互后触发 | SettingsScreen.kt:817–831；SettingsViewModel resync | SOURCE_OK(入口)；真实多次刷新待同ID对账 |",
+    "historical_removed": false
+  },
+  {
+    "report": "07-system.md",
+    "section": "",
+    "position": "Settings 多实例编辑、旧secondary/basic auth字段",
+    "row": "| Settings 多实例编辑、旧secondary/basic auth字段 | 源码保留但`if(false)`块不展示 | 不当成当前用户可见功能 | SettingsScreen.kt:368附近 | 不计可见参数缺数据；不得误称可用多实例切换 |",
+    "historical_removed": false
+  },
+  {
+    "report": "07-system.md",
+    "section": "",
+    "position": "Tariff 默认单价",
+    "row": "| Tariff 默认单价 | SettingsDataStore.defaultChargePrice | 有限且>=0，单位所选币/kWh | TariffConfigViewModel.kt:58–61；Screen.kt:198–208 | SOURCE_OK输入；费用消费者02/05另验 |",
+    "historical_removed": false
+  },
+  {
+    "report": "07-system.md",
+    "section": "",
+    "position": "Tariff 启用峰平谷",
+    "row": "| Tariff 启用峰平谷 | DataStore.tariffEnabled | 开关只保存；生产费用未读取这组字段 | ViewModel.kt:53–55；全main引用索引 | **BUG SYS-01**，开关未打通实际计费 |",
+    "historical_removed": false
+  },
+  {
+    "report": "07-system.md",
+    "section": "",
+    "position": "Tariff 峰单价",
+    "row": "| Tariff 峰单价 | DataStore.tariffPeakPrice | Double，无有限/非负检查 | ViewModel.kt:64–66；Screen.kt:373 | **BUG SYS-02**，可保存负/NaN/Inf |",
+    "historical_removed": false
+  },
+  {
+    "report": "07-system.md",
+    "section": "",
+    "position": "Tariff 平单价",
+    "row": "| Tariff 平单价 | DataStore.tariffFlatPrice | 同上 | ViewModel.kt:69–71 | **BUG SYS-02** |",
+    "historical_removed": false
+  },
+  {
+    "report": "07-system.md",
+    "section": "",
+    "position": "Tariff 谷单价",
+    "row": "| Tariff 谷单价 | DataStore.tariffValleyPrice | 同上 | ViewModel.kt:74–76 | **BUG SYS-02** |",
+    "historical_removed": false
+  },
+  {
+    "report": "07-system.md",
+    "section": "",
+    "position": "Tariff 峰/平/谷时间段及小时数",
+    "row": "| Tariff 峰/平/谷时间段及小时数 | 本地JSON数组TimeRange | 包含结束小时；列表分别求和 | TariffConfigScreen.kt:69–108、533–536 | 未校验跨组重叠/完整24小时；预览权重可重复，P2 |",
+    "historical_removed": false
+  },
+  {
+    "report": "07-system.md",
+    "section": "",
+    "position": "Tariff 月费用预览/分段/节省",
+    "row": "| Tariff 月费用预览/分段/节省 | 用户费率+明确假设50kWh | 小时加权单价×50；比较三价格简单均值，节省下限0 | Screen.kt:532–548、596 | HYPOTHETICAL，明确显示“假设月充电50kWh”，不是用户月账单；SOURCE_OK为演算，不能算真车数据 |",
+    "historical_removed": false
+  },
+  {
+    "report": "07-system.md",
+    "section": "",
+    "position": "Tariff 货币符号/重置",
+    "row": "| Tariff 货币符号/重置 | 当前设置加载符号；reset整个UiState为CNY | 重置不修改真实currencyCode | ViewModel.kt:48、94–97 | **BUG SYS-03(P2)**，非CNY用户重置后符号错误 |",
+    "historical_removed": false
+  },
+  {
+    "report": "07-system.md",
+    "section": "",
+    "position": "TPMS设置 目标胎压",
+    "row": "| TPMS设置 目标胎压 | DataStore.get/saveTpmsAlertProfile(currentCarId) | bar、TpmsAlertProfile.isValid | SettingsViewModel.kt:131–151、282–305；TpmsSettingsScreen.kt:131 | **BUG SYS-04**：保存远端正ID，监测读localHistoryCarId负ID |",
+    "historical_removed": false
+  },
+  {
+    "report": "07-system.md",
+    "section": "",
+    "position": "TPMS设置 低压阈值",
+    "row": "| TPMS设置 低压阈值 | 同一profile | 有限、低于目标；单位bar | SettingsViewModel.kt:285–288；Screen.kt:140 | 验证正确，作用域键同SYS-04 |",
+    "historical_removed": false
+  },
+  {
+    "report": "07-system.md",
+    "section": "",
+    "position": "TPMS设置 高压阈值",
+    "row": "| TPMS设置 高压阈值 | 同一profile | 有限、高于目标；单位bar | SettingsViewModel.kt:286–288；Screen.kt:149 | 验证正确，作用域键同SYS-04 |",
+    "historical_removed": false
+  },
+  {
+    "report": "07-system.md",
+    "section": "",
+    "position": "TPMS设置 启用/当前车ID/保存成功",
+    "row": "| TPMS设置 启用/当前车ID/保存成功 | 当前全局SettingsRepository.currentCarId | 成功表示写入成功，不证明worker采用 | SettingsViewModel.kt:299–305；Screen.kt:163 | SYS-04会造成“已保存/启用”但不生效 |",
+    "historical_removed": false
+  },
+  {
+    "report": "07-system.md",
+    "section": "",
+    "position": "TPMS变化提醒 开关/变化bar/时间小时",
+    "row": "| TPMS变化提醒 开关/变化bar/时间小时 | cached verified context→localHistoryCarId→TpmsChangeRuleStore | candidate.valid后保存同localId | TpmsChangeSettingsCard.kt:23–43 | SOURCE_OK，与上面旧profile键不同；未验证身份时不显示，不能猜读 |",
+    "historical_removed": false
+  },
+  {
+    "report": "07-system.md",
+    "section": "",
+    "position": "AmapSetup 配置/隐私/已保存/已验证/重启状态",
+    "row": "| AmapSetup 配置/隐私/已保存/已验证/重启状态 | AmapSettingsStore + AmapSetupViewModel事务状态 | 枚举状态，无虚假车辆数 | AmapSetupGuideScreen.kt:318–383 | SOURCE_OK源码；真实Key/SDK可用性UNVERIFIED |",
+    "historical_removed": false
+  },
+  {
+    "report": "07-system.md",
+    "section": "",
+    "position": "AmapSetup 包名/构建类型/SHA1",
+    "row": "| AmapSetup 包名/构建类型/SHA1 | Android安装身份provider | 签名散列/元信息，非车辆测点 | GuideScreen.kt:286–301 | SOURCE_OK获取路线；实际发布签名需候选包复核 |",
+    "historical_removed": false
+  },
+  {
+    "report": "07-system.md",
+    "section": "",
+    "position": "AmapSetup Key输入/验证结果/复制项",
+    "row": "| AmapSetup Key输入/验证结果/复制项 | 本机保存Key、用户输入/地图回执 | mask/校验/事务结束，不把存在Key当验证成功 | GuideScreen.kt:345–383、440–466；AmapSetupViewModel | UNVERIFIED真实SDK；本审查不读取真实Key |",
+    "historical_removed": false
+  },
+  {
+    "report": "07-system.md",
+    "section": "",
+    "position": "AmapPreview 坐标点/标记",
+    "row": "| AmapPreview 坐标点/标记 | getCars验证身份→snapshot/status→scoped VehicleStatusStore | VehiclePositionResolver有限坐标；不从缺坐标补默认用户位置 | AmapMapViewModel.kt:115–160 | SOURCE_OK资格；离线cold fetch getCars失败时不取已存位置，P2缓存缺口 |",
+    "historical_removed": false
+  },
+  {
+    "report": "07-system.md",
+    "section": "",
+    "position": "AmapPreview 历史位置及时间",
+    "row": "| AmapPreview 历史位置及时间 | getCachedPosition(scope,verified) | 明确positionHistorical及observedAt | AmapMapViewModel.kt:153–160；AmapMapScreen.kt:65–79 | SOURCE_OK标识；UI无坐标明确说明，SDK默认城市不能冒充车位 |",
+    "historical_removed": false
+  },
+  {
+    "report": "07-system.md",
+    "section": "",
+    "position": "AmapPreview 加载/成功/失败",
+    "row": "| AmapPreview 加载/成功/失败 | AmapMapView回调+15s保护 | 成功与失败状态，不是观测新鲜度 | AmapMapScreen.kt:38–77 | UNVERIFIED实际SDK/签名/权限；不以编译代替 |",
+    "historical_removed": false
+  },
+  {
+    "report": "07-system.md",
+    "section": "",
+    "position": "About 版本/提交",
+    "row": "| About 版本/提交 | BuildConfig.VERSION_NAME/GIT_SHA | 字符串 | AboutScreen.kt:162–164 | SOURCE_OK；dirty仍显示HEAD不能唯一证明当前源码 |",
+    "historical_removed": false
+  },
+  {
+    "report": "07-system.md",
+    "section": "",
+    "position": "About 隐私/协议/帮助公开链接",
+    "row": "| About 隐私/协议/帮助公开链接 | PublicInfoLinks + BuildConfig public base | 白名单URL；未配置有提示 | AboutScreen.kt:110–119 | UNVERIFIED公开页面当前内容/在线可达，不操作用户账号 |",
+    "historical_removed": false
+  },
+  {
+    "report": "07-system.md",
+    "section": "",
+    "position": "DataReadiness 已报告/可用/未知数",
+    "row": "| DataReadiness 已报告/可用/未知数 | 六类服务端readiness items | reported非null；available有限状态；unknown含缺项，分母6 | DataReadinessScreen.kt:119–143 | SOURCE_OK计数；无响应为0已报告、6未知，不伪造车端0 |",
+    "historical_removed": false
+  },
+  {
+    "report": "07-system.md",
+    "section": "",
+    "position": "DataReadiness 实时/位置/TPMS/行程/充电/电池健康状态",
+    "row": "| DataReadiness 实时/位置/TPMS/行程/充电/电池健康状态 | readiness six-key白名单、source/lastObservedAt | readinessItemStatus有限枚举、未知fallback | Screen.kt:72–89、310–383 | SOURCE_OK映射；实际每项raw观测UNVERIFIED |",
+    "historical_removed": false
+  },
+  {
+    "report": "07-system.md",
+    "section": "",
+    "position": "DataReadiness 授权/车辆/接收/资格/历史/展示诊断",
+    "row": "| DataReadiness 授权/车辆/接收/资格/历史/展示诊断 | readiness verified receipt + local evidence session | captures同scope，await后反复current；PASS为已观测/处理非全产品成功 | ViewModel.kt:191–228；ReadinessDiagnosticCards.kt:30–76 | SOURCE_OK证据层级；真实Fleet首事件未获本轮证明 |",
+    "historical_removed": false
+  },
+  {
+    "report": "07-system.md",
+    "section": "",
+    "position": "DataReadiness 配对/钥匙/配置同步/最后观测",
+    "row": "| DataReadiness 配对/钥匙/配置同步/最后观测 | getTelemetryPairingStatus + official URL校验 | configured不等于车主钥匙已确认 | Screen.kt:233–300；ViewModel.kt:230–280 | UNVERIFIED车主操作；不得补假就绪 |",
+    "historical_removed": false
+  },
+  {
+    "report": "07-system.md",
+    "section": "",
+    "position": "DataReadiness 归档绑定/迁移资格/目标/完成",
+    "row": "| DataReadiness 归档绑定/迁移资格/目标/完成 | migration inspect+verified车辆、里程 | 独立资格和用户确认，无自动生产迁移 | ViewModel.kt:200–221、360以后；Screen.kt:460–530 | 源码可追；本轮不操作迁移/真实数据 |",
+    "historical_removed": false
+  },
+  {
+    "report": "07-system.md",
+    "section": "",
+    "position": "Updates 总更新次数",
+    "row": "| Updates 总更新次数 | repository.getUpdates→allUpdates→过滤 | items.size | SoftwareVersionsViewModel.kt:159–184、245；Screen.kt:177 | SOURCE_OK源码，数据缺源时不应承诺完整历史 |",
+    "historical_removed": false
+  },
+  {
+    "report": "07-system.md",
+    "section": "",
+    "position": "Updates 平均更新间隔",
+    "row": "| Updates 平均更新间隔 | 已知start Instant排序 | 相邻间隔毫秒/86400000平均；不足2为null | ViewModel.kt:235–243 | SOURCE_OK公式；无日期不算0天 |",
+    "historical_removed": false
+  },
+  {
+    "report": "07-system.md",
+    "section": "",
+    "position": "Updates 最早/最新版本",
+    "row": "| Updates 最早/最新版本 | 有合法日期的version序列 | first/last，清版本尾部 | ViewModel.kt:238、247–248、269 | SOURCE_OK，缺版本Unknown非观测 |",
+    "historical_removed": false
+  },
+  {
+    "report": "07-system.md",
+    "section": "",
+    "position": "Updates 每次版本/安装/结束/升级耗时/驻留天数/当前标识",
+    "row": "| Updates 每次版本/安装/结束/升级耗时/驻留天数/当前标识 | UpdateData start/end→projection | 负时长拒绝；最新start至now，其余至下一版本start | ViewModel.kt:202–229；Screen update cards | SOURCE_OK源码；进行中记录是否代表已安装需producer约束，UNVERIFIED |",
+    "historical_removed": false
+  },
+  {
+    "report": "07-system.md",
+    "section": "",
+    "position": "Updates 月柱图/日期筛选/最长高亮",
+    "row": "| Updates 月柱图/日期筛选/最长高亮 | projection选中月份或ALL_TIME | 图表ALL_TIME仍固定最近24个月；列表可更早 | ViewModel.kt:252–265 | P2时间窗/覆盖说明缺口，不能图表当全部历史 |",
+    "historical_removed": false
+  },
+  {
+    "report": "07-system.md",
+    "section": "",
+    "position": "WhereWasI 目标时间/活动类型",
+    "row": "| WhereWasI 目标时间/活动类型 | target timestamp+该日UnifiedHistory | 包含起止范围找activeDrive/Charge否则推parked | WhereWasIViewModel.kt:90–139 | **BUG SYS-05**身份/代际栅栏缺失；cached-only直接退出导致离线不显示 |",
+    "historical_removed": false
+  },
+  {
+    "report": "07-system.md",
+    "section": "",
+    "position": "WhereWasI 经纬度/地图/地点/国家/城市/地址",
+    "row": "| WhereWasI 经纬度/地图/地点/国家/城市/地址 | detail nearest point或charge位置→geocode | nearest无最大间隔，无逐点资格；异步geocode直接写UI | VM:150–184、187–217、432以后；Screen.kt:198、268–346 | **BUG SYS-05/06**，不能证明精确“当时在此” |",
+    "historical_removed": false
+  },
+  {
+    "report": "07-system.md",
+    "section": "",
+    "position": "WhereWasI 里程表/行程距离",
+    "row": "| WhereWasI 里程表/行程距离 | drive.odometerEnd/distance或charge.odometer | 端点值非目标时刻；UnitFormatter使用当前status units | VM:171、175、207、271；Screen.kt:364–396 | SYS-06时点/同响应单位缺证据，缺值— |",
+    "historical_removed": false
+  },
+  {
+    "report": "07-system.md",
+    "section": "",
+    "position": "WhereWasI 速度",
+    "row": "| WhereWasI 速度 | 最近detail position.speed | 无插值、无时间距离上限 | VM:157–173；Screen.kt:388–389 | SOURCE_DATA_MISSING/BUG，不能用远时刻点标瞬时速度 |",
+    "historical_removed": false
+  },
+  {
+    "report": "07-system.md",
+    "section": "",
+    "position": "WhereWasI 车外温度",
+    "row": "| WhereWasI 车外温度 | nearest.outsideTemp否则drive/charge均温 | 历史均温不等于目标时刻 | VM:172、208、272；Screen.kt:372 | SYS-06应区分采样/摘要，不冒充当时观测 |",
+    "historical_removed": false
+  },
+  {
+    "report": "07-system.md",
+    "section": "",
+    "position": "WhereWasI 充电SOC/功率",
+    "row": "| WhereWasI 充电SOC/功率 | nearest charge point；SOC回退startBatteryLevel | 起点SOC非目标时刻；power无点则— | VM:197–210；Screen.kt:406–413 | SYS-06；缺采样不能倒填 |",
+    "historical_removed": false
+  },
+  {
+    "report": "07-system.md",
+    "section": "",
+    "position": "WhereWasI 驻车时长/开始/上一活动入口",
+    "row": "| WhereWasI 驻车时长/开始/上一活动入口 | 最近过去活动；没找到则用未来firstOrNull | target-last.end，未来分支把endTime设target，得到0 | VM:239–279、331–347；Screen.kt:420–438 | SYS-06，缺边界应未知而非确定停在未来起点 |",
+    "historical_removed": false
+  },
+  {
+    "report": "07-system.md",
+    "section": "",
+    "position": "WhereWasI 天气温度/图标/描述",
+    "row": "| WhereWasI 天气温度/图标/描述 | OpenMeteo archive hourly API | 仅按hour匹配；缺weatherCode默认0晴，API未传timezone | VM:446–475；OpenMeteoApi.kt:11–16；Screen.kt:458–483 | **BUG SYS-07(P2)**错小时/缺码晴；外部服务可用UNVERIFIED |",
+    "historical_removed": false
+  },
+  {
+    "report": "07-system.md",
+    "section": "",
+    "position": "Sentry 当前活动/开始时间/本次事件/过去事件/时间/地点",
+    "row": "| Sentry 当前活动/开始时间/本次事件/过去事件/时间/地点 | localHistoryCarId下StateDataStore+Room AlertLog，App轮询观测 | 65s去重；detectedAt为App观察时间，不是车机原始事件时间 | SentryStateRepository.kt:58–107；SentryHistoryViewModel.kt:122–153 | SOURCE_OK读取；SOURCE_DATA_MISSING：App未观察到的历史不会凭空补齐 |",
+    "historical_removed": false
+  },
+  {
+    "report": "07-system.md",
+    "section": "",
+    "position": "Sentry 热力格/日期/小时提示/点击定位",
+    "row": "| Sentry 热力格/日期/小时提示/点击定位 | DAO按epoch小时计数→6日×12个2h桶 | counts加总；本地日零点起点；tooltip同2h索引 | VM:132–151；Screen.kt:338–409；DAO:29–34 | SOURCE_OK基本公式；DST跨天为P2边界；无采样0格仅代表本机无事件 |",
+    "historical_removed": false
+  },
+  {
+    "report": "07-system.md",
+    "section": "",
+    "position": "Sentry 当前session清零/结束",
+    "row": "| Sentry 当前session清零/结束 | Worker status.sentryMode ?: false | 缺字段被当明确关闭，resetSession | ChargingNotificationWorker.kt:247；SentryStateRepository.kt:69–76 | **BUG SYS-08(P1)**，缺测不能重置已有活动状态 |",
+    "historical_removed": false
+  },
+  {
+    "report": "07-system.md",
+    "section": "",
+    "position": "Vehicle3d 车身/门/充电口/前备箱",
+    "row": "| Vehicle3d 车身/门/充电口/前备箱 | remember本地bool+固定wireframe，carId未使用 | 手势仅局部状态 | Vehicle3dScreen.kt:28–45、画布/按钮 | **BUG SYS-09(P2)**展示为“车辆控制”但没有真实车辆链路；演示需明确，不属于真实车况 |",
+    "historical_removed": false
+  }
+]

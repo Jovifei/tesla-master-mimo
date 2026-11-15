@@ -1,0 +1,110 @@
+name: App interaction visuals implementation and consumer verification
+on:
+  push:
+    branches: [codex/app-interaction-visuals-20261104]
+    paths:
+      - tools/interaction-execution/**
+      - .github/workflows/interaction-app-implement.yml
+permissions:
+  contents: write
+concurrency:
+  group: interaction-app-implementation
+  cancel-in-progress: false
+jobs:
+  implement:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      TARGET_BRANCH: codex/app-interaction-visuals-20261104
+      BASE_SHA: 984196d8c1a6deaff124eaa8dd6c45f55c40e700
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply reviewed source only on the owned branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = Jovifei/tesla-master-mimo
+          test "$GITHUB_REF" = "refs/heads/$TARGET_BRANCH"
+          git merge-base --is-ancestor "$BASE_SHA" HEAD
+          test "$(git ls-remote origin "refs/heads/$TARGET_BRANCH" | cut -f1)" = "$GITHUB_SHA"
+          git diff --name-only "$BASE_SHA" HEAD > /tmp/bootstrap-paths
+          python3 - <<'PY'
+          from pathlib import Path
+          paths=Path('/tmp/bootstrap-paths').read_text().splitlines()
+          assert all(p.startswith('tools/interaction-execution/') or p in {'.github/workflows/interaction-app-implement.yml','.github/workflows/interaction-source-review.yml'} for p in paths), paths
+          PY
+          python3 tools/interaction-execution/app_apply.py
+          # GITHUB_TOKEN has contents permission, not workflows permission. Publish
+          # application changes here; authorized connector edits own CI registration.
+          git restore --source=HEAD --staged --worktree .github/workflows
+          git diff --check --cached
+          python3 tools/interaction-stage/verify-visual-contract.py
+          mkdir -p interaction-evidence
+          git diff --cached --binary > interaction-evidence/source.patch
+          git diff --cached --stat > interaction-evidence/diffstat.txt
+          git diff --cached --name-only > interaction-evidence/paths.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          paths=Path('interaction-evidence/paths.txt').read_text().splitlines()
+          assert len(paths)>=20
+          assert all(p.startswith(('android/','docs/','tools/interaction-stage/')) or p=='tools/energy-stage/android-instrumentation-ci.sh' for p in paths), paths
+          assert not any(p.startswith('.github/') for p in paths)
+          PY
+          git write-tree > interaction-evidence/TESTED_TREE.txt
+          git archive --format=zip --output=interaction-evidence/reviewed-source.zip "$(git write-tree)"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+          log-accepted-android-sdk-licenses: false
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+      - name: Real Debug and Release consumer tests and AndroidTest APK compilation
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd android
+          backup="$(mktemp)"; cp gradle.properties "$backup"
+          trap 'cp "$backup" gradle.properties; rm -f "$backup"' EXIT
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('gradle.properties'); keys={'systemProp.http.proxyHost','systemProp.http.proxyPort','systemProp.https.proxyHost','systemProp.https.proxyPort','systemProp.http.nonProxyHosts'}
+          p.write_text('\n'.join(s for s in p.read_text().splitlines() if s.split('=',1)[0] not in keys)+'\n')
+          PY
+          export TZ=Asia/Shanghai
+          tests=(--tests '*InteractionVisualStateTest' --tests '*LoadingStripePresentationTest' --tests '*ParkedChargeBreakdownTest' --tests '*TpmsTrendAnalyzerTest')
+          bash ./gradlew :app:testDebugUnitTest "${tests[@]}" :app:testReleaseUnitTest "${tests[@]}" :app:assembleDebugAndroidTest \
+            --no-daemon --max-workers=1 \
+            -Dorg.gradle.jvmargs='-Xmx5g -XX:MaxMetaspaceSize=1g -XX:+UseSerialGC -Dfile.encoding=UTF-8' \
+            -Pkotlin.compiler.execution.strategy=in-process \
+            -PJOURVOLT_API_BASE_URL=https://api.teslalink.joviluma.com/ \
+            -PMATELINK_PUBLIC_INFO_BASE_URL=https://auth.teslalink.joviluma.com \
+            -PJOURVOLT_AUTH_HOST=auth.teslalink.joviluma.com \
+            2>&1 | tee ../interaction-evidence/focused-gradle.log
+      - name: Normally commit and push tested application source, never force
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --exit-code
+          test "$(git write-tree)" = "$(cat interaction-evidence/TESTED_TREE.txt)"
+          test "$(git ls-remote origin "refs/heads/$TARGET_BRANCH" | cut -f1)" = "$GITHUB_SHA"
+          test -z "$(git diff --cached --name-only -- .github)"
+          git config user.name 'Jovifei'
+          git config user.email '110970864+Jovifei@users.noreply.github.com'
+          git commit -m 'feat(android): wire scoped interaction visuals without changing data or authorization flows'
+          git push origin "HEAD:refs/heads/$TARGET_BRANCH"
+          git show -s --format='%H%n%T%n%P' HEAD > interaction-evidence/PUSHED_SOURCE.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: app-interaction-source-tests
+          retention-days: 14
+          path: |
+            interaction-evidence/
+            android/app/build/test-results/

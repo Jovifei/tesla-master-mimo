@@ -1,0 +1,192 @@
+# App问题与版本记录
+
+更新：2026-11-02。发现版本是审查/复现时的源码候选，不等于首次引入版本；提交、APK、安装与生产分别记录。完整逐次事件见[JSON账本](releases/app-issue-versions.json)。
+
+共 153 条：保留此前记录，新增电池趋势、用户数据保留与候选行程补全问题。恢复工作在 App 分支 `codex/app-collection-recovery-20261029`；原84条仍保留各自build73证据，基线导入 `e53a2d01`。
+
+每条记录修复方向及实际验证状态，尚未修复或未回归的项目明确保留；raw receipt/旧记录保留，source gates与发布门不混称已验收。
+
+11 月 2 日 build82：Debug / Release 各 1857 项测试、0 失败（Release 8 项既有跳过）；lint 均 0 错误，Debug 333、Release 314 条警告。此前全量测试中 Fleet 无合同能耗分析列曾有 1 项失败，修正后相关定向 116 项通过。API `8d3da22` 已部署，当前车辆独立桥首轮 478 条 / 10 批完成；build82 已同签覆盖安装并完成指定页面抽查。build83 已同签名保数据覆盖安装，双变体全量、lint、模拟器及指定真机页面抽查通过；其他页面、重复记录和长期桥问题仍开放；旧版测试、线上发布与真机抽查的范围不能混同。
+
+2026-11-02：生产候选 `b11bae080f8554691b28688e196e24766ccb48a6` 的 Linux 合成 PG16/network-none 定向 race 为服务端 118 项及子项、桥 2 项通过，均无失败、跳过或数据竞争；180 个相关模块文件及日志哈希证据见 `E:\Claude_allow\Download\matelink-race-b11-20261102-d72a91c4\race-result.json`。App 分支 cherry-pick `37955cf09994fc223406d6a48431dd080733454e` 的七个相关文件与生产候选一致，但其他服务端文件不同，不能将整个服务端等同。截至本次记录 App 提交 `067607f225b06698ded501bed25998b5f66ecc38` 的 18 项远端检查已全部通过；生产 API 仍为 `8d3da22`、候选未部署，离线发布 gate 有硬阻断。
+
+2026-11-02：真实 8d→b11→8d API 二进制在独立合成 PostgreSQL 16 上的回滚兼容测试通过；这不是生产回滚，也未验证手机 Room 手工费用。详见[归档授权记录(data-history/RPT-2026-11-02-archive-revocation-race.md)。
+
+## 2026-11-01 数据源与刷新
+
+| 问题 ID | 发现日期 / 版本 | 根因与修复 | 验证 |
+| --- | --- | --- | --- |
+| NOV03-COST-PARTIAL-TOTALS | 2026-11-03 / App 2.1.68 build88 | 成本分析页 ChargeCostTotals 忽略部分观测电量，与充电列表“≈估算费用”口径不同；2.1.69 / build89 区分整笔与部分估算，新增“已采集部分估算”卡片并支持实时监听手工修改 | 13 项单测通过，CostRoomFirstViewModelTest 验证通过，真机核验通过 |
+| NOV03-HISTORY-FAMILIES-DECOUPLING | 2026-11-03 / App 2.1.68 build88 | 统一历史入口串行拉取行程与充电导致跨模块互相拖慢；2.1.69 / build89 引入 HistoryFamilies 按需加载数据族 | HistoryFamilyReadTest 6 项通过，真机各页面秒开验证通过 |
+| NOV03-PARKED-DETAIL-LOCALIZATION | 2026-11-03 / App 2.1.68 build88 | 驻车详情标题硬编码中文导致英文环境下中英混排；2.1.69 / build89 资源化为 parked_detail_title | 编译通过，资源文件补充 |
+| NOV02-SHORT-TRIP-RATED-ENERGY | 2026-11-03 / App 2.1.67 build87 | 极短行程前后整数 SOC 无变化（deltaSoc=0）且无功率采样时能耗返回 UNAVAILABLE 变成横杠；2.1.68 / build88 引入额定续航微弱差值（deltaRange）回退估算 | 单元测试通过，真机升级至 build 88 验证 | 
+| NOV02-DRIVE-ENERGY-UNMEASURED | 2026-11-02 / App 2.1.65 build84 | Fleet 遥测行程返回 no_verified_driving_net_energy，客户端此前直接硬阻断拒绝 SOC / 功率估算，列表及详情显示“暂不可用”横杠；2.1.67 / build87 识别无硬件计数流并回退功率积分与 SOC 容量估算 | 61 项定向测试通过，build87 真机实测近一周行程能耗（如 ≈16.5、≈13.5 kWh/100km）恢复计算与展示 |
+| NOV02-BATTERY-TREND-SOURCES-FILTER | 2026-11-02 / App 2.1.64 build83 | batteryTrendSamples 要求 sources.distinct().size == 1，当归档与实时行程共存时所有样本被丢弃返回 null，页面提示“有效样本不足”；2.1.67 / build87 移除该过度限制，只过滤冲突记录 | build87 真机实测恢复 114 个有效样本与完整 07-09 至 11-02 趋势曲线 |
+| NOV02-ENROLLMENT-SESSION-EXPIRY | 2026-11-02 / 候选服务 bfe60d5 合成复现 | 手机 session 在归档确认事务中到期仍可能被批准；候选在提交前重新校验同一锁定 session，到期回滚 | 隔离 PG16 复现后修复；Linux race 37 项及子项通过，未证明生产发生，也未部署；见[记录(data-history/RPT-2026-11-02-enrollment-session-expiry.md) |
+| NOV02-TREND-RESTART | 2026-11-02 / 独立趋势桥 8d3da22 | 原桥以一次性标准输入领取凭据，重启后无法自动重连；早期候选增加私有 socket 和独立状态，但旧状态缺可信账号归属，换授权时有串号风险 | `aae2f6af` 的隔离容器测试未覆盖该风险，禁止部署；正在补全入口停发与双账号测试，见[记录(data-history/RPT-2026-11-02-archive-restart-candidate.md) |
+| NOV02-COST-TOMBSTONE-REAPPEARS | 2026-11-02 / build83 源码审查 | 精确删除标记存在时旧手工费用可能重新显示；build84 候选在列表及详情按同车、记录和币种抑制旧展示，不删除原记录 | 双变体各 1879 项及隔离模拟器 34 项通过；用户反馈已修改的价格仍保留；build84 尚未安装，见[记录(data-history/RPT-2026-11-02-charge-import-duplicates.md) |
+| NOV02-ARCHIVE-REVOCATION-RACE | 2026-11-02 / 生产 API 8d3da22（仅隔离复现） | 同事务重验并锁定归档授权，撤权先完成时不写入；候选尚未部署 | 最终合成 PG16 服务端 716 项；生产候选 Linux race 服务端 118 项及子项通过；线上未部署、发布 gate 阻断，见[记录(data-history/RPT-2026-11-02-archive-revocation-race.md) |
+| NOV02-BATTERY-ARCHIVE-PENDING | 2026-11-02 / 生产 API 8d3da22 | 仅缺少对应归档且整批无冲突时允许旧桥重试；真实冲突继续拦截 | 最终合成 PG16 服务端 716 项、桥 59 项；生产候选 Linux race 服务端 118 项及子项、桥 2 项通过；线上未部署、发布 gate 阻断，见[记录(data-history/RPT-2026-11-02-battery-trend-pending.md) |
+| NOV02-CI-POSTGRES-OPTIN | 2026-11-02 / App 分支 cf9b488 | 临时库启用隔离开关并对齐专用库名前缀，不降低测试门禁 | 本地 568 项通过、远端 eab3af4 verify 通过；最新分支完整检查待确认，见[记录(release-quality/RPT-2026-11-02-ci-postgres-opt-in.md) |
+| NOV02-BATTERY-UNSUPPORTED-MSG | 2026-11-02 / App 2.1.63 build82 | 明确标记 unsupported 的空容量被误报为网络失败；2.1.64 / build83 提交 `7bd9ecf136f1e4f92d17f1cfa54cf7710d467893` 区分未提供实测容量与真实网络错误 | 72 项定向、双变体各 1862 项单测、双 lint 和模拟器 36 项通过；build83 真机此次显示“当前数据源未提供实测电池容量”，未见错误连接提示，范围仅限本次抽查，见[记录(data-history/RPT-2026-11-01-battery-trend-retention.md) |
+| NOV02-CHARGE-UNLINKED-IMPORT | 2026-11-02 / App 2.1.63 build82 | 候选防止 archive 记录重复回传；尝试对同记录原始值展示参考电量/费用，不自动合并或计入正式统计 | build84 双变体各 1879 项、双 lint 和模拟器 34 项通过，**真机仍空卡**；build85 脱敏诊断确认原始电量存在，被详情合成 unknown 拦截，修复进行中；见[记录(data-history/RPT-2026-11-02-charge-import-duplicates.md) |
+| NOV01-BATTERY-ARCHIVE-EVIDENCE | 2026-11-01 / App build81、API 403aa6c | 云端归档没有提供行程额定续航及合格温标；独立趋势证据链已按绑定作用域部署并首轮回填 | 生产 `8d3da22` 已部署；478 条 / 10 批，SQL 112 合格含旧 110；build82 手机显示 112 样本和曲线。长期重启与源后补回扫仍开放，见[记录(data-history/RPT-2026-11-01-battery-trend-retention.md) |
+| NOV01-RESYNC-HISTORY-RETENTION | 2026-11-01 / App build81 源码审查 | 设置重新同步原先先删除历史摘要和聚合；候选改为保留记录并重新检查 | 相关真实 Room/VM 定向和 build82 双变体全量单测通过；未证实用户触发过原操作，真机验收待完成，见[记录(data-history/RPT-2026-11-01-battery-trend-retention.md) |
+| NOV01-LEGACY-COST-RETENTION | 2026-11-01 / App build81 源码审查 | 旧手工总价迁移遇异常可能删除原 JSON；候选保留原文并安全重试 | 真实 DataStore/Room 合成回归通过，未证实用户发生该问题，见[记录(data-history/RPT-2026-11-01-battery-trend-retention.md) |
+| NOV01-BATTERY-TREND-RETENTION | 2026-11-01 / App build81 源码审查 | 同身份空/不足趋势可能替换已有曲线；build82 按验证身份保留缓存并隔离切车 | 46 项定向及 build82 双变体全量单测通过；真实样本与曲线已手机抽查，空/不足样本及切车等其他场景仍待验证，见[记录(data-history/RPT-2026-11-01-battery-trend-retention.md) |
+| NOV01-DRIVE-SPARSE-RECEIPT | 2026-11-01 / App build81 源码审查 | 同会话连续稀疏响应可能丢失旧 SOC/续航/温度原始证据；build82 候选保留原回执和单位 | IN_PROGRESS：真实 Room 合成复现后候选已修；早期定向 112 项、后续含 Fleet 修复定向 116 项及 build82 双变体全量单测通过；真机待验，见[记录(data-history/RPT-2026-11-01-battery-trend-retention.md) |
+| NOV01-DRIVE-ENERGY-SHARED-BUDGET | 2026-11-01 / 2.1.63 build82 未发布候选 | 早期候选仅限制单个行程补全任务，同一刷新多个任务可能累计超过 20 次逻辑详情调用；当前候选按刷新代共享预算并在失败时停止后续请求 | 11 月 1 日候选 Debug 定向 5 组共 55 项通过；11 月 2 日 build82 双变体全量单测和 lint 已通过，其他实机场景待验；20 次仅为逻辑调用上限 |
+| NOV01-DRIVE-ENERGY-CACHE-REVISIT | 2026-11-01 / 2.1.63 build82 未发布候选 | 早期候选先查尝试标记，可能跳过之后才保存的同身份本地详情；当前候选先检查经过验证的本地点，再用尝试标记限制远端请求 | 11 月 1 日候选 Debug 定向 5 组共 55 项通过；11 月 2 日 build82 双变体全量单测和 lint 已通过，其他实机场景待验，未在 build81 真机复现 |
+| NOV01-DRIVE-GEOCODE-PHYSICAL-LIMIT | 2026-11-01 / 2.1.63 build82 未发布候选 | 高德同步反查可能不响应取消；当前候选限制行程自动反查最多两个物理调用，满槽后等待一次释放事件再试 | 11 月 1 日候选 Debug 定向 5 组共 55 项通过；11 月 2 日 build82 双变体全量单测和 lint 已通过，其他实机场景待验；[已知极端边界(data-history/RPT-2026-11-01-android-module-boundaries.md)仍开放 |
+| NOV01-DRIVE-AUTO-POINT-BUDGET | 2026-11-01 / 2.1.63 build82 未发布候选 | 自动读取行程详情的早期候选会写入共享明细缓存，可能占用充电曲线的缓存预算；当前候选只写经身份和完整功率窗口校验的能耗摘要，不自动写行程曲线 | 11 月 1 日候选 Debug 定向 5 组共 55 项通过；11 月 2 日 build82 双变体全量单测和 lint 已通过，其他实机场景待验；不是已上线或真机复现的问题 |
+| NOV01-DRIVE-ENRICH-CHARGE-WAIT | 2026-11-01 / 2.1.63 build82 未发布候选 | 早期候选在充电历史完成前未用已验证行程启动补全；当前候选按已验证 Room 行程变化独立触发并保留身份栅栏 | 11 月 1 日候选 Debug 定向 5 组共 55 项通过；11 月 2 日 build82 双变体全量单测和 lint 已通过，其他实机场景待验 |
+| NOV01-COST-PARTIAL-ESTIMATE | 2026-11-01 / 2.1.62 build81 对应源码 | 充电页可基于 Fleet 部分观测显示估价，成本页汇总仍要求完整电量而跳过该估价；需单独标注已采集部分，不得混作整场或正式账单 | 开放未修；源码证据，未在用户手机确认，见[审查(data-history/RPT-2026-11-01-android-module-boundaries.md) |
+| NOV01-SELF-HOSTED-MANUAL-COST | 2026-11-01 / 2.1.62 build81 对应源码 | 兼容的自托管旧记录可能缺少 source，手工费用可保存但被判为来源未核实；需依已验证来源和会话隔离修复，不放行所有空来源 | 开放未修；源码证据，判断早于本轮，当前用户场景未真机复现，见[审查(data-history/RPT-2026-11-01-android-module-boundaries.md) |
+| NOV01-DRIVE-FLEET-LOCATION | 2026-11-01 / App build81、API 403aa6c | Fleet 轨迹坐标为大写字段，列表查询只读小写；App 合并还需避免跨响应逐轴拼坐标 | 服务端与 App 候选测试中，真机待验收；见[记录(data-history/RPT-2026-11-01-drive-data-regression.md) |
+| NOV01-DRIVE-ENERGY-ENRICH | 2026-11-01 / App build81 | 归档列表缺少能耗摘要，打开详情后才由完整功率样本估算并写回 | 原问题真机复现；11 月 1 日候选 Debug 定向 5 组共 55 项通过；11 月 2 日 build82 双变体全量单测和 lint 已通过，其他实机场景待验；无功率不编造 |
+| NOV01-DRIVE-MIXED-DUP | 2026-11-01 / App build81、API 403aa6c | Fleet 与归档存在相近时间的记录；仅凭时间不能证明为同一行程 | build83 手机 11 月 1 日 22:03 两卡数值与云端两类记录分别相符，但未读取手机卡 ID，无法证明一一映射或同一行程；保留原记录、不自动合并，见[记录(data-history/RPT-2026-11-01-drive-data-regression.md) |
+| NOV01-CHARGE-REFRESH-FEEDBACK | 2026-11-01 / 2.1.62 build81 | 充电缓存发布会提前结束刷新状态，超时正文也被误作错误键；build82 候选修正状态与提示 | 代码修正及回归进行中，见[记录(data-history/RPT-2026-11-01-charge-energy-filters.md) |
+| NOV01-ONBOARDING-PENDING | 2026-11-01 / 2.1.62 build81 | 已登录账号的接入状态仍为待处理时，重启会再次进入自动接入页；继续进入无需重新登录。简单跳过可能隐藏真实授权失败，待设计安全引导 | 真机两次覆盖安装复现；未改登录路由，见[记录(data-history/RPT-2026-11-01-charge-energy-filters.md) |
+| NOV01-FLEET-LOCATION-WINDOW | 2026-11-01 / API 2548097 | Fleet 位置事件可能迟到并落入错误充电会话；API 403aa6c 按同会话起止时间校验，归档原有规则保持 | 隔离测试与生产健康核验通过；真实迟到样本待验证，见[记录(data-history/RPT-2026-11-01-charge-energy-filters.md) |
+| NOV01-FLEET-LOCATION-MISSING | 2026-11-01 / API 2548097 | 会话开启前的位置不会用于初始化充电位置，静止时不一定有新的 Location 事件；10 月 31 日原始事件是否到达仍未证实 | 不使用当前车位猜历史；后续评估同车时间边界及 Tesla 定期重发支持，见[记录(data-history/RPT-2026-11-01-charge-energy-filters.md) |
+| NOV01-SERVER-RESOURCE | 2026-11-01 / API ab9a245c | 历史 OOM；网络管理、时间同步和日志服务失败；磁盘约 82%。已恢复原有服务，不清理其他项目数据；内存及磁盘容量风险仍开放 | 网卡已连接、NTP 已同步、日志探针通过，API 本机和真实公网地址检查正常；见[记录(data-history/RPT-2026-11-01-charge-energy-filters.md) |
+| NOV01-DRIVE-FILTER-LABEL | 2026-11-01 / 2.1.60 build79 | 行程距离筛选文字与实际 10/100 km 边界不一致；保留原筛选行为并修正文案，英里边界标为约数 | build80 已装机，边界自动回归通过；build81 追加页面精简，见[记录(data-history/RPT-2026-11-01-charge-energy-filters.md) |
+| NOV01-SYNC-SOURCE-STALE | 2026-11-01 / 2.1.60 build79 | Tesla 会话仍有效，但持久来源仍是不可达的 `http://192.168.0.104:18080`；切到 MateLink 云端后首页和 10 月 31 日充电/行程恢复。手动刷新同时改为 REPLACE，避免 RETRY 中的旧 Worker 吞掉刷新请求；网络错误文案提示确认数据源。不改页面布局或手机数据 | 真机首页、10 月 31 日四段充电和行程均已显示；定向测试、双变体、lint、保数据安装见[记录(data-history/RPT-2026-11-01-self-hosted-source-refresh-recovery.md) |
+| NOV01-CHARGE-PARTIAL | 2026-11-01 / 2.1.60 build79 | 完整会话电量未知时，保留已验证的部分计数器观测并明确标注近似；预估费用和手动金额分别保留 | API 2548097 已部署，build80 真机已显示部分电量与预估；build81 追加详情显示修正，见[记录(data-history/RPT-2026-11-01-charge-energy-filters.md) |
+| NOV01-HISTORY-FILTERS | 2026-11-01 / 2.1.60 build79 | 日期选择移至摘要，精简常驻提示；修复地点菜单中文显示与坐标成对合并 | 定向回归通过，完整测试与设备验收进行中；详见[记录(data-history/RPT-2026-11-01-charge-energy-filters.md) |
+| NOV01-DASH-CLOUD-CACHE | 2026-11-01 / 2.1.60 build79 | 云端车辆列表暂不可达时，首页原逻辑没有读取此前已验证的车辆快照；候选仅在身份仍匹配且非授权错误时回显历史状态，不用缓存授权写入或定位 | build80 真机首页在线显示正常；离线缓存已自动回归，尚未做真机断网验收，见[记录(data-history/RPT-2026-11-01-charge-energy-filters.md) |
+
+## 2026-10-31 Android CI
+
+| 问题 ID | 发现日期 / 版本 | 修复内容 | 验证 |
+| --- | --- | --- | --- |
+| OCT31-CI-RELEASE-CONTRACT | 2026-10-31 / 2.1.60 build79，`883f1722` | 设置页测试预期从 build77/2.1.58 同步到 build79/2.1.60，保留所有显示和本地化断言；不改布局 | 双变体各 11 项定向与 1712 项全量单测通过；lint、构建与同 SHA CI 按[报告(release-quality/RPT-2026-10-31-pr27-android-ci.md)记录 |
+
+## 2026-10-29 采集恢复续作
+
+[本轮恢复报告(data-history/RPT-2026-10-29-fleet-archive-recovery.md)记录真实运行变更。旧重复桥已停止；本人确认后原桥追上传 10 月 29 日行程，手机默认列表看到 4 条，另 1 条短记录按既有规则隐藏。本人批准开放单 TCP 4443 后已收到 Fleet 首个真实事件。10 月 28 日源数据缺失，30 天凭据再次到期和 Fleet 源时间处理仍是开放问题。
+
+| 问题 ID | 发现日期 / 版本 | 修复方向 | 验证状态 |
+| --- | --- | --- | --- |
+| OCT29-ENROLL-HTTP-REPLAY | 2026-10-29 / build75 未发布候选 | 续绑预览与确认禁用自动重发，保持账号、车辆与会话身份栅栏 | 旧候选 RED；修复后 socket、定向和双变体全量测试通过，真机待验 |
+| OCT29-ENROLL-APP-LIFECYCLE | 2026-10-29 / build75 未发布候选 | 防止 Activity 重建自动重开旧确认，仍由本人决定 | 合成生命周期及双变体全量测试通过；真机待验 |
+| OCT29-ENROLL-RETRY-RECOVERY | 2026-10-29 / 未发布助手候选 | 中断重建和 ACK 丢响应时按持久配置、容器身份及运行状态恢复 | 74 项合成测试通过；生产续绑待验 |
+| OCT29-FLEET-ID-SCOPE | 2026-10-29 / build75 未发布候选 | 分别核验车辆摘要和 provider ID，以已验证同车映射关联；过期里程保持未知 | 定向及双变体全量测试通过；真机待验 |
+| OCT29-FLEET-INGRESS-4443 | 2026-10-29 / 线上 ab9a245c | 本人批准后仅开放 TCP 4443，保留接收端 mTLS | 外网复测可达，已收到真实首事件 |
+| OCT29-FLEET-SOURCE-TIMESTAMP | 2026-10-29 / 线上 ab9a245c | 恢复车辆原始时间与重放标记，防止接收时间伪装成实际行程时间 | 仅隔离候选完成发送/解析合同及溢出回归；端到端修复仍开放 |
+| OCT29-ARCHIVE-EXPIRY-LIFECYCLE | 2026-10-29 / 线上 ab9a245c | 增加状态查询和到期提醒，续期仍由本人确认 | 本次已恢复；提醒候选未集成，普通用户自助入口与再次到期风险仍开放 |
+| OCT29-SHORT-RECORD-LABEL | 2026-10-29 / App build75 | 仅修正开关及说明文字，保留布局和用户设置 | build76 定向测试、Release lint、保数据安装及设备显示通过 |
+| OCT30-CHARGE-COST-OVERLAP | 2026-10-30 / App build76 | 删除叠放的额外费用提示，保留费用点击与估算 `≈`，不改布局参数 | build77 33 项定向测试、Release lint、同签名安装及实机点击和布局验证通过 |
+| OCT30-API35-FIXTURE-CONTRACT | 2026-10-30 / PR #27 b702e658 | 修正设置加载等待、曲线时间样本、驻车 SOC 原始证据及合成来源，并检查旧温度不残留 | 独立 API 35 模拟器相关 11 项通过；远端提交 5681c6fe 的 18 项检查全部通过 |
+| OCT30-FLEET-SESSION-ID-SCOPE | 2026-10-30 / 线上 ab9a245c 源码 | 新建行程标识加入账号和车辆作用域，保留既有行程身份并拒绝跨作用域冲突 | 修复提交 fe9f0685；独立复审及隔离 PostgreSQL 全量回归通过，未部署 |
+| OCT30-ARCHIVE-CONFIRMATION-COMPARISON | 2026-10-30 / 续绑助手源码 | 显示与 App 可对照的来源指纹，校验完整比较状态并拒绝畸形输入 | 修复提交 774694fb；独立复审及 94 项隔离测试通过，普通用户向导仍未交付 |
+| OCT30-ENGINE26-ISOLATED-CI | 2026-10-30 / 隔离测试提交 6af70186 | 修复无端口空值兼容和临时目录权限门，细化固定诊断，保留失败证据 | 诊断提交 a876c30b 的第三次隔离测试前 10 项通过、第 11 项被 API 保护规则拒绝；内外已知资源确认清理，未部署生产 |
+| OCT30-DRIVE-DETAIL-POINTS | 2026-10-30 / App 2.1.60 build79 | 仅在自托管旧接口双方无来源元数据时，按已验证服务器、车辆、行程和精确时间匹配 | Release 18 项聚焦测试、离线重派生 7 项通过；build79 同签名保数据安装，真机验证 3.7 km、87 km/h、功率采样均值 1.5 kW、速度/功率/电量曲线和 1,723 点；提交 `483e7c1f` 已推送 App 分支。详见[记录(data-history/RPT-2026-10-30-drive-points-visibility.md) |
+
+## 2026-10-28 行程缺失与独立缺陷
+
+发现版本和实际安装包不同于修复候选；10 月 29 日后续已安装 App 并部署服务端。细节、证据边界和后续见[当天行程排查报告(data-history/RPT-2026-10-28-missing-drives.md)与[恢复报告(data-history/RPT-2026-10-29-fleet-archive-recovery.md)。
+
+| 问题 ID | 发现版本 | 当前状态 | 下一步 |
+| --- | --- | --- | --- |
+| OCT28-SOURCE-GAP | 2.1.55 / build74 实机 | 源记录缺失，开放 | 恢复可靠采集，核验自然新行程；不编造旧行程 |
+| OCT28-ARCHIVE-EXPIRY | 服务端 2c8b7655 | 本人确认后同作用域续期并追上传成功 | 补齐到期提醒；固定 30 天仍可能再次到期 |
+| OCT28-DRIVE-CHARGE-BLOCK / ROOM-NEW-DRIVES | build74 源码 | 本地提交 4e9d5cb4；全量测试通过 | 完成未来真实记录及设备验证 |
+| OCT28-NEW-IDENTITY / UID-REMAP / ADDRESS-COLLISION / TIMEOUT-MESSAGE | build74 基础上的本轮 WIP | 本地提交 4e9d5cb4；消费者回归通过 | 完成未来真实记录及设备验证 |
+| OCT28-ADDRESS-LATE | 本轮 WIP | 本地提交 4e9d5cb4；正反例通过 | 避免迟到反查覆盖后续 Room 地址 |
+| OCT28-REFRESH-STATE / TIMELINE-CAR | 本轮及继承的 App WIP | 本地提交 4e9d5cb4；消费者回归通过 | 保持刷新状态，并以真实车辆 proof 防止时间线串车 |
+| OCT29-TIMELINE-ROUTE | 继承源码 | 条件性路由风险，待运行复现 | 验证车辆发现迟到时 More 与时间线使用同一已验证车辆 |
+| OCT28-PG-FINALIZER | 服务端 2c8b7655 源码 | 已包含在生产 ab9a245c，独立 PostgreSQL 集成测试通过 | 持续观察；不是当天缺源的已证实原因 |
+
+| 新增问题 | 发现日期 / 版本 | 状态 | 改法 / 验证记录 | 修复版本 / commit |
+|---|---|---|---|---|
+| ACC-AUTH-01 新ticket兑换失败会借旧session打开旧账号首页 | 2026-10-27 / 2.1.54 build73 | CODE_COMMITTED_LOCAL_QA_PASS | 删除未绑定ticket的失败成功兜底，实际VM两项RED→GREEN；成功/在途重复保留；[验收续查](releases/2026-10-27-display-acceptance.md) | 2.1.55 build74候选 / 63cdb8ee |
+| ACC-HUD-01 缺电压时隐藏已有16A/0A电流 | 2026-10-27 / 2.1.54 build73 | CODE_COMMITTED_LOCAL_QA_PASS | 现有HUD位置显示谓词改任一观测存在，两项RED→GREEN；全空仍unknown；[验收续查](releases/2026-10-27-display-acceptance.md) | 2.1.55 build74候选 / 63cdb8ee |
+| ACC-MILEAGE-01 年详情漏计无行程月份的合格充电费用 | 2026-10-27 / 2.1.54 build73 | CODE_COMMITTED_LOCAL_QA_PASS | 所选年份全部合格费用求和，三项RED→GREEN；10对3/跨年/真实0；[验收续查](releases/2026-10-27-display-acceptance.md) | 2.1.55 build74候选 / 63cdb8ee |
+
+| 问题 | 发现日期 / 版本 | 状态 | 改法 / 验证记录 | 修复版本 / commit |
+|---|---|---|---|---|
+| H01 H01 — P1：实际首车没有写回全局selected car，导致新账号/多车首页与所有主导航仍请求旧ID | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | 只在当前已验证车单恢复selection并在导航前写回真实首车ID；拒绝无UID/重复/迟到车单；[证据](releases/groups/F1-auth-cache.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| H02 快照缓存未保留同响应单位、来源和观测时间元信息 | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | 缓存v4同时保存原status、units/source/observedAt；旧无单位保raw但显示投影屏蔽单位敏感值；[证据](releases/groups/F1-auth-cache.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| H03 H03 — P1：可达HUD分支将未知速度、充入电量、电流伪装为观测0 | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | HUD缺速度/能量/电流保留unknown，真实0保留，不以默认0生成观测；[证据](releases/groups/F1-auth-cache.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| H04 H04 — P1：从登录页启动后会话失效不会自动返回登录，可能停在无限首页加载 | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | 登录后过期由当前认证状态触发重定向，不依赖冷启动初始页；[证据](releases/groups/F1-auth-cache.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| H05 H05 — P1：退出等待期间同账号token rotation会让退出直接放弃，本地仍登录 | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | 持久login epoch区分同登录token轮换与新登录/ABA，原子条件退出；[证据](releases/groups/F1-auth-cache.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| H06 H06 — P2：正式cloud telemetry source字符串与Android freshness分类不一致 | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | 识别真实telemetry_mqtt来源词表并使用原始观测时间；[证据](releases/groups/F1-auth-cache.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| H07 H07 — P2：最近数据或服务不可用被错误显示成“车辆休眠” | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | RECENT、服务失败和显式车辆休眠独立判断；[证据](releases/groups/F1-auth-cache.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| CHG-P1-01 CHG-P1-01：旧聚合把未知充电模式写成 AC，列表/筛选/统计与详情不一致 | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | 用正向phase/fast证据与合同共享AC/DC/UNKNOWN；processed不当AC，冷开读本地模式索引；[证据](releases/groups/F2-charging.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| CHG-P1-02 CHG-P1-02：免费资格和费用投影缺少会话级适用证明，且离线重开会改口径 | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | 有效手工/单次实付优先；车级免费权益不足以免费历史DC，免费0需会话证明；[证据](releases/groups/F2-charging.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| CHG-P1-03 CHG-P1-03：历史 load 在持久化保护前预合并，跨窗口借用同 ID 的旧字段 | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | raw融合前校同源/实例/record/精确window，持久化使用实际remote receipt而非预合并值；[证据](releases/groups/F2-charging.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| CHG-P1-04 CHG-P1-04：当前充电存在原始数据旁路、会话被快照覆盖和身份生命周期缺口 | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | current scope/generation栅栏、真实clock/value/gaps、独立current counter；快照不覆起点/历史曲线；失败仅历史不装饰新快照；[证据](releases/groups/F2-charging.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| CHG-P2-01 CHG-P2-01：详情离线重建把缺失时长当真实 0，单位依赖另一次 status | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | 离线从nullable receipt恢复时长，同响应温标/长度单位进入缓存；points按自己的单位转换；[证据](releases/groups/F2-charging.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| CHG-P2-02 CHG-P2-02：缺充电坐标时无界借用相邻行程的位置 | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | 地图仅接有效完整pair；同窗同源receipt可回退，不再借任意相邻行程；[证据](releases/groups/F2-charging.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| CHG-P2-03 CHG-P2-03：总能量无覆盖数，短会话隐藏与摘要母集不同 | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | 列表/摘要/图共用短会话筛选，现有覆盖文案增加known energy/records，真实0不当缺失；[证据](releases/groups/F2-charging.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| D01 D01 — 相同整数SOC会制造无观测支持的固定145Wh/km。 `DrivesViewModel.kt:227-239` 在resolver因相同SOC返回未知后，以 `min… | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | 删除无观测支持的固定145Wh/km；保留有资格SOC/容量估计与真实0/负净回收；[证据](releases/groups/F3-driving.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| D02 D02 — 驻车Room fallback将未知SOC列的0占位变成历史实测。 `ParkedDetailViewModel.kt:292-302` 直接读 `DriveSumma… | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | 驻车SOC从nullable receipt读取，primitive0不能变观测；缺wire采样元信息保持null；[证据](releases/groups/F3-driving.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| D03 D03 — 图表的数值、时间、缺口和真实采样顺序没有同一索引。 `DriveCurvesScreen.kt:155-175,366,434,459,493,567-579` 和 `… | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | 统一timestamp/value/index/gap投影、有限范围、原indices downsample和同clock统计；[证据](releases/groups/F3-driving.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| D04 D04 — 详情内联速度曲线二次转换英里，且未知长度单位仍画km/h。 `DriveDetailScreen.kt:709-727` 收到raw preferred speed后，… | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | raw preferred mph曲线不重复乘0.621371；未知单位不猜km/h；[证据](releases/groups/F3-driving.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| D05 D05 — 全局distinct把闭环真实终点删除。 `DriveDetailScreen.kt:521-527` 对整条GPS序列做distinct，`AmapRouteView… | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | 只去相邻GPS重复，保留A→B→A，非法/断档分段不拉直；[证据](releases/groups/F3-driving.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| D06 D06 — 驻车远端成功仅验pair数字ID，未验本地已知的精确窗口/来源。 `ParkedDetailViewModel.kt:181-186` 只核对older/newer I… | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | 远端pair须匹配当前本地邻接proof/来源/精确window；显式car/instance冲突拒绝，legacy instance缺失标未证；[证据](releases/groups/F3-driving.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| D07 D07 — 行程列表Room-first的“完整序列”实际预先丢掉隔离中间行程。 `DrivesViewModel.kt:515,525,716` 读 `DriveSummaryD… | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | 完整all-qualities chronology用于邻接证明，quarantine中间行阻断，显示仍隔离；[证据](releases/groups/F3-driving.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| D08 D08 — 单侧地址缺失被另一侧冒名填充。 `DriveDetailScreen.kt:417-421`、`DriveCurvesScreen.kt:287-290`。触发star… | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | 两侧地址各自fallbackunknown，仅完整边界pair可反查，不借另一侧或中途GPS；[证据](releases/groups/F3-driving.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| D09 D09 — 少量样本极值覆盖较完整的报告极值。 `DriveDetailMetrics.kt:129,133-134` 优先samples max/min，完全不看采样覆盖。触发报… | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | 合格同窗report极值优先，缺report的样本极值在原位置标样本，不拼整程覆盖；[证据](releases/groups/F3-driving.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| D10 D10 — 距离估算曲线忽略时间且缺全速度仍编造线性进度。 `DriveCurvesScreen.kt:397-407`。触发非等间隔speed样本时sum(speed)比例不是距… | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | 距离曲线仅按实际speed和dt积分，首点0，缺时刻/速度不造线性中点；[证据](releases/groups/F3-driving.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| D11 D11 — 停车位置可混合两次观测，网络失败后又丢已读坐标。 `ParkedDetailViewModel.kt:94-98` lat/lon分别fallback，older仅la… | 2026-10-26/27 / 2.1.53 / build72候选 | HISTORICAL_REMOVED | 冻结候选已无当前地图消费者；不恢复/删除布局，不认领旧UI移除为逻辑修复；[证据](audits/2026-10-26/full-data-chain/03-driving-parked.md) | 不适用 / 不适用 |
+| D12 D12 — 行程详情/曲线不是Room先显，长网络和失败会造成空白。 `DriveDetailViewModel.kt:106-110,134-140` 先重置state、等rem… | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | 已验证Room summary/完整header/points先显，有限时刷新失败保留并拒迟到UID；[证据](releases/groups/F3-driving.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| D13 D13 — 曲线/标题绕过已有有限值与范围资格。 `DriveCurvesScreen.kt:434,459` 对power/SOC直接toFloat，`ChartDrawUtil… | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | speed/power/SOC/duration各自有限范围门；非法点留gap，不污染轴与tooltip；[证据](releases/groups/F3-driving.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| D14 D14 — 提供方的样本均值进入DTO后失去样本语义。 `history_sample_metrics.go:77-79,101-106` 的speed_avg是观测点算术mean… | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | 透传speed metric method/sample count，样本均值保持样本语义；[证据](releases/groups/F3-driving.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| D15 D15 — 非exact SOC边界平局任意选首个。 `DriveDetailMetrics.kt:110-116` 只minBy时间距离；exact冲突已正确拒绝（:104-10… | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | 最近SOC等距候选冲突则unknown，不依赖原数组顺序；[证据](releases/groups/F3-driving.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| D16 D16 — 缺失天气码会被显示为晴天。 `WeatherRepository.kt:294-304` 默认weatherCode为0，`WeatherRepository.kt:5… | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | 缺/未知天气码UNKNOWN；真实point clock→明确GMT/C查询→用户本地显示，缺时刻不插值；[证据](releases/groups/F3-driving.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| D17 D17 — 驻车远端详情和充电边界证明仅保留内存。 `ParkedDetailViewModel.kt:168-205` 成功只赋UiState，没有Room写入；`ParkedP… | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | 同proof/window/source有界追加v23 parked header receipt+SHA，冷重开优先读取，坏/写失败保旧，不扩schema；[证据](releases/groups/F3-driving.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| AN-01 AN-01 — P1：Vampire 丢弃路由车辆身份，迟到响应缺scope栅栏 | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | Vampire使用路由car及验证proof，scope/代次阻断晚结果，失败清内部旧投影；[证据](releases/groups/F4-analysis.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| AN-02 AN-02 — P2：缺可用SOC被主要SOC代填 | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | usable SOC缺失不代入主要SOC，真实usable0仍已知；[证据](releases/groups/F4-analysis.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| AN-03 AN-03 — P2：趋势SOC与额定range可跨首尾端拼对 | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | SOC/rated range只同端点配对，日期/温度/单位来自同receipt；[证据](releases/groups/F4-analysis.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| AN-04 AN-04 — P2：规范km的电池趋势只被附上mi标签 | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | canonical km通过formatDistanceKm转mi一次；[证据](releases/groups/F4-analysis.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| AN-05 AN-05 — P2：当前温度消费者丢掉原响应温标 | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | 同响应温标先canonicalC再消费，不借长度偏好猜温标；[证据](releases/groups/F4-analysis.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| AN-06 AN-06 — P2：模型未达门槛时把真实候选覆盖清成0 | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | 候选样本覆盖与已采用模型样本分开，未成模不把候选覆盖清零；[证据](releases/groups/F4-analysis.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| AN-07 AN-07 — P2：温度insights由独立极值和固定文案产生未观测结论 | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | 温差用同drive内外配对，不用独立极值或固定空调好坏结论；[证据](releases/groups/F4-analysis.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| AN-08 AN-08 — P2：自托管standby producer把已观察的0kWh丢成未知 | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | standby producer完整有限功率区间的真实0保留，缺失/断档/NaN/Inf不能造0；[证据](releases/groups/F4-analysis.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| AN-09 AN-09 — P2：本地fallback的“近期待机时段”取到最早10条 | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | 按Instant降序后取近期10条；[证据](releases/groups/F4-analysis.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| S01 S01 [P1，条件性] Countries/Regions缺请求与身份栅栏 | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | Countries/Regions捕获scope/request/boundary/units代次，先清旧内容再安全重读；[证据](releases/groups/F5-statistics.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| S02 S02 [P2] 规范单位与原API展示单位混用 | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | 国家/地区canonical km正确转偏好；C字段转F一次，物理单位和标签一致；[证据](releases/groups/F5-statistics.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| S03 S03 [P2，发布前应修] 地理SQL与深入能量小计丢失字段资格 | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | Geo复用同Room qualified cohort，nullable总量与sample count、坐标/quality门、UNKNOWN模式贯通；[证据](releases/groups/F5-statistics.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| S04 S04 [P2] 地理页面年份与首次/最近排序未用同一本地Instant合同 | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | 同一captured local-year Instant筛选，首次/最近按时间顺序，不用ISO字符串排序；[证据](releases/groups/F5-statistics.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| S05 S05 [P2] Timeline有值时长隐藏；撤回能量旁路判断 | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | 只补合法durationMin的现有位置回退；能量原资格化链不改；[证据](releases/groups/F5-statistics.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| S06 S06 [P2，需场景验证] 主Stats金额快照未携带币种标签 | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | CarStats带同次currencyCode，金额与符号同次发布，拒迟到settings重贴标签；[证据](releases/groups/F5-statistics.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| N01 CreateTrip/Export 将remote carId直接当scoped Room key，并缺失迟到scope门 | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | Create/Export使用verified local key、冻结scope与请求，晚save/export不得写或发布旧身份；[证据](releases/groups/F6-trips-reports.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| N02 Trips列表没有scope失效清空，网络先行的旧读取仍可发布 | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | Trips本地先显与scope失效清投影，units/refresh前后复核；[证据](releases/groups/F6-trips-reports.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| N03 年度页所选年份没有传给PDF | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | Annual callback携当前selectedYear到PDF冻结snapshot；[证据](releases/groups/F6-trips-reports.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| N04 Trip地图走另一套未验source/window的详情与旧cache | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | Trip复用verified immutable detail receipts及revision/hash；每drive slot保留、内部parts断档、不复用仅ID旧线；[证据](releases/groups/F6-trips-reports.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| N05 失败路段被压缩后，天气位置套错drive时间窗，地图起终也冒名 | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | 失败drive保空slot，weather以driveId/window/真实observedAt配对，首末失败不冒用中段；[证据](releases/groups/F6-trips-reports.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| N06 仅打开Trips即可按drive集合删除含不同charge/用户信息的SavedTrip | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | 浏览不删除仅drive集合相同但name/charges不同的保存记录；精确saved row ID用于修改/删除；[证据](releases/groups/F6-trips-reports.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| N07 CSV/JSON费用输出绕过有效费用和币种合同 | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | 导出明确raw summary与qualified/effective字段，nullable/币种/来源/覆盖可追踪，不把混合币种当总账；[证据](releases/groups/F6-trips-reports.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| N08 旅途时间范围与成员不一致，原字符串排序也不能证明先后 | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | 成员按Instant排序与union时间边界，不用原ISO字符串；[证据](releases/groups/F6-trips-reports.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| N09 canonical km只换英里标签：创建预览与每100mi费用均错 | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | 创建/详情canonical km正确转mi，100unit费用分母先转显示单位；[证据](releases/groups/F6-trips-reports.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| N10 未知充电类型当AC，未知时长还能产0kW | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | 三态mode用于timeline/map/功率组；未知duration不算0kW，真实0独立；[证据](releases/groups/F6-trips-reports.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| N11 创建保存忽略实际结果且失败无恢复 | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | 保存事务核验当前scope、成员仍存在/未用，失败保草稿并反馈，成功后带真实saved ID导航；[证据](releases/groups/F6-trips-reports.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| N12 年度/PDF只要一份有效样本就把部分合计呈现为全量 | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | Trip/Annual/PDF用qualified nullable指标及已知覆盖，不把部分数据写全量；[证据](releases/groups/F6-trips-reports.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| N13 年度月图把稀疏月份挤成连续相邻月份，PDF却保留12槽 | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | 年度图固定12个月时轴，unknown留gap，不压缩月份或补零；[证据](releases/groups/F6-trips-reports.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| N14 PDF页面预览丢掉合格零/负均耗，最终文件却保留 | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | PDF预览保有资格0/负均耗，与导出计算一致；[证据](releases/groups/F6-trips-reports.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| N15 普通导出计数、记录集合、日期窗及分享类型没有同一个冻结请求 | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | CSV/JSON冻结同一cohort/count/window/format，输出与MIME绑定，scope改动撤回旧URI；[证据](releases/groups/F6-trips-reports.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| N16 输出文件名不绑定生成身份，旧URI可指向后一次内容 | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | PDF/导出每次独立文件，分享URI不被同名后续生成覆盖；[证据](releases/groups/F6-trips-reports.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| SYS-01 SYS-01 [P1] 分时电价配置没有实际费用消费者 | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | 分时配置进入共享estimate，App时区按时长加权；缺window仅明确default-rate估计，实付优先；[证据](releases/groups/F2-charging.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| SYS-02 峰/平/谷价格接受NaN或Infinity | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | 价格仅接受有限非负数，非法配置不参与计算；[证据](releases/groups/F2-charging.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| SYS-03 重置电价配置误改币种符号 | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | 重置保当前币种符号；[证据](releases/groups/F2-charging.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| SYS-04 SYS-04 [P1] TPMS目标/上下限保存键和监测读取键不一致 | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | profile Settings writer/worker统一verified local key，旧未归属正ID保留不猜迁移；[证据](releases/groups/F7-observation-boundaries.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| SYS-05 SYS-05 [P1] WhereWasI缺身份/代际守护，迟到位置/天气可发布旧账号数据 | 2026-10-26/27 / 2.1.53 / build72候选 | LATENT_NOT_EXPOSED | 注册但当前生产导航未开放；维持backlog，不擅开入口；[证据](audits/2026-10-26/full-data-chain/07-system.md) | 不适用 / 不适用 |
+| SYS-06 SYS-06 [P1/P2] WhereWasI展示目标时刻而消费端点、无界nearest与未来活动 | 2026-10-26/27 / 2.1.53 / build72候选 | LATENT_NOT_EXPOSED | 注册但当前生产导航未开放；维持backlog，不擅开入口；[证据](audits/2026-10-26/full-data-chain/07-system.md) | 不适用 / 不适用 |
+| SYS-07 SYS-07 [P2] 历史天气时区/缺码 | 2026-10-26/27 / 2.1.53 / build72候选 | LATENT_NOT_EXPOSED | 注册但当前生产导航未开放；维持backlog，不擅开入口；[证据](audits/2026-10-26/full-data-chain/07-system.md) | 不适用 / 不适用 |
+| SYS-08 SYS-08 [P1] 缺sentry_mode被当关闭并结束session | 2026-10-26（27日复现/复核） / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | 未知sentry_mode不当off；Cloud读已存观测、selfhost固定scope client，告警水位/跃迁原子防重；[证据](releases/groups/F7-observation-boundaries.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| SYS-09 SYS-09 [P2] 3D“车辆控制”是未接真实数据的本地演示 | 2026-10-26/27 / 2.1.53 / build72候选 | LATENT_NOT_EXPOSED | 注册但当前生产导航未开放；维持backlog，不擅开入口；[证据](audits/2026-10-26/full-data-chain/07-system.md) | 不适用 / 不适用 |
+| S02-R Stats“100mi误贴”断言反证撤回；实际资源无占位符 | 2026-10-26/27 / 2.1.53 / build72候选 | RETRACTED_AFTER_REVIEW | 已按实际源码反证撤回；保留原ID避免以后重复误报；[证据](audits/2026-10-26/full-data-chain/10-statistics-review.md) | 不适用 / 不适用 |
+| S05-R Timeline能量旁路P1反证撤回；上游UHR已资格化 | 2026-10-26/27 / 2.1.53 / build72候选 | RETRACTED_AFTER_REVIEW | 已按实际源码反证撤回；保留原ID避免以后重复误报；[证据](audits/2026-10-26/full-data-chain/10-statistics-review.md) | 不适用 / 不适用 |
+| IR-NOTIF-01 普通字段刷新重放同一旧哨兵脉冲 | 2026-10-27 / 2.1.54 / build73工作候选 | CODE_COMMITTED_LOCAL_QA_PASS | 持久同车display跃迁、水位及Mutex全环消费；不以整份snapshot新时间证明新脉冲；[证据](releases/groups/F7-observation-boundaries.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| IR-NOTIF-02 远端监控跨来源/账号后把新响应写旧local键 | 2026-10-27 / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | 固定selfhost API、请求/HTTP admission/写入/通知前复核scope；Cloud仅消费已有本地观测；[证据](releases/groups/independent-data-fixes-review.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| IR-NOTIF-03 通知缺SOC/目标/功率被补0/80且未知当AC | 2026-10-27 / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | nullable真实字段、UNKNOWN类型及indeterminate进度；保留真实0；[证据](releases/groups/independent-data-fixes-review.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| IR-NOTIF-04 通知把local历史键当remote路由ID | 2026-10-27 / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | notification local身份与remote路由分开，接收端核验当前缓存映射/账号/UID，零额外HTTP；[证据](releases/groups/independent-data-fixes-review.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| IR-NOTIF-05 哨兵与前台loading相同数字ID覆盖且PendingIntent跨local复用 | 2026-10-27 / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | 哨兵type tag与成对cancel、type/local data URI隔离PI，保留原前台native槽；[证据](releases/groups/independent-data-fixes-review.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| IR-COST-01 已知外币账单被当无价记录再估成本币 | 2026-10-27 / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | Cost估算也经同一费用资格resolver；currency mismatch不降级为本币假设账单；[证据](releases/groups/F2-charging.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| IR-CACHE-01 充电详情远端身份发现挡住已验证Room记录 | 2026-10-27 / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | 同scope缓存summary/points先发布，有限时刷新失败保留，迟到/换UID拒绝；[证据](releases/groups/F2-charging.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| IR-CACHE-02 冷开AC筛选未读取本地正向类型索引 | 2026-10-27 / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | 首帧同时读合格AC/DC索引并绑定cached proof，当前scope首发不能清有效缓存；[证据](releases/groups/F2-charging.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| IR-UNITS-01 preferred点温度存入宣称canonicalC的聚合及C值只贴F | 2026-10-27 / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | 同response温标归一C，processing version7定向重算；旧未证温度仅内存unknown，渲染转偏好一次；[证据](releases/groups/F2-units.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| IR-UNITS-02 稀疏刷新跨C/F或km/mi借用旧数值 | 2026-10-27 / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | 字段与receipt元信息共同仲裁；保raw和单位，不借后来status猜单位；[证据](releases/groups/F2-units.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |
+| IR-TRIP-01 同drive GPS缺口桥接和天气按点索引造时刻 | 2026-10-27 / 2.1.53 / build72候选 | CODE_COMMITTED_LOCAL_QA_PASS | 每drive保持slot、parts断线、真实point observedAt配所属drive/window；GMT/C查询并显示本地时刻；[证据](releases/groups/F3-driving.md) | 2.1.54 / build73候选 / 161d77cea4d110aac93b52956644ab3ea5603733 |

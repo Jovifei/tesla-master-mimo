@@ -119,7 +119,7 @@
 
 ## 文档与交接
 
-- [ ] 更新 `docs/PHASE-HANDOFF-2026-07-09.md`，把已完成项、待验证项、阻塞项分开写。
+- [x] 原阶段交接文档已在 2026-11-07 按授权归档删除；完成项、待验证项和阻塞项保留在本计划与当前任务台账中。
 - [ ] 更新 `docs/STITCH_PAGE_MAPPING.md`，记录 Android/Web/iOS 数据配置变化和剩余页面级核查项。
 - [ ] 在 `tasks/todo.md` 追加本轮执行结果和 proof boundary。
 - [ ] 若 Jovi 审批提交，先列出候选文件，再 staging，再提交。
@@ -140,7 +140,7 @@
 待 Jovi 审批后，优先提交以下源码与文档：
 
 - `README.md`
-- `docs/PHASE-HANDOFF-2026-07-09.md`
+- `docs/reports/DOC-CLEANUP-20261107.md`（删除授权与保留边界）
 - `docs/STITCH_PAGE_MAPPING.md`
 - `docs/superpowers/plans/2026-07-09-app-mimo-data-setup.md`
 - `android/app/build.gradle.kts`

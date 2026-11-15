@@ -4,6 +4,8 @@ import com.matelink.data.api.models.resolveSourceRecordIdentity
 import com.matelink.data.api.models.ChargeDetail
 import com.matelink.data.api.models.DriveDetail
 import com.matelink.data.local.VehicleContext
+import com.matelink.data.local.HistoryConnectionSource
+import com.matelink.data.local.selfHostedVehicleStableIdentity
 import com.matelink.data.local.dao.HistoryDetailDao
 import com.matelink.data.local.dao.HistoryDetailInsertResult
 import com.matelink.data.local.entity.ChargeSummary
@@ -12,6 +14,7 @@ import com.matelink.data.local.entity.HistoryDetailReceipt
 import com.matelink.data.local.entity.HistoryDetailReceiptState
 import com.matelink.domain.analytics.toRawAnalysisChargeData
 import com.matelink.domain.analytics.toRawAnalysisDriveData
+import com.matelink.domain.analytics.HistorySummaryEvidenceCodec
 import com.matelink.util.parseIsoInstant
 import kotlinx.coroutines.CancellationException
 import javax.inject.Inject
@@ -27,8 +30,11 @@ class HistoryDetailIdentity private constructor(
     val sourceIdKey: String,
     val startInstant: String,
     val endInstant: String,
-    val identityKey: String
+    val identityKey: String,
+    val mode: Mode = Mode.STRICT
 ) {
+    enum class Mode { STRICT, LEGACY_SELF_HOSTED }
+
     companion object {
         const val CHARGE = "charge"
         const val DRIVE = "drive"
@@ -56,6 +62,36 @@ class HistoryDetailIdentity private constructor(
                 sourceKey, instanceKey, sourceIdKey, start.toString(), end.toString(), key)
         }
 
+        /** Only a genuine list receipt in an established self-hosted namespace may be unknown-source. */
+        internal fun fromVerifiedLegacyDrive(
+            context: VehicleContext, row: DriveSummary
+        ): HistoryDetailIdentity? {
+            if (context.connectionSource != HistoryConnectionSource.SELF_HOSTED ||
+                context.localHistoryCarId !in (Int.MIN_VALUE + 1)..-1 ||
+                row.carId != context.localHistoryCarId || row.driveId < 0 ||
+                row.qualityState == "quarantined") return null
+            val stable = runCatching {
+                selfHostedVehicleStableIdentity(context.serverIdentity, context.remoteApiCarId)
+            }.getOrNull() ?: return null
+            if (context.stableIdentity != stable) return null
+            // Never use toRawAnalysisDriveData's legacy scalar fallback as a list receipt.
+            val raw = row.apiEvidence?.let(HistorySummaryEvidenceCodec::decodeDrive) ?: return null
+            if (raw.driveId != row.driveId || !metadataAbsent(raw.source, raw.sourceInstanceId,
+                    raw.sourceId, raw.sourceRecordId)) return null
+            val start = parseIsoInstant(raw.startDate) ?: return null
+            val end = parseIsoInstant(raw.endDate) ?: return null
+            if (end.isBefore(start) || start != parseIsoInstant(row.startDate) ||
+                end != parseIsoInstant(row.endDate)) return null
+            val scope = digest(context.stableIdentity, context.connectionSource.name, context.serverIdentity)
+            val key = digest("legacy_self_hosted_drive_v1", context.localHistoryCarId.toString(),
+                scope, DRIVE, row.driveId.toString(), start.toString(), end.toString())
+            return HistoryDetailIdentity(context.localHistoryCarId, scope, DRIVE, row.driveId,
+                "", "", "", start.toString(), end.toString(), key, Mode.LEGACY_SELF_HOSTED)
+        }
+
+        private fun metadataAbsent(source: String?, instance: String?, sourceId: String?, recordId: String?) =
+            source == null && instance == null && sourceId == null && recordId == null
+
         private fun digest(vararg values: String): String = sha256Framed(
             values.first().toByteArray(Charsets.UTF_8),
             values.drop(1).map { it.toByteArray(Charsets.UTF_8) })
@@ -63,6 +99,8 @@ class HistoryDetailIdentity private constructor(
 
     fun matches(id: Int, source: String?, instanceId: String?, start: String?, end: String?,
                 sourceId: String? = null, sourceRecordId: String? = null): Boolean {
+        if (mode == Mode.LEGACY_SELF_HOSTED && !metadataAbsent(source, instanceId, sourceId, sourceRecordId))
+            return false
         val record = resolveSourceRecordIdentity(sourceId, sourceRecordId)
         return !record.conflicted && recordId == id && sourceKey == source?.trim().orEmpty() &&
             sourceInstanceKey == instanceId?.trim().orEmpty() &&
@@ -89,6 +127,7 @@ fun DriveSummary.verifiedDetailIdentity(context: VehicleContext): HistoryDetailI
         parseIsoInstant(raw.endDate) != parseIsoInstant(endDate)) return null
     return runCatching { HistoryDetailIdentity.create(context, HistoryDetailIdentity.DRIVE,
         driveId, raw.source, raw.sourceInstanceId, startDate, endDate, raw.sourceId, raw.sourceRecordId) }.getOrNull()
+        ?: HistoryDetailIdentity.fromVerifiedLegacyDrive(context, this)
 }
 
 /** A single old-style 2xx detail response proves receipt delivery, not provider-total coverage. */

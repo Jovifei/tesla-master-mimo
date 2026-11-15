@@ -1,5 +1,6 @@
 package com.matelink.ui.screens.temperature
 
+import com.matelink.ui.components.HistoryForegroundRefreshEffect
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -15,6 +16,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Thermostat
+import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -67,6 +71,7 @@ fun TemperatureTrendScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     LaunchedEffect(carId) { viewModel.load(carId) }
+    HistoryForegroundRefreshEffect { viewModel.retry() }
 
     Scaffold(
         topBar = {
@@ -147,24 +152,22 @@ fun TemperatureTrendScreen(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                if (state.currentStatusAvailable) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        TemperatureMetricCard(
-                            title = stringResource(R.string.temperature_current_inside),
-                            value = state.currentInsideTemp?.let { "${it}°C" } ?: "--",
-                            color = ColorCabin,
-                            modifier = Modifier.weight(1f)
-                        )
-                        TemperatureMetricCard(
-                            title = stringResource(R.string.temperature_current_outside),
-                            value = state.currentOutsideTemp?.let { "${it}°C" } ?: "--",
-                            color = ColorOutside,
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    TemperatureMetricCard(
+                        title = stringResource(R.string.temperature_current_inside),
+                        value = state.currentInsideTemp?.let { "${it}°C" } ?: "--",
+                        color = ColorCabin,
+                        modifier = Modifier.weight(1f)
+                    )
+                    TemperatureMetricCard(
+                        title = stringResource(R.string.temperature_current_outside),
+                        value = state.currentOutsideTemp?.let { "${it}°C" } ?: "--",
+                        color = ColorOutside,
+                        modifier = Modifier.weight(1f)
+                    )
                 }
 
                 Text(
@@ -224,6 +227,7 @@ fun TemperatureTrendScreen(
                         )
                     }
                     TemperatureTrendChartCard(state.points)
+                    TemperatureInsightsCard(state)
                 }
             }
         }
@@ -400,5 +404,92 @@ private fun LegendItem(color: Color, label: String) {
             style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.Medium
         )
+    }
+}
+
+
+@Composable
+private fun TemperatureInsightsCard(state: TemperatureTrendUiState) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+        ),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Thermostat,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
+                )
+                Text(
+                    text = stringResource(R.string.temperature_insights_title),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            // Same-observation averages cannot establish solar or climate-performance causality.
+            val maxCabinGain = state.maxPairedDifferenceC
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.WbSunny,
+                    contentDescription = null,
+                    tint = Color(0xFFFB8C00),
+                    modifier = Modifier.size(18.dp).padding(top = 2.dp)
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        text = stringResource(R.string.temperature_observed_pair_delta_title) +
+                                (maxCabinGain?.let { " (%+.1f°C)".format(it) } ?: ""),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = stringResource(R.string.temperature_observed_pair_delta_note),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            // Insight Item 2: Climate Performance
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Info,
+                    contentDescription = null,
+                    tint = ColorCabin,
+                    modifier = Modifier.size(18.dp).padding(top = 2.dp)
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        text = stringResource(R.string.temperature_insights_climate_good),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = stringResource(R.string.analysis_coverage_insufficient),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
     }
 }

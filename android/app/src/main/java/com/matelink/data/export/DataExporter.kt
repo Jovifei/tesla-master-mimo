@@ -13,6 +13,9 @@ import java.io.File
 import java.io.FileWriter
 import java.text.SimpleDateFormat
 import java.util.Locale
+import com.matelink.domain.analytics.EffectiveChargeCost
+import com.matelink.domain.analytics.toAnalysisDriveData
+import com.matelink.domain.analytics.toAnalysisChargeData
 
 enum class ExportFormat(val extension: String, val mimeType: String) {
     CSV("csv", "text/csv"),
@@ -25,7 +28,11 @@ enum class ExportDataType {
     BOTH
 }
 
-class DataExporter(private val context: Context) {
+class DataExporter(
+    private val context: Context,
+    chargeCosts: Map<Int, EffectiveChargeCost> = emptyMap()
+) {
+    private val chargeCosts = chargeCosts.toMap()
 
     companion object {
         fun createShareIntent(uri: android.net.Uri, format: ExportFormat): Intent {
@@ -48,32 +55,33 @@ class DataExporter(private val context: Context) {
         dataType: ExportDataType
     ): android.net.Uri = withContext(Dispatchers.IO) {
         cleanupStaleExports()
-        val timestamp = System.currentTimeMillis() / 1000
-        val fileName = "matelink_export_$timestamp.${format.extension}"
-        val file = File(context.cacheDir, fileName)
+        val file = File.createTempFile("matelink_export_", ".${format.extension}", context.cacheDir)
 
-        when (format) {
-            ExportFormat.CSV -> exportCsv(file, drives, charges, dataType)
-            ExportFormat.JSON -> exportJson(file, drives, charges, dataType)
-        }
-
-        FileProvider.getUriForFile(
+        try {
+            when (format) {
+                ExportFormat.CSV -> exportCsv(file, drives, charges, dataType)
+                ExportFormat.JSON -> exportJson(file, drives, charges, dataType)
+            }
+            FileProvider.getUriForFile(
             context,
             "${context.packageName}.fileprovider",
             file
-        )
+            )
+        } catch (e: Exception) {
+            // A completed unique file may already have a FileProvider consumer;
+            // never reuse its path for another request.
+            throw e
+        }
     }
 
     private fun csvEscape(value: Any?): String {
-        val s = value?.toString() ?: ""
-        val escaped = if (s.contains(",") || s.contains("\"") || s.contains("\n") || s.contains("\r"))
+        // A signed Number is a number, never a spreadsheet formula. Text is
+        // defanged before quoting so a comma cannot hide a formula prefix.
+        if (value is Number) return value.toString()
+        val raw = value?.toString() ?: ""
+        val s = if (raw.trimStart().firstOrNull() in setOf('=', '+', '-', '@')) "'$raw" else raw
+        return if (s.any { it == ',' || it == '"' || it == '\n' || it == '\r' })
             "\"${s.replace("\"", "\"\"")}\"" else s
-        // Defang formula-prefix characters to prevent CSV injection in spreadsheet apps
-        return when {
-            escaped.startsWith("=") || escaped.startsWith("+") ||
-            escaped.startsWith("-") || escaped.startsWith("@") -> "'$escaped"
-            else -> escaped
-        }
     }
 
     private fun exportCsv(
@@ -84,16 +92,19 @@ class DataExporter(private val context: Context) {
     ) {
         FileWriter(file).use { writer ->
             if (dataType == ExportDataType.DRIVES || dataType == ExportDataType.BOTH) {
-                writer.append("Type,Start Date,End Date,Distance (km),Energy (kWh),Efficiency (Wh/km),Max Speed (km/h),Duration (min)\n")
+                writer.append("Type,Start Date,End Date,Raw Summary Distance (km),Raw Summary Energy (kWh),Raw Summary Efficiency (Wh/km),Raw Summary Max Speed (km/h),Raw Summary Duration (min),Qualified Distance (km),Qualified Energy (kWh),Qualified Efficiency (Wh/km),Source,Quality\n")
                 drives.forEach { d ->
-                    writer.append("DRIVE,${csvEscape(d.startDate)},${csvEscape(d.endDate)},${d.distance},${csvEscape(d.energyConsumed)},${csvEscape(d.efficiency)},${csvEscape(d.speedMax)},${d.durationMin}\n")
+                    val qualified = d.toAnalysisDriveData()
+                    writer.append("DRIVE,${csvEscape(d.startDate)},${csvEscape(d.endDate)},${d.distance},${csvEscape(d.energyConsumed)},${csvEscape(d.efficiency)},${csvEscape(d.speedMax)},${d.durationMin},${csvEscape(qualified.distanceKm)},${csvEscape(qualified.netEnergyKwh)},${csvEscape(qualified.efficiencyWhKm)},${csvEscape(qualified.source)},${csvEscape(d.qualityState)}\n")
                 }
             }
             if (dataType == ExportDataType.CHARGES || dataType == ExportDataType.BOTH) {
                 if (dataType == ExportDataType.BOTH) writer.append("\n")
-                writer.append("Type,Start Date,End Date,Energy Added (kWh),Cost,Duration (min),Start Battery %,End Battery %\n")
+                writer.append("Type,Start Date,End Date,Raw Summary Energy Added (kWh),Raw Cost,Raw Summary Duration (min),Raw Summary Start Battery %,Raw Summary End Battery %,Raw Currency,Qualified Battery Input (kWh),Effective Cost,Effective Currency,Cost Source,Source,Quality\n")
                 charges.forEach { c ->
-                    writer.append("CHARGE,${csvEscape(c.startDate)},${csvEscape(c.endDate)},${c.energyAdded},${csvEscape(c.cost)},${csvEscape(c.durationMin)},${csvEscape(c.startBatteryLevel)},${csvEscape(c.endBatteryLevel)}\n")
+                    val qualified = c.toAnalysisChargeData()
+                    val cost = chargeCosts[c.chargeId]
+                    writer.append("CHARGE,${csvEscape(c.startDate)},${csvEscape(c.endDate)},${c.energyAdded},${csvEscape(c.cost)},${csvEscape(c.durationMin)},${csvEscape(c.startBatteryLevel)},${csvEscape(c.endBatteryLevel)},${csvEscape(qualified.currencyCode)},${csvEscape(qualified.batteryInputKwh)},${csvEscape(cost?.cost)},${csvEscape(cost?.currencyCode)},${csvEscape(cost?.source?.name)},${csvEscape(qualified.source)},${csvEscape(c.qualityState)}\n")
                 }
             }
         }
@@ -106,6 +117,8 @@ class DataExporter(private val context: Context) {
         dataType: ExportDataType
     ) {
         val root = JSONObject()
+        root.put("dataContract", "raw_summary_and_qualified_projection_v1")
+        root.put("legacyScalarFields", "raw_stored_summary_not_measurement_proof")
         root.put("exportDate", SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).format(System.currentTimeMillis()))
 
         if (dataType == ExportDataType.DRIVES || dataType == ExportDataType.BOTH) {
@@ -115,10 +128,16 @@ class DataExporter(private val context: Context) {
                 obj.put("startDate", d.startDate)
                 obj.put("endDate", d.endDate ?: JSONObject.NULL)
                 obj.put("distanceKm", d.distance)
-                obj.put("energyKwh", d.energyConsumed)
-                obj.put("efficiencyWhKm", d.efficiency)
+                obj.put("energyKwh", d.energyConsumed ?: JSONObject.NULL)
+                obj.put("efficiencyWhKm", d.efficiency ?: JSONObject.NULL)
                 obj.put("maxSpeedKmh", d.speedMax ?: JSONObject.NULL)
                 obj.put("durationMin", d.durationMin)
+                val qualified = d.toAnalysisDriveData()
+                obj.put("qualifiedDistanceKm", qualified.distanceKm ?: JSONObject.NULL)
+                obj.put("qualifiedEnergyKwh", qualified.netEnergyKwh ?: JSONObject.NULL)
+                obj.put("qualifiedEfficiencyWhKm", qualified.efficiencyWhKm ?: JSONObject.NULL)
+                obj.put("source", qualified.source ?: JSONObject.NULL)
+                obj.put("qualityState", d.qualityState)
                 drivesArr.put(obj)
             }
             root.put("drives", drivesArr)
@@ -135,6 +154,16 @@ class DataExporter(private val context: Context) {
                 obj.put("durationMin", c.durationMin)
                 obj.put("startBatteryPercent", c.startBatteryLevel)
                 obj.put("endBatteryPercent", c.endBatteryLevel)
+                val qualified = c.toAnalysisChargeData()
+                val cost = chargeCosts[c.chargeId]
+                obj.put("rawCost", c.cost ?: JSONObject.NULL)
+                obj.put("currencyCode", qualified.currencyCode ?: JSONObject.NULL)
+                obj.put("qualifiedBatteryInputKwh", qualified.batteryInputKwh ?: JSONObject.NULL)
+                obj.put("effectiveCost", cost?.cost ?: JSONObject.NULL)
+                obj.put("effectiveCurrencyCode", cost?.currencyCode ?: JSONObject.NULL)
+                obj.put("costSource", cost?.source?.name ?: JSONObject.NULL)
+                obj.put("source", qualified.source ?: JSONObject.NULL)
+                obj.put("qualityState", c.qualityState)
                 chargesArr.put(obj)
             }
             root.put("charges", chargesArr)
