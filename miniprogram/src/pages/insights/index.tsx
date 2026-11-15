@@ -214,7 +214,23 @@ export default function InsightsPage() {
     {loading ? <LoadingIndicator label="正在读取所选车辆数据…" compact /> : null}
     {error ? <Text className="error">{error}</Text> : null}
     {cacheWarning ? <Text className="muted">数据已读取，本机缓存预算不足，本次未全部保存；已有缓存保留。</Text> : null}
-    {drives.some(isHistoryIdentityAmbiguous) || charges.some(isHistoryIdentityAmbiguous) ? <Text className="muted">来源身份未确认的历史记录已保留，但未计入当前展示或统计</Text> : null}
+    {drives.some(isHistoryIdentityAmbiguous) || charges.some(isHistoryIdentityAmbiguous) ? (
+      <View
+        className="history-identity-badge"
+        onClick={() => {
+          void Taro.showModal({
+            title: '历史记录提示',
+            content: '来源身份未确认的历史记录已保留，但未计入当前展示或统计。',
+            showCancel: false,
+            confirmText: '我知道了',
+          })
+        }}
+        ariaLabel="来源身份未确认的历史记录已保留，但未计入当前展示或统计"
+      >
+        <Text className="identity-badge-icon">ℹ</Text>
+        <Text className="history-identity-note">来源身份未确认的历史记录已保留，但未计入当前展示或统计</Text>
+      </View>
+    ) : null}
     {!readAppSession(Taro)?.userId ? <Button className="button" onClick={() => Taro.switchTab({ url: '/pages/me/index' })}>前往登录</Button> : null}
     {car && (kind === 'range' || kind === 'cost' || kind === 'longTrips') ? <View className="insight-filters">
       <HistoryDateChips kind={kind === 'cost' ? 'charges' : 'drives'} query={query} onChange={patch => { setQuery({ ...query, ...patch }); setLegPage(0) }} />

@@ -20,7 +20,7 @@ let page: ReactTestRenderer | null = null
 const origin = 'https://api.example.test'
 const response = (data: unknown) => ({ statusCode: 200, data: { data }, header: {} })
 const car = { car_id: 7, vehicle_uid: 'drive-audit' }
-const base = Date.now() - 4 * 60 * 60 * 1000
+const base = (() => { const now = new Date(); return new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12).getTime() })()
 const at = (minutes: number) => new Date(base + minutes * 60_000).toISOString()
 const drive = (id: number, minutes: number, km: number, quality = 'observed') => ({ drive_id: id, session_id: `drive-${id}`,
   source: 'teslamate_archive', source_instance_id: 'archive-A', source_vehicle_id: 'car-A', source_record_id: `record-${id}`,
