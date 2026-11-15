@@ -8,7 +8,7 @@
 
 | 微信版本 | 提交日期 | Git Commit | 生产 API 入口 | 单测状态 | 模拟器巡检状态 | 当前后台状态 |
 |---|---|---|---|---|---|---|
-| **0.7.1** | 2026-11-15 | `175028c033a1aa627637e8a486be4daa0e380568` | `https://api.teslalink.joviluma.com/` | 91 文件 / 1201 项 + 资源 6/6 | 独立合成项目 6 页截图，Console error 无命中 | **上传成功** |
+| **0.7.1** | 2026-11-15 | `e6f3958b22fedf61239488b35254df8054a7f4c5` | `https://api.teslalink.joviluma.com/` | 91 文件 / 1201 项 + 资源 6/6 | 独立合成项目 6 页截图，Console error 无命中 | **上传成功（精简文案后）** |
 | **0.6.8** | 2026-11-13 | `1b42f9ac220e5371e688b1633abf15a3f96702b5` | `https://api.teslalink.joviluma.com/` | 1115/1115 + 资源 6/6 | 生产未登录与合成配置各 9 页，Console error 无命中 | **上传成功** / 体验版状态待核实 |
 | **0.6.7** | 2026-11-07 | `f2e0a8e` | `https://api.teslalink.joviluma.com/` | 79/79 PASS (100%) | 6 核心页面 0 Error | **开发版已上传** / 待设为体验版 |
 | **0.6.5** | 2026-11-04 | `799a41c` | `https://api.teslalink.joviluma.com/` | Vitest 4.1.12 PASS | 基础校验通过 | **当前体验版** |
@@ -23,7 +23,7 @@
 
 * **发布类型**：UI 基线锁定与多分支合并、日期交互、首页请求隔离、数据证据、费用编辑和合成模式安全。
 * **Git 分支**：`codex/ui-product-mini-20261109` 合并至 0.7.1 待提交。
-* **Git Commit Hash**：`175028c033a1aa627637e8a486be4daa0e380568`；上传源码基于该合并提交构建的 `dist`。
+* **Git Commit Hash**：`e6f3958b22fedf61239488b35254df8054a7f4c5`；上传源码基于该最终提交构建的 `dist`，含精简冗余提示。
 * **运行参数与环境**：`TARO_APP_API_BASE_URL=https://api.teslalink.joviluma.com/`、`TARO_APP_MOCK_FIXTURE=false`、`miniprogramRoot=dist/`、AppID `wxc84899ab6146f1be`。
 * **产物体积流档**：微信上传回执主包 `1,273,147` B；vehicle-assets-1 至 6 依次 `1,739,914 / 1,733,701 / 1,790,648 / 1,708,704 / 1,770,251 / 1,547,085` B；总包 `11,563,450` B；本机构建 contentSha256 `d7212ce8e490a1c759b692ac31b1bf6e9e2ee5c1705af9039bff5d3d7a4495e2`。
 * **质量与实测门禁**：类型检查通过；Vitest 91 文件 / 1201 项通过，车辆资源检查 6/6 通过；关键路径 7 组 249 项通过；微信 WXSS 实际编译通过；独立合成项目 6 页截图，Console error 过滤无命中。合成数据不代表真实账户、车辆或服务端数据验收。
