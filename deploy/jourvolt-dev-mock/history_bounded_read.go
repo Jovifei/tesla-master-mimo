@@ -581,6 +581,12 @@ func (s *telemetryService) historyPageContext(ctx context.Context, userID string
 		items = append(items, item)
 		sessions = append(sessions, row.Session)
 	}
+	// List rows omit drive_details, so a bounded server-side power integral is
+	// the only way the client can show energy for drives without SOC endpoints
+	// or a reported contract. It is published as a qualified estimate.
+	if kind == "drive" {
+		s.attachDrivePowerEnergyContracts(readCtx, userID, vehicleID, items, sessions)
+	}
 	// Archive drives can carry rated-range endpoints and counter-based charge
 	// windows; live drives and charges with missing addresses can borrow a
 	// labelled archive place. Enrichment never fails the read.
@@ -697,6 +703,9 @@ func (s *telemetryService) historyDetailContext(ctx context.Context, userID stri
 			}
 			if session.PublicID == publicID && session.QualityState != "quarantined" {
 				item := historySessionMap(session, kind, 0)
+				if kind == "drive" {
+					attachDrivePowerEnergyContractFromSession(item, session)
+				}
 				return item, true, ctx.Err()
 			}
 		}
@@ -714,6 +723,9 @@ func (s *telemetryService) historyDetailContext(ctx context.Context, userID stri
 	}
 	// Detail rows carry the full route, so address inference and endpoint
 	// evidence apply here exactly as they do for list rows.
+	if kind == "drive" {
+		attachDrivePowerEnergyContractFromSession(item, session)
+	}
 	s.enrichHistorySessions(ctx, userID, vehicleID, kind, []map[string]any{item}, []telemetrySession{session})
 	return item, true, nil
 }

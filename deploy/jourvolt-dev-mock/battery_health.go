@@ -64,8 +64,10 @@ type batteryEvidenceEndpoint struct {
 }
 
 type batteryEvidencePayload struct {
-	Start batteryEvidenceEndpoint `json:"start"`
-	End   batteryEvidenceEndpoint `json:"end"`
+	Start           batteryEvidenceEndpoint `json:"start"`
+	End             batteryEvidenceEndpoint `json:"end"`
+	OutsideTempAvgC *float64                `json:"outside_temp_avg_c"`
+	InsideTempAvgC  *float64                `json:"inside_temp_avg_c"`
 }
 
 func batteryHealthRound(value float64, places int) float64 {

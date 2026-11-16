@@ -471,6 +471,9 @@ type app struct {
 	// Nearby-charging response cache (design 2026-11-05 §5), 10-minute TTL.
 	nearbyMu    sync.Mutex
 	nearbyCache map[string]nearbyCacheEntry
+	// Optional Amap Web-service key. Fleet nearby charging is not available
+	// on every Tesla account; Amap POI search is the configured fallback.
+	amapKey string
 	// Vehicle commands (design 2026-11-05 §6): kill switch + gray list are
 	// operator-controlled via env; both default to fully disabled.
 	commandsEnabled   bool
@@ -893,6 +896,12 @@ func (a *app) carResource(w http.ResponseWriter, r *http.Request, userID, path s
 			return
 		}
 		a.batteryHealth(w, r, userID, carID)
+	case "climate-history":
+		if r.Method != http.MethodGet {
+			a.json(w, http.StatusNotFound, map[string]string{"error": "not_found"})
+			return
+		}
+		a.climateHistory(w, r, userID, carID)
 	case "updates":
 		if r.Method != http.MethodGet {
 			a.json(w, http.StatusNotFound, map[string]string{"error": "not_found"})
@@ -1286,6 +1295,7 @@ func main() {
 		commandsEnabled:   os.Getenv("JOURVOLT_COMMANDS_ENABLED") == "true",
 		commandsGrayUsers: parseUserIDSet(os.Getenv("JOURVOLT_COMMANDS_GRAY_USERS")),
 		commandLimiter:    newCommandRateLimiter(),
+		amapKey:           os.Getenv("AMAP_WEB_SERVICE_KEY"),
 	}
 	if telemetry != nil {
 		a.commandExecutor = telemetry

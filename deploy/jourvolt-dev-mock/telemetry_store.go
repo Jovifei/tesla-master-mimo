@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -43,6 +44,20 @@ CREATE TABLE IF NOT EXISTS jourvolt_telemetry_event_buffer (
     expires_at TIMESTAMPTZ NOT NULL,
     PRIMARY KEY (event_id, user_id, vehicle_id)
 );
+-- TeslaMate archives carry per-drive outside temperature only; live MQTT
+-- InsideTemp/OutsideTemp observations are the only cabin-temperature history.
+-- Each accepted observation is recorded once, so the series is bounded by the
+-- collector interval rather than by client polling.
+CREATE TABLE IF NOT EXISTS jourvolt_climate_samples (
+    user_id TEXT NOT NULL REFERENCES jourvolt_users(id) ON DELETE CASCADE,
+    vehicle_id INTEGER NOT NULL REFERENCES jourvolt_vehicles(id) ON DELETE CASCADE,
+    observed_at TIMESTAMPTZ NOT NULL,
+    inside_temp_c DOUBLE PRECISION,
+    outside_temp_c DOUBLE PRECISION,
+    PRIMARY KEY (user_id, vehicle_id, observed_at)
+);
+CREATE INDEX IF NOT EXISTS jourvolt_climate_samples_lookup_idx
+    ON jourvolt_climate_samples(user_id, vehicle_id, observed_at DESC);
 CREATE INDEX IF NOT EXISTS jourvolt_telemetry_event_buffer_expiry_idx ON jourvolt_telemetry_event_buffer(expires_at);
 CREATE TABLE IF NOT EXISTS jourvolt_telemetry_route_points (
     id BIGSERIAL PRIMARY KEY,
@@ -291,11 +306,17 @@ WHERE EXCLUDED.observed_at > jourvolt_telemetry_latest.observed_at`, ref.UserID,
 			continue
 		}
 		accepted++
+		if err := recordClimateSample(ctx, tx, ref, record); err != nil {
+			return telemetryPostgresIngestResult{}, err
+		}
 		if err := applyPostgresSessionEvent(ctx, tx, ref, record, s.config.StopDebounce); err != nil {
 			return telemetryPostgresIngestResult{}, err
 		}
 	}
 	if _, err := tx.Exec(ctx, `DELETE FROM jourvolt_telemetry_event_buffer WHERE expires_at < now()`); err != nil {
+		return telemetryPostgresIngestResult{}, err
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM jourvolt_climate_samples WHERE observed_at < now() - interval '400 days'`); err != nil {
 		return telemetryPostgresIngestResult{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -314,6 +335,34 @@ func insertDownsampledRoutePoint(ctx context.Context, tx pgx.Tx, ref telemetryVe
 		return nil
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO jourvolt_telemetry_route_points(user_id, vehicle_id, observed_at, latitude, longitude, speed, power, heading) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT DO NOTHING`, ref.UserID, ref.VehicleID, point.ObservedAt, point.Latitude, point.Longitude, point.Speed, point.Power, point.Heading)
+	return err
+}
+
+// recordClimateSample stores live cabin/ambient temperature observations.
+// TeslaMate's archive only reports one outside average per drive, so this is
+// the only source of an inside-temperature history. Implausible values are
+// dropped rather than plotted; nil values never erase a recorded column.
+func recordClimateSample(ctx context.Context, tx pgx.Tx, ref telemetryVehicleRef, record telemetryRecord) error {
+	if record.FieldName != "InsideTemp" && record.FieldName != "OutsideTemp" {
+		return nil
+	}
+	value := floatPointerFromNumber(record.Value)
+	if value == nil || math.IsNaN(*value) || math.IsInf(*value, 0) || *value < -60 || *value > 80 {
+		return nil
+	}
+	var inside, outside *float64
+	if record.FieldName == "InsideTemp" {
+		inside = value
+	} else {
+		outside = value
+	}
+	_, err := tx.Exec(ctx, `
+INSERT INTO jourvolt_climate_samples(user_id, vehicle_id, observed_at, inside_temp_c, outside_temp_c)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (user_id, vehicle_id, observed_at) DO UPDATE SET
+    inside_temp_c = COALESCE(EXCLUDED.inside_temp_c, jourvolt_climate_samples.inside_temp_c),
+    outside_temp_c = COALESCE(EXCLUDED.outside_temp_c, jourvolt_climate_samples.outside_temp_c)`,
+		ref.UserID, ref.VehicleID, record.ObservedAt, inside, outside)
 	return err
 }
 

@@ -1,7 +1,10 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 )
@@ -56,22 +59,90 @@ func TestFleetNearbyChargingPath(t *testing.T) {
 
 func TestNearbyCacheFreshness(t *testing.T) {
 	application := &app{}
-	if _, ok := application.nearbyCacheGet("user", 7); ok {
+	key := nearbyCacheKey("user", 7)
+	if _, ok := application.nearbyCacheGet(key); ok {
 		t.Fatal("empty cache must miss")
 	}
 	sites := []chargingSite{{Name: "SC", Type: "supercharger"}}
-	application.nearbyCachePut("user", 7, sites)
-	got, ok := application.nearbyCacheGet("user", 7)
+	application.nearbyCachePut(key, sites)
+	got, ok := application.nearbyCacheGet(key)
 	if !ok || len(got) != 1 || got[0].Name != "SC" {
 		t.Fatalf("cache get = %#v, %v", got, ok)
 	}
-	if _, ok := application.nearbyCacheGet("user", 8); ok {
+	if _, ok := application.nearbyCacheGet(nearbyCacheKey("user", 8)); ok {
 		t.Fatal("different vehicle must miss")
 	}
 	application.nearbyMu.Lock()
-	application.nearbyCache[nearbyCacheKey("user", 7)] = nearbyCacheEntry{sites: sites, fetchedAt: time.Now().Add(-nearbyChargingCacheTTL - time.Second)}
+	application.nearbyCache[key] = nearbyCacheEntry{sites: sites, fetchedAt: time.Now().Add(-nearbyChargingCacheTTL - time.Second)}
 	application.nearbyMu.Unlock()
-	if _, ok := application.nearbyCacheGet("user", 7); ok {
+	if _, ok := application.nearbyCacheGet(key); ok {
 		t.Fatal("expired entry must miss")
+	}
+}
+
+func TestAmapNearbyChargingSitesNormalizesPOIs(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("key") != "test-key" || r.URL.Query().Get("location") != "120.155100,30.274100" ||
+			r.URL.Query().Get("keywords") != "充电站" || r.URL.Query().Get("sortrule") != "distance" {
+			t.Errorf("query = %s", r.URL.RawQuery)
+		}
+		_, _ = w.Write([]byte(`{"status":"1","pois":[
+			{"name":"远处充电站","location":"120.200000,30.300000","distance":"2600"},
+			{"name":"附近充电站","location":"120.160000,30.280000","distance":"850"},
+			{"name":"坐标无效","location":"bad","distance":"10"}
+		]}`))
+	}))
+	defer upstream.Close()
+	previous := amapPlaceAroundURL
+	amapPlaceAroundURL = upstream.URL
+	defer func() { amapPlaceAroundURL = previous }()
+
+	sites, err := amapNearbyChargingSites(context.Background(), "test-key", 30.2741, 120.1551)
+	if err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	if len(sites) != 2 || sites[0].Name != "附近充电站" || sites[1].Name != "远处充电站" {
+		t.Fatalf("sites = %#v", sites)
+	}
+	if sites[0].Type != "poi" || sites[0].DistanceKM == nil || *sites[0].DistanceKM != 0.85 {
+		t.Fatalf("site = %#v", sites[0])
+	}
+	if sites[0].Latitude == nil || *sites[0].Latitude != 30.28 || sites[0].Longitude == nil || *sites[0].Longitude != 120.16 {
+		t.Fatalf("coordinates = %#v/%#v", sites[0].Latitude, sites[0].Longitude)
+	}
+}
+
+func TestAmapNearbyChargingSitesRejectsUpstreamError(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"status":"0","info":"INVALID_USER_KEY"}`))
+	}))
+	defer upstream.Close()
+	previous := amapPlaceAroundURL
+	amapPlaceAroundURL = upstream.URL
+	defer func() { amapPlaceAroundURL = previous }()
+
+	if sites, err := amapNearbyChargingSites(context.Background(), "bad-key", 30.2741, 120.1551); err == nil || sites != nil {
+		t.Fatalf("error response accepted: %#v %v", sites, err)
+	}
+}
+
+func TestNearbyCoordinatesRequiresBothValues(t *testing.T) {
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/cars/1/nearby-charging-sites?lat=30.27&lng=120.15", nil)
+	if latitude, longitude, ok := nearbyCoordinates(request); !ok || latitude != 30.27 || longitude != 120.15 {
+		t.Fatalf("coordinates = %v,%v ok=%v", latitude, longitude, ok)
+	}
+	if _, _, ok := nearbyCoordinates(httptest.NewRequest(http.MethodGet, "/api/v1/cars/1/nearby-charging-sites?lat=30.27", nil)); ok {
+		t.Fatal("missing longitude accepted")
+	}
+	if _, _, ok := nearbyCoordinates(httptest.NewRequest(http.MethodGet, "/api/v1/cars/1/nearby-charging-sites?lat=91&lng=120", nil)); ok {
+		t.Fatal("out-of-range latitude accepted")
+	}
+}
+
+func TestClimateHistoryDays(t *testing.T) {
+	for raw, want := range map[string]int{"7": 7, "30": 30, "": 7, "14": 7, "365": 7} {
+		if got := climateHistoryDays(raw); got != want {
+			t.Fatalf("days(%q) = %d, want %d", raw, got, want)
+		}
 	}
 }

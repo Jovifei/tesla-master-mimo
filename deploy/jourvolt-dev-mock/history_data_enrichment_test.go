@@ -7,7 +7,7 @@ import (
 )
 
 func TestDriveEvidenceFromPayloadReadsEndpoints(t *testing.T) {
-	payload := `{"start":{"soc_percent":75,"rated_range_km":298.9},"end":{"soc_percent":74,"rated_range_km":295.81}}`
+	payload := `{"start":{"soc_percent":75,"rated_range_km":298.9},"end":{"soc_percent":74,"rated_range_km":295.81},"outside_temp_avg_c":18.4,"inside_temp_avg_c":22.6}`
 	evidence, ok := driveEvidenceFromPayload(payload)
 	if !ok {
 		t.Fatal("expected usable evidence")
@@ -17,6 +17,27 @@ func TestDriveEvidenceFromPayloadReadsEndpoints(t *testing.T) {
 	}
 	if evidence.StartRangeKm == nil || *evidence.StartRangeKm != 298.9 || evidence.EndRangeKm == nil || *evidence.EndRangeKm != 295.81 {
 		t.Fatalf("range endpoints = %+v", evidence)
+	}
+	if evidence.OutsideTempAvgC == nil || *evidence.OutsideTempAvgC != 18.4 || evidence.InsideTempAvgC == nil || *evidence.InsideTempAvgC != 22.6 {
+		t.Fatalf("temperature evidence = %+v", evidence)
+	}
+}
+
+func TestDriveEvidenceFromPayloadAcceptsTemperatureOnly(t *testing.T) {
+	evidence, ok := driveEvidenceFromPayload(`{"outside_temp_avg_c":-3.5}`)
+	if !ok || evidence.OutsideTempAvgC == nil || *evidence.OutsideTempAvgC != -3.5 {
+		t.Fatalf("temperature-only evidence = %+v ok=%v", evidence, ok)
+	}
+}
+
+func TestEndpointTemperatureRejectsImplausibleValues(t *testing.T) {
+	for _, value := range []float64{-61, 81} {
+		if temperature, ok := endpointTemperature(&value); ok || temperature != nil {
+			t.Fatalf("temperature %v accepted as %v", value, temperature)
+		}
+	}
+	if temperature, ok := endpointTemperature(nil); ok || temperature != nil {
+		t.Fatalf("nil temperature accepted as %v", temperature)
 	}
 }
 
@@ -97,10 +118,11 @@ func TestEnrichDriveItemAddsRangeSocAndAddress(t *testing.T) {
 	}
 	evidence := map[string]driveBatteryEvidence{
 		"teslamate:drive:496": {
-			StartSOC:     intPointerForTest(75),
-			EndSOC:       intPointerForTest(74),
-			StartRangeKm: floatPointerForTest(298.9),
-			EndRangeKm:   floatPointerForTest(295.81),
+			StartSOC:        intPointerForTest(75),
+			EndSOC:          intPointerForTest(74),
+			StartRangeKm:    floatPointerForTest(298.9),
+			EndRangeKm:      floatPointerForTest(295.81),
+			OutsideTempAvgC: floatPointerForTest(18.4),
 		},
 	}
 	places := &historyPlaceIndex{Points: []historyPlacePoint{
@@ -138,6 +160,42 @@ func TestEnrichDriveItemAddsRangeSocAndAddress(t *testing.T) {
 	}
 	if item["start_address_inferred"] != true || item["end_address_inferred"] != true {
 		t.Fatal("inferred addresses must be marked")
+	}
+	if item["outside_temp_avg"] != 18.4 || item["outside_temp_avg_inferred"] != nil {
+		t.Fatalf("outside temperature = %v inferred=%v", item["outside_temp_avg"], item["outside_temp_avg_inferred"])
+	}
+}
+
+func TestEnrichDriveItemKeepsExistingTemperature(t *testing.T) {
+	service := &telemetryService{}
+	item := map[string]any{"outside_temp_avg": 9.5}
+	session := telemetrySession{Source: "teslamate_archive", SourceRecordID: "teslamate:drive:9"}
+	evidence := map[string]driveBatteryEvidence{
+		"teslamate:drive:9": {OutsideTempAvgC: floatPointerForTest(18.4)},
+	}
+
+	service.enrichDriveItem(item, session, nil, evidence, nil, 58.545)
+
+	if item["outside_temp_avg"] != 9.5 {
+		t.Fatalf("route-sample temperature replaced: %v", item["outside_temp_avg"])
+	}
+}
+
+func TestEnrichDriveItemMarksBorrowedTemperature(t *testing.T) {
+	service := &telemetryService{}
+	start := time.Date(2026, 11, 2, 10, 54, 0, 0, time.UTC)
+	end := start.Add(26 * time.Minute)
+	item := map[string]any{"outside_temp_avg": nil}
+	session := telemetrySession{Source: "telemetry_mqtt", SourceRecordID: "mqtt:drive:7", StartAt: start, EndAt: &end}
+	window := &historyDriveWindow{RecordID: "teslamate:drive:42", StartAt: start.Add(110 * time.Second), EndAt: end.Add(104 * time.Second)}
+	evidence := map[string]driveBatteryEvidence{
+		"teslamate:drive:42": {OutsideTempAvgC: floatPointerForTest(-2.4)},
+	}
+
+	service.enrichDriveItem(item, session, window, evidence, nil, 58.545)
+
+	if item["outside_temp_avg"] != -2.4 || item["outside_temp_avg_inferred"] != true {
+		t.Fatalf("borrowed temperature = %v inferred=%v", item["outside_temp_avg"], item["outside_temp_avg_inferred"])
 	}
 }
 

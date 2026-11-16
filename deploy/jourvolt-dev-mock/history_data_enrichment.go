@@ -21,6 +21,10 @@ type driveBatteryEvidence struct {
 	EndSOC       *int
 	StartRangeKm *float64
 	EndRangeKm   *float64
+	// Temperature is the drive average TeslaMate reports in its drive summary.
+	// It is evidence about the drive window, not a route sample.
+	OutsideTempAvgC *float64
+	InsideTempAvgC  *float64
 }
 
 type historyPlacePoint struct {
@@ -95,6 +99,27 @@ func historyItemInteger(item map[string]any, key string) (int, bool) {
 	return 0, false
 }
 
+func historyItemFloat(item map[string]any, key string) (float64, bool) {
+	switch value := item[key].(type) {
+	case float64:
+		if math.IsNaN(value) || math.IsInf(value, 0) {
+			return 0, false
+		}
+		return value, true
+	case int:
+		return float64(value), true
+	case int64:
+		return float64(value), true
+	case json.Number:
+		parsed, err := value.Float64()
+		if err != nil || math.IsNaN(parsed) || math.IsInf(parsed, 0) {
+			return 0, false
+		}
+		return parsed, true
+	}
+	return 0, false
+}
+
 func endpointSOC(endpoint batteryEvidenceEndpoint) (*int, bool) {
 	if endpoint.SOCPercent == nil {
 		return nil, false
@@ -115,6 +140,14 @@ func endpointRatedRange(endpoint batteryEvidenceEndpoint) (*float64, bool) {
 		return nil, false
 	}
 	return &value, true
+}
+
+func endpointTemperature(value *float64) (*float64, bool) {
+	if value == nil || math.IsNaN(*value) || math.IsInf(*value, 0) || *value < -60 || *value > 80 {
+		return nil, false
+	}
+	temperature := *value
+	return &temperature, true
 }
 
 func driveEvidenceFromPayload(payload string) (driveBatteryEvidence, bool) {
@@ -138,6 +171,14 @@ func driveEvidenceFromPayload(payload string) (driveBatteryEvidence, bool) {
 	}
 	if rated, ok := endpointRatedRange(decoded.End); ok {
 		evidence.EndRangeKm = rated
+		usable = true
+	}
+	if temperature, ok := endpointTemperature(decoded.OutsideTempAvgC); ok {
+		evidence.OutsideTempAvgC = temperature
+		usable = true
+	}
+	if temperature, ok := endpointTemperature(decoded.InsideTempAvgC); ok {
+		evidence.InsideTempAvgC = temperature
 		usable = true
 	}
 	return evidence, usable
@@ -563,8 +604,10 @@ func (s *telemetryService) enrichDriveItem(item map[string]any, session telemetr
 		}
 	}
 	found, hasEvidence := evidence[strings.TrimSpace(session.SourceRecordID)]
+	evidenceFromMatchedWindow := false
 	if !hasEvidence && window != nil && window.RecordID != "" {
 		found, hasEvidence = evidence[window.RecordID]
+		evidenceFromMatchedWindow = hasEvidence
 	}
 	if hasEvidence {
 		if found.StartRangeKm != nil && found.EndRangeKm != nil {
@@ -574,6 +617,21 @@ func (s *telemetryService) enrichDriveItem(item map[string]any, session telemetr
 			}
 			if window != nil {
 				item["range_rated_inferred"] = true
+			}
+		}
+		// TeslaMate reports one average temperature per drive. It belongs to
+		// this drive's window even when the drive came from live telemetry and
+		// only the overlapping archive record carried the summary.
+		if _, present := historyItemFloat(item, "outside_temp_avg"); !present && found.OutsideTempAvgC != nil {
+			item["outside_temp_avg"] = batteryHealthRound(*found.OutsideTempAvgC, 1)
+			if evidenceFromMatchedWindow {
+				item["outside_temp_avg_inferred"] = true
+			}
+		}
+		if _, present := historyItemFloat(item, "inside_temp_avg"); !present && found.InsideTempAvgC != nil {
+			item["inside_temp_avg"] = batteryHealthRound(*found.InsideTempAvgC, 1)
+			if evidenceFromMatchedWindow {
+				item["inside_temp_avg_inferred"] = true
 			}
 		}
 		details, _ := item["battery_details"].(map[string]any)
