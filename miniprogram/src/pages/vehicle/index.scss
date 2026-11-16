@@ -11,6 +11,7 @@
   --dashboard-soft: var(--apple-surface-secondary, #edeff2);
   --dashboard-badge-bg: var(--apple-fill-quaternary, #ddf0f1);
   --dashboard-badge-fg: var(--apple-label-secondary, #164e63);
+  --dashboard-action-on: #ffffff;
   --dashboard-warning-bg: var(--apple-warning-soft, rgba(255, 149, 0, 0.12));
   color:var(--dashboard-text);
   .dashboard-system-bar-cover {
@@ -522,7 +523,7 @@
     border-radius:999rpx
   }
   .dashboard-soc-window.active {
-    color:#fff;
+    color:var(--dashboard-action-on);
     background:var(--dashboard-primary);
     border-color:var(--dashboard-primary)
   }
@@ -752,6 +753,7 @@
     --dashboard-soft:#282d34;
     --dashboard-badge-bg:#164e63;
     --dashboard-badge-fg:#cffafe;
+    --dashboard-action-on:#111315;
   }
   .vehicle-page .dashboard-system-bar-cover,.vehicle-page .dashboard-capsule-cover { background:#111315; }
   .vehicle-page .dashboard-icon-light  {
@@ -811,9 +813,9 @@
 
 .vehicle-remote-card {
   padding: 32rpx;
-  background: #ffffff;
+  background: var(--dashboard-surface);
   border-radius: 28rpx;
-  border: 1rpx solid rgba(233, 237, 242, 0.7);
+  border: 1rpx solid var(--dashboard-border);
 
   .remote-card-header {
     display: flex;
@@ -898,7 +900,7 @@
 
   .remote-group-divider {
     height: 1rpx;
-    background: rgba(233, 237, 242, 0.6);
+    background: var(--dashboard-border);
     margin: 20rpx 0;
   }
 
@@ -910,8 +912,8 @@
     gap: 8rpx;
     padding: 18rpx 12rpx;
     min-height: 76rpx;
-    background: #ffffff;
-    border: 1rpx solid rgba(233, 237, 242, 0.9);
+    background: var(--dashboard-surface);
+    border: 1rpx solid var(--dashboard-border);
     border-radius: 20rpx;
     margin: 0;
     line-height: 1.2;
@@ -948,8 +950,8 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    background: #ffffff;
-    border: 1rpx solid rgba(233, 237, 242, 0.9);
+    background: var(--dashboard-surface);
+    border: 1rpx solid var(--dashboard-border);
     border-radius: 20rpx;
     height: 76rpx;
     padding: 0 8rpx;
@@ -1017,9 +1019,9 @@
 
 .nearby-charging-card, .vehicle-places-card {
   padding: 32rpx;
-  background: #ffffff;
+  background: var(--dashboard-surface);
   border-radius: 28rpx;
-  border: 1rpx solid rgba(233, 237, 242, 0.7);
+  border: 1rpx solid var(--dashboard-border);
 
   .nearby-card-header, .places-card-header {
     display: flex;
@@ -1060,7 +1062,7 @@
       padding: 18rpx 20rpx;
       border-radius: 18rpx;
       background: var(--dashboard-neutral-soft);
-      border: 1rpx solid rgba(233, 237, 242, 0.6);
+      border: 1rpx solid var(--dashboard-border);
 
       .site-type-badge {
         width: 60rpx;
@@ -1102,7 +1104,7 @@
         font-weight: 700;
         color: var(--dashboard-primary);
         padding: 6rpx 14rpx;
-        background: #ffffff;
+        background: var(--dashboard-surface);
         border-radius: 12rpx;
         border: 1rpx solid rgba(21, 122, 134, 0.2);
         white-space: nowrap;
@@ -1121,7 +1123,7 @@
         margin: 0;
         padding: 6rpx 16rpx;
         font-size: 22rpx;
-        background: #ffffff;
+        background: var(--dashboard-surface);
         color: #ef4444;
         border: 1rpx solid rgba(239, 68, 68, 0.3);
         border-radius: 999rpx;
@@ -1135,7 +1137,7 @@
       flex-direction: column;
       gap: 12rpx;
       padding-top: 16rpx;
-      border-top: 1rpx solid rgba(233, 237, 242, 0.8);
+      border-top: 1rpx solid var(--dashboard-border);
 
       .frequent-places-title {
         font-size: 22rpx;
@@ -1152,7 +1154,7 @@
         padding: 6rpx 18rpx;
         font-size: 22rpx;
         background: var(--dashboard-primary);
-        color: #ffffff;
+        color: var(--dashboard-action-on);
         border: none;
         border-radius: 999rpx;
         line-height: 1.4;

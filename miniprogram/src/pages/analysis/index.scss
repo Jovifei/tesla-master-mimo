@@ -45,7 +45,11 @@
   .history-chip {
     flex: none;
     margin: 0;
-    padding: 10rpx 24rpx;
+    padding: 0 22rpx;
+    min-height: 64rpx;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     background: var(--apple-surface);
     border: 1rpx solid var(--apple-separator);
     color: var(--apple-label-secondary);

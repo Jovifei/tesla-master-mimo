@@ -120,14 +120,14 @@
   .history-chip {
     flex: none;
     margin: 0;
-    border: 1rpx solid rgba(233, 237, 242, 0.9);
+    border: 1rpx solid var(--apple-separator);
     border-radius: 999rpx;
-    background: #ffffff;
-    color: #6b7280;
-    padding: 4rpx 18rpx;
-    font-size: 22rpx;
+    background: var(--apple-surface);
+    color: var(--apple-label-secondary);
+    padding: 0 20rpx;
+    font-size: 24rpx;
     line-height: 1.35;
-    height: 44rpx;
+    height: 64rpx;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -135,11 +135,10 @@
     &::after { border: none; }
   }
   .history-chip-selected {
-    background: #ffffff !important;
-    border-color: #157a86 !important;
-    color: #157a86 !important;
+    background: var(--apple-teal-soft) !important;
+    border-color: var(--apple-label-primary) !important;
+    color: var(--apple-label-primary) !important;
     font-weight: 600;
-    box-shadow: 0 2rpx 8rpx rgba(21, 122, 134, 0.15);
   }
 
   .history-record {

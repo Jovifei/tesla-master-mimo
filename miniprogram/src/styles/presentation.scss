@@ -143,3 +143,8 @@
   .account-card .wechat-box-badge { background: #242a31; color: #b7bdc6; }
   .account-card .wechat-box-badge.bound { background: #153a26; color: #7fe0a4; }
 }
+
+@media (prefers-color-scheme: dark) {
+  .account-hero { background: var(--apple-surface); }
+  .consent-card { border-color: var(--apple-separator); }
+}
