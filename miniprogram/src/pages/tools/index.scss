@@ -105,6 +105,14 @@
   .muted { display: block; margin: 12rpx 0; }
   .tools-actions { display: flex; gap: 20rpx; margin-top: 20rpx; }
   .vehicle-map { width: 100%; height: 500rpx; border-radius: 20rpx; overflow: hidden; }
+  .tariff-price-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16rpx;
+    margin-top: 8rpx;
+  }
+  .tariff-price-grid .tariff-field { margin: 0; min-width: 0; }
+  .tariff-price-grid .tariff-field input { width: 100%; box-sizing: border-box; }
   .tariff-field { margin: 24rpx 0; font-size: 28rpx; }
   .tariff-field input { background: #ffffff; border: 1rpx solid #e5e5e5; padding: 16rpx 20rpx; border-radius: 16rpx; margin-top: 12rpx; }
   .vehicle-wireframe-stage { display: flex; justify-content: center; align-items: center; height: 480rpx; overflow: hidden; }
