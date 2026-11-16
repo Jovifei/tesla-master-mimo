@@ -13,8 +13,11 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.*
@@ -75,6 +78,10 @@ import com.matelink.domain.model.VehicleHeroProfile
 import com.matelink.domain.model.UnitFormatter
 import com.matelink.domain.telemetry.SnapshotFreshness
 import com.matelink.domain.model.resolveVehicleHeroProfile
+import com.matelink.domain.analytics.SocTrendPoint
+import com.matelink.domain.analytics.SocTrendUnavailable
+import com.matelink.domain.analytics.dailySocTrend
+import java.time.Instant
 import com.matelink.ui.theme.StatusSuccess
 import com.matelink.ui.theme.StatusWarning
 import com.matelink.ui.theme.SwissInk
@@ -832,6 +839,10 @@ fun DashboardScreen(
             }
         }
 
+        // Inline recorded battery history. The App shows the daily SOC curve
+        // here instead of sending the user to the statistics screen.
+        DashboardSocTrendCard(drives = uiState.recentDrives)
+
         // Fleet expansion sections (design 2026-11-05 §5–�?): vehicle
         // controls (hidden until the backend reports command scopes
         // ready), nearby charging (loaded on demand to save Fleet API
@@ -1124,6 +1135,155 @@ fun DashboardScreen(
         }
     }
 }
+}
+
+/** Inline daily SOC curve: one honest point per recorded drive day. */
+@Composable
+private fun DashboardSocTrendCard(drives: List<com.matelink.data.local.entity.DriveSummary>) {
+    var windowDays by remember { mutableStateOf(7) }
+    val trend = remember(drives, windowDays) {
+        dailySocTrend(drives, windowDays, Instant.now())
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Bolt,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Text(
+                        text = "每日电量趋势",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    listOf(7 to "近7天", 30 to "近30天").forEach { (days, label) ->
+                        TextButton(
+                            onClick = { windowDays = days },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = label,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = if (windowDays == days) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontWeight = if (windowDays == days) FontWeight.SemiBold else FontWeight.Normal
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (trend.points.isEmpty()) {
+                Text(
+                    text = when (trend.unavailableReason) {
+                        SocTrendUnavailable.NO_HISTORY_IN_WINDOW ->
+                            "近${windowDays}天没有已完成行程，暂无每日电量记录。"
+                        else -> "窗口内的行程没有携带可验证的起止电量，未生成曲线。"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                Row(
+                    verticalAlignment = Alignment.Bottom,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "${trend.latestSoc}%",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = buildString {
+                            append("最近记录 · 共 ${trend.points.size} 个记录日")
+                            trend.change?.let { change ->
+                                append(" · 窗口变化 ")
+                                append(if (change > 0) "+" else "")
+                                append(change)
+                                append("%")
+                            }
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                SocTrendCanvas(
+                    points = trend.points,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(110.dp)
+                )
+                Text(
+                    text = "每点为当日最后一次已完成行程结束时的电量；没有记录的日期不补点。",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SocTrendCanvas(points: List<SocTrendPoint>, modifier: Modifier = Modifier) {
+    val lineColor = MaterialTheme.colorScheme.primary
+    val baselineColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+    Canvas(modifier = modifier) {
+        val pad = 10.dp.toPx()
+        val low = (points.minOf { it.soc } - 4).coerceAtLeast(0)
+        val high = (points.maxOf { it.soc } + 4).coerceAtMost(100).coerceAtLeast(low + 8)
+        val span = (high - low).coerceAtLeast(1)
+        val first = points.first().at.toEpochMilli()
+        val last = points.last().at.toEpochMilli()
+        val usableWidth = size.width - pad * 2
+        val usableHeight = size.height - pad * 2
+        fun x(at: Instant): Float =
+            pad + if (last == first) usableWidth / 2f
+            else ((at.toEpochMilli() - first).toFloat() / (last - first).toFloat()) * usableWidth
+        fun y(soc: Int): Float = pad + ((high - soc).toFloat() / span.toFloat()) * usableHeight
+
+        drawLine(
+            color = baselineColor,
+            start = Offset(pad, size.height - pad),
+            end = Offset(size.width - pad, size.height - pad),
+            strokeWidth = 1.dp.toPx()
+        )
+        for (index in 1 until points.size) {
+            drawLine(
+                color = lineColor,
+                start = Offset(x(points[index - 1].at), y(points[index - 1].soc)),
+                end = Offset(x(points[index].at), y(points[index].soc)),
+                strokeWidth = 2.dp.toPx(),
+                cap = StrokeCap.Round
+            )
+        }
+        points.forEach { point ->
+            drawCircle(
+                color = lineColor,
+                radius = 3.dp.toPx(),
+                center = Offset(x(point.at), y(point.soc))
+            )
+        }
+    }
 }
 
 @Composable

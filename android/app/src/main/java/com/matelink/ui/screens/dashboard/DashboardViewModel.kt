@@ -132,7 +132,9 @@ data class DashboardUiState(
     val customPhotoFile: java.io.File? = null,
     val isAmapConfigured: Boolean = false,
     val isHudDismissed: Boolean = false,
-    val recentDrive: com.matelink.data.local.entity.DriveSummary? = null
+    val recentDrive: com.matelink.data.local.entity.DriveSummary? = null,
+    /** Bounded recent history for the dashboard's inline daily SOC curve. */
+    val recentDrives: List<com.matelink.data.local.entity.DriveSummary> = emptyList()
 )
 
 /** Final publication fence: a late response from a previous login cannot reuse a numeric car id. */
@@ -243,12 +245,12 @@ class DashboardViewModel @Inject constructor(
             settingsRepository.currentCarId.flatMapLatest { id ->
                 val historyId = resolveLocalHistoryCarId(id)
                 driveSummaryDao.observeAll(historyId).map { drives ->
-                    drives.firstOrNull() ?: driveSummaryDao.getLatestAnyCar()
+                    if (drives.isNotEmpty()) drives.take(120)
+                    else listOfNotNull(driveSummaryDao.getLatestAnyCar())
                 }
-            }.collect { latestDrive ->
-                if (latestDrive != null) {
-                    _uiState.update { it.copy(recentDrive = latestDrive) }
-                }
+            }.collect { drives ->
+                val latestDrive = drives.firstOrNull()
+                _uiState.update { it.copy(recentDrive = latestDrive ?: it.recentDrive, recentDrives = drives) }
             }
         }
         viewModelScope.launch {
@@ -553,7 +555,8 @@ class DashboardViewModel @Inject constructor(
                     },
                     isAmapConfigured = hasAmap,
                     isHudDismissed = _uiState.value.isHudDismissed,
-                    recentDrive = latestDrive ?: _uiState.value.recentDrive
+                    recentDrive = latestDrive ?: _uiState.value.recentDrive,
+                    recentDrives = _uiState.value.recentDrives
                 )
 
                 launch {
