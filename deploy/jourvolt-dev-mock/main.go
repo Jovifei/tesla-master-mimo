@@ -892,9 +892,7 @@ func (a *app) carResource(w http.ResponseWriter, r *http.Request, userID, path s
 			a.json(w, http.StatusNotFound, map[string]string{"error": "not_found"})
 			return
 		}
-		a.json(w, http.StatusOK, map[string]any{"data": map[string]any{
-			"battery_health": nil, "meta": a.unsupportedMeta(userID),
-		}})
+		a.batteryHealth(w, r, userID, carID)
 	case "updates":
 		if r.Method != http.MethodGet {
 			a.json(w, http.StatusNotFound, map[string]string{"error": "not_found"})

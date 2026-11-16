@@ -30,7 +30,7 @@ type boundedHistoryPageRow struct {
 	ChargeLongitude   *float64
 	DriveStartPoint   *telemetryRoutePoint
 	DriveEndPoint     *telemetryRoutePoint
-    EnergyContract map[string]any
+	EnergyContract    map[string]any
 	Sequence          int
 }
 
@@ -162,11 +162,11 @@ func historyFleetDriveEndpoint(position string) string {
 
 func decodeFleetDriveEndpoint(data []byte, session telemetrySession) *telemetryRoutePoint {
 	var value struct {
-		Time      string   `json:"time"`
-		UpperLat  *float64 `json:"upper_lat"`
-		UpperLon  *float64 `json:"upper_lon"`
-		LowerLat  *float64 `json:"lower_lat"`
-		LowerLon  *float64 `json:"lower_lon"`
+		Time     string   `json:"time"`
+		UpperLat *float64 `json:"upper_lat"`
+		UpperLon *float64 `json:"upper_lon"`
+		LowerLat *float64 `json:"lower_lat"`
+		LowerLon *float64 `json:"lower_lon"`
 	}
 	if len(data) == 0 || json.Unmarshal(data, &value) != nil || session.StartAt.IsZero() || session.EndAt == nil {
 		return nil
@@ -208,10 +208,10 @@ SELECT s.id, s.public_id, s.started_at, s.ended_at, s.odometer_start, s.odometer
        s.source, s.quality_state, s.quality_reason,
        COALESCE(s.source_instance_id,''), COALESCE(s.source_vehicle_id,''), COALESCE(s.source_record_id,''),
        s.start_address, s.end_address, s.address, s.cost,
-       CASE WHEN s.kind='drive' AND s.source='telemetry_mqtt' THEN NULL ELSE NULLIF(s.route_json->0->>'latitude','')::double precision END,
-       CASE WHEN s.kind='drive' AND s.source='telemetry_mqtt' THEN NULL ELSE NULLIF(s.route_json->0->>'longitude','')::double precision END,
-       CASE WHEN s.kind='drive' AND s.source='telemetry_mqtt' THEN NULL ELSE NULLIF(s.route_json->(jsonb_array_length(CASE WHEN jsonb_typeof(s.route_json)='array' THEN s.route_json ELSE '[]'::jsonb END)-1)->>'latitude','')::double precision END,
-       CASE WHEN s.kind='drive' AND s.source='telemetry_mqtt' THEN NULL ELSE NULLIF(s.route_json->(jsonb_array_length(CASE WHEN jsonb_typeof(s.route_json)='array' THEN s.route_json ELSE '[]'::jsonb END)-1)->>'longitude','')::double precision END,
+CASE WHEN s.kind='drive' AND s.source='telemetry_mqtt' THEN NULL ELSE `+historyRoutePointLatitude(historyRouteFirstPointExpr)+` END,
+       CASE WHEN s.kind='drive' AND s.source='telemetry_mqtt' THEN NULL ELSE `+historyRoutePointLongitude(historyRouteFirstPointExpr)+` END,
+       CASE WHEN s.kind='drive' AND s.source='telemetry_mqtt' THEN NULL ELSE `+historyRoutePointLatitude(historyRouteLastPointExpr)+` END,
+       CASE WHEN s.kind='drive' AND s.source='telemetry_mqtt' THEN NULL ELSE `+historyRoutePointLongitude(historyRouteLastPointExpr)+` END,
        `+historyFleetDriveEndpoint("0")+`,
        `+historyFleetDriveEndpoint("jsonb_array_length(CASE WHEN jsonb_typeof(s.route_json)='array' THEN s.route_json ELSE '[]'::jsonb END)-1")+`,
        `+historySOCAtPosition("observed.first_position")+`,
@@ -281,7 +281,7 @@ ORDER BY p.started_at DESC, p.public_id DESC
 			return nil, err
 		}
 		var row boundedHistoryPageRow
-        var contractJSON []byte
+		var contractJSON []byte
 		var driveStartJSON, driveEndJSON []byte
 		var startLatitude, startLongitude, endLatitude, endLongitude *float64
 		if err := rows.Scan(
@@ -300,9 +300,11 @@ ORDER BY p.started_at DESC, p.public_id DESC
 			return nil, err
 		}
 		row.Session.Kind = kind
-        if len(contractJSON)>0 && string(contractJSON)!="null" {
-            if err:=json.Unmarshal(contractJSON,&row.EnergyContract); err!=nil {return nil,err}
-        }
+		if len(contractJSON) > 0 && string(contractJSON) != "null" {
+			if err := json.Unmarshal(contractJSON, &row.EnergyContract); err != nil {
+				return nil, err
+			}
+		}
 		if kind == "drive" && row.Session.Source == "telemetry_mqtt" {
 			row.DriveStartPoint = decodeFleetDriveEndpoint(driveStartJSON, row.Session)
 			row.DriveEndPoint = decodeFleetDriveEndpoint(driveEndJSON, row.Session)
@@ -553,6 +555,7 @@ func (s *telemetryService) historyPageContext(ctx context.Context, userID string
 		return nil, nil, 0, resolvedShow, err
 	}
 	items := make([]map[string]any, 0, len(rows))
+	sessions := make([]telemetrySession, 0, len(rows))
 	for _, row := range rows {
 		if err := readCtx.Err(); err != nil {
 			return nil, nil, 0, resolvedShow, err
@@ -567,16 +570,21 @@ func (s *telemetryService) historyPageContext(ctx context.Context, userID string
 				item["end_latitude"], item["end_longitude"] = row.DriveEndPoint.Latitude, row.DriveEndPoint.Longitude
 			}
 		}
-        if kind == "charge" && validFleetCoordinates(row.ChargeLatitude, row.ChargeLongitude) {
-            item["latitude"], item["longitude"] = *row.ChargeLatitude, *row.ChargeLongitude
-        }
-        if kind=="charge" && row.Session.Source=="telemetry_mqtt" && row.EnergyContract!=nil {
-            publishChargeEnergyContract(item,row.EnergyContract)
-        }
+		if kind == "charge" && validFleetCoordinates(row.ChargeLatitude, row.ChargeLongitude) {
+			item["latitude"], item["longitude"] = *row.ChargeLatitude, *row.ChargeLongitude
+		}
+		if kind == "charge" && row.Session.Source == "telemetry_mqtt" && row.EnergyContract != nil {
+			publishChargeEnergyContract(item, row.EnergyContract)
+		}
 		item["battery_details"] = driveBatteryDetails(row.StartBatteryLevel, row.EndBatteryLevel)
 		applyHistorySampleMetrics(item, row.Metrics, kind)
 		items = append(items, item)
+		sessions = append(sessions, row.Session)
 	}
+	// Archive drives can carry rated-range endpoints and counter-based charge
+	// windows; live drives and charges with missing addresses can borrow a
+	// labelled archive place. Enrichment never fails the read.
+	s.enrichHistorySessions(ctx, userID, vehicleID, kind, items, sessions)
 	return items, resultMeta, total, resolvedShow, readCtx.Err()
 }
 
@@ -704,5 +712,8 @@ func (s *telemetryService) historyDetailContext(ctx context.Context, userID stri
 	if err := readCtx.Err(); err != nil {
 		return nil, false, err
 	}
+	// Detail rows carry the full route, so address inference and endpoint
+	// evidence apply here exactly as they do for list rows.
+	s.enrichHistorySessions(ctx, userID, vehicleID, kind, []map[string]any{item}, []telemetrySession{session})
 	return item, true, nil
 }
