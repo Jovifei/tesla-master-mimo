@@ -26,14 +26,21 @@ export default function ReadinessChecklist({ items = [], pairing, sessionReady =
   const [expanded, setExpanded] = useState<string | null>(null)
   const [showSetup, setShowSetup] = useState(false), [showItems, setShowItems] = useState(false)
   const steps = diagnosticSteps({ ...diagnostics, items, pairing, sessionReady })
+  const readyCount = steps.filter(step => step.state === 'PASS' && step.freshness !== 'stale_or_skewed').length
+  const waitingCount = steps.filter(step => step.state === 'WAITING').length
+  const pendingCount = steps.length - readyCount - waitingCount
   const icons: VisualIconName[] = ['account', 'vehicle', 'cloud', 'shield', 'clock', 'chart']
   const readiness = readinessViewFor(items, 'telemetry')
   const pairingLabel = pairing?.status === 'available' ? '服务端报告就绪' : pairing?.status === 'pairing_required' ? '需要确认' : '待服务端确认'
   return (
     <View className="card readiness-compact">
       <View className="visual-heading"><VisualIcon name="cloud" /><Text className="section-title">数据状态</Text></View>
-      <Text className="muted">先看本次收到的数据，点开条目查看原因。未核验不等于故障，也不代表没有记录。</Text>
-      <Text className="muted">只读诊断 · 各项证据独立，不计算整链通过率。</Text>
+      <Text className="muted">只读诊断：各项证据独立，点开条目查看原因；未核验不等于故障，也不代表没有记录。</Text>
+      <View className="readiness-summary">
+        <Text className="readiness-summary-pill ready">{readyCount} 项已有证据</Text>
+        {waitingCount ? <Text className="readiness-summary-pill">{waitingCount} 项等待车辆</Text> : null}
+        {pendingCount ? <Text className="readiness-summary-pill">{pendingCount} 项待核对</Text> : null}
+      </View>
       {steps.map((step, index) => <View className="readiness-item" key={step.key}>
         <Button className="readiness-toggle" ariaLabel={`${expanded === step.key ? '收起' : '展开'} ${step.label}`} onClick={() => setExpanded(expanded === step.key ? null : step.key)}>
           <View className="visual-heading"><VisualIcon name={icons[index]} /><Text className="status-label">{step.label}</Text></View>

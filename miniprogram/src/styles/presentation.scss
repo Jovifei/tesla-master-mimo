@@ -101,6 +101,9 @@
 .readiness-toggle::after { border: 0; }
 .readiness-compact .readiness-item { padding: 0; }
 .readiness-compact .readiness-detail { padding-bottom: 24rpx; }
+.settings-section-heading { display: block; margin: 24rpx 12rpx 12rpx; font-size: 24rpx; font-weight: 600; color: var(--apple-label-secondary); letter-spacing: 0.5rpx; }
+.settings-nav-label { display: flex; align-items: center; gap: 16rpx; min-width: 0; }
+.settings-nav-label .visual-icon { width: 36rpx; height: 36rpx; flex: none; }
 .settings-nav-row { display: flex; width: 100%; justify-content: space-between; align-items: center; padding: 28rpx 0; min-height: 104rpx; background: transparent; border-bottom: 1px solid var(--apple-separator); text-align: left; color: var(--apple-label-primary); font-size: 30rpx; line-height: 1.5; }
 .settings-nav-row::after { border: 0; }
 .settings-nav-row:last-child { border-bottom: 0; }

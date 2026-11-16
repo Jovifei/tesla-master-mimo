@@ -6,6 +6,7 @@ import Taro, { useDidHide, useDidShow, useRouter, useUnload } from '@tarojs/taro
 import { useRef, useState } from 'react'
 import MetricValue from '../../components/MetricValue'
 import SectionHeading from '../../components/SectionHeading'
+import VisualIcon from '../../components/VisualIcon'
 import TpmsPanel from '../../components/TpmsPanel'
 import EvidenceCurve from '../../components/EvidenceCurve'
 import { temperatureTrendPoints } from '../../domain/temperature_trend'
@@ -55,6 +56,7 @@ export default function ToolsPage() {
   const [temperatureInsideSampleIndex, setTemperatureInsideSampleIndex] = useState(0)
   const [climateSamples, setClimateSamples] = useState<Partial<Record<7 | 30, ClimateSample[]>>>({})
   const [climateFailed, setClimateFailed] = useState(false)
+  const [showAboutHistory, setShowAboutHistory] = useState(false)
   const [zoom, setZoom] = useState(1), [pan, setPan] = useState({ x: 0, y: 0 })
   const [previewOpen, setPreviewOpen] = useState({ doors: false, frunk: false, port: false })
   const gesture = useRef({ x: 0, y: 0, distance: 0, zoom: 1, pan: { x: 0, y: 0 } })
@@ -222,16 +224,6 @@ export default function ToolsPage() {
     } catch (reason) { if (valid()) setError(reason instanceof ApiError ? reason.message : '历史位置暂时无法读取') }
     finally { if (valid()) setLoading(false) }
   }
-  const logout = async () => {
-    if (loading) return
-    const scope = scopeKey(), operation = epoch.current
-    const result = await Taro.showModal({ title: '退出登录', content: '仅结束当前会话，不删除车辆历史、费用或外观偏好。', confirmText: '退出登录' })
-    if (!result.confirm || operation !== epoch.current || scope !== scopeKey()) return
-    setLoading(true); setError(null)
-    try { await matelinkApi.logout(); if (pageVisible.current && !readAppSession(Taro)) await load() }
-    catch { if (pageVisible.current) setError('退出未完成，请重试；已有历史保留。') }
-    finally { if (pageVisible.current) setLoading(false) }
-  }
   const coordinate = mapCoordinate(status?.location?.latitude, status?.location?.longitude)
   const historicCoordinate = mapCoordinate(historicPosition?.latitude, historicPosition?.longitude)
   const profileEpoch = epoch.current
@@ -242,23 +234,35 @@ export default function ToolsPage() {
     {kind === 'account' ? <AccountManagementPanel sessionUserId={session?.userId ?? null} /> : null}
     {kind === 'settings' ? <>
       <PresentationPreferences />
+      <Text className="settings-section-heading">账号与车辆</Text>
       <View className="card settings-directory">
-        {([['account', '账号与授权管理'], ['language', '语言与单位'], ['tpmsSettings', '胎压提醒设置'], ['maps', '地图与导航'], ['tariff', '分时电价设置'], ['permissions', '提醒与权限'], ['localData', '本机数据与升级'], ['about', '关于 MateLink']] as const).map(([target, label]) =>
-          <Button key={target} className="settings-nav-row" onClick={() => Taro.navigateTo({ url: `/pages/tools/index?kind=${target}` })}><Text>{label}</Text><Text>›</Text></Button>)}
+        {([
+          ['account', '账号与授权管理', 'account'],
+          ['tpmsSettings', '胎压提醒设置', 'battery'],
+          ['maps', '地图与导航', 'map'],
+        ] as const).map(([target, label, icon]) =>
+          <Button key={target} className="settings-nav-row" onClick={() => Taro.navigateTo({ url: `/pages/tools/index?kind=${target}` })}><View className="settings-nav-label"><VisualIcon name={icon} /><Text>{label}</Text></View><Text>›</Text></Button>)}
       </View>
-      {session ? (
-        <View className="card settings-logout-card">
-          <Button className="button button-secondary" loading={loading} onClick={logout}>退出当前登录</Button>
-        </View>
-      ) : null}
+      <Text className="settings-section-heading">数据与偏好</Text>
+      <View className="card settings-directory">
+        {([
+          ['language', '语言与单位', 'settings'],
+          ['tariff', '分时电价设置', 'energy'],
+          ['permissions', '提醒与权限', 'shield'],
+          ['localData', '本机数据与升级', 'update'],
+          ['about', '关于 MateLink', 'info'],
+        ] as const).map(([target, label, icon]) =>
+          <Button key={target} className="settings-nav-row" onClick={() => Taro.navigateTo({ url: `/pages/tools/index?kind=${target}` })}><View className="settings-nav-label"><VisualIcon name={icon} /><Text>{label}</Text></View><Text>›</Text></Button>)}
+      </View>
     </> : null}
     {kind === 'localData' ? <>
       <View className="card local-data-status">
         <SectionHeading icon="shield" title="本机数据与升级" />
-        <Text className="muted">正常升级保留有效登录、费用、手动旅程和设置；不清空历史，也不要求重新授权。退出登录与删除账号是不同操作。</Text>
+<Text className="muted">升级保留：登录、费用、手动旅程和设置；不清空历史，也不要求重新授权。退出登录与删除账号是不同操作。</Text>
         {storageUsage ? <Text className="muted">本机已用 {Math.ceil(storageUsage.totalBytes / 1024)} / {storageUsage.budgetBytes / 1024} KiB；用户资料 {Math.ceil(storageUsage.userBytes / 1024)} KiB；新缓存为用户资料预留 {storageUsage.reservedUserBytes / 1024} KiB。</Text>
           : <Text className="muted">暂时无法读取存储状态；已有资料不会因此删除。</Text>}
-        <Text className="muted">空间不足时停止新增缓存并提示，不自动删除手填费用或手动旅程。卸载微信、主动清理存储与授权撤销不属于正常升级；摘要导出不是完整恢复备份。</Text>
+<Text className="muted">空间不足：停止新增缓存并提示，不自动删除手填费用或手动旅程。</Text>
+<Text className="muted">非正常升级：卸载微信、主动清理存储或撤销授权；摘要导出不是完整恢复备份。</Text>
       </View>
     </> : null}
     {kind === 'language' ? <View className="card">
@@ -280,7 +284,7 @@ export default function ToolsPage() {
       {(['currency', 'peak', 'flat', 'valley'] as const).map(key => <View className="tariff-field" key={key}><Text>{({ currency: '币种（例如 CNY）', peak: '峰价 / kWh', flat: '平价 / kWh', valley: '谷价 / kWh' })[key]}</Text><Input value={tariff[key]} type={key === 'currency' ? 'text' : 'digit'} onInput={event => setTariff({ ...tariff, [key]: key === 'currency' ? event.detail.value.toUpperCase() : event.detail.value })} /></View>)}
       <View className="status"><Text>启用分时电价</Text><Switch checked={tariff.enabled} onChange={event => setTariff({ ...tariff, enabled: event.detail.value })} /></View><View className="tariff-field"><Text>默认充电电价 / kWh（缺账单估算，关闭分时时也使用）</Text><Input value={tariff.defaultPrice} type="digit" onInput={event => setTariff({ ...tariff, defaultPrice: event.detail.value })} /></View>{(['peakRanges', 'flatRanges', 'valleyRanges'] as const).map(key => <View className="tariff-field" key={key}><Text>{({ peakRanges: '峰段小时', flatRanges: '平段小时', valleyRanges: '谷段小时' })[key]}</Text><Input value={tariff[key]} onInput={event => setTariff({ ...tariff, [key]: event.detail.value })} /></View>)}<Text className="muted">时段左闭右开、覆盖24小时且不重叠；跨午夜分两段。电价记录保存时本机IANA时区，估算不随设备移动改时区。关闭分时后只按明确默认电价估算。</Text><Button className="button button-secondary" onClick={() => setTariff({ ...tariff, currency: 'CNY', peak: '1', flat: '.7', valley: '.3', peakRanges: DEFAULT_TARIFF_PERIODS.peak, flatRanges: DEFAULT_TARIFF_PERIODS.flat, valleyRanges: DEFAULT_TARIFF_PERIODS.valley, enabled: true })}>恢复 App 默认时段和参考价格</Button>
       <Button className="button" onClick={saveTariff}>保存本机电价</Button></View> : null}
-    {kind === 'about' ? <View className="card"><SectionHeading icon="info" title="MateLink 车迹" /><Text>小程序 {APP_MINIPROGRAM_VERSION}</Text><Text className="metric-source">构建：{process.env.TARO_APP_SOURCE_REVISION?.slice(0, 12) || '未确认'}{process.env.TARO_APP_SOURCE_REVISION?.endsWith('-dirty') ? ' · 含未提交改动' : ''}</Text><Text className="muted">车辆、行程、充电与历史分析。记录的来源、时间和已知覆盖均单独展示。</Text><SectionHeading icon="update" title="本版更新" /><Text className="muted">0.7.8 优化分析与洞察页：电池容量/健康合并为两张卡、费用估算合并，刷新按钮紧凑化；分析页标题统一图标并限制长列表，可展开更多。</Text><Text className="muted">0.7.7 优化行程与充电详情：顶部新增关键指标摘要，无数据的指标分组收敛为一行说明，只为有采样的通道绘制曲线。</Text><Text className="muted">0.7.6 重构「更多」页为导航中心：账号摘要、两列分析磁贴、系统列表；账号管理、微信绑定与退出移至「账号与授权」二级页。</Text><Text className="muted">0.7.5 数据页对齐安卓端：首页内联每日电量趋势、附近充电与常用地点自动加载，新行程提示移至首页；行程距离筛选改为通勤/日游/公路旅行（10/100km），温度趋势新增车内历史记录。</Text><Text className="muted">0.7.3 重构「更多」页面与账号管理布局：移除已登录态顶部冗余条款，底部重构为紧凑横排按钮组与微信快捷进入面板，彻底缩短页面并优化交互。</Text><SectionHeading icon="update" title="历史更新" /><Text className="muted">0.7.2 修复「更多」磁贴样式与箭头。0.7.1 完善行程、充电与数据状态展示。0.6.7 全面落地 Apple 风格 UI 重构。</Text><Button className="button button-secondary" onClick={() => Taro.navigateTo({ url: '/pages/legal/index?kind=privacy' })}>隐私指引</Button><Button className="button button-secondary" onClick={() => Taro.navigateTo({ url: '/pages/legal/index?kind=terms' })}>服务条款</Button><Button className="button button-secondary" onClick={() => { void Taro.setClipboardData({ data: 'https://github.com/Jovifei/tesla-master-mimo/issues' }) }}>复制问题反馈地址</Button></View> : null}
+    {kind === 'about' ? <View className="card"><SectionHeading icon="info" title="MateLink 车迹" /><Text>小程序 {APP_MINIPROGRAM_VERSION}</Text><Text className="metric-source">构建：{process.env.TARO_APP_SOURCE_REVISION?.slice(0, 12) || '未确认'}{process.env.TARO_APP_SOURCE_REVISION?.endsWith('-dirty') ? ' · 含未提交改动' : ''}</Text><Text className="muted">车辆、行程、充电与历史分析。记录的来源、时间和已知覆盖均单独展示。</Text><SectionHeading icon="update" title="本版更新" /><Text className="muted">0.7.9 优化设置与数据状态：设置目录分组并加图标，移除重复退出入口；本机数据说明改为分组短句，关于页历史更新可折叠，数据状态顶部新增证据汇总。</Text><Text className="muted">0.7.8 优化分析与洞察页：电池容量/健康合并为两张卡、费用估算合并，刷新按钮紧凑化；分析页标题统一图标并限制长列表，可展开更多。</Text><Text className="muted">0.7.7 优化行程与充电详情：顶部新增关键指标摘要，无数据的指标分组收敛为一行说明，只为有采样的通道绘制曲线。</Text><Text className="muted">0.7.6 重构「更多」页为导航中心：账号摘要、两列分析磁贴、系统列表；账号管理、微信绑定与退出移至「账号与授权」二级页。</Text><View hidden={!showAboutHistory}><Text className="muted">0.7.5 数据页对齐安卓端：首页内联每日电量趋势、附近充电与常用地点自动加载，新行程提示移至首页；行程距离筛选改为通勤/日游/公路旅行（10/100km），温度趋势新增车内历史记录。</Text><Text className="muted">0.7.3 重构「更多」页面与账号管理布局：移除已登录态顶部冗余条款，底部重构为紧凑横排按钮组与微信快捷进入面板，彻底缩短页面并优化交互。</Text></View><Button className="button button-secondary" onClick={() => setShowAboutHistory(value => !value)}>{showAboutHistory ? '收起历史更新' : '展开历史更新'}</Button><SectionHeading icon="update" title="历史更新" /><Text className="muted">0.7.2 修复「更多」磁贴样式与箭头。0.7.1 完善行程、充电与数据状态展示。0.6.7 全面落地 Apple 风格 UI 重构。</Text><Button className="button button-secondary" onClick={() => Taro.navigateTo({ url: '/pages/legal/index?kind=privacy' })}>隐私指引</Button><Button className="button button-secondary" onClick={() => Taro.navigateTo({ url: '/pages/legal/index?kind=terms' })}>服务条款</Button><Button className="button button-secondary" onClick={() => { void Taro.setClipboardData({ data: 'https://github.com/Jovifei/tesla-master-mimo/issues' }) }}>复制问题反馈地址</Button></View> : null}
     {kind === 'location' ? coordinate ? <View className="card"><SectionHeading icon="map" title="车辆位置" /><Map onError={() => setError("地图暂时不可用，请检查微信权限后重试")} className="vehicle-map" latitude={coordinate.latitude} longitude={coordinate.longitude} scale={14} markers={[{ id: 1, ...coordinate, iconPath: '/assets/tabs/vehicle-selected.png', width: 24, height: 24, title: car?.displayName || '车辆位置' }]} /><Text className="metric-source">状态报告时间（非位置独立观测时间） · {status?.observedAt || '未提供'}</Text><Text className="muted">地图使用一次转换后的坐标；位置仅在线显示，不写入本机历史缓存。</Text><Button className="button button-secondary" onClick={() => Taro.navigateTo({ url: '/pages/tools/index?kind=whereWasI' })}>查询历史时刻的位置</Button></View> : <View className="card"><SectionHeading icon="map" title="车辆位置" /><Text>暂无有效的位置观测</Text></View> : null}
     {kind === 'whereWasI' ? <View className="card"><SectionHeading icon="clock" title="当时在哪里" /><Text className="muted">查询时刻使用本机显示时区；仅展示已有报告和实际采样，不插值或生成未知位置。{complete ? '已读历史已翻页完成。' : '当前为有界部分历史。'}</Text><View className="tools-actions"><Picker mode="date" value={targetDate} onChange={event => setTargetDate(event.detail.value)}><Text>{targetDate} ⌄</Text></Picker><Picker mode="time" value={targetTime} onChange={event => setTargetTime(event.detail.value)}><Text>{targetTime} ⌄</Text></Picker></View><Button className="button" loading={loading} disabled={!car} onClick={() => { void findHistoricPosition() }}>查询这个时刻</Button>{historicReason ? <Text className="muted">{historicReason}</Text> : null}{historicCoordinate && historicPosition ? <><Map className="vehicle-map" onError={() => setError('地图暂时不可用，位置报告已保留')} latitude={historicCoordinate.latitude} longitude={historicCoordinate.longitude} scale={14} markers={[{ id: 1, ...historicCoordinate, iconPath: '/assets/tabs/vehicle-selected.png', width: 24, height: 24 }]} /><Text className="muted">{historicPosition.label}</Text><Text className="metric-source">{historicPosition.at || '独立位置观测时间未知'} · {historicPosition.source || '来源未标明'}</Text></> : null}</View> : null}
     {kind === 'tpmsSettings' && car && session?.userId ? <TpmsSettingsPanel scope={{ origin: getApiOrigin(), userId: session.userId, stableId: car.stableId }} snapshot={status?.tpms} history={readTpmsCache(Taro, session.userId, getApiOrigin(), car.stableId)} isCurrent={() => { try { return epoch.current === profileEpoch && owner.current === scopeKey() } catch { return false } }} /> : null}
