@@ -210,7 +210,7 @@ export default function InsightsPage() {
     <SubpageHeader title={titles[kind]} subtitle={carName(car)} />
     {MOCK_FIXTURE_ENABLED ? <View className="card fixture-data-notice" style={{ backgroundColor: '#fff7ed', borderColor: '#c2410c' }}><Text className="section-title" style={{ color: '#9a3412', marginBottom: 0 }}>合成测试数据，未连接真实车辆</Text></View> : null}
     {cars.length > 1 ? <Picker mode="selector" range={cars.map(value => carName(value))} value={Math.max(0, cars.findIndex(row => row.stableId === car?.stableId))} onChange={event => { const next = cars[Number(event.detail.value)]; if (next) void load(next) }}><View className="status">切换车辆：{carName(car)}</View></Picker> : null}
-    <Button className="button-secondary" loading={loading} onClick={() => { void load(currentCar.current ?? undefined) }}>刷新数据</Button>
+    <View className="insight-top-actions"><Button className="button-secondary insight-refresh" loading={loading} onClick={() => { void load(currentCar.current ?? undefined) }}>刷新数据</Button></View>
     {loading ? <LoadingIndicator label="正在读取所选车辆数据…" compact /> : null}
     {error ? <Text className="error">{error}</Text> : null}
     {cacheWarning ? <Text className="muted">数据已读取，本机缓存预算不足，本次未全部保存；已有缓存保留。</Text> : null}
@@ -239,14 +239,26 @@ export default function InsightsPage() {
     </View> : null}
 
     {car && kind === 'battery' ? <>
-      <View className="card"><SectionHeading icon="battery" title="电池容量" /><Text className="muted">{MOCK_FIXTURE_ENABLED ? '容量与健康为合成测试数据，不使用当前SOC猜测。' : '容量与健康来自服务端实际报告，不使用当前SOC猜测。'}</Text>
-        <View className="metric-grid"><MetricValue label="当前容量" value={health?.currentCapacityKwh ?? null} unit="kWh" /><MetricValue label="原始容量" value={health?.maxCapacityKwh ?? null} unit="kWh" /></View>
+      <View className="card"><SectionHeading icon="battery" title="电池与续航" />
+        <Text className="muted">{MOCK_FIXTURE_ENABLED ? '容量与健康为合成测试数据，不使用当前SOC猜测。' : '容量与健康来自服务端实际报告，不使用当前SOC猜测。'}</Text>
+        <View className="metric-grid">
+          <MetricValue label="当前容量" value={health?.currentCapacityKwh ?? null} unit="kWh" />
+          <MetricValue label="原始容量" value={health?.maxCapacityKwh ?? null} unit="kWh" />
+          <MetricValue label="最大报告续航" value={health?.maxRangeKm ?? null} unit="km" />
+          <MetricValue label="当前报告续航" value={health?.currentRangeKm ?? status?.ratedRange ?? null} unit="km" />
+        </View>
         <Text className="muted">{healthEvidence?.availability === 'unsupported' ? '此数据源尚未提供电池健康合同' : health ? MOCK_FIXTURE_ENABLED ? '合成容量报告' : '服务端容量报告' : '暂无合格容量报告'}</Text>
         <Text className="metric-source">{sourceLabel(healthEvidence?.source)} · {healthEvidence?.observedAt || '报告时间未提供'}</Text>
       </View>
-      <View className="card"><SectionHeading icon="shield" title="电池健康" /><View className="metric-grid"><MetricValue label={MOCK_FIXTURE_ENABLED ? '合成健康比例' : '服务端健康比例'} value={health?.healthPercentage ?? null} unit="%" /><MetricValue label="容量衰减" value={health?.healthPercentage != null ? 100 - health.healthPercentage : null} unit="%" /><MetricValue label="额定能耗" value={health?.ratedEfficiencyWhKm != null ? health.ratedEfficiencyWhKm / 10 : null} unit="kWh/100km" /></View></View>
-      <View className="card"><SectionHeading icon="distance" title="续航信息" /><View className="metric-grid"><MetricValue label="最大报告续航" value={health?.maxRangeKm ?? null} unit="km" /><MetricValue label="当前报告续航" value={health?.currentRangeKm ?? status?.ratedRange ?? null} unit="km" /></View><Text className="muted">当前车辆续航读数与电池健康证据分别展示，缺失健康不会被SOC替代。</Text></View>
-      <View className="card"><SectionHeading icon="chart" title="健康趋势与检测" /><Text className="muted">只在来源返回合格的连续容量历史时绘制趋势；当前接口未提供趋势样本，不生成示例曲线。车辆服务模式检测请在车辆内进行。</Text></View>
+      <View className="card"><SectionHeading icon="shield" title="健康与趋势" />
+        <View className="metric-grid">
+          <MetricValue label={MOCK_FIXTURE_ENABLED ? '合成健康比例' : '服务端健康比例'} value={health?.healthPercentage ?? null} unit="%" />
+          <MetricValue label="容量衰减" value={health?.healthPercentage != null ? 100 - health.healthPercentage : null} unit="%" />
+          <MetricValue label="额定能耗" value={health?.ratedEfficiencyWhKm != null ? health.ratedEfficiencyWhKm / 10 : null} unit="kWh/100km" />
+        </View>
+        <Text className="muted">当前车辆续航读数与电池健康证据分别展示，缺失健康不会被SOC替代。</Text>
+        <Text className="muted">当前接口未提供连续容量趋势样本，不生成示例曲线；车辆服务模式检测请在车辆内进行。</Text>
+      </View>
     </> : null}
     {car && kind === 'range' ? <>
       <View className="card"><SectionHeading icon="route" title="个性化续航" /><MetricValue label="合格能耗与容量估算" value={range.rangeKm} unit="km" />
@@ -261,16 +273,19 @@ export default function InsightsPage() {
       {!comparisons.length ? <Text className="muted">已加载记录尚缺额定续航起止端点，不能从SOC或当前续航补算历史偏差。</Text> : null}
     </> : null}
     {car && kind === 'cost' ? <>
-      {fullEstimates.groups.map(group => <View className="card" key={`full-estimate-${group.currency}`}>
-        <SectionHeading icon="money" title="完整记录估算" />
-        <MetricValue label="完整记录估算" value={group.cost == null ? null : `≈${displayNumber(group.cost, 2)}`} unit={group.currency} />
-        <Text className="muted">{group.known} 次无账单充电的电价估算；不计入已确认账单或账单均价。</Text>
-      </View>)}
-      {partialEstimates.groups.map(group => <View className="card" key={`partial-estimate-${group.currency}`}>
-        <SectionHeading icon="money" title="已采集部分估算" />
-        <MetricValue label="已采集部分估算" value={group.cost == null ? null : `≈${displayNumber(group.cost, 2)}`} unit={group.currency} />
-        <Text className="muted">{group.known} 次充电的已采集部分；不是整次账单，不计入完整电量或账单均价。</Text>
-      </View>)}
+      {(fullEstimates.groups.length > 0 || partialEstimates.groups.length > 0) ? <View className="card">
+        <SectionHeading icon="money" title="费用估算" />
+        {fullEstimates.groups.map(group => <View key={`full-estimate-${group.currency}`}>
+          <Text className="section-title">完整记录估算</Text>
+          <MetricValue label="完整记录估算" value={group.cost == null ? null : `≈${displayNumber(group.cost, 2)}`} unit={group.currency} />
+          <Text className="muted">{group.known} 次无账单充电的电价估算；不计入已确认账单或账单均价。</Text>
+        </View>)}
+        {partialEstimates.groups.map(group => <View key={`partial-estimate-${group.currency}`}>
+          <Text className="section-title">已采集部分估算</Text>
+          <MetricValue label="已采集部分估算" value={group.cost == null ? null : `≈${displayNumber(group.cost, 2)}`} unit={group.currency} />
+          <Text className="muted">{group.known} 次充电的已采集部分；不是整次账单，不计入完整电量或账单均价。</Text>
+        </View>)}
+      </View> : null}
       {!costs.groups.length && !fullEstimates.groups.length && !partialEstimates.groups.length ? <View className="card"><Text className="section-title">暂无可合计的费用</Text><Text className="muted">费用与币种同时明确才参与合计；真实0会保留。</Text></View> : null}
       <Text className="muted">已加载 {costs.total} 次；缺费用 {costs.missingCost} 次；币种未知 {costs.unknownCurrency} 次。不同币种分别统计。</Text>
       {manualCostCount ? <Text className="muted">含 {manualCostCount} 条本机手动费用；这是本机展示金额，服务端原账单保留。</Text> : null}
@@ -300,7 +315,7 @@ export default function InsightsPage() {
         <Button className="button" disabled={!name.trim() || !preview} onClick={saveTrip}>保存本机长途旅程</Button><Button className="button-secondary" onClick={resetDraft}>取消编辑</Button>
       </View> : null}
       {selectedTrip && !creating ? <View className="card"><Button className="button-secondary" onClick={() => setSelectedTrip(null)}>返回长途列表</Button><SectionHeading icon="route" title={selectedTrip.name} />{summary(selectedTrip)}
-        <Text className="section-title">行程时间线</Text>{selectedTrip.legs.map(leg => {
+        <SectionHeading icon="timeline" title="行程时间线" />{selectedTrip.legs.map(leg => {
           const efficiency = leg.kind === 'drive' ? aggregateDriveHistory([insightDrive(leg.drive)]).efficiency : null
           return <View className="insight-table-row" key={tripLegKey(leg)}><Text>{dataLabel(leg)} · {historyDateTime(legRow(leg).startDate)}</Text><Text className="metric-source">{sourceLabel(legRow(leg).source)} · {historyDateTime(legRow(leg).endDate)}</Text>{leg.kind === 'drive' ? <MetricValue label={efficiency?.value != null && efficiency.estimated > 0 ? '段平均能耗（估算）' : '段平均能耗'} value={efficiency?.value ?? null} unit="kWh/100km" /> : <MetricValue label="段费用" value={leg.charge.cost} unit={leg.charge.currencyCode || '币种未知'} />}<Button className="button-secondary" disabled={offline || car.remoteVerified !== true} onClick={() => Taro.navigateTo({ url: leg.kind === 'drive' ? `/pages/analysis/index?kind=curves&id=${encodeURIComponent(leg.drive.id)}` : `/pages/analysis/index?kind=timeline&chargeId=${encodeURIComponent(leg.charge.id)}` })}>查看原始{dataLabel(leg)}详情</Button></View>
         })}
