@@ -1,6 +1,6 @@
 import { useAppearance } from '../../services/appearance'
 import { Text, View } from '@tarojs/components'
-import { useLoad } from '@tarojs/taro'
+import Taro, { useLoad } from '@tarojs/taro'
 import { useState } from 'react'
 import { legalDocumentFor, legalDocuments, type LegalDocument } from '../../domain/legal'
 import SubpageHeader from '../../components/SubpageHeader'
@@ -23,8 +23,17 @@ export default function LegalPage() {
         <Text className="muted">{document.summary}</Text>
       </View>
 
-      {document.sections.map(section => (
-        <View key={section.title} className="card legal-section">
+      <View className="card legal-toc">
+        <Text className="section-title">目录</Text>
+        <View className="legal-toc-chips">
+          {document.sections.map((section, index) => (
+            <Text key={section.title} className="legal-toc-chip" onClick={() => { void Taro.pageScrollTo({ selector: `#legal-section-${index}`, duration: 250 }).catch(() => {}) }}>{section.title.replace(/^\d+\.\s*/, '')}</Text>
+          ))}
+        </View>
+      </View>
+
+      {document.sections.map((section, index) => (
+        <View key={section.title} id={`legal-section-${index}`} className="card legal-section">
           <Text className="section-title">{section.title}</Text>
           {section.paragraphs.map(paragraph => <Text key={paragraph} className="legal-paragraph">{paragraph}</Text>)}
         </View>

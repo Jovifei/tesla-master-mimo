@@ -159,12 +159,17 @@ export default function AuthPage() {
       <View className={`page subpage-page ${appearance.className}`}>
         <SubpageHeader title="Tesla 官方授权" subtitle="官方账号登录与授权" />
         <View className="card">
+          <View className="auth-steps">
+            <Text className={`auth-step ${url ? 'done' : ''}`}>1 打开官方页面</Text>
+            <Text className="auth-step">2 在 Tesla 完成登录</Text>
+            <Text className="auth-step">3 返回检查授权</Text>
+          </View>
           {error ? <Text className="error">{error}</Text> : !url ? <LoadingIndicator label="正在准备官方授权入口…" compact /> : null}
           {url ? <>
             <Text className="muted">{desktopSimulator
               ? '官方授权入口已就绪。电脑开发者工具请在系统浏览器完成 Tesla 官方登录，随后返回这里检查授权状态。'
               : '若微信无法打开官方页面，请复制入口到系统浏览器完成登录，再返回小程序检查授权状态。'}</Text>
-            <Button className="button" onClick={() => { void copyOfficialEntry() }}>复制 Tesla 官方授权入口</Button>
+            <Button className="button button-secondary" onClick={() => { void copyOfficialEntry() }}>复制 Tesla 官方授权入口</Button>
           </> : null}
           <Button className="button" onClick={() => { void resumeAuthorization() }}>检查授权状态</Button>
           <Button className="button" onClick={() => Taro.navigateBack()}>返回</Button>
