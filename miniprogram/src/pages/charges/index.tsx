@@ -843,7 +843,17 @@ export default function ChargesPage() {
           {MOCK_FIXTURE_ENABLED ? <View className="card fixture-data-notice" style={{ backgroundColor: '#fff7ed', borderColor: '#c2410c' }}><Text className="section-title" style={{ color: '#9a3412', marginBottom: 0 }}>合成测试数据，未连接真实车辆</Text></View> : null}
           <View className="card charge-detail-intro"><Text className="section-title">位置与费用</Text><Text className="charge-detail-address">{displayAddress(selected.address)}</Text>
             <Text className="muted">开始 {historyDetailDateTime(selected.startDate)} · 结束 {historyDetailDateTime(selected.endDate)} · {modeLabel(selected)}</Text>
-            <MetricValue label="充电费用" {...costLabel(selectedView)} icon="account" />
+            {(() => {
+              const socDelta = selected.startBatteryLevel != null && selected.endBatteryLevel != null
+                ? selected.endBatteryLevel - selected.startBatteryLevel : null
+              const peakPower = selectedEvidence?.summary.chargerPowerKw ?? selected.chargerPowerKw ?? powerStats.max
+              return <View className="telemetry-metric-strip charge-detail-summary">
+                <MetricValue label="SOC 变化" value={socDelta} unit="%" digits={0} />
+                <MetricValue label="充电时长" value={selected.durationMinutes} unit="分钟" digits={0} />
+                <MetricValue label="峰值功率" value={peakPower} unit="kW" digits={0} />
+                <MetricValue label="充电费用" {...costLabel(selectedView)} icon="account" />
+              </View>
+            })()}
             <Text className="muted">费用来源：{costState?.costProvenance === 'manual' ? '本机手动设置' : costState?.costProvenance === 'free' ? '免费（免费超级充电 · DC）' : costState?.costProvenance === 'actual' ? selectedView.cost === 0 ? '服务端报告0费用' : '服务端账单报告' : costState?.costProvenance === 'estimate' ? `按 ${estimateBasis(costState)} 与${costState.partialEstimatedCost != null ? "已采集部分电量" : "合格电池充入量"}估算，不是实际账单` : costState?.reportedCost === 0 && selected.source === 'teslamate_archive' ? 'TeslaMate 原始0表示未填，当前无合格估算' : '未知'}</Text>
             {canEditCost ? <View className="history-detail-actions">
               <Button className="button button-secondary" onClick={() => void editCost(false)}>编辑本机费用</Button>
@@ -860,10 +870,10 @@ export default function ChargesPage() {
             <MetricValue label="AC输入效率" value={acEfficiency} unit="%" />
           </View>
           <Text className="section-title">电池</Text>
-          <View className="telemetry-metric-strip metric-grid">
-            <MetricValue label="起始SOC" value={selected.startBatteryLevel} unit="%" /><MetricValue label="结束SOC" value={selected.endBatteryLevel} unit="%" />
-            <MetricValue label="SOC变化" value={selected.startBatteryLevel != null && selected.endBatteryLevel != null ? selected.endBatteryLevel - selected.startBatteryLevel : null} unit="%" /><MetricValue label="充电时长" value={selected.durationMinutes} unit="分钟" />
-          </View>
+          {selected.startBatteryLevel != null || selected.endBatteryLevel != null ? <View className="telemetry-metric-strip metric-grid">
+            <MetricValue label="起始SOC" value={selected.startBatteryLevel} unit="%" />
+            <MetricValue label="结束SOC" value={selected.endBatteryLevel} unit="%" />
+          </View> : <Text className="muted detail-empty-line">本次记录未提供起止电量。</Text>}
           <View className="section-header-row">
             <Text className="section-title">功率</Text>
             <Text
@@ -878,28 +888,62 @@ export default function ChargesPage() {
               }}
             >ℹ</Text>
           </View>
-          <View className="telemetry-metric-strip metric-grid">
-            <MetricValue label="报告功率" value={selectedEvidence?.summary.chargerPowerKw ?? selected.chargerPowerKw} unit="kW" icon="energy" />
-            <MetricValue label="样本平均功率" value={powerStats.average} unit="kW" />
-            <MetricValue label="样本最高功率" value={powerStats.max} unit="kW" />
-            <MetricValue label="样本最低功率" value={powerStats.min} unit="kW" />
-          </View>
-          {selected.energy?.chargeMode === 'ac' && qualifiedAcEnergyBalance(selected) ? <><Text className="section-title">电压与电流</Text><View className="telemetry-metric-strip metric-grid">
-            <MetricValue label="报告电压" value={selectedEvidence?.summary.chargerVoltageV ?? null} unit="V" /><MetricValue label="报告电流" value={selectedEvidence?.summary.currentA ?? null} unit="A" />
-            <MetricValue label="样本平均电压" value={voltageStats.average} unit="V" /><MetricValue label="样本平均电流" value={currentStats.average} unit="A" />
-            <MetricValue label="样本最高电压" value={voltageStats.max} unit="V" /><MetricValue label="样本最低电压" value={voltageStats.min} unit="V" />
-            <MetricValue label="样本最高电流" value={currentStats.max} unit="A" /><MetricValue label="样本最低电流" value={currentStats.min} unit="A" />
-          </View></> : null}
-          <Text className="section-title">温度</Text>
-          <View className="telemetry-metric-strip metric-grid"><MetricValue label="报告环境温度" value={selectedEvidence?.summary.outsideTempC ?? null} unit="°C" /><MetricValue label="样本平均温度" value={temperatureStats.average} unit="°C" /><MetricValue label="样本最高温度" value={temperatureStats.max} unit="°C" /><MetricValue label="样本最低温度" value={temperatureStats.min} unit="°C" /></View>
-          <Text className="muted history-sampling-note">仅基于本次响应的有效采样：功率 {powerStats.count} / 电压 {voltageStats.count} / 电流 {currentStats.count} / 温度 {temperatureStats.count} 点；缺失不补0，均值为样本均值。</Text>
-          {selectedEvidence ? <>
-            <EvidenceCurve id="charge-detail-soc" title="充电电量变化" unit="%" points={selectedEvidence.points} valueOf={point => point.batteryLevel} provenanceOf={point => chargeCurveProvenance(point, 'batteryLevel')} forceDisconnected={selectedEvidence.hasUnplaceableSamples} selected={curveSampleIndex} onSelect={setCurveSampleIndex} isCurrent={() => detailContext.current?.row === selected} />
-            <EvidenceCurve id="charge-detail-power" title="充电功率" unit="kW" points={selectedEvidence.points} valueOf={point => point.powerKw} provenanceOf={point => chargeCurveProvenance(point, 'powerKw')} forceDisconnected={selectedEvidence.hasUnplaceableSamples} selected={curveSampleIndex} onSelect={setCurveSampleIndex} isCurrent={() => detailContext.current?.row === selected} />
-            <EvidenceCurve id="charge-detail-voltage" title="充电电压" unit="V" points={selectedEvidence.points} valueOf={point => point.voltageV} provenanceOf={point => chargeCurveProvenance(point, 'voltageV')} forceDisconnected={selectedEvidence.hasUnplaceableSamples} selected={curveSampleIndex} onSelect={setCurveSampleIndex} isCurrent={() => detailContext.current?.row === selected} />
-            <EvidenceCurve id="charge-detail-current" title="充电电流" unit="A" points={selectedEvidence.points} valueOf={point => point.currentA} provenanceOf={point => chargeCurveProvenance(point, 'currentA')} forceDisconnected={selectedEvidence.hasUnplaceableSamples} selected={curveSampleIndex} onSelect={setCurveSampleIndex} isCurrent={() => detailContext.current?.row === selected} />
-            <EvidenceCurve id="charge-detail-temperature" title="环境温度" unit="°C" points={selectedEvidence.points} valueOf={point => point.temperatureC} provenanceOf={point => chargeCurveProvenance(point, 'temperatureC')} forceDisconnected={selectedEvidence.hasUnplaceableSamples} selected={curveSampleIndex} onSelect={setCurveSampleIndex} isCurrent={() => detailContext.current?.row === selected} />
-          </> : null}
+          {(() => {
+            const reportPower = selectedEvidence?.summary.chargerPowerKw ?? selected.chargerPowerKw ?? null
+            return <View className="telemetry-metric-strip metric-grid">
+              <MetricValue label="报告功率" value={reportPower} unit="kW" icon="energy" />
+              <MetricValue label="样本平均功率" value={powerStats.average} unit="kW" />
+              <MetricValue label="样本最高功率" value={powerStats.max} unit="kW" />
+              <MetricValue label="样本最低功率" value={powerStats.min} unit="kW" />
+            </View>
+          })()}
+          {(() => {
+            const reportVoltage = selectedEvidence?.summary.chargerVoltageV ?? null
+            const reportCurrent = selectedEvidence?.summary.currentA ?? null
+            const hasVoltage = reportVoltage != null || voltageStats.count > 0
+            const hasCurrent = reportCurrent != null || currentStats.count > 0
+            if (selected.energy?.chargeMode !== 'ac' || !qualifiedAcEnergyBalance(selected) || (!hasVoltage && !hasCurrent)) return null
+            return <>
+              <Text className="section-title">电压与电流</Text>
+              <View className="telemetry-metric-strip metric-grid">
+                {hasVoltage ? <>
+                  {reportVoltage != null ? <MetricValue label="报告电压" value={reportVoltage} unit="V" /> : null}
+                  {voltageStats.count > 0 ? <MetricValue label="样本平均电压" value={voltageStats.average} unit="V" /> : null}
+                </> : null}
+                {hasCurrent ? <>
+                  {reportCurrent != null ? <MetricValue label="报告电流" value={reportCurrent} unit="A" /> : null}
+                  {currentStats.count > 0 ? <MetricValue label="样本平均电流" value={currentStats.average} unit="A" /> : null}
+                </> : null}
+              </View>
+            </>
+          })()}
+          {(() => {
+            const reportTemp = selectedEvidence?.summary.outsideTempC ?? null
+            return <>
+              <Text className="section-title">温度</Text>
+              <View className="telemetry-metric-strip metric-grid">
+                <MetricValue label="报告环境温度" value={reportTemp} unit="°C" />
+                <MetricValue label="样本平均温度" value={temperatureStats.average} unit="°C" />
+                <MetricValue label="样本最高温度" value={temperatureStats.max} unit="°C" />
+                <MetricValue label="样本最低温度" value={temperatureStats.min} unit="°C" />
+              </View>
+            </>
+          })()}
+          <Text className="muted detail-empty-line">仅基于本次响应的有效采样：功率 {powerStats.count} / 电压 {voltageStats.count} / 电流 {currentStats.count} / 温度 {temperatureStats.count} 点；缺失不补0，均值为样本均值。</Text>
+          {(() => {
+            const points = selectedEvidence?.points ?? []
+            const socPoints = points.filter(point => point.batteryLevel != null && Number.isFinite(point.batteryLevel))
+            const curveCount = (socPoints.length > 0 ? 1 : 0) + (powerStats.count > 0 ? 1 : 0) +
+              (voltageStats.count > 0 ? 1 : 0) + (currentStats.count > 0 ? 1 : 0) + (temperatureStats.count > 0 ? 1 : 0)
+            if (!selectedEvidence || curveCount === 0) return <Text className="muted detail-empty-line">本次响应没有可绘制的曲线采样。</Text>
+            return <>
+              {socPoints.length > 0 ? <EvidenceCurve id="charge-detail-soc" title="充电电量变化" unit="%" points={selectedEvidence.points} valueOf={point => point.batteryLevel} provenanceOf={point => chargeCurveProvenance(point, 'batteryLevel')} forceDisconnected={selectedEvidence.hasUnplaceableSamples} selected={curveSampleIndex} onSelect={setCurveSampleIndex} isCurrent={() => detailContext.current?.row === selected} /> : null}
+              {powerStats.count > 0 ? <EvidenceCurve id="charge-detail-power" title="充电功率" unit="kW" points={selectedEvidence.points} valueOf={point => point.powerKw} provenanceOf={point => chargeCurveProvenance(point, 'powerKw')} forceDisconnected={selectedEvidence.hasUnplaceableSamples} selected={curveSampleIndex} onSelect={setCurveSampleIndex} isCurrent={() => detailContext.current?.row === selected} /> : null}
+              {voltageStats.count > 0 ? <EvidenceCurve id="charge-detail-voltage" title="充电电压" unit="V" points={selectedEvidence.points} valueOf={point => point.voltageV} provenanceOf={point => chargeCurveProvenance(point, 'voltageV')} forceDisconnected={selectedEvidence.hasUnplaceableSamples} selected={curveSampleIndex} onSelect={setCurveSampleIndex} isCurrent={() => detailContext.current?.row === selected} /> : null}
+              {currentStats.count > 0 ? <EvidenceCurve id="charge-detail-current" title="充电电流" unit="A" points={selectedEvidence.points} valueOf={point => point.currentA} provenanceOf={point => chargeCurveProvenance(point, 'currentA')} forceDisconnected={selectedEvidence.hasUnplaceableSamples} selected={curveSampleIndex} onSelect={setCurveSampleIndex} isCurrent={() => detailContext.current?.row === selected} /> : null}
+              {temperatureStats.count > 0 ? <EvidenceCurve id="charge-detail-temperature" title="环境温度" unit="°C" points={selectedEvidence.points} valueOf={point => point.temperatureC} provenanceOf={point => chargeCurveProvenance(point, 'temperatureC')} forceDisconnected={selectedEvidence.hasUnplaceableSamples} selected={curveSampleIndex} onSelect={setCurveSampleIndex} isCurrent={() => detailContext.current?.row === selected} /> : null}
+            </>
+          })()}
           {selected.qualityState ? <Text className="muted">记录质量：{MOCK_FIXTURE_ENABLED && selected.source === 'mock_fixture' && selected.qualityState === 'observed' ? '合成观测' : qualityLabel(selected.qualityState)}</Text> : null}
           {cacheWarning ? <Text className="error">当前详情尚未保存到本机。</Text> : null}
           {error ? <Text className="error">{error}</Text> : null}

@@ -481,6 +481,12 @@
     font-weight: 600;
     color: #1f2937;
     .visual-icon { width: 36rpx; height: 36rpx; color: #157a86; }
+    .section-card-action { margin-left: auto; }
+  }
+  .route-summary-strip {
+    margin-top: 16rpx;
+    padding-top: 16rpx;
+    border-top: 1rpx solid #e9edf2;
   }
   .route-time-row {
     display: flex;

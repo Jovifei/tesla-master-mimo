@@ -711,6 +711,7 @@ export default function DrivesPage() {
             <View className="route-header-top">
               <VisualIcon name="route" />
               <Text>路线</Text>
+              <Button className="section-card-action" onClick={() => { void Taro.navigateTo({ url: `/pages/analysis/index?kind=curves&id=${encodeURIComponent(selected.id)}` }) }}>行程曲线 ›</Button>
             </View>
             <View className="history-route">
               <View className="route-indicator-dots">
@@ -731,37 +732,38 @@ export default function DrivesPage() {
             <View className="route-time-row">
               <View className="route-time-col"><Text className="time-label">开始时间</Text><Text className="time-val">{historyDetailDateTime(selected.startDate)}</Text></View>
               <View className="route-time-col"><Text className="time-label">结束时间</Text><Text className="time-val">{historyDetailDateTime(selected.endDate)}</Text></View>
-              <View className="route-time-col"><Text className="time-label">时长</Text><Text className="time-val">{selected.durationMinutes != null ? `${duration(selected.durationMinutes).value} 分钟` : '暂无数据'}</Text></View>
             </View>
+            {(() => {
+              const usedSoc = selected.startBatteryLevel != null && selected.endBatteryLevel != null
+                ? selected.startBatteryLevel - selected.endBatteryLevel : null
+              return <View className="telemetry-metric-strip route-summary-strip">
+                <MetricValue label="距离" value={selected.distanceKm} unit="km" digits={1} />
+                <MetricValue label="时长" value={duration(selected.durationMinutes).value} unit={duration(selected.durationMinutes).unit} digits={Number.isInteger(selected.durationMinutes) ? 0 : 1} />
+                <MetricValue label="平均能耗" value={efficiency(selected)} unit="kWh/100km" digits={1} negative={(efficiency(selected) ?? 0) < 0} />
+                <MetricValue label="SOC 变化" value={usedSoc} unit="%" digits={0} />
+              </View>
+            })()}
           </View>
 
-          {/* 3. 分组面板：行程 */}
-          <View className="section-card">
-            <View className="section-card-header">
-              <View className="section-card-title"><VisualIcon name="route" /><Text>行程</Text></View>
-              <Button className="section-card-action" onClick={() => { void Taro.navigateTo({ url: `/pages/analysis/index?kind=curves&id=${encodeURIComponent(selected.id)}` }) }}>行程曲线 ›</Button>
-            </View>
-            <View className="telemetry-metric-strip">
-              <MetricValue label="距离" value={selected.distanceKm} unit="km" digits={1} />
-              <MetricValue label="时长" value={duration(selected.durationMinutes).value} unit={duration(selected.durationMinutes).unit} digits={Number.isInteger(selected.durationMinutes) ? 0 : 1} />
-              <MetricValue label="平均能耗" value={efficiency(selected)} unit="kWh/100km" digits={1} negative={(efficiency(selected) ?? 0) < 0} />
-            </View>
-          </View>
 
           {/* 4. 分组面板：速度 */}
           {(() => {
             const avgDistSpeed = (selected.distanceKm != null && selected.durationMinutes != null && selected.durationMinutes > 0)
               ? Number((selected.distanceKm / (selected.durationMinutes / 60)).toFixed(0)) : null
+            const speedPoints = selectedEvidence?.points.filter(point => point.speedKmh != null && Number.isFinite(point.speedKmh)) ?? []
+            const hasValues = peakSpeedKmh(selected) != null || selected.speedAvgKmh != null || avgDistSpeed != null || speedPoints.length > 0
             return <View className="section-card">
               <View className="section-card-header">
                 <View className="section-card-title"><VisualIcon name="speed" /><Text>速度</Text></View>
               </View>
-              <View className="telemetry-metric-strip">
-                <MetricValue label="最高速度" value={peakSpeedKmh(selected)} unit="km/h" digits={0} />
-                <MetricValue label="报告均速" value={selected.speedAvgKmh} unit="km/h" digits={0} />
-                <MetricValue label="距离均速" value={avgDistSpeed} unit="km/h" digits={0} />
-              </View>
-              {selectedEvidence ? <EvidenceCurve id="drive-inline-speed" title="速度曲线" unit="km/h" points={selectedEvidence.points} valueOf={point => point.speedKmh} selected={curveSampleIndex} onSelect={setCurveSampleIndex} isCurrent={() => pageVisible.current && detailContext.current?.row === selected && detailContext.current?.generation === getApiSessionGeneration()} /> : null}
+              {hasValues ? <>
+                <View className="telemetry-metric-strip">
+                  <MetricValue label="最高速度" value={peakSpeedKmh(selected)} unit="km/h" digits={0} />
+                  <MetricValue label="报告均速" value={selected.speedAvgKmh} unit="km/h" digits={0} />
+                  <MetricValue label="距离均速" value={avgDistSpeed} unit="km/h" digits={0} />
+                </View>
+                {speedPoints.length > 0 ? <EvidenceCurve id="drive-inline-speed" title="速度曲线" unit="km/h" points={selectedEvidence!.points} valueOf={point => point.speedKmh} selected={curveSampleIndex} onSelect={setCurveSampleIndex} isCurrent={() => pageVisible.current && detailContext.current?.row === selected && detailContext.current?.generation === getApiSessionGeneration()} /> : <Text className="muted detail-empty-line">本次响应未提供逐点速度采样，仅显示行程摘要速度。</Text>}
+              </> : <Text className="muted detail-empty-line">本次行程未提供速度数据。</Text>}
             </View>
           })()}
 
@@ -778,12 +780,14 @@ export default function DrivesPage() {
               <View className="section-card-header">
                 <View className="section-card-title"><VisualIcon name="energy" /><Text>功率</Text></View>
               </View>
-              <View className="telemetry-metric-strip">
-                <MetricValue label="峰值输出" value={maxOutput} unit="kW" digits={0} />
-                <MetricValue label="峰值回收" value={maxRegen} unit="kW" digits={0} />
-                <MetricValue label="平均功率 (样本)" value={avgPower} unit="kW" digits={1} />
-              </View>
-              {selectedEvidence ? <EvidenceCurve id="drive-inline-power" title="功率曲线" unit="kW" points={selectedEvidence.points} valueOf={point => point.powerKw} selected={curveSampleIndex} onSelect={setCurveSampleIndex} isCurrent={() => pageVisible.current && detailContext.current?.row === selected && detailContext.current?.generation === getApiSessionGeneration()} /> : null}
+              {powers.length > 0 ? <>
+                <View className="telemetry-metric-strip">
+                  <MetricValue label="峰值输出" value={maxOutput} unit="kW" digits={0} />
+                  <MetricValue label="峰值回收" value={maxRegen} unit="kW" digits={0} />
+                  <MetricValue label="平均功率 (样本)" value={avgPower} unit="kW" digits={1} />
+                </View>
+                <EvidenceCurve id="drive-inline-power" title="功率曲线" unit="kW" points={points} valueOf={point => point.powerKw} selected={curveSampleIndex} onSelect={setCurveSampleIndex} isCurrent={() => pageVisible.current && detailContext.current?.row === selected && detailContext.current?.generation === getApiSessionGeneration()} />
+              </> : <Text className="muted detail-empty-line">本次响应未提供可用的功率采样。</Text>}
             </View>
           })()}
 
@@ -791,25 +795,29 @@ export default function DrivesPage() {
           {(() => {
             const usedSoc = (selected.startBatteryLevel != null && selected.endBatteryLevel != null)
               ? selected.startBatteryLevel - selected.endBatteryLevel : null
+            const totalEnergy = energyValue(selected)
+            const hasValues = selected.startBatteryLevel != null || selected.endBatteryLevel != null || totalEnergy != null
             return <View className="section-card">
               <View className="section-card-header">
                 <View className="section-card-title"><VisualIcon name="battery" /><Text>电量</Text></View>
               </View>
-              <View className="telemetry-metric-strip">
-                <MetricValue label="起始电量" value={selected.startBatteryLevel} unit="%" digits={0} />
-                <MetricValue label="结束电量" value={selected.endBatteryLevel} unit="%" digits={0} />
-                <MetricValue label="已用电量" value={usedSoc} unit="%" digits={0} />
-                <MetricValue label="总电耗" value={energyValue(selected)} unit="kWh" negative={(energyValue(selected) ?? 0) < 0} />
-              </View>
-              {selected.energy?.evidence?.method ? (
-                <View style={{ marginTop: '16rpx' }}>
-                  <Text className="history-source">计算依据：{energyMethodLabel(selected.energy.evidence.method)}</Text>
+              {hasValues ? <>
+                <View className="telemetry-metric-strip">
+                  <MetricValue label="起始电量" value={selected.startBatteryLevel} unit="%" digits={0} />
+                  <MetricValue label="结束电量" value={selected.endBatteryLevel} unit="%" digits={0} />
+                  <MetricValue label="已用电量" value={usedSoc} unit="%" digits={0} />
+                  <MetricValue label="总电耗" value={totalEnergy} unit="kWh" negative={(totalEnergy ?? 0) < 0} />
                 </View>
-              ) : selected.energy?.quality === 'estimated' ? (
-                <View style={{ marginTop: '16rpx' }}>
-                  <Text className="history-source">估算能耗</Text>
-                </View>
-              ) : null}
+                {selected.energy?.evidence?.method ? (
+                  <View style={{ marginTop: '16rpx' }}>
+                    <Text className="history-source">计算依据：{energyMethodLabel(selected.energy.evidence.method)}</Text>
+                  </View>
+                ) : selected.energy?.quality === 'estimated' ? (
+                  <View style={{ marginTop: '16rpx' }}>
+                    <Text className="history-source">估算能耗</Text>
+                  </View>
+                ) : null}
+              </> : <Text className="muted detail-empty-line">本次行程未提供电量端点或可用能耗。</Text>}
             </View>
           })()}
 
