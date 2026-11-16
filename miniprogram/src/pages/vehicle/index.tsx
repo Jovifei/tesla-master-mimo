@@ -742,7 +742,12 @@ export default function VehiclePage() {
         <DashboardHud status={status} dismissed={hudDismissed} onDismiss={() => setHudDismissed(true)} onExpand={() => setHudDismissed(false)} onOpen={() => { void Taro.switchTab({ url: activeDriving ? '/pages/drives/index' : '/pages/charges/index' }) }} />
         <DashboardHero car={car} status={status} imageSrc={imageSrc} imageLoading={imageLoading} imageError={imageError} onRetryImage={() => setImageRetry(value => value + 1)} onOpenBattery={openBattery} onManagePhoto={appearanceScope ? openAppearance : undefined} appearanceLabel={appearanceLabel} />
         {loading ? <LoadingIndicator label="正在读取最新数据…" compact /> : null}
-        <View className="dashboard-location-row"><DashboardInfoCard label="里程" value={dashboardMetric(status.odometer, 'km', 0)} icon="speed" onClick={() => navigate('/pages/analysis/index?kind=mileage')} /><DashboardInfoCard label="位置" value={location} icon="location" onClick={() => { if (map) navigate('/pages/tools/index?kind=location'); else { focusDiagnostics.current = true; setShowDiagnostics(true) } }} /></View>
+        <View className="dashboard-quick-nav">
+          <Button className="dashboard-quick-link" onClick={() => { void Taro.pageScrollTo({ selector: '.vehicle-remote-card', duration: 250 }).catch(() => {}) }}>车辆控制</Button>
+          <Button className="dashboard-quick-link" onClick={() => { void Taro.pageScrollTo({ selector: '.nearby-charging-card', duration: 250 }).catch(() => {}) }}>附近充电</Button>
+          <Button className="dashboard-quick-link" onClick={() => { void Taro.pageScrollTo({ selector: '.vehicle-places-card', duration: 250 }).catch(() => {}) }}>我的地点</Button>
+        </View>
+        <DailySocTrend trend={socTrend} windowDays={socWindow} loading={socLoading} onWindowChange={setSocWindow} />
         {recentDrive ? <DashboardRecentDrive drive={recentDrive} onOpen={() => { void Taro.switchTab({ url: '/pages/drives/index' }) }} /> : null}
         {newTrip ? <View className="dashboard-new-trip">
           <View className="dashboard-new-trip-main">
@@ -760,10 +765,10 @@ export default function VehiclePage() {
             <Button className="button button-secondary" onClick={() => setNewTrip(null)}>关闭</Button>
           </View>
         </View> : null}
+        <View className="dashboard-location-row"><DashboardInfoCard label="里程" value={dashboardMetric(status.odometer, 'km', 0)} icon="speed" onClick={() => navigate('/pages/analysis/index?kind=mileage')} /><DashboardInfoCard label="位置" value={location} icon="location" onClick={() => { if (map) navigate('/pages/tools/index?kind=location'); else { focusDiagnostics.current = true; setShowDiagnostics(true) } }} /></View>
         <View className="dashboard-temperature-row"><DashboardInfoCard label="车内" value={dashboardTemperature(status.insideTemp)} icon="thermostat" onClick={() => navigate('/pages/tools/index?kind=temperature')} /><DashboardInfoCard label="车外" value={dashboardTemperature(status.outsideTemp)} icon="thermostat" onClick={() => navigate('/pages/tools/index?kind=temperature')} /></View>
         <DashboardTpms snapshot={status.tpms} report={status.tpmsReport} warnings={tpmsAlerts} readiness={tpmsReadiness} onOpen={() => navigate('/pages/tools/index?kind=tpms')} />
         {map ? <View className="dashboard-map-card">{!mapFailed ? <Map id="dashboard-map" latitude={map.latitude} longitude={map.longitude} scale={15} showLocation={false} markers={[{ id: 1, ...map, iconPath: '/assets/tabs/vehicle-selected.png', width: 24, height: 24, title: car.displayName || car.name || '车辆' }]} onError={() => setMapFailed(true)} /> : <View className="dashboard-map-unavailable"><Text>地图暂时无法载入</Text><Button className="dashboard-text-button" onClick={() => setMapFailed(false)}>重试地图</Button></View>}</View> : null}
-        <DailySocTrend trend={socTrend} windowDays={socWindow} loading={socLoading} onWindowChange={setSocWindow} />
         {activeCharging ? <DashboardCurrentCharge status={status} onOpen={() => navigate('/pages/insights/index?kind=currentCharge')} /> : null}
         <VehicleRemoteSections
           carId={car.id}

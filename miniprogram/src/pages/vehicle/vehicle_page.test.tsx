@@ -617,10 +617,10 @@ it('matches the actual Dashboard hierarchy, App InfoCard ordering, four state ch
   expect(map.props.showLocation).toBe(false)
   expect(map.props.latitude).not.toBe(31.2)
   const sections = page.root.findByProps({ className: 'page vehicle-page appearance-neutral' }).findAllByType('view').map(node => node.props.className)
+  expect(sections.indexOf('dashboard-soc-trend')).toBeLessThan(sections.indexOf('dashboard-location-row'))
   expect(sections.indexOf('dashboard-location-row')).toBeLessThan(sections.indexOf('dashboard-temperature-row'))
   expect(sections.indexOf('dashboard-temperature-row')).toBeLessThan(sections.indexOf('dashboard-tpms'))
   expect(sections.indexOf('dashboard-tpms')).toBeLessThan(sections.indexOf('dashboard-map-card'))
-  expect(sections.indexOf('dashboard-map-card')).toBeLessThan(sections.indexOf('dashboard-soc-trend'))
   expect(snapshotBadge().children.join('')).toContain('实时')
 })
 

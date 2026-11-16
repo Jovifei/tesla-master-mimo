@@ -287,6 +287,26 @@
   .dashboard-opening-grid>view {
     width:calc(50% - 6rpx)
   }
+  .dashboard-quick-nav {
+    display: flex;
+    gap: 12rpx;
+    margin: 4rpx 0 24rpx;
+  }
+  .dashboard-quick-link {
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+    height: 64rpx;
+    line-height: 64rpx;
+    padding: 0 12rpx;
+    font-size: 23rpx;
+    color: var(--dashboard-label-primary, #1f2937);
+    background: var(--dashboard-neutral-soft);
+    border: 0.5px solid var(--dashboard-border);
+    border-radius: 999rpx;
+    text-align: center;
+    &::after { border: none; }
+  }
   .dashboard-location-row,.dashboard-temperature-row {
     display:flex;
     gap:24rpx;
