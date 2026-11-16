@@ -13,9 +13,9 @@
     width: auto;
     min-width: 0;
     margin: 0;
-    padding: 0 28rpx;
-    height: 64rpx;
-    line-height: 64rpx;
+    padding: 0 30rpx;
+    height: 80rpx;
+    line-height: 80rpx;
     font-size: 24rpx;
   }
   .insight-header .muted { margin-top: 8rpx; }
@@ -33,19 +33,19 @@
     width: auto;
     margin: 0;
     padding: 10rpx 24rpx;
-    border: 1rpx solid #e9edf2;
+    border: 1rpx solid var(--apple-separator);
     border-radius: 999rpx;
-    color: #6b7280;
-    background: #f9f9fa;
+    color: var(--apple-label-secondary);
+    background: var(--apple-surface-secondary);
     font-size: 26rpx;
     line-height: 1.4;
     white-space: nowrap;
     &::after { border: 0; }
   }
   .insight-filters .history-chip-selected {
-    color: #164e63;
-    background: #ddf0f1;
-    border-color: #157a86;
+    color: var(--apple-label-primary);
+    background: var(--apple-teal-soft);
+    border-color: var(--apple-label-primary);
     font-weight: 600;
   }
   .insight-filters .history-filter-row {
@@ -56,7 +56,7 @@
   }
   .insight-coverage {
     display: block;
-    color: #6b7280;
+    color: var(--apple-label-secondary);
     font-size: 26rpx;
     line-height: 1.6;
   }
@@ -65,7 +65,7 @@
     flex-direction: column;
     gap: 12rpx;
     padding: 24rpx 0;
-    border-top: 1rpx solid #e9edf2;
+    border-top: 1rpx solid var(--apple-separator);
     overflow-wrap: anywhere;
   }
   .insight-name {

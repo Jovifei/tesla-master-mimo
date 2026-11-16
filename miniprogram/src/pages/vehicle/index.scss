@@ -296,10 +296,10 @@
     flex: 1;
     min-width: 0;
     margin: 0;
-    height: 64rpx;
-    line-height: 64rpx;
+    height: 88rpx;
+    line-height: 88rpx;
     padding: 0 12rpx;
-    font-size: 23rpx;
+    font-size: 24rpx;
     color: var(--dashboard-label-primary, #1f2937);
     background: var(--dashboard-neutral-soft);
     border: 0.5px solid var(--dashboard-border);
@@ -511,11 +511,11 @@
   }
   .dashboard-soc-window {
     min-width:0;
-    height:48rpx;
-    line-height:48rpx;
-    padding:0 18rpx;
+    height:80rpx;
+    line-height:80rpx;
+    padding:0 22rpx;
     margin:0;
-    font-size:22rpx;
+    font-size:24rpx;
     background:transparent;
     color:var(--dashboard-muted);
     border:0.5px solid var(--dashboard-border);

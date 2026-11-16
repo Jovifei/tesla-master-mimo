@@ -1,5 +1,5 @@
 import { useAppearance } from '../../services/appearance'
-import { Text, View } from '@tarojs/components'
+import { Button, Text, View } from '@tarojs/components'
 import Taro, { useLoad } from '@tarojs/taro'
 import { useState } from 'react'
 import { legalDocumentFor, legalDocuments, type LegalDocument } from '../../domain/legal'
@@ -27,7 +27,7 @@ export default function LegalPage() {
         <Text className="section-title">目录</Text>
         <View className="legal-toc-chips">
           {document.sections.map((section, index) => (
-            <Text key={section.title} className="legal-toc-chip" onClick={() => { void Taro.pageScrollTo({ selector: `#legal-section-${index}`, duration: 250 }).catch(() => {}) }}>{section.title.replace(/^\d+\.\s*/, '')}</Text>
+            <Button key={section.title} className="legal-toc-chip" onClick={() => { void Taro.pageScrollTo({ selector: `#legal-section-${index}`, duration: 250 }).catch(() => {}) }}>{section.title.replace(/^\d+\.\s*/, '')}</Button>
           ))}
         </View>
       </View>

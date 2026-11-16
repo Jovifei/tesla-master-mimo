@@ -131,3 +131,15 @@
   :root, page, .appearance-neutral, .appearance-cream { --apple-label-secondary:#b7bdc6; --apple-surface-secondary:#242a31; --apple-surface-tertiary:#282d34; --apple-separator:#323840; --day-rear:#191d22; --day-rear-selected:#20252b; }
   .charge-activity-cell[style] { background:var(--charge-cell-bg-dark); color:var(--charge-cell-ink-dark); }
 }
+
+/* Dark semantic chips introduced by recent account/auth/diagnostic surfaces. */
+@media (prefers-color-scheme: dark) {
+  .state-pill { background: #242a31; color: #b7bdc6; }
+  .state-pill-ready { background: #153a26; color: #7fe0a4; }
+  .auth-step { background: #242a31; color: #b7bdc6; }
+  .auth-step.done { background: #153a26; color: #7fe0a4; }
+  .readiness-summary-pill { background: #242a31; color: #b7bdc6; }
+  .readiness-summary-pill.ready { background: #153a26; color: #7fe0a4; }
+  .account-card .wechat-box-badge { background: #242a31; color: #b7bdc6; }
+  .account-card .wechat-box-badge.bound { background: #153a26; color: #7fe0a4; }
+}

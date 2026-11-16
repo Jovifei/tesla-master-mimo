@@ -46,17 +46,18 @@
     flex: none;
     margin: 0;
     padding: 10rpx 24rpx;
-    background: #ffffff;
-    border: 1rpx solid #e9edf2;
-    color: #6b7280;
+    background: var(--apple-surface);
+    border: 1rpx solid var(--apple-separator);
+    color: var(--apple-label-secondary);
     font-size: 26rpx;
     border-radius: 999rpx;
     line-height: 1.4;
     &::after { border: 0; }
   }
   .history-chip-selected {
-    color: #157a86;
-    background: #ddf0f1;
+    color: var(--apple-label-primary);
+    background: var(--apple-teal-soft);
+    border-color: var(--apple-label-primary);
     font-weight: 600;
   }
   .analysis-date-range {
@@ -67,18 +68,18 @@
     flex-wrap: wrap;
     picker {
       font-size: 26rpx;
-      color: #6b7280;
+      color: var(--apple-label-secondary);
     }
   }
   .analysis-coverage {
     padding: 16rpx 0 20rpx;
-    color: #6b7280;
+    color: var(--apple-label-secondary);
     font-size: 26rpx;
     line-height: 1.5;
     > text { display: block; overflow-wrap: anywhere; }
   }
   .analysis-record {
-    border-top: 1rpx solid #e9edf2;
+    border-top: 1rpx solid var(--apple-separator);
     padding: 24rpx 0;
     line-height: 1.6;
     > text { display: block; overflow-wrap: anywhere; }
