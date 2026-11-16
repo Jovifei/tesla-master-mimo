@@ -435,8 +435,11 @@ export default function AccountManagementPanel({
       </View>
       <Text className="wechat-box-muted">{wechatBound === null ? '微信绑定状态暂未确认' : wechatBound ? '此账号已绑定微信' : '此账号尚未绑定微信'}{recoveryEnabled ? '，本机已启用快捷进入。' : '。'}</Text>
       <View className="wechat-box-actions">
-        <Button className="button button-secondary" disabled={loading || authorizationPending} onClick={() => { void bindWechat() }}>{wechatBound ? '启用当前微信快捷进入' : '绑定当前微信'}</Button>
-        {wechatBound ? <Button className="button button-secondary" disabled={loading || authorizationPending} onClick={() => { void unbindWechat() }}>解绑微信</Button> : null}
+        {wechatBound ? (
+          <Button className="button button-secondary" disabled={loading || authorizationPending} onClick={() => { void unbindWechat() }}>解绑微信</Button>
+        ) : (
+          <Button className="button button-secondary" disabled={loading || authorizationPending} onClick={() => { void bindWechat() }}>绑定当前微信</Button>
+        )}
       </View>
     </View>
 
