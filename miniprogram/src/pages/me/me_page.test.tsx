@@ -33,6 +33,11 @@ async function mount() {
   await act(async () => { renderer = TestRenderer.create(React.createElement(Page)); })
   await act(async () => { platform.show() }); await flush()
 }
+async function mountAccount() {
+  const Panel = (await import('../../components/AccountManagementPanel')).default
+  await act(async () => { renderer = TestRenderer.create(React.createElement(Panel)); })
+  await act(async () => { platform.show() }); await flush()
+}
 
 it('keeps fixture account controls separate from real authorization and data-status storage', async () => {
   vi.stubEnv('TARO_APP_MOCK_FIXTURE', 'true')
@@ -69,6 +74,12 @@ it('More mirrors the App section order and opens existing analysis and live read
   expect(labels).toEqual(['统计概览', '电池健康', '里程统计', '行程历史', '长途旅程', '能耗', '费用分析', '续航分析', '待机能耗', '时间线', '年度报告', '导出数据'])
   expect(visible()).not.toContain('查看数据')
   expect(visible()).not.toContain('查看车辆与数据状态')
+  // The hub keeps a compact account row; management lives on the account subpage.
+  expect(renderer!.root.findAllByProps({ className: 'card account-hero compact-account-hero' })).toHaveLength(1)
+  expect(renderer!.root.findAllByProps({ className: 'card account-card' })).toHaveLength(0)
+  expect(visible()).not.toContain('重新授权 Tesla')
+  expect(visible()).not.toContain('退出登录')
+  expect(visible()).not.toContain('注销账号')
   const system = renderer!.root.findAllByProps({ className: 'more-system-label' }).map(node => node.children.join(''))
   expect(system).toEqual(['数据状态', '软件更新', '哨兵历史', '设置', '关于'])
   const tiles = renderer!.root.findAllByType('button').filter(node => node.props.className === 'more-action more-tile')
@@ -87,7 +98,7 @@ it('More mirrors the App section order and opens existing analysis and live read
 /** Actual page -> actual API logout -> platform transport/storage, no API mocking. */
 it('successful logout exposes login and clears the actual local session', async () => {
   platform.request.mockResolvedValueOnce(respond(200, { status: 'logged_out' }))
-  await mount(); await logout()
+  await mountAccount(); await logout()
   expect(platform.values.has(key)).toBe(false)
   expect(visible()).toContain('尚未登录')
   expect(renderer!.root.findAllByType('button').some(node => node.children.join('') === '特斯拉账号登录')).toBe(true)
@@ -96,7 +107,7 @@ it('successful logout exposes login and clears the actual local session', async 
 it.each(['network', 'http500'])('failed %s logout still synchronizes already-cleared local session', async failure => {
   if (failure === 'network') platform.request.mockRejectedValueOnce(Error('PRIVATE_TRANSPORT_DIAGNOSTIC'))
   else platform.request.mockResolvedValueOnce(respond(500, { message: 'PRIVATE_SERVER_DIAGNOSTIC' }))
-  await mount(); await logout()
+  await mountAccount(); await logout()
   expect(platform.values.has(key)).toBe(false)
   expect(visible()).toContain('尚未登录')
   expect(visible()).not.toContain('PRIVATE_')
@@ -110,7 +121,7 @@ it('shows that automatic recovery could resume after restart when logout and loc
     { apiOrigin: 'https://api.example.test', boundUserId: 'a', enabled: true })
   platform.failPreferenceWrite = true; platform.failPreferenceRemove = true
   platform.request.mockRejectedValue(Error('PRIVATE_TRANSPORT_DIAGNOSTIC'))
-  await mount(); await logout()
+  await mountAccount(); await logout()
   expect(visible()).toContain('重启后可能重新进入')
   expect(visible()).toContain('退出请求未确认')
   expect(visible()).not.toContain('PRIVATE_TRANSPORT_DIAGNOSTIC')
@@ -121,7 +132,7 @@ it('late successful logout synchronizes a newer local session instead of clearin
   const { matelinkApi } = await import('../../services/api')
   let release!: (value: unknown) => void
   platform.request.mockImplementationOnce(() => new Promise(resolve => { release = resolve }))
-  await mount(); await logout()
+  await mountAccount(); await logout()
   platform.request.mockResolvedValueOnce(respond(200, { access_token: 'fixture-b', user: { id: 'b' }, link_required: false }))
   await act(async () => { await matelinkApi.exchangeTeslaTicket('fixture-ticket') })
   await act(async () => { release(respond(200, { status: 'logged_out' })) }); await flush()
@@ -134,7 +145,7 @@ it('late successful logout synchronizes a newer local session instead of clearin
 it('hidden lifecycle invalidates a late logout completion and re-show reads the new session', async () => {
   let release!: (value: unknown) => void
   platform.request.mockImplementationOnce(() => new Promise(resolve => { release = resolve }))
-  await mount(); await logout()
+  await mountAccount(); await logout()
   await act(async () => { platform.hide() })
   platform.values.set(key, session('b'))
   await act(async () => { release(respond(200, { status: 'logged_out' })) }); await flush()
@@ -152,7 +163,7 @@ async function consent() {
 }
 it('does not infer current consent from an existing session or restore a withdrawn consent', async () => {
   platform.values.set('matelink.consent.v1', { termsVersion: 'old', privacyVersion: 'old', acceptedAtEpochMs: Date.now() })
-  await mount()
+  await mountAccount()
   const checked = () => renderer!.root.findAllByType('checkbox' as React.ElementType).map(node => node.props.checked)
   expect(checked()).toEqual([false, false])
   expect(button('重新授权 Tesla').props.disabled).toBe(true)
@@ -164,7 +175,7 @@ it('does not infer current consent from an existing session or restore a withdra
   expect(checked()).toEqual([false, false])
 })
 it('keeps withdrawn consent unchecked and reports a storage failure when the prior record cannot be removed', async () => {
-  await mount(); await consent()
+  await mountAccount(); await consent()
   platform.failConsentWrite = true; platform.failConsentRemove = true
   await act(async () => { renderer!.root.findByType('checkboxgroup' as React.ElementType).props.onChange({ detail: { value: ['terms'] } }) })
   await act(async () => { platform.hide(); platform.show() }); await flush()
@@ -175,7 +186,7 @@ it('asks for confirmation before binding the current WeChat identity', async () 
   platform.login.mockResolvedValue({ code: 'synthetic-code' })
   platform.modal.mockResolvedValueOnce({ confirm: false }).mockResolvedValueOnce({ confirm: true })
   platform.request.mockResolvedValue(respond(200, { status: 'bound' }))
-  await mount()
+  await mountAccount()
   await act(async () => { button('绑定当前微信').props.onClick() }); await flush()
   expect(platform.login).not.toHaveBeenCalled()
   await act(async () => { button('绑定当前微信').props.onClick() }); await flush()
@@ -195,7 +206,7 @@ it('shows the server binding and local failure when binding succeeds but prefere
   platform.login.mockResolvedValue({ code: 'fresh-code' })
   platform.modal.mockResolvedValue({ confirm: true })
   platform.request.mockResolvedValue(respond(200, { status: 'bound' }))
-  await mount()
+  await mountAccount()
   await act(async () => { button('绑定当前微信').props.onClick() }); await flush()
   expect(visible()).toContain('本机快捷进入设置无法保存')
   expect(visible()).toContain('此账号已绑定微信')
@@ -212,7 +223,7 @@ it('shows the server unbinding and local failure while retaining a Tesla session
     .mockResolvedValueOnce(respond(200, { bound: false, binding_version: '1' }))
   platform.modal.mockResolvedValue({ confirm: true })
   platform.request.mockResolvedValue(respond(200, { status: 'unbound' }))
-  await mount()
+  await mountAccount()
   await act(async () => { button('解绑微信').props.onClick() }); await flush()
   expect(visible()).toContain('本机快捷进入设置无法保存')
   expect(visible()).toContain('此账号尚未绑定微信')
@@ -230,7 +241,7 @@ it('does not apply a delayed binding status from an account that has been replac
   platform.login.mockResolvedValue({ code: 'fresh-code' })
   platform.modal.mockResolvedValue({ confirm: true })
   platform.request.mockResolvedValue(respond(200, { status: 'bound' }))
-  await mount()
+  await mountAccount()
   await act(async () => { button('绑定当前微信').props.onClick() })
   await vi.waitFor(() => expect(platform.bindingRequest).toHaveBeenCalledTimes(3))
   await act(async () => { platform.hide(); platform.values.set(key, session('b')); platform.show() }); await flush()
@@ -245,7 +256,7 @@ it('does not query binding again after unbinding revokes the current WeChat sess
   platform.bindingRequest.mockResolvedValue(respond(200, { bound: true, binding_version: '0' }))
   platform.modal.mockResolvedValue({ confirm: true })
   platform.request.mockResolvedValue(respond(200, { status: 'unbound' }))
-  await mount()
+  await mountAccount()
   await act(async () => { button('解绑微信').props.onClick() }); await flush()
   expect(platform.values.has(key)).toBe(false)
   expect(visible()).toContain('尚未登录')
@@ -259,7 +270,7 @@ it('pins the binding version before confirmation and does not override a later u
   platform.modal.mockImplementation(() => new Promise(resolve => { release = resolve }))
   platform.login.mockResolvedValue({ code: 'fresh-code' })
   platform.request.mockResolvedValue(respond(409, { error: 'wechat_bind_expired' }))
-  await mount()
+  await mountAccount()
   await act(async () => { button('绑定当前微信').props.onClick() }); await flush()
   expect(platform.bindingRequest).toHaveBeenCalledTimes(2)
   expect(platform.login).not.toHaveBeenCalled()
@@ -296,7 +307,7 @@ it('shows the restored account after the More page is hidden and shown during re
 it('disables WeChat binding while another Tesla authorization remains pending', async () => {
   platform.values.set(pendingKey, pending('a'))
   platform.request.mockResolvedValue(respond(200, { status: 'pending' }))
-  await mount()
+  await mountAccount()
   expect(button('绑定当前微信').props.disabled).toBe(true)
 })
 
@@ -307,7 +318,7 @@ it('opens the Tesla authorization page after a same-account token refresh comple
   platform.request.mockImplementation(({ url }: { url: string }) => url.endsWith('/v1/session/refresh')
     ? new Promise(resolve => { release = resolve })
     : Promise.resolve(respond(200, { authorization_url: 'https://auth.tesla.com/oauth2/v3/authorize?state=fixture', transaction_id: 'txn', client_proof: 'proof' })))
-  await mount()
+  await mountAccount()
   await consent()
   const refreshing = refreshSession()
   await act(async () => { button('重新授权 Tesla').props.onClick() })
@@ -321,7 +332,7 @@ it('returns a WeChat-restored account to Tesla login after unbinding', async () 
   platform.bindingRequest.mockResolvedValue(respond(200, { bound: true, binding_version: '0' }))
   platform.modal.mockResolvedValue({ confirm: true })
   platform.request.mockResolvedValue(respond(200, { status: 'unbound' }))
-  await mount()
+  await mountAccount()
   await act(async () => { button('解绑微信').props.onClick() }); await flush()
   expect(platform.values.has(key)).toBe(false)
   expect(visible()).toContain('尚未登录')
@@ -330,7 +341,7 @@ it('returns a WeChat-restored account to Tesla login after unbinding', async () 
 it('does not delete a replacement account when the delete confirmation was opened for another', async () => {
   let release!: (value: unknown) => void
   platform.modal.mockImplementation(() => new Promise(resolve => { release = resolve }))
-  await mount()
+  await mountAccount()
   await act(async () => { button('注销账号').props.onClick() })
   platform.values.set(key, session('b'))
   await act(async () => { release({ confirm: true }) }); await flush()
@@ -344,7 +355,7 @@ it('does not let a stale binding status hide a successful binding', async () => 
   platform.login.mockResolvedValue({ code: 'fresh-code' })
   platform.modal.mockResolvedValue({ confirm: true })
   platform.request.mockResolvedValue(respond(200, { status: 'bound' }))
-  await mount()
+  await mountAccount()
   await act(async () => { button('绑定当前微信').props.onClick() }); await flush()
   expect(visible()).toContain('此账号已绑定微信')
   await act(async () => { release(respond(200, { bound: false, binding_version: '0' })) }); await flush()
@@ -355,7 +366,7 @@ it.each(['绑定当前微信', '解绑微信', '注销账号'])('ignores a stale
   if (label === '解绑微信') platform.bindingRequest.mockResolvedValue(respond(200, { bound: true, binding_version: '0' }))
   let release!: (value: unknown) => void
   platform.modal.mockImplementation(() => new Promise(resolve => { release = resolve }))
-  await mount()
+  await mountAccount()
   await act(async () => { button(label).props.onClick() })
   await act(async () => { platform.hide(); platform.show() }); await flush()
   await act(async () => { release({ confirm: true }) }); await flush()

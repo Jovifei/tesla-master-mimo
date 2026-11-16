@@ -3,7 +3,7 @@ import VisualIcon from '../../components/VisualIcon'
 import { Button, Checkbox, CheckboxGroup, Text, View } from '@tarojs/components'
 import Taro, { useDidHide, useDidShow, useUnload } from '@tarojs/taro'
 import { useRef, useState } from 'react'
-import { ApiError, ensureWechatSession, getApiOrigin, getApiSessionGeneration, getWechatRecoveryFailure, isWechatRecoveryEnabledForAccount, JOURVOLT_PRIVACY_VERSION, JOURVOLT_TERMS_VERSION, matelinkApi } from '../../services/api'
+import { ApiError, ensureWechatSession, getApiOrigin, getApiSessionGeneration, getWechatRecoveryFailure, JOURVOLT_PRIVACY_VERSION, JOURVOLT_TERMS_VERSION, matelinkApi } from '../../services/api'
 import { readAppSession, readPendingTeslaAuthorization, type AppSession } from '../../services/session'
 import { requestDataStatus } from '../../services/data_status_intent'
 import { MOCK_FIXTURE_ENABLED } from '../../services/mock_fixture'
@@ -118,8 +118,9 @@ export default function MePage() {
   const showPage = () => {
     pageVisible.current = true
     const operation = ++operationEpoch.current
-    setSession(null)
-    setWechatBound(null)
+    // Keep the current account display while the session is refreshed, so the
+    // hub does not flash the login state on every show.
+    setSession(current => current ?? readAppSession(Taro))
     setRestoring(true)
     void ensureWechatSession().then(() => {
       if (!pageVisible.current || operation !== operationEpoch.current) return
@@ -135,70 +136,6 @@ export default function MePage() {
   }
   useSessionRecoveryReload(() => { if (pageVisible.current) showPage() })
   useDidShow(showPage)
-
-  const bindWechat = async () => {
-    if (!pageVisible.current || loading || restoring || authorizationPending || MOCK_FIXTURE_ENABLED) return
-    const scope = captureScope()
-    if (!scope.session?.userId || scope.pending) return
-    const operation = ++operationEpoch.current
-    bindingEpoch.current += 1
-    setLoading(true); setError(null)
-    try {
-      const prepared = await matelinkApi.prepareWechatBinding()
-      const confirmationScope = captureScope()
-      if (!pageVisible.current || operation !== operationEpoch.current || confirmationScope.generation !== scope.generation ||
-          confirmationScope.session?.userId !== scope.session?.userId || confirmationScope.session?.apiOrigin !== scope.session?.apiOrigin || confirmationScope.pending) return
-      const confirmed = await Taro.showModal({ title: '绑定当前微信？', content: '绑定后可用当前微信快捷进入此账号，随时可在这里解绑。', confirmText: '确认绑定' })
-      if (!confirmed.confirm || !pageVisible.current || operation !== operationEpoch.current || !sameScope(confirmationScope)) return
-      await matelinkApi.bindWechat(prepared.bindingVersion)
-      const current = readAppSession(Taro)
-      if (operation !== operationEpoch.current || !pageVisible.current || getApiSessionGeneration() !== scope.generation ||
-          current?.userId !== scope.session?.userId || current?.apiOrigin !== scope.session?.apiOrigin || readPendingTeslaAuthorization(Taro)) return
-      setWechatBound(true)
-      Taro.showToast({ title: '微信已绑定', icon: 'success' })
-    } catch (reason) {
-      if (operation === operationEpoch.current && pageVisible.current) {
-        setError(errorMessage(reason))
-        const current = readAppSession(Taro)
-        if (reason instanceof ApiError && reason.code === 'wechat_recovery_storage_failed' && getApiSessionGeneration() === scope.generation &&
-            current?.userId === scope.session?.userId && current?.apiOrigin === scope.session?.apiOrigin && !readPendingTeslaAuthorization(Taro)) {
-          setWechatBound(null)
-          await loadWechatBinding()
-        }
-      }
-    }
-    finally { if (operation === operationEpoch.current) setLoading(false) }
-  }
-
-  const unbindWechat = async () => {
-    if (!pageVisible.current || loading || restoring || authorizationPending || MOCK_FIXTURE_ENABLED) return
-    const scope = captureScope()
-    if (!scope.session?.userId || scope.pending) return
-    const beforeConfirmation = operationEpoch.current
-    const confirmed = await Taro.showModal({ title: '解绑微信？', content: '解绑后不能再用微信快捷进入；微信进入的会话会退出。', confirmText: '确认解绑' })
-    if (!confirmed.confirm || !pageVisible.current || operationEpoch.current !== beforeConfirmation || !sameScope(scope)) return
-    const operation = ++operationEpoch.current
-    bindingEpoch.current += 1
-    setLoading(true); setError(null)
-    try {
-      await matelinkApi.unbindWechat()
-      if (operation !== operationEpoch.current || !pageVisible.current) return
-      const current = readAppSession(Taro)
-      setSession(current); setWechatBound(current ? false : null)
-      if (!current) { setTermsAccepted(false); setPrivacyAccepted(false) }
-      Taro.showToast({ title: current ? '微信已解绑' : '微信已解绑，请重新登录', icon: 'none' })
-    } catch (reason) {
-      if (operation === operationEpoch.current && pageVisible.current) {
-        const current = readAppSession(Taro)
-        setSession(current); setError(errorMessage(reason))
-        if (reason instanceof ApiError && reason.code === 'wechat_recovery_storage_failed' && getApiSessionGeneration() === scope.generation &&
-            current?.userId === scope.session?.userId && current?.apiOrigin === scope.session?.apiOrigin && !readPendingTeslaAuthorization(Taro)) {
-          setWechatBound(null)
-          await loadWechatBinding()
-        } else if (!current) setWechatBound(null)
-      }
-    } finally { if (operation === operationEpoch.current) setLoading(false) }
-  }
 
   const enterWithWechat = async () => {
     if (!termsAccepted || !privacyAccepted || loading || restoring || authorizationPending || MOCK_FIXTURE_ENABLED) return
@@ -292,77 +229,6 @@ export default function MePage() {
     }
   }
 
-  const logout = async () => {
-    if (MOCK_FIXTURE_ENABLED) return
-    setLoading(true)
-    setError(null)
-    const operation = ++operationEpoch.current
-    const generation = getApiSessionGeneration()
-    try {
-      await matelinkApi.logout()
-      if (operation !== operationEpoch.current) return
-      if (!readAppSession(Taro) && getApiSessionGeneration() === generation + 1)
-        Taro.showToast({ title: '已退出登录', icon: 'success' })
-    } catch (reason) {
-      if (operation === operationEpoch.current && getApiSessionGeneration() === generation + 1)
-        setError(errorMessage(reason))
-    } finally {
-      if (operation === operationEpoch.current) {
-        const current = readAppSession(Taro)
-        const consent = !consentBlocked.current && readStoredConsent(Taro) !== null
-        setSession(current)
-        setWechatBound(null)
-        setTermsAccepted(consent)
-        setPrivacyAccepted(consent)
-        setAuthorizationPending(Boolean(readPendingTeslaAuthorization(Taro)))
-        setLoading(false)
-      }
-    }
-  }
-
-  const deleteAccount = async () => {
-    if (MOCK_FIXTURE_ENABLED) return
-    if (!pageVisible.current || loading || restoring) return
-    const scope = captureScope(), beforeConfirmation = operationEpoch.current
-    if (!scope.session?.userId) return
-    const confirmation = await Taro.showModal({
-      title: '注销 MateLink 账号？',
-      content: '服务端账号、会话和关联车辆数据将被删除。此操作不可撤销；Tesla 官方授权需要随后单独撤销。',
-      confirmText: '确认注销',
-      confirmColor: '#b42318',
-    })
-    if (!confirmation.confirm || !pageVisible.current || operationEpoch.current !== beforeConfirmation || !sameScope(scope)) return
-    setLoading(true)
-    setError(null)
-    const operation = ++operationEpoch.current
-    try {
-      const result = await matelinkApi.deleteAccount()
-      if (operation !== operationEpoch.current) return
-      try { Taro.removeStorageSync(CONSENT_STORAGE_KEY) } catch { /* best effort */ }
-      setSession(null)
-      setAuthorizationPending(false)
-      setTermsAccepted(false)
-      setPrivacyAccepted(false)
-      if (result.recoveryStorageWarning) setError('账号已注销，但本机快捷进入设置无法保存，请检查微信存储。')
-      Taro.showToast({ title: '账号已注销', icon: 'success' })
-      if (result.teslaConsentRevokeUrl) {
-        const revoke = await Taro.showModal({
-          title: '撤销 Tesla 授权',
-          content: 'MateLink 账号已删除。建议继续前往 Tesla 官方页面撤销第三方授权。',
-          confirmText: '前往 Tesla',
-        })
-        if (revoke.confirm && operation === operationEpoch.current) {
-          const url = `/pages/auth/index?url=${encodeURIComponent(result.teslaConsentRevokeUrl)}`
-          await Taro.navigateTo({ url })
-        }
-      }
-    } catch (reason) {
-      if (operation === operationEpoch.current) { setSession(readAppSession(Taro)); setError(errorMessage(reason)) }
-    } finally {
-      if (operation === operationEpoch.current) setLoading(false)
-    }
-  }
-
   const openLegal = (kind: 'terms' | 'privacy') => {
     void Taro.navigateTo({ url: `/pages/legal/index?kind=${kind}` })
   }
@@ -371,29 +237,27 @@ export default function MePage() {
   useUnload(invalidatePage)
 
   const navGeo = getAppNavGeometry()
-  let recoveryEnabled = false
-  try { recoveryEnabled = Boolean(!MOCK_FIXTURE_ENABLED && session?.userId && isWechatRecoveryEnabledForAccount(getApiOrigin(), session.userId)) } catch { /* no preference */ }
   return (
     <View className={`page more-page ${appearance.className}${session ? '' : ' minimal-login'}`}>
       <View className="app-toolbar" style={{ paddingTop: `${navGeo.navBarTop}px`, paddingRight: `${navGeo.capsuleRightPadding}px` }}><Text className="title">更多</Text></View>
       {MOCK_FIXTURE_ENABLED ? <Text className="muted">合成数据模式——账号状态为模拟，授权流程不可用；全部记录为 source=mock_fixture 的测试数据。</Text> : null}
       {!session ? <View className="login-welcome"><Text className="title">每一程，都有记录。</Text><Text className="muted">连接你的 Tesla，查看车辆状态、行程与充电。账号登录、官方授权和车辆确认各自独立。</Text></View> : null}
-      <View className="card account-hero" onClick={() => {
-        if (!MOCK_FIXTURE_ENABLED && session) {
+      {session ? <View className="card account-hero compact-account-hero" onClick={() => {
+        if (!MOCK_FIXTURE_ENABLED) {
           void Taro.navigateTo({ url: '/pages/tools/index?kind=account' })
         }
       }}>
         <View className="account-heading">
-          <View>
-            <View className="visual-heading"><VisualIcon name="account" /><Text className="section-title">账号与授权</Text></View>
-          </View>
+          <View className="visual-heading"><VisualIcon name="account" /><Text className="section-title">账号与授权</Text></View>
           <View className="account-heading-right">
-            <Text className={`state-pill ${session && !MOCK_FIXTURE_ENABLED ? 'state-pill-ready' : ''}`}>{session ? MOCK_FIXTURE_ENABLED ? '合成会话' : '会话已建立' : '尚未登录'}</Text>
-            {session && !MOCK_FIXTURE_ENABLED ? <Text className="account-hero-chevron">›</Text> : null}
+            <Text className={`state-pill ${MOCK_FIXTURE_ENABLED ? '' : 'state-pill-ready'}`}>{MOCK_FIXTURE_ENABLED ? '合成会话' : '会话已建立'}</Text>
+            {!MOCK_FIXTURE_ENABLED ? <Text className="account-hero-chevron">›</Text> : null}
           </View>
         </View>
-        <Text className="muted">{MOCK_FIXTURE_ENABLED ? '合成会话，未连接真实账号或车辆。' : '使用特斯拉账号登录，授权在 Tesla 官方页面完成。与 App 使用同一特斯拉账号，可查看该账号已有的车辆和历史数据。'}</Text>
-      </View>
+        <Text className="muted compact-account-hint">{MOCK_FIXTURE_ENABLED
+          ? '合成会话，未连接真实账号或车辆。'
+          : `${wechatBound === true ? '微信快捷进入已绑定' : wechatBound === false ? '微信快捷进入未绑定' : '微信绑定状态未确认'} · 点击管理账号、微信与退出`}</Text>
+      </View> : null}
 
       {!session && !MOCK_FIXTURE_ENABLED ? <View className="card consent-card">
         <View className="visual-heading"><VisualIcon name="shield" /><Text className="section-title">授权前确认</Text></View>
@@ -457,46 +321,6 @@ export default function MePage() {
         } else void Taro.navigateTo({ url: `/pages/tools/index?kind=${item.kind}` })
       }}><VisualIcon name={item.icon} /><Text className="more-system-label">{item.label}</Text><Text className="more-system-chevron">›</Text></Button>)}</View>
 </> : null}
-      {session && !MOCK_FIXTURE_ENABLED ? (
-        <View className="card account-card">
-          <View className="visual-heading"><VisualIcon name="account" /><Text className="section-title">账号管理</Text></View>
-          <Text className="muted">已通过 Tesla 官方授权连接。退出只结束当前会话；注销会删除服务端账号数据。</Text>
-
-          <View className="account-reauth-consent">
-            <View className="legal-links">
-              <Text className="legal-link" onClick={() => openLegal('terms')}>查看服务条款</Text>
-              <Text className="legal-link" onClick={() => openLegal('privacy')}>查看隐私指引</Text>
-            </View>
-            <CheckboxGroup onChange={onConsentChange}>
-              <View className="consent-row"><Checkbox value="terms" checked={termsAccepted}>同意服务条款（{TERMS_VERSION}）</Checkbox></View>
-              <View className="consent-row"><Checkbox value="privacy" checked={privacyAccepted}>同意隐私指引（{PRIVACY_VERSION}）</Checkbox></View>
-            </CheckboxGroup>
-          </View>
-
-          <View className="account-btn-row">
-            <Button className="button" loading={loading} disabled={loading || !termsAccepted || !privacyAccepted} onClick={startTeslaAuthorization}>重新授权 Tesla</Button>
-            <Button className="button button-secondary" disabled={loading || authorizationPending || !termsAccepted || !privacyAccepted} onClick={startTeslaAuthorization}>切换 Tesla 账号</Button>
-          </View>
-
-          <View className="account-wechat-box">
-            <View className="wechat-box-info">
-              <Text className="wechat-box-title">微信快捷进入</Text>
-              <Text className={`wechat-box-badge ${wechatBound ? 'bound' : ''}`}>{wechatBound === null ? '未确认' : wechatBound ? '已绑定' : '未绑定'}</Text>
-            </View>
-            <Text className="wechat-box-muted">{wechatBound === null ? '微信绑定状态暂未确认' : wechatBound ? '此账号已绑定微信' : '此账号尚未绑定微信'}{recoveryEnabled ? '，本机已启用快捷进入。' : '。'}</Text>
-            <View className="wechat-box-actions">
-              <Button className="button button-secondary" disabled={loading || restoring || authorizationPending} onClick={() => { void bindWechat() }}>{wechatBound ? '启用当前微信快捷进入' : '绑定当前微信'}</Button>
-              {wechatBound ? <Button className="button button-secondary" disabled={loading || restoring || authorizationPending} onClick={() => { void unbindWechat() }}>解绑微信</Button> : null}
-            </View>
-          </View>
-
-          <View className="account-btn-row account-danger-row">
-            <Button className="button button-secondary" disabled={loading} onClick={logout}>退出登录</Button>
-            <Button className="button button-danger" disabled={loading} onClick={() => { void deleteAccount() }}>注销账号</Button>
-          </View>
-        </View>
-      ) : null}
-
       {error ? <Text className="error">{error}</Text> : null}
     </View>
   )
