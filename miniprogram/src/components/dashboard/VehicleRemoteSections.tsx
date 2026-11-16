@@ -7,7 +7,8 @@ import {
   needsCommandReauthorization,
   offeredCommands,
 } from '../../domain/vehicle_commands'
-import { isSuperchargerSite, siteDisplayParking, siteDisplayPrice, siteStallsText } from '../../domain/nearby'
+import { isAmapPoiSite, isSuperchargerSite, siteDisplayParking, siteDisplayPrice, siteStallsText } from '../../domain/nearby'
+import type { FrequentPlace } from '../../domain/frequent_places'
 import DashboardIcon from './DashboardIcon'
 import VisualIcon from '../VisualIcon'
 import LoadingIndicator from '../LoadingIndicator'
@@ -17,6 +18,20 @@ export type CommandOutcome = {
   command: string
   verified?: boolean
   errorClass?: string
+}
+
+/** The server explains why a nearby response is empty; never hide that reason. */
+function nearbyReasonText(reason: string | null | undefined): string {
+  switch (reason) {
+    case 'nearby_requires_fleet_or_amap_key':
+      return '服务端未开通 Fleet 附近充电能力，也未配置高德 Web 服务 Key。配置其中一项后即可查询附近充电站。'
+    case 'nearby_requires_vehicle_location':
+      return '车辆当前位置未知，无法按位置查询附近充电站。'
+    case 'amap_query_failed':
+      return '高德充电站查询失败，请稍后重试。'
+    default:
+      return '车辆附近暂无可显示的充电站。'
+  }
 }
 
 export type VehicleRemoteSectionsProps = {
@@ -30,6 +45,7 @@ export type VehicleRemoteSectionsProps = {
 
   nearbySites: ChargingSite[] | null
   nearbySource: string | null
+  nearbyReason?: string | null
   nearbyLoading: boolean
   nearbyError: boolean
   onLoadNearby: () => void
@@ -38,8 +54,10 @@ export type VehicleRemoteSectionsProps = {
   places: VehiclePlace[] | null
   placesLoading: boolean
   placesError: boolean
+  frequentPlaces?: FrequentPlace[]
   onLoadPlaces: () => void
   onCreatePlace: (name: string, radiusM: number) => Promise<void>
+  onSaveFrequentPlace?: (place: FrequentPlace) => Promise<void>
   onDeletePlace: (id: number) => Promise<void>
 }
 
@@ -53,6 +71,7 @@ export default function VehicleRemoteSections({
   onDismissOutcome,
   nearbySites,
   nearbySource,
+  nearbyReason,
   nearbyLoading,
   nearbyError,
   onLoadNearby,
@@ -60,8 +79,10 @@ export default function VehicleRemoteSections({
   places,
   placesLoading,
   placesError,
+  frequentPlaces = [],
   onLoadPlaces,
   onCreatePlace,
+  onSaveFrequentPlace,
   onDeletePlace,
 }: VehicleRemoteSectionsProps) {
   const [unlockConfirmOpen, setUnlockConfirmOpen] = useState(false)
@@ -389,7 +410,7 @@ export default function VehicleRemoteSections({
                     <View className="site-info">
                       <Text className="site-name">{site.name || '充电站'}</Text>
                       <Text className="site-desc">
-                        {isSuperchargerSite(site) ? '超级充电站' : '目的地充电'}
+                        {isAmapPoiSite(site) ? '地图充电站' : isSuperchargerSite(site) ? '超级充电站' : '目的地充电'}
                         {siteStallsText(site) ? ` · 空闲 ${siteStallsText(site)}` : ''}
                       </Text>
                     </View>
@@ -406,10 +427,12 @@ export default function VehicleRemoteSections({
                 </View>
               ))
             ) : (
-              <Text className="muted">车辆附近暂无可显示的充电站。</Text>
+              <Text className="muted">{nearbyReasonText(nearbyReason)}</Text>
             )}
             {nearbySource === 'cache' ? (
               <Text className="muted nearby-cached-hint">数据来自缓存</Text>
+            ) : nearbySource === 'amap' ? (
+              <Text className="muted nearby-cached-hint">数据来自高德地图 · 车辆位置 5 公里范围</Text>
             ) : null}
           </View>
         )}
@@ -457,8 +480,38 @@ export default function VehicleRemoteSections({
                 </View>
               ))
             ) : (
-              <Text className="muted">还没有保存的地点。把车辆当前位置存下来即可命名。</Text>
+              <Text className="muted">
+                {frequentPlaces.length > 0
+                  ? '还没有保存的地点。可从下方常用地点中保存，或把车辆当前位置存为地点。'
+                  : '还没有保存的地点。把车辆当前位置存下来即可命名。'}
+              </Text>
             )}
+
+            {frequentPlaces.length > 0 ? (
+              <View className="frequent-places">
+                <Text className="frequent-places-title">常用地点 · 来自最近行程</Text>
+                {frequentPlaces.map(place => {
+                  const saved = (places ?? []).some(item => (item.name ?? '').trim() === place.name)
+                  return (
+                    <View key={place.name} className="place-row frequent-place-row">
+                      <DashboardIcon name="location" tone="muted" />
+                      <View className="place-info">
+                        <Text className="place-name">{place.name}</Text>
+                        <Text className="place-radius">最近 {place.count} 次行程经过</Text>
+                      </View>
+                      {!saved && place.latitude != null && place.longitude != null && onSaveFrequentPlace ? (
+                        <Button
+                          className="place-save-btn"
+                          onClick={() => { void onSaveFrequentPlace(place) }}
+                        >
+                          保存
+                        </Button>
+                      ) : saved ? <Text className="place-saved-tag">已保存</Text> : null}
+                    </View>
+                  )
+                })}
+              </View>
+            ) : null}
 
             {status.location ? (
               <Button

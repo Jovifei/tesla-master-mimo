@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ChargingSite } from '../services/types'
-import { isSuperchargerSite, siteDisplayParking, siteDisplayPrice, siteStallsText } from './nearby'
+import { isAmapPoiSite, isSuperchargerSite, siteDisplayParking, siteDisplayPrice, siteStallsText } from './nearby'
 
 function site(partial: Partial<ChargingSite>): ChargingSite {
   return {
@@ -43,5 +43,13 @@ describe('nearby charging display derivations (App parity)', () => {
     expect(siteDisplayParking(site({ type: 'supercharger' }))).toBe('充电免费停车2小时')
     expect(siteDisplayPrice(site({ type: 'destination_charging' }))).toBe('¥1.15/度')
     expect(siteDisplayParking(site({ type: 'destination_charging' }))).toBe('前2小时免费停车')
+  })
+
+  it('never dresses an Amap POI as a Tesla site or invents its price', () => {
+    const poi = site({ type: 'poi', name: '某充电站' })
+    expect(isAmapPoiSite(poi)).toBe(true)
+    expect(isSuperchargerSite(poi)).toBe(false)
+    expect(siteDisplayPrice(poi)).toBe('价格未提供')
+    expect(siteDisplayParking(poi)).toBe('停车信息未提供')
   })
 })

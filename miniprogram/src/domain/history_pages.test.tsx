@@ -280,7 +280,7 @@ describe('history pages consume canonical data across layers', () => {
     expect(page.root.findAllByProps({ className: 'history-detail-overlay' })).toHaveLength(0)
   })
 
-  it('keeps history readable and makes a saturated durable notice journal visible', async () => {
+  it('keeps history readable when the durable notice journal is saturated', async () => {
     platform.request.mockImplementation(async ({ url }: { url: string }) => url.endsWith('/cars') ? respond({ cars })
       : respond({ drives: [reported], meta: { page: 1, show: 20, total_pages: 1 } }))
     const page = await mount('drives')
@@ -290,7 +290,7 @@ describe('history pages consume canonical data across layers', () => {
       baseline: Date.parse(end), watermark: Date.parse(end), seen: Array.from({ length: 500 }, (_, id) => `session:old-${id}`),
     } } })
     await click(page, '刷新')
-    expect(JSON.stringify(page.toJSON())).toContain('本机前台提示记录不可写或已达上限，后续提示暂停；历史仍可查看')
+    expect(JSON.stringify(page.toJSON())).not.toContain('本机前台提示记录不可写或已达上限，后续提示暂停；历史仍可查看')
     expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(1)
   })
 
@@ -403,29 +403,24 @@ describe('history pages consume canonical data across layers', () => {
     expect(interval.findByProps({ ariaLabel: '充电次数 5 次' })).toBeDefined()
   })
 
-  it('keeps each newly detected event available when one poll contains multiple completed drives', async () => {
+  it('shows each newly detected event as a normal row and leaves new-trip notices to the dashboard', async () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date('2026-10-14T00:02:00Z'))
     let fresh = false
     const raw = (id: number) => ({ ...reported, drive_id: id, session_id: `batch-${id}`, end_date: `2026-10-14T00:0${id}:00Z` })
     platform.request.mockImplementation(async ({ url }: { url: string }) => {
       if (url.endsWith('/cars')) return respond({ cars })
-      const match = url.match(/\/drives\/(\d+)$/)
-      if (match) return respond({ drive: raw(Number(match[1])) })
       return respond({ drives: fresh ? [raw(4), raw(3), raw(1)] : [raw(1)], meta: { page: 1, show: 20, total_pages: 1 } })
     })
     const page = await mount('drives')
     fresh = true; vi.setSystemTime(new Date('2026-10-14T00:05:00Z'))
     await click(page, '刷新')
-    await click(page, '查看新行程')
-    expect(page.root.findAllByProps({ className: 'card history-notice' })).toHaveLength(1)
-    await click(page, '查看新行程')
     expect(page.root.findAllByProps({ className: 'card history-notice' })).toHaveLength(0)
-    expect(platform.request.mock.calls.some(([request]) => request.url.endsWith('/drives/3'))).toBe(true)
-    expect(platform.request.mock.calls.some(([request]) => request.url.endsWith('/drives/4'))).toBe(true)
+    expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(3)
+    expect(platform.request.mock.calls.some(([request]) => request.url.endsWith('/drives/3'))).toBe(false)
   })
 
-  it.each(['drives', 'charges'] as const)('suppresses first-import %s notices, opens a genuinely new same-scope detail once and deduplicates corrections/reopen', async kind => {
+  it.each(['drives', 'charges'] as const)('keeps %s history free of foreground notice chrome across refreshes and remounts', async kind => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date('2026-10-14T00:02:00Z'))
     let phase: 'initial' | 'new' | 'correction' = 'initial'
@@ -435,19 +430,14 @@ describe('history pages consume canonical data across layers', () => {
     platform.request.mockImplementation(async ({ url }: { url: string }) => {
       if (url.endsWith('/cars')) return respond({ cars })
       if (url.endsWith('/current')) return respond({ charge: null })
-      if (url.endsWith(`/${kind}/2`)) return respond({ [kind === 'drives' ? 'drive' : 'charge']: raw(2) })
       return respond({ [kind]: phase === 'initial' ? [raw(1)] : [raw(2), raw(1)], meta: { page: 1, show: 20, total_pages: 1 } })
     })
     let page = await mount(kind)
-    const noticeLabel = `查看新${kind === 'drives' ? '行程' : '充电'}`
     expect(page.root.findAllByProps({ className: 'card history-notice' })).toHaveLength(0)
     phase = 'new'; vi.setSystemTime(new Date('2026-10-14T00:04:00Z'))
     await click(page, '刷新')
-    expect(page.root.findAllByProps({ className: 'card history-notice' })).toHaveLength(1)
-    await click(page, noticeLabel)
-    expect(platform.request.mock.calls.some(([request]) => request.url.endsWith(`/${kind}/2`))).toBe(true)
-    expect(JSON.stringify(page.toJSON())).toContain(`${kind === 'drives' ? '行程' : '充电'}详情`)
-    await click(page, '‹ 返回')
+    expect(page.root.findAllByProps({ className: 'card history-notice' })).toHaveLength(0)
+    expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(2)
     phase = 'correction'
     await click(page, '刷新')
     expect(page.root.findAllByProps({ className: 'card history-notice' })).toHaveLength(0)

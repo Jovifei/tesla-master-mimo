@@ -26,6 +26,7 @@ import type {
   TelemetryPairing,
   TeslaAuthorizationStatus,
   ChargingSite,
+  ClimateHistoryData,
   NearbyChargingData,
   VehiclePlace,
   VehiclePlaceRequest,
@@ -1184,9 +1185,14 @@ export const matelinkApi = {
     return { status: data.status ?? null }
   },
 
-  async getNearbyChargingSites(carId: number, car?: Car): Promise<NearbyChargingData> {
+  async getNearbyChargingSites(carId: number, car?: Car, location?: { latitude: number; longitude: number } | null): Promise<NearbyChargingData> {
     assertVehicle(null, carId, car)
-    const response = await requestJson<ApiEnvelope<NearbyChargingData> | NearbyChargingData>(`/api/v1/cars/${carId}/nearby-charging-sites`)
+    // Coordinates let the server use its configured Amap POI fallback when the
+    // Tesla account has no Fleet nearby-charging capability. They are the
+    // already display-converted (GCJ-02) coordinates, not the raw provider fix.
+    const query = location && Number.isFinite(location.latitude) && Number.isFinite(location.longitude)
+      ? `?lat=${location.latitude.toFixed(6)}&lng=${location.longitude.toFixed(6)}` : ''
+    const response = await requestJson<ApiEnvelope<NearbyChargingData> | NearbyChargingData>(`/api/v1/cars/${carId}/nearby-charging-sites${query}`)
     const data = unwrap(response)
     assertVehicle(data, carId, car)
     return {
@@ -1202,7 +1208,28 @@ export const matelinkApi = {
         price_text: stringValue(site.price_text),
         parking_policy: stringValue(site.parking_policy),
       })) : [],
-      meta: data.meta ? { source: stringValue(data.meta.source) } : null,
+      meta: data.meta ? { source: stringValue(data.meta.source), reason: stringValue(data.meta.reason) } : null,
+    }
+  },
+
+  async getClimateHistory(carId: number, days: 7 | 30, car?: Car): Promise<ClimateHistoryData> {
+    assertVehicle(null, carId, car)
+    const response = await requestJson<ApiEnvelope<{ samples?: unknown[]; meta?: ClimateHistoryData['meta'] }> | { samples?: unknown[]; meta?: ClimateHistoryData['meta'] }>(
+      `/api/v1/cars/${carId}/climate-history?days=${days === 30 ? 30 : 7}`)
+    const data = unwrap(response)
+    assertVehicle(data, carId, car)
+    return {
+      samples: Array.isArray(data.samples) ? data.samples.flatMap(value => {
+        const sample = (value && typeof value === 'object' ? value : {}) as { observed_at?: unknown; inside_temp_c?: unknown; outside_temp_c?: unknown }
+        const observedAt = stringValue(sample.observed_at)
+        if (!observedAt || !Number.isFinite(Date.parse(observedAt))) return []
+        return [{
+          observedAt,
+          insideTempC: finite(sample.inside_temp_c, -60, 80),
+          outsideTempC: finite(sample.outside_temp_c, -60, 80),
+        }]
+      }) : [],
+      meta: data.meta ? { days: finite(data.meta.days, 1, 365), source: stringValue(data.meta.source), reason: stringValue(data.meta.reason) } : null,
     }
   },
 

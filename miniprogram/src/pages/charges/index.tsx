@@ -22,7 +22,6 @@ import LoadingIndicator from '../../components/LoadingIndicator'
 import EvidenceCurve, { chargeCurveProvenance } from '../../components/EvidenceCurve'
 import HistoryIntervalSummary from '../../components/HistoryIntervalSummary'
 import HistoryDateChips from '../../components/HistoryDateChips'
-import { inspectForegroundEvents, observeForegroundEvents, type ForegroundNotice } from '../../services/foreground_events'
 import MetricValue, { formatSocRange, formatSocRangeMetric } from '../../components/MetricValue'
 import VisualIcon from '../../components/VisualIcon'
 import { availabilityLabel, qualityLabel, sourceLabel } from '../../domain/data_labels'
@@ -165,9 +164,6 @@ export default function ChargesPage() {
   const selectedRef = useRef(selected), carRef = useRef(car)
   selectedRef.current = selected; carRef.current = car
   const [interval, setInterval] = useState<HistoryInterval<Charge> | null>(null)
-  const [notices, setNotices] = useState<ForegroundNotice[]>([])
-  const notice = notices[0] ?? null
-  const [noticeLimited, setNoticeLimited] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [query, setQueryState] = useState<HistoryQuery>(defaultChargeHistoryQuery())
   const [filtersExpanded, setFiltersExpanded] = useState(false)
@@ -200,8 +196,6 @@ export default function ChargesPage() {
     void setSelected(null)
     setSelectedEvidence(null); setMapFailed(false)
     setInterval(null)
-    setNotices([])
-    setNoticeLimited(false)
     setCacheWarning(false)
     queryScopeRef.current = null
     setQuery(defaultChargeHistoryQuery())
@@ -213,8 +207,6 @@ export default function ChargesPage() {
     loadingMoreRef.current = false
     setLoading(false)
     setLoadingMore(false)
-    setNotices([])
-    setNoticeLimited(false)
   }
 
   const restoreCached = (nextCar: Car) => {
@@ -272,8 +264,6 @@ export default function ChargesPage() {
 
     if (!append) {
       setInterval(null)
-      setNotices([])
-      setNoticeLimited(false)
       scopeGate.current.begin('interval')
       loadingMoreRef.current = false
       itemsRef.current = []
@@ -323,10 +313,6 @@ export default function ChargesPage() {
       setMeta({ ...result.meta, hasMore: decision.hasMore })
       setError(null)
       if (!append) {
-        const admittedRows = result.items.map(row => decision.state.items.find(item => sameHistoryIdentity(item, row)) ?? row)
-        const notices = observeForegroundEvents(Taro, { origin: apiOrigin, userId: session.userId, stableId: nextCar.stableId }, 'charges', admittedRows)
-        setNotices(notices)
-        setNoticeLimited(inspectForegroundEvents(Taro, { origin: apiOrigin, userId: session.userId, stableId: nextCar.stableId }, 'charges').limited)
         const intervalTicket = scopeGate.current.begin('interval')
         const canonicalPage = { ...result, items: enrichHistoryInterval(result.items, decision.state.items) }
         void collectHistoryInterval(canonicalPage, async page => {
@@ -747,32 +733,6 @@ export default function ChargesPage() {
         </View>
         {offline ? <Text className="muted">{copy('history.localCache')}</Text> : null}
       </View> : null}
-      {items.some(isHistoryIdentityAmbiguous) ? (
-        <View
-          className="history-identity-badge"
-          onClick={() => {
-            void Taro.showModal({
-              title: '历史记录提示',
-              content: '来源身份未确认的历史记录已保留，但未计入当前展示或统计。',
-              showCancel: false,
-              confirmText: '我知道了',
-            })
-          }}
-          ariaLabel="来源身份未确认的历史记录已保留，但未计入当前展示或统计"
-        >
-          <Text className="identity-badge-icon">ℹ</Text>
-          <Text className="history-identity-note">来源身份未确认的历史记录已保留，但未计入当前展示或统计</Text>
-        </View>
-      ) : null}
-      {notice ? <View className="card history-notice">
-        <Text className="muted">前台发现一条新的已完成充电，仅本次打开时检查。</Text>
-        <Button className="button" onClick={() => {
-          const matches = itemsRef.current.filter(item => item.id === notice.id && item.sessionId === notice.sessionId && item.source === notice.source)
-          setNotices(current => current.slice(1))
-          if (matches.length === 1) void openDetail(matches[0])
-        }}>查看新充电</Button>
-        <Button className="button" onClick={() => setNotices([])}>关闭提示</Button>
-      </View> : null}
       {car && !loading ? <HistoryIntervalSummary interval={intervalView} query={query} kind="charges" /> : null}
       {car && dailyCells.length ? <View className="card charge-month-chart">
         <View className="charge-heatmap-heading">
@@ -799,8 +759,6 @@ export default function ChargesPage() {
           <Text className="muted">{unknownDates} 条记录的日期无法确认，未纳入日格。</Text>
         </View>
       ) : null}
-      {noticeLimited ? <Text className="muted history-notice-limit">本机前台提示记录不可写或已达上限，后续提示暂停；历史仍可查看</Text> : null}
-
       {chargeStarting && !current ? (
         <View className="history-list">
           <View className="visual-heading"><VisualIcon name="energy" /><Text className="section-title">充电即将开始</Text></View>

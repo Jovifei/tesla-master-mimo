@@ -50,7 +50,7 @@ it.each(['short', 'quarantined'] as const)('does not bridge a hidden %s drive on
   expect(JSON.stringify(view.toJSON())).not.toContain('来源身份未确认的历史记录已保留')
 })
 
-it('reports retained ambiguous legacy history without showing or counting it', async () => {
+it('keeps retained ambiguous legacy history out of display, totals and inline chrome', async () => {
   const current = drive(1, 0, 2)
   const { normalizeDrive } = await import('../../services/api')
   const { historyCacheKey, readHistoryCache, writeHistoryCache } = await import('../../services/history_cache')
@@ -64,14 +64,14 @@ it('reports retained ambiguous legacy history without showing or counting it', a
     response({ drives: [current], meta: { page: 1, show: 20, total_pages: 1 } }))
   const view = await mount()
   const text = JSON.stringify(view.toJSON())
-  expect(text).toContain('来源身份未确认的历史记录已保留，但未计入当前展示或统计')
+  expect(text).not.toContain('来源身份未确认的历史记录已保留，但未计入当前展示或统计')
   expect(text).not.toContain('Old unconfirmed place')
   expect(view.root.findAllByProps({ className: 'history-record' })).toHaveLength(1)
   expect(view.root.findByProps({ ariaLabel: '总行程数 1 次' })).toBeDefined()
   expect(readHistoryCache<{ identityAmbiguous?: boolean }>(storage, key).some(row => row.identityAmbiguous === true)).toBe(true)
-  const longTrips = view.root.findAllByType('button').find(item => item.children.join('') === '长途 (200km+)')!
+  const longTrips = view.root.findAllByType('button').find(item => item.children.join('') === '公路旅行 (100km+)')!
   await act(async () => { longTrips.props.onClick() }); await flush()
-  expect(JSON.stringify(view.toJSON())).toContain('来源身份未确认的历史记录已保留，但未计入当前展示或统计')
+  expect(JSON.stringify(view.toJSON())).not.toContain('来源身份未确认的历史记录已保留，但未计入当前展示或统计')
 })
 
 it('shows a parked card when a complete, same-instance history proves two adjacent drives', async () => {
@@ -106,9 +106,9 @@ it('reuses a confirmed proof after filtering the candidate out and back into vie
     await act(async () => { button!.props.onClick() }); await flush()
   }
   expect(view.root.findAllByProps({ className: 'history-record history-parked' })).toHaveLength(1)
-  await click('长途 (200km+)')
+  await click('公路旅行 (100km+)')
   expect(view.root.findAllByProps({ className: 'history-record history-parked' })).toHaveLength(0)
-  await click('通勤 (< 50km)')
+  await click('通勤 (< 10km)')
   expect(view.root.findAllByProps({ className: 'history-record history-parked' })).toHaveLength(1)
   expect(platform.request.mock.calls.filter(([request]) => request.url.endsWith('/parked/1/3'))).toHaveLength(1)
 })

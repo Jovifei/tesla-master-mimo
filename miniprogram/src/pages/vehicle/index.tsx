@@ -1,7 +1,7 @@
 import { useAppearance } from '../../services/appearance'
 import { Button, Map, Picker, Text, View } from '@tarojs/components'
 import Taro, { useDidHide, useDidShow, usePageScroll, useUnload } from '@tarojs/taro'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import VisualIcon from '../../components/VisualIcon'
 import ReadinessChecklist from '../../components/ReadinessChecklist'
 import MetricValue from '../../components/MetricValue'
@@ -13,6 +13,7 @@ import { mergeVehicleVisualConfig, resolveVehicleVisual } from '../../domain/veh
 import { ensureVehicleAsset } from '../../services/vehicle_assets'
 import AppearanceSelector from '../../components/dashboard/AppearanceSelector'
 import VehicleRemoteSections, { type CommandOutcome } from '../../components/dashboard/VehicleRemoteSections'
+import DailySocTrend from '../../components/dashboard/DailySocTrend'
 import type { ChargingSite, Drive, VehiclePlace } from '../../services/types'
 import { locationDisplayText } from '../../domain/recent_drive'
 import { DEFAULT_VEHICLE_APPEARANCE, clearVehicleAppearance, readVehicleAppearance, writeVehicleAppearance, type VehicleAppearanceScope } from '../../services/vehicle_appearance'
@@ -28,10 +29,13 @@ import { consumeDataStatus } from '../../services/data_status_intent'
 import { createRequestScopeGate } from '../../domain/request_scope'
 import { readCarsCache } from '../../services/cars_cache'
 import { readVehicleCache, writeVehicleCache } from '../../services/vehicle_cache'
-import { inspectHistoryCache, type HistoryCacheEvidence } from '../../services/history_cache'
+import { historyCacheKey, inspectHistoryCache, readHistoryCache, type HistoryCacheEvidence } from '../../services/history_cache'
 import { readTpmsProfile } from '../../services/tpms_profile'
 import { evaluateTpmsAlerts } from '../../domain/tpms_alerts'
 import { vehicleSnapshotDelay } from '../../domain/vehicle_polling'
+import { socDailyTrend } from '../../domain/soc_daily_trend'
+import { frequentPlaces, type FrequentPlace } from '../../domain/frequent_places'
+import { observeForegroundEvents, type ForegroundNotice } from '../../services/foreground_events'
 
 function messageFor(error: unknown): string {
   if (error instanceof ApiError) return error.message
@@ -77,6 +81,7 @@ export default function VehiclePage() {
   const foreground = useRef(false)
   const statusRef = useRef(status)
   statusRef.current = status
+  const statusCarRef = useRef<string | null>(null)
   const pollBusy = useRef(false)
   const [hudDismissed, setHudDismissed] = useState(false)
   const [mapFailed, setMapFailed] = useState(false)
@@ -84,22 +89,28 @@ export default function VehiclePage() {
   const [imageLoading, setImageLoading] = useState(false)
   const [imageError, setImageError] = useState(false)
   const [imageRetry, setImageRetry] = useState(0)
-  const [imageActivation, setImageActivation] = useState(0)
   const [appearanceRevision, setAppearanceRevision] = useState(0)
   const [appearanceOpen, setAppearanceOpen] = useState(false)
   const appearanceTicket = useRef<{ version: number; generation: number; owner: string | null } | null>(null)
   const imageEpoch = useRef(0)
+  const loadedAssetRef = useRef<string | null>(null)
   const clearNativeImage = () => {
     try { const component = Taro.getCurrentInstance?.().page?.selectComponent?.('#matelink-vehicle-asset') as { clearAsset?: () => void } | null; component?.clearAsset?.() } catch { /* native host may be absent in a non-WeChat renderer */ }
   }
-  const clearImage = () => { imageEpoch.current += 1; clearNativeImage(); setImageSrc(null); setImageLoading(false); setImageError(false) }
+  const clearImage = () => { imageEpoch.current += 1; loadedAssetRef.current = null; clearNativeImage(); setImageSrc(null); setImageLoading(false); setImageError(false) }
   const [tpmsCacheReason, setTpmsCacheReason] = useState<string | null>(null)
   const [busyCommand, setBusyCommand] = useState<string | null>(null)
   const [commandOutcome, setCommandOutcome] = useState<CommandOutcome | null>(null)
   const [nearbySites, setNearbySites] = useState<ChargingSite[] | null>(null)
   const [nearbySource, setNearbySource] = useState<string | null>(null)
+  const [nearbyReason, setNearbyReason] = useState<string | null>(null)
   const [nearbyLoading, setNearbyLoading] = useState(false)
   const [nearbyError, setNearbyError] = useState(false)
+  const [socDrives, setSocDrives] = useState<Drive[]>([])
+  const [socWindow, setSocWindow] = useState<7 | 30>(7)
+  const [socLoading, setSocLoading] = useState(false)
+  const [newTrip, setNewTrip] = useState<ForegroundNotice | null>(null)
+  const secondaryLoadedFor = useRef<string | null>(null)
   const [places, setPlaces] = useState<VehiclePlace[] | null>(null)
   const [placesLoading, setPlacesLoading] = useState(false)
   const [placesError, setPlacesError] = useState(false)
@@ -150,14 +161,19 @@ export default function VehiclePage() {
     if (refresh && current()) void load()
   }
 
-  const handleLoadNearby = async () => {
-    if (!car) return
+  const handleLoadNearby = async (selected: Car | null = car, currentStatus: CarStatus | null = status) => {
+    if (!selected) return
     setNearbyLoading(true)
     setNearbyError(false)
     try {
-      const data = await matelinkApi.getNearbyChargingSites(car.id, car)
+      // Amap requires GCJ-02 coordinates; the display map conversion already
+      // produces exactly that. Without a location the server answers with a
+      // reason instead of a silent empty list.
+      const location = currentStatus?.location ? mapCoordinate(currentStatus.location.latitude, currentStatus.location.longitude) : null
+      const data = await matelinkApi.getNearbyChargingSites(selected.id, selected, location)
       setNearbySites(data.sites)
       setNearbySource(data.meta?.source ?? null)
+      setNearbyReason(data.meta?.reason ?? null)
     } catch {
       setNearbyError(true)
     } finally {
@@ -180,17 +196,32 @@ export default function VehiclePage() {
     })
   }
 
-  const handleLoadPlaces = async () => {
-    if (!car) return
+  const handleLoadPlaces = async (selected: Car | null = car) => {
+    if (!selected) return
     setPlacesLoading(true)
     setPlacesError(false)
     try {
-      const data = await matelinkApi.getVehiclePlaces(car.id, car)
+      const data = await matelinkApi.getVehiclePlaces(selected.id, selected)
       setPlaces(data)
     } catch {
       setPlacesError(true)
     } finally {
       setPlacesLoading(false)
+    }
+  }
+
+  const handleSaveFrequentPlace = async (place: FrequentPlace) => {
+    if (!car || place.latitude == null || place.longitude == null) return
+    try {
+      await matelinkApi.createVehiclePlace(car.id, {
+        name: place.name,
+        latitude: place.latitude,
+        longitude: place.longitude,
+        radius_m: 200,
+      }, car)
+      void handleLoadPlaces(car)
+    } catch {
+      /* The current location action remains available as a fallback. */
     }
   }
 
@@ -220,21 +251,16 @@ export default function VehiclePage() {
   }
 
   const invalidatePage = () => {
-    clearImage()
     setAppearanceOpen(false)
     setBusyCommand(null)
     setCommandOutcome(null)
-    setNearbySites(null)
-    setPlaces(null)
     requestVersion.current += 1
     scopeGate.current.invalidate()
     setLoading(false)
   }
 
   const load = async (consumeIntent = false) => {
-    clearImage()
     setBusyCommand(null)
-    setImageActivation(value => value + 1)
     setAppearanceOpen(false)
     const version = ++requestVersion.current
     const current = readAppSession(Taro)
@@ -244,7 +270,9 @@ export default function VehiclePage() {
     if (pageOwner.current && (pageOwner.current !== incomingOwner || (pageOrigin.current && pageOrigin.current !== incomingOrigin))) {
       scopeGate.current.invalidate(); pageOwner.current = null; pageOrigin.current = null; selectedStableId.current = null
       setCommandOutcome(null)
+      clearImage()
       setCars([]); setCar(null); setStatus(null); setHistoryEvidence(null); setReadinessItems([]); setPairing(null); setRecentDrive(null); setCached(false)
+      setSocDrives([]); setNewTrip(null); setNearbySites(null); setNearbyReason(null); setPlaces(null); secondaryLoadedFor.current = null
     }
     setLoading(true)
     await ensureWechatSession()
@@ -276,23 +304,21 @@ export default function VehiclePage() {
     }
     scopeGate.current.invalidate()
     pageOrigin.current = null
-    setStatus(null)
     setHudDismissed(false)
     setMapFailed(false)
-    setCar(null)
-    setHistoryEvidence(null)
-    setReadinessItems([])
-    setPairing(null)
-    setRecentDrive(null)
-    setCached(false)
     if (!session?.userId) {
       scopeGate.current.invalidate()
+      clearImage()
       setCars([])
       setCar(null)
       setStatus(null)
+      setHistoryEvidence(null)
       setReadinessItems([])
       setPairing(null)
       setRecentDrive(null)
+      setSocDrives([])
+      setNewTrip(null)
+      setNearbySites(null); setNearbyReason(null); setPlaces(null); secondaryLoadedFor.current = null
       setCached(false)
       setError(null)
       setLoading(false)
@@ -308,13 +334,42 @@ export default function VehiclePage() {
     let acceptOptional = true
     try {
       origin = getApiOrigin()
+      pageOrigin.current = origin
+      const storedStableId = selectedStableId.current ?? readSelection(session.userId)
+      // Hydrate the last known display before the network answers. Re-entering
+      // the mini-program then shows the same car, status and battery history
+      // immediately; the refresh only replaces what changed.
+      if (cars.length === 0) {
+        const cachedCars = readCarsCache(Taro, session.userId, origin)
+        const cachedCar = cachedCars.find(item => item.stableId === String(storedStableId)) ?? cachedCars[0] ?? null
+        if (cachedCars.length > 0) {
+          setCars(cachedCars)
+          if (cachedCar) setCar(cachedCar)
+        }
+        const cachedStatus = cachedCar ? readVehicleCache(Taro, session.userId, origin, cachedCar.stableId) : null
+        if (statusRef.current == null && cachedStatus) {
+          statusRef.current = cachedStatus
+          statusCarRef.current = cachedCar!.stableId
+          setStatus(cachedStatus)
+          setCached(true)
+        }
+        if (socDrives.length === 0 && cachedCar) {
+          const cachedDrives = readHistoryCache<Drive>(Taro, historyCacheKey('drives', session.userId, cachedCar.stableId, origin))
+          if (cachedDrives.length > 0) setSocDrives(cachedDrives)
+        }
+      }
       const nextCars = await matelinkApi.getCars()
       if (!ownerIsCurrent()) return
-      pageOrigin.current = origin
       setCars(nextCars)
-      setCached(false)
-      const storedStableId = selectedStableId.current ?? readSelection(session.userId)
       const selected = nextCars.find(item => item.stableId === String(storedStableId)) ?? nextCars[0] ?? null
+      if (statusCarRef.current && statusCarRef.current !== selected?.stableId) {
+        statusRef.current = null
+        setStatus(null)
+        setCached(false)
+        setSocDrives([])
+        setNewTrip(null)
+      }
+      statusCarRef.current = selected?.stableId ?? null
       setCar(selected)
       if (!selected) {
         scopeGate.current.invalidate()
@@ -323,6 +378,18 @@ export default function VehiclePage() {
         setPairing(null)
         setRecentDrive(null)
         return
+      }
+      if (socDrives.length === 0) {
+        const cachedDrives = readHistoryCache<Drive>(Taro, historyCacheKey('drives', session.userId, selected.stableId, origin))
+        if (cachedDrives.length > 0) setSocDrives(cachedDrives)
+      }
+      if (statusRef.current == null) {
+        const cachedStatus = readVehicleCache(Taro, session.userId, origin, selected.stableId)
+        if (cachedStatus) {
+          statusRef.current = cachedStatus
+          setStatus(cachedStatus)
+          setCached(true)
+        }
       }
       scopeGate.current.bind({
         accountId: session.userId,
@@ -356,9 +423,17 @@ export default function VehiclePage() {
         if (current(pairingTicket)) { setPairing(null); reportFailure('pairing', reason) }
       })
       const recentDriveTicket = scopeGate.current.begin('recent-drive')
-      void matelinkApi.getDrives(selected.id, 1, 1, selected).then(value => {
-        if (current(recentDriveTicket)) setRecentDrive(value.items[0] ?? null)
-      }).catch(() => { /* Recent drive is optional. */ })
+      setSocLoading(true)
+      void matelinkApi.getDrives(selected.id, 1, 100, selected).then(value => {
+        if (!current(recentDriveTicket)) return
+        setSocDrives(value.items)
+        setRecentDrive(value.items[0] ?? null)
+        // The new-trip notice belongs to the dashboard. Observing here marks
+        // the rows as seen, so the drives page itself stays a quiet summary.
+        const notices = observeForegroundEvents(Taro, { origin: origin!, userId: session.userId!, stableId: selected.stableId }, 'drives', value.items)
+        setNewTrip(notices[0] ?? null)
+      }).catch(() => { /* Recent drive and the battery curve are optional. */ })
+        .finally(() => { if (current(recentDriveTicket)) setSocLoading(false) })
       const statusResult = await statusPromise
       if (!current(statusTicket)) return
       if (statusResult.status === 'fulfilled') {
@@ -367,6 +442,9 @@ export default function VehiclePage() {
           const observed = observeTpmsCache(Taro, session.userId, origin!, selected.stableId, nextStatus.tpms)
           setTpmsCacheReason(observed.reason)
         } else setTpmsCacheReason(null)
+        statusRef.current = nextStatus
+        statusCarRef.current = selected.stableId
+        setCached(false)
         setStatus(nextStatus)
         writeVehicleCache(Taro, session.userId, origin, selected.stableId, nextStatus)
         setCar(current => current ? {
@@ -376,10 +454,27 @@ export default function VehiclePage() {
           exteriorColor: nextStatus.exteriorColor ?? current.exteriorColor,
           wheelType: nextStatus.wheelType ?? current.wheelType,
         } : current)
+        // First arrival for this car loads nearby charging and saved places
+        // without a second tap. Later refreshes keep the rendered lists.
+        const secondaryKey = `${origin}:${selected.stableId}`
+        if (secondaryLoadedFor.current !== secondaryKey) {
+          secondaryLoadedFor.current = secondaryKey
+          void handleLoadNearby(selected, nextStatus)
+          void handleLoadPlaces(selected)
+        }
       } else {
-        setStatus(readVehicleCache(Taro, session.userId, origin, selected.stableId))
+        const cachedStatus = readVehicleCache(Taro, session.userId, origin, selected.stableId)
+        statusRef.current = cachedStatus
+        statusCarRef.current = selected.stableId
+        setStatus(cachedStatus)
         setCached(true)
         reportFailure('status', statusResult.reason)
+        const secondaryKey = `${origin}:${selected.stableId}`
+        if (cachedStatus && secondaryLoadedFor.current !== secondaryKey) {
+          secondaryLoadedFor.current = secondaryKey
+          void handleLoadNearby(selected, cachedStatus)
+          void handleLoadPlaces(selected)
+        }
       }
     } catch (reason) {
       acceptOptional = false
@@ -392,12 +487,27 @@ export default function VehiclePage() {
         setCars(offlineCars)
         setCar(selected)
         selectedStableId.current = selected?.stableId ?? null
-        setStatus(selected && origin ? readVehicleCache(Taro, session.userId, origin, selected.stableId) : null)
+        statusCarRef.current = selected?.stableId ?? null
+        const cachedStatus = selected && origin ? readVehicleCache(Taro, session.userId, origin, selected.stableId) : null
+        statusRef.current = cachedStatus
+        setStatus(cachedStatus)
         setHistoryEvidence(selected && origin ? inspectHistoryCache(Taro, session.userId, selected.stableId, origin) : null)
         setReadinessItems([])
         setPairing(null)
-        setRecentDrive(null)
+        if (selected && origin) {
+          const cachedDrives = readHistoryCache<Drive>(Taro, historyCacheKey('drives', session.userId, selected.stableId, origin))
+          if (cachedDrives.length > 0) {
+            setSocDrives(cachedDrives)
+            setRecentDrive(cachedDrives[0] ?? null)
+          } else setRecentDrive(null)
+        } else setRecentDrive(null)
         setCached(true)
+        const secondaryKey = selected && origin ? `${origin}:${selected.stableId}` : null
+        if (cachedStatus && secondaryKey && secondaryLoadedFor.current !== secondaryKey) {
+          secondaryLoadedFor.current = secondaryKey
+          void handleLoadNearby(selected, cachedStatus)
+          void handleLoadPlaces(selected)
+        }
       }
     } finally {
       if (version === requestVersion.current && sessionGeneration === getApiSessionGeneration()) setLoading(false)
@@ -426,8 +536,9 @@ export default function VehiclePage() {
       let originChanged = false
       try { originChanged = Boolean(pageOrigin.current && pageOrigin.current !== getApiOrigin()) } catch { originChanged = true }
       if (pageOwner.current && (originChanged || pageOwner.current !== `${readAppSession(Taro)?.userId ?? ''}:${getApiSessionGeneration()}`)) {
-        invalidatePage(); setCars([]); setCar(null); setStatus(null); setReadinessItems([]); setPairing(null); setHistoryEvidence(null)
-        setRecentDrive(null)
+        invalidatePage(); clearImage(); setCars([]); setCar(null); statusRef.current = null; statusCarRef.current = null
+        setStatus(null); setReadinessItems([]); setPairing(null); setHistoryEvidence(null)
+        setRecentDrive(null); setSocDrives([]); setNewTrip(null); setNearbySites(null); setNearbyReason(null); setPlaces(null); secondaryLoadedFor.current = null
         pageOwner.current = null
       }
     }, 1000)
@@ -476,13 +587,17 @@ export default function VehiclePage() {
     try { currentOrigin = getApiOrigin() } catch { /* invalid origin cannot own a vehicle selection */ }
     if (pageOwner.current !== `${session.userId}:${getApiSessionGeneration()}` || !currentOrigin || pageOrigin.current !== currentOrigin) {
       invalidatePage()
+      clearImage()
       setCars([])
       setCar(null)
+      statusRef.current = null
+      statusCarRef.current = null
       setStatus(null)
       setHistoryEvidence(null)
       setReadinessItems([])
       setPairing(null)
       setRecentDrive(null)
+      setSocDrives([]); setNewTrip(null); setNearbySites(null); setNearbyReason(null); setPlaces(null); secondaryLoadedFor.current = null
       return
     }
     scopeGate.current.invalidate()
@@ -491,19 +606,29 @@ export default function VehiclePage() {
     setCommandOutcome(null)
     saveSelection(session.userId!, next.stableId)
     setCar(next)
+    statusRef.current = null
+    statusCarRef.current = next.stableId
     setStatus(null)
     setHistoryEvidence(null)
     setReadinessItems([])
     setPairing(null)
     setRecentDrive(null)
+    setSocDrives([]); setNewTrip(null); setNearbySites(null); setNearbyReason(null); setPlaces(null); secondaryLoadedFor.current = null
     if (next.remoteVerified === false) {
       requestVersion.current += 1
       setLoading(false)
       setCached(true)
       try {
         const origin = getApiOrigin()
-        setStatus(readVehicleCache(Taro, session.userId!, origin, next.stableId))
+        const cachedStatus = readVehicleCache(Taro, session.userId!, origin, next.stableId)
+        statusRef.current = cachedStatus
+        setStatus(cachedStatus)
         setHistoryEvidence(inspectHistoryCache(Taro, session.userId!, next.stableId, origin))
+        const cachedDrives = readHistoryCache<Drive>(Taro, historyCacheKey('drives', session.userId!, next.stableId, origin))
+        if (cachedDrives.length > 0) {
+          setSocDrives(cachedDrives)
+          setRecentDrive(cachedDrives[0] ?? null)
+        }
       }
       catch { setStatus(null) }
       return
@@ -558,17 +683,22 @@ export default function VehiclePage() {
     try { return Boolean(appearanceScope && ticket && ticket.version === requestVersion.current && ticket.generation === getApiSessionGeneration() && ticket.owner === (readAppSession(Taro)?.userId ?? null) && getApiOrigin() === appearanceScope.origin && (!car || selectedStableId.current === car.stableId)) } catch { return false }
   }
   useEffect(() => {
-    const assetEpoch = ++imageEpoch.current, version = requestVersion.current, generation = getApiSessionGeneration()
+    const assetEpoch = ++imageEpoch.current, generation = getApiSessionGeneration()
     const owner = readAppSession(Taro)?.userId ?? null, origin = appearanceOrigin, stableId = car?.stableId ?? null
+    if (!visual.assetKey || !origin || !appearanceScope) return
+    // Same asset across a routine refresh: keep the loaded image instead of
+    // blanking it and fetching the identical file again.
+    if (loadedAssetRef.current === visual.assetKey) return
     clearNativeImage(); setImageSrc(null); setImageError(false); setImageLoading(false)
-    if (!visual.assetKey || !origin || !appearanceScope || (!car && loading)) return
+    // A routine refresh must not invalidate an image load that is still in
+    // flight; only a changed owner, origin, generation or car can.
     const isCurrent = () => {
-      try { return imageEpoch.current === assetEpoch && requestVersion.current === version && getApiSessionGeneration() === generation && (readAppSession(Taro)?.userId ?? null) === owner && getApiOrigin() === origin && (!stableId || selectedStableId.current === stableId) } catch { return false }
+      try { return imageEpoch.current === assetEpoch && getApiSessionGeneration() === generation && (readAppSession(Taro)?.userId ?? null) === owner && getApiOrigin() === origin && (!stableId || selectedStableId.current === stableId) } catch { return false }
     }
     setImageLoading(true)
-    void ensureVehicleAsset(visual, { isCurrent }).then(src => { if (isCurrent()) { setImageSrc(src); setImageLoading(false) } }).catch(() => { if (isCurrent()) { clearNativeImage(); setImageError(true); setImageLoading(false) } })
+    void ensureVehicleAsset(visual, { isCurrent }).then(src => { if (isCurrent()) { loadedAssetRef.current = visual.assetKey; setImageSrc(src); setImageLoading(false) } }).catch(() => { if (isCurrent()) { clearNativeImage(); setImageError(true); setImageLoading(false) } })
     return () => { if (imageEpoch.current === assetEpoch) { imageEpoch.current += 1; clearNativeImage() } }
-  }, [visual.assetKey, car?.stableId, imageRetry, appearanceRevision, loading, imageActivation])
+  }, [visual.assetKey, car?.stableId, imageRetry, appearanceRevision, loading])
 
   const readiness = readinessViewFor(readinessItems)
   // Per-wheel readiness wording mirrors App readinessDashboardValue: a missing
@@ -596,6 +726,8 @@ export default function VehiclePage() {
   const locationText = locationDisplayText({ geofence: status?.geofence, location: status?.location, recentDrive })
   const coordinates = status?.location ? `${status.location.latitude.toFixed(4)}, ${status.location.longitude.toFixed(4)}` : null
   const location = locationText && locationText === coordinates ? '已获取位置 · 点击查看地图' : locationText ?? '暂无数据'
+  const socTrend = useMemo(() => socDailyTrend(socDrives, socWindow, Date.now()), [socDrives, socWindow])
+  const frequent = useMemo(() => frequentPlaces(socDrives, 5), [socDrives])
   const headerGeometry = dashboardHeaderGeometry()
   return (
     <View className={`page vehicle-page ${uiAppearance.className}`} style={{ paddingTop: `${headerGeometry.top}px` }}>
@@ -612,10 +744,26 @@ export default function VehiclePage() {
         {loading ? <LoadingIndicator label="正在读取最新数据…" compact /> : null}
         <View className="dashboard-location-row"><DashboardInfoCard label="里程" value={dashboardMetric(status.odometer, 'km', 0)} icon="speed" onClick={() => navigate('/pages/analysis/index?kind=mileage')} /><DashboardInfoCard label="位置" value={location} icon="location" onClick={() => { if (map) navigate('/pages/tools/index?kind=location'); else { focusDiagnostics.current = true; setShowDiagnostics(true) } }} /></View>
         {recentDrive ? <DashboardRecentDrive drive={recentDrive} onOpen={() => { void Taro.switchTab({ url: '/pages/drives/index' }) }} /> : null}
+        {newTrip ? <View className="dashboard-new-trip">
+          <View className="dashboard-new-trip-main">
+            <DashboardIcon name="car" tone="primary" />
+            <View>
+              <Text className="dashboard-new-trip-title">发现一条新的已完成行程</Text>
+              <Text className="dashboard-new-trip-note">仅在首页提示一次，行程页保持为摘要与时间筛选。</Text>
+            </View>
+          </View>
+          <View className="dashboard-new-trip-actions">
+            <Button className="button" onClick={() => {
+              setNewTrip(null)
+              void Taro.switchTab({ url: '/pages/drives/index' })
+            }}>查看行程</Button>
+            <Button className="button button-secondary" onClick={() => setNewTrip(null)}>关闭</Button>
+          </View>
+        </View> : null}
         <View className="dashboard-temperature-row"><DashboardInfoCard label="车内" value={dashboardTemperature(status.insideTemp)} icon="thermostat" onClick={() => navigate('/pages/tools/index?kind=temperature')} /><DashboardInfoCard label="车外" value={dashboardTemperature(status.outsideTemp)} icon="thermostat" onClick={() => navigate('/pages/tools/index?kind=temperature')} /></View>
         <DashboardTpms snapshot={status.tpms} report={status.tpmsReport} warnings={tpmsAlerts} readiness={tpmsReadiness} onOpen={() => navigate('/pages/tools/index?kind=tpms')} />
         {map ? <View className="dashboard-map-card">{!mapFailed ? <Map id="dashboard-map" latitude={map.latitude} longitude={map.longitude} scale={15} showLocation={false} markers={[{ id: 1, ...map, iconPath: '/assets/tabs/vehicle-selected.png', width: 24, height: 24, title: car.displayName || car.name || '车辆' }]} onError={() => setMapFailed(true)} /> : <View className="dashboard-map-unavailable"><Text>地图暂时无法载入</Text><Button className="dashboard-text-button" onClick={() => setMapFailed(false)}>重试地图</Button></View>}</View> : null}
-        <View className="dashboard-history-entry" onClick={() => navigate('/pages/analysis/index?kind=stats')}><DashboardIcon name="bolt" /><View><Text>7天电量趋势</Text><Text>查看已记录的电池历史与容量详情</Text></View></View>
+        <DailySocTrend trend={socTrend} windowDays={socWindow} loading={socLoading} onWindowChange={setSocWindow} />
         {activeCharging ? <DashboardCurrentCharge status={status} onOpen={() => navigate('/pages/insights/index?kind=currentCharge')} /> : null}
         <VehicleRemoteSections
           carId={car.id}
@@ -627,6 +775,7 @@ export default function VehiclePage() {
           onDismissOutcome={() => setCommandOutcome(null)}
           nearbySites={nearbySites}
           nearbySource={nearbySource}
+          nearbyReason={nearbyReason}
           nearbyLoading={nearbyLoading}
           nearbyError={nearbyError}
           onLoadNearby={() => void handleLoadNearby()}
@@ -634,8 +783,10 @@ export default function VehiclePage() {
           places={places}
           placesLoading={placesLoading}
           placesError={placesError}
+          frequentPlaces={frequent}
           onLoadPlaces={() => void handleLoadPlaces()}
           onCreatePlace={handleCreatePlace}
+          onSaveFrequentPlace={handleSaveFrequentPlace}
           onDeletePlace={handleDeletePlace}
         />
       </> : car ? <View className="dashboard-partial">

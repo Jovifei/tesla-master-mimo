@@ -15,7 +15,7 @@ import { analysisApi } from '../../services/analysis_api'
 import type { SoftwareUpdate } from '../../services/analysis_types'
 import { readAppSession } from '../../services/session'
 import { useSessionRecoveryReload } from '../../services/use_session_recovery'
-import { carSelectionStorageKey, type Car, type CarStatus, type Charge, type Drive } from '../../services/types'
+import { carSelectionStorageKey, type Car, type CarStatus, type Charge, type ClimateSample, type Drive } from '../../services/types'
 import { readTpmsCache } from '../../services/tpms_cache'
 import { readTpmsProfile } from '../../services/tpms_profile'
 import { canStoreCache, localStorageUsage } from '../../services/cache_budget'
@@ -51,6 +51,9 @@ export default function ToolsPage() {
   const [complete, setComplete] = useState(false), [loading, setLoading] = useState(false), [error, setError] = useState<string | null>(null)
   const [year, setYear] = useState(new Date().getFullYear()), [angle, setAngle] = useState(0)
   const [temperatureWindow, setTemperatureWindow] = useState<7 | 30>(30), [temperatureSampleIndex, setTemperatureSampleIndex] = useState(0)
+  const [temperatureInsideSampleIndex, setTemperatureInsideSampleIndex] = useState(0)
+  const [climateSamples, setClimateSamples] = useState<Partial<Record<7 | 30, ClimateSample[]>>>({})
+  const [climateFailed, setClimateFailed] = useState(false)
   const [zoom, setZoom] = useState(1), [pan, setPan] = useState({ x: 0, y: 0 })
   const [previewOpen, setPreviewOpen] = useState({ doors: false, frunk: false, port: false })
   const gesture = useRef({ x: 0, y: 0, distance: 0, zoom: 1, pan: { x: 0, y: 0 } })
@@ -69,7 +72,7 @@ export default function ToolsPage() {
     let beforeScope: string | null = null
     try { beforeScope = scopeKey() } catch { /* An invalid origin cannot own the old display. */ }
     if (owner.current && owner.current !== beforeScope) setTariff(blankTariff())
-    if (nextPage === 1) { setStatus(null); setDrives([]); setCharges([]); setUpdates([]); setUpdatesHasMore(false); setCar(null); setComplete(false); setHistoricPosition(null); setHistoricReason(null) }
+    if (nextPage === 1) { setStatus(null); setDrives([]); setCharges([]); setUpdates([]); setUpdatesHasMore(false); setCar(null); setComplete(false); setHistoricPosition(null); setHistoricReason(null); setClimateSamples({}); setClimateFailed(false) }
     setLoading(true)
     await ensureWechatSession()
     if (epoch.current !== operation) return
@@ -110,6 +113,18 @@ export default function ToolsPage() {
             const tripResult = await analysisApi.getHistory(selected, 'drives', { isCurrent: valid })
             if (!valid()) return
             setDrives(tripResult.items)
+            // Cabin temperature history is recorded server-side from this
+            // version on; older drives only carry one outside average.
+            const [week, month] = await Promise.all([
+              matelinkApi.getClimateHistory(selected.id, 7, selected).catch(() => null),
+              matelinkApi.getClimateHistory(selected.id, 30, selected).catch(() => null),
+            ])
+            if (!valid()) return
+            setClimateSamples({
+              7: week?.samples ?? [],
+              30: month?.samples ?? [],
+            })
+            setClimateFailed(!week && !month)
           } catch { /* dependent surfaces degrade to current-only data */ }
         }
       } else {
@@ -294,12 +309,61 @@ export default function ToolsPage() {
       {(['currency', 'peak', 'flat', 'valley'] as const).map(key => <View className="tariff-field" key={key}><Text>{({ currency: '币种（例如 CNY）', peak: '峰价 / kWh', flat: '平价 / kWh', valley: '谷价 / kWh' })[key]}</Text><Input value={tariff[key]} type={key === 'currency' ? 'text' : 'digit'} onInput={event => setTariff({ ...tariff, [key]: key === 'currency' ? event.detail.value.toUpperCase() : event.detail.value })} /></View>)}
       <View className="status"><Text>启用分时电价</Text><Switch checked={tariff.enabled} onChange={event => setTariff({ ...tariff, enabled: event.detail.value })} /></View><View className="tariff-field"><Text>默认充电电价 / kWh（缺账单估算，关闭分时时也使用）</Text><Input value={tariff.defaultPrice} type="digit" onInput={event => setTariff({ ...tariff, defaultPrice: event.detail.value })} /></View>{(['peakRanges', 'flatRanges', 'valleyRanges'] as const).map(key => <View className="tariff-field" key={key}><Text>{({ peakRanges: '峰段小时', flatRanges: '平段小时', valleyRanges: '谷段小时' })[key]}</Text><Input value={tariff[key]} onInput={event => setTariff({ ...tariff, [key]: event.detail.value })} /></View>)}<Text className="muted">时段左闭右开、覆盖24小时且不重叠；跨午夜分两段。电价记录保存时本机IANA时区，估算不随设备移动改时区。关闭分时后只按明确默认电价估算。</Text><Button className="button button-secondary" onClick={() => setTariff({ ...tariff, currency: 'CNY', peak: '1', flat: '.7', valley: '.3', peakRanges: DEFAULT_TARIFF_PERIODS.peak, flatRanges: DEFAULT_TARIFF_PERIODS.flat, valleyRanges: DEFAULT_TARIFF_PERIODS.valley, enabled: true })}>恢复 App 默认时段和参考价格</Button>
       <Button className="button" onClick={saveTariff}>保存本机电价</Button></View> : null}
-    {kind === 'about' ? <View className="card"><SectionHeading icon="info" title="MateLink 车迹" /><Text>小程序 {APP_MINIPROGRAM_VERSION}</Text><Text className="metric-source">构建：{process.env.TARO_APP_SOURCE_REVISION?.slice(0, 12) || '未确认'}{process.env.TARO_APP_SOURCE_REVISION?.endsWith('-dirty') ? ' · 含未提交改动' : ''}</Text><Text className="muted">车辆、行程、充电与历史分析。记录的来源、时间和已知覆盖均单独展示。</Text><SectionHeading icon="update" title="本版更新" /><Text className="muted">0.7.3 重构「更多」页面与账号管理布局：移除已登录态顶部冗余条款，底部重构为紧凑横排按钮组与微信快捷进入面板，彻底缩短页面并优化交互。</Text><SectionHeading icon="update" title="历史更新" /><Text className="muted">0.7.2 修复「更多」磁贴样式与箭头。0.7.1 完善行程、充电与数据状态展示。0.6.7 全面落地 Apple 风格 UI 重构。</Text><Button className="button button-secondary" onClick={() => Taro.navigateTo({ url: '/pages/legal/index?kind=privacy' })}>隐私指引</Button><Button className="button button-secondary" onClick={() => Taro.navigateTo({ url: '/pages/legal/index?kind=terms' })}>服务条款</Button><Button className="button button-secondary" onClick={() => { void Taro.setClipboardData({ data: 'https://github.com/Jovifei/tesla-master-mimo/issues' }) }}>复制问题反馈地址</Button></View> : null}
+    {kind === 'about' ? <View className="card"><SectionHeading icon="info" title="MateLink 车迹" /><Text>小程序 {APP_MINIPROGRAM_VERSION}</Text><Text className="metric-source">构建：{process.env.TARO_APP_SOURCE_REVISION?.slice(0, 12) || '未确认'}{process.env.TARO_APP_SOURCE_REVISION?.endsWith('-dirty') ? ' · 含未提交改动' : ''}</Text><Text className="muted">车辆、行程、充电与历史分析。记录的来源、时间和已知覆盖均单独展示。</Text><SectionHeading icon="update" title="本版更新" /><Text className="muted">0.7.5 数据页对齐安卓端：首页内联每日电量趋势、附近充电与常用地点自动加载，新行程提示移至首页；行程距离筛选改为通勤/日游/公路旅行（10/100km），温度趋势新增车内历史记录。</Text><Text className="muted">0.7.3 重构「更多」页面与账号管理布局：移除已登录态顶部冗余条款，底部重构为紧凑横排按钮组与微信快捷进入面板，彻底缩短页面并优化交互。</Text><SectionHeading icon="update" title="历史更新" /><Text className="muted">0.7.2 修复「更多」磁贴样式与箭头。0.7.1 完善行程、充电与数据状态展示。0.6.7 全面落地 Apple 风格 UI 重构。</Text><Button className="button button-secondary" onClick={() => Taro.navigateTo({ url: '/pages/legal/index?kind=privacy' })}>隐私指引</Button><Button className="button button-secondary" onClick={() => Taro.navigateTo({ url: '/pages/legal/index?kind=terms' })}>服务条款</Button><Button className="button button-secondary" onClick={() => { void Taro.setClipboardData({ data: 'https://github.com/Jovifei/tesla-master-mimo/issues' }) }}>复制问题反馈地址</Button></View> : null}
     {kind === 'location' ? coordinate ? <View className="card"><SectionHeading icon="map" title="车辆位置" /><Map onError={() => setError("地图暂时不可用，请检查微信权限后重试")} className="vehicle-map" latitude={coordinate.latitude} longitude={coordinate.longitude} scale={14} markers={[{ id: 1, ...coordinate, iconPath: '/assets/tabs/vehicle-selected.png', width: 24, height: 24, title: car?.displayName || '车辆位置' }]} /><Text className="metric-source">状态报告时间（非位置独立观测时间） · {status?.observedAt || '未提供'}</Text><Text className="muted">地图使用一次转换后的坐标；位置仅在线显示，不写入本机历史缓存。</Text><Button className="button button-secondary" onClick={() => Taro.navigateTo({ url: '/pages/tools/index?kind=whereWasI' })}>查询历史时刻的位置</Button></View> : <View className="card"><SectionHeading icon="map" title="车辆位置" /><Text>暂无有效的位置观测</Text></View> : null}
     {kind === 'whereWasI' ? <View className="card"><SectionHeading icon="clock" title="当时在哪里" /><Text className="muted">查询时刻使用本机显示时区；仅展示已有报告和实际采样，不插值或生成未知位置。{complete ? '已读历史已翻页完成。' : '当前为有界部分历史。'}</Text><View className="tools-actions"><Picker mode="date" value={targetDate} onChange={event => setTargetDate(event.detail.value)}><Text>{targetDate} ⌄</Text></Picker><Picker mode="time" value={targetTime} onChange={event => setTargetTime(event.detail.value)}><Text>{targetTime} ⌄</Text></Picker></View><Button className="button" loading={loading} disabled={!car} onClick={() => { void findHistoricPosition() }}>查询这个时刻</Button>{historicReason ? <Text className="muted">{historicReason}</Text> : null}{historicCoordinate && historicPosition ? <><Map className="vehicle-map" onError={() => setError('地图暂时不可用，位置报告已保留')} latitude={historicCoordinate.latitude} longitude={historicCoordinate.longitude} scale={14} markers={[{ id: 1, ...historicCoordinate, iconPath: '/assets/tabs/vehicle-selected.png', width: 24, height: 24 }]} /><Text className="muted">{historicPosition.label}</Text><Text className="metric-source">{historicPosition.at || '独立位置观测时间未知'} · {historicPosition.source || '来源未标明'}</Text></> : null}</View> : null}
     {kind === 'tpmsSettings' && car && session?.userId ? <TpmsSettingsPanel scope={{ origin: getApiOrigin(), userId: session.userId, stableId: car.stableId }} snapshot={status?.tpms} history={readTpmsCache(Taro, session.userId, getApiOrigin(), car.stableId)} isCurrent={() => { try { return epoch.current === profileEpoch && owner.current === scopeKey() } catch { return false } }} /> : null}
     {kind === 'tpms' ? <TpmsPanel profile={costScope && owner.current === scopeKey() ? readTpmsProfile(Taro, costScope) : null} snapshot={status?.tpms} report={status?.tpmsReport} history={car && session?.userId ? readTpmsCache(Taro, session.userId, getApiOrigin(), car.stableId) : null} trendDrives={drives.map(drive => ({ endDate: drive.endDate ?? null, speedMaxKmh: drive.speedMaxKmh ?? null }))} /> : null}
-    {kind === 'temperature' ? <View className="card"><SectionHeading icon="cloud" title="温度趋势" /><View className="metric-grid"><MetricValue label="车内温度" value={status?.insideTemp} unit="°C" /><MetricValue label="车外温度" value={status?.outsideTemp} unit="°C" /></View>{(() => { const trend = temperatureTrendPoints(drives, temperatureWindow, Date.now()); return <><View className="tools-actions"><Button className={temperatureWindow === 7 ? 'button' : 'button-secondary'} onClick={() => { setTemperatureWindow(7); setTemperatureSampleIndex(0) }}>近7天</Button><Button className={temperatureWindow === 30 ? 'button' : 'button-secondary'} onClick={() => { setTemperatureWindow(30); setTemperatureSampleIndex(0) }}>近30天</Button></View>{trend.points.length ? <><EvidenceCurve id="temperature-history-outside" title="车外温度历史" unit="°C" points={trend.points} valueOf={point => point.outsideTempC} selected={temperatureSampleIndex} onSelect={setTemperatureSampleIndex} isCurrent={() => true} /><Text className="muted">每点为一次行程开始时报告的车外温度；窗口内行程 {trend.drivesInWindow} 条，合格温度点 {trend.points.length} 个。逐点车内温度历史不在行程记录中，未生成。</Text></> : <Text className="muted">{trend.unavailableReason === 'no_history_in_window' ? `近${temperatureWindow}天内暂无行程记录，无法生成温度历史。` : '窗口内行程未提供合格的车外温度记录，无法生成温度历史。'}历史温度只取自已记录行程，不以状态报告时间伪造曲线。</Text>}</> })()}</View> : null}
+    {kind === 'temperature' ? (() => {
+      const trend = temperatureTrendPoints(drives, temperatureWindow, Date.now())
+      const climatePoints = (climateSamples[temperatureWindow] ?? []).map(sample => ({
+        date: sample.observedAt,
+        insideTempC: sample.insideTempC,
+        outsideTempC: sample.outsideTempC,
+      }))
+      const insidePoints = climatePoints.filter(point => point.insideTempC != null)
+      const climateOutside = climatePoints.filter(point => point.outsideTempC != null)
+      const chooseWindow = (days: 7 | 30) => {
+        setTemperatureWindow(days)
+        setTemperatureSampleIndex(0)
+        setTemperatureInsideSampleIndex(0)
+      }
+      return <View className="card">
+        <SectionHeading icon="cloud" title="温度趋势" />
+        <View className="metric-grid"><MetricValue label="车内温度" value={status?.insideTemp} unit="°C" /><MetricValue label="车外温度" value={status?.outsideTemp} unit="°C" /></View>
+        <View className="tools-actions"><Button className={temperatureWindow === 7 ? 'button' : 'button-secondary'} onClick={() => chooseWindow(7)}>近7天</Button><Button className={temperatureWindow === 30 ? 'button' : 'button-secondary'} onClick={() => chooseWindow(30)}>近30天</Button></View>
+        {insidePoints.length ? (
+          <>
+            <EvidenceCurve id="temperature-history-inside" title="车内温度历史（持续采样）" unit="°C" points={insidePoints} valueOf={point => point.insideTempC} selected={temperatureInsideSampleIndex} onSelect={setTemperatureInsideSampleIndex} isCurrent={() => true} />
+            <Text className="muted">每小时车内温度取自已保存的车辆采样；没有采样的时段断开，不插值。</Text>
+          </>
+        ) : (
+          <Text className="muted">
+            {climateFailed
+              ? '车内温度历史读取失败，请稍后重试；当前车内温度仍来自最新状态报告。'
+              : `车内温度历史从本版本开始由服务端持续记录，近${temperatureWindow}天还没有已保存的采样。本版本之前的行程没有逐点车内温度，不能补造曲线。`}
+          </Text>
+        )}
+        {climateOutside.length ? (
+          <>
+            <EvidenceCurve id="temperature-history-outside-climate" title="车外温度历史（持续采样）" unit="°C" points={climateOutside} valueOf={point => point.outsideTempC} selected={temperatureSampleIndex} onSelect={setTemperatureSampleIndex} isCurrent={() => true} />
+            <Text className="muted">车外温度同样取自持续采样；窗口内共 {climateOutside.length} 个合格采样点。</Text>
+          </>
+        ) : trend.points.length ? (
+          <>
+            <EvidenceCurve id="temperature-history-outside" title="车外温度历史（行程报告）" unit="°C" points={trend.points} valueOf={point => point.outsideTempC} selected={temperatureSampleIndex} onSelect={setTemperatureSampleIndex} isCurrent={() => true} />
+            <Text className="muted">每点为一次行程开始时报告的车外温度；窗口内行程 {trend.drivesInWindow} 条，合格温度点 {trend.points.length} 个。</Text>
+          </>
+        ) : (
+          <Text className="muted">
+            {trend.unavailableReason === 'no_history_in_window'
+              ? `近${temperatureWindow}天内暂无行程记录，无法生成温度历史。`
+              : '窗口内行程未提供合格的车外温度记录，无法生成温度历史。'}
+            历史温度只取自已记录行程与持续采样，不以状态报告时间伪造曲线。
+          </Text>
+        )}
+      </View>
+    })() : null}
     {kind === 'sentry' ? <View className="card"><SectionHeading icon="shield" title="哨兵历史" /><MetricValue label="当前哨兵状态" value={status?.sentryMode == null ? null : status.sentryMode ? '开启' : '关闭'} /><Text className="muted">当前状态不能还原告警事件。App 本机保存的哨兵历史未通过服务端共享，当前小程序没有已验证事件历史。</Text></View> : null}
     {kind === 'updates' ? <View className="card"><SectionHeading icon="update" title="软件更新" />{updates.length ? updates.map(update => <View className="status" key={update.id}><Text>{update.version || '版本未提供'}</Text><Text>{historyDateTime(update.startDate)}</Text></View>) : <Text>当前页暂无已记录的软件更新</Text>}<Text className="muted">仅当前响应记录，不代表全部软件历史。</Text><View className="tools-actions">{page > 1 ? <Button onClick={() => { void load(page - 1) }}>上一页</Button> : null}{updatesHasMore ? <Button onClick={() => { void load(page + 1) }}>下一页</Button> : null}</View></View> : null}
     {(kind === 'report' || kind === 'export') && car && !error && !loading ? <View className="card"><SectionHeading icon={kind === 'report' ? 'chart' : 'update'} title={kind === 'report' ? '年度报告' : '数据导出'} /><Text className="muted">{complete ? '当前历史响应翻页完成' : '部分历史覆盖 · 自动读取最多500条/25页'}；日期按本机显示时区分组。</Text>

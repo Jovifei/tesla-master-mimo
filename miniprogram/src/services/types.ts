@@ -518,7 +518,18 @@ export type ChargingSite = {
 
 export type NearbyChargingData = {
   sites: ChargingSite[]
-  meta?: { source?: string | null } | null
+  meta?: { source?: string | null; reason?: string | null } | null
+}
+
+export type ClimateSample = {
+  observedAt: string
+  insideTempC: number | null
+  outsideTempC: number | null
+}
+
+export type ClimateHistoryData = {
+  samples: ClimateSample[]
+  meta?: { days?: number | null; source?: string | null; reason?: string | null } | null
 }
 
 export type VehiclePlace = {

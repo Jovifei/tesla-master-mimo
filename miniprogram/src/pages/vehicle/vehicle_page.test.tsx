@@ -198,7 +198,7 @@ it.each(['y', 'Model Y'])('opens and saves the appearance editor for a genuine A
   const { readVehicleAppearance } = await import('../../services/vehicle_appearance')
   expect(readVehicleAppearance({ getStorageSync: key => platform.values.get(key) }, { origin: 'https://api.example.test', userId: 'a', stableId: 'uid7' })).toMatchObject({ model: 'Y', variant: 'myj', exteriorColor: 'PX02' })
 })
-it('loads the default preview after page-show invalidation and reloads it when the same page is shown again', async () => {
+it('keeps the default preview mounted across page hide/show', async () => {
   platform.values.delete('matelink.wechat.session.v1')
   const assets = await import('../../services/vehicle_assets')
   const loading = vi.spyOn(assets, 'ensureVehicleAsset').mockImplementation(async plan => plan.assetPath!)
@@ -208,7 +208,8 @@ it('loads the default preview after page-show invalidation and reloads it when t
     expect(renderer!.root.findAllByProps({ className: 'dashboard-vehicle-placeholder dashboard-art-placeholder' })).toHaveLength(0)
     const before = loading.mock.calls.length
     await act(async () => { platform.hide(); platform.show() }); await flush()
-    expect(loading.mock.calls.length).toBeGreaterThan(before)
+    // At most one in-flight retry is acceptable; the preview must never blank.
+    expect(loading.mock.calls.length).toBeLessThanOrEqual(before + 1)
     expect(renderer!.root.findAllByProps({ className: 'dashboard-vehicle-placeholder dashboard-art-placeholder' })).toHaveLength(0)
   } finally { loading.mockRestore() }
 })
@@ -619,7 +620,7 @@ it('matches the actual Dashboard hierarchy, App InfoCard ordering, four state ch
   expect(sections.indexOf('dashboard-location-row')).toBeLessThan(sections.indexOf('dashboard-temperature-row'))
   expect(sections.indexOf('dashboard-temperature-row')).toBeLessThan(sections.indexOf('dashboard-tpms'))
   expect(sections.indexOf('dashboard-tpms')).toBeLessThan(sections.indexOf('dashboard-map-card'))
-  expect(sections.indexOf('dashboard-map-card')).toBeLessThan(sections.indexOf('dashboard-history-entry'))
+  expect(sections.indexOf('dashboard-map-card')).toBeLessThan(sections.indexOf('dashboard-soc-trend'))
   expect(snapshotBadge().children.join('')).toContain('实时')
 })
 
@@ -692,9 +693,9 @@ it.each(fixture.readiness_cases)('shared synthetic $id runs through the API norm
   if (row.id === 'old_timestamp') expect(byKey.receive.freshness).toBe('stale_or_skewed')
   expect(visible()).toContain('订阅通知尚未接入（UNSUPPORTED）')
   expect(visible()).toContain('胎压为有界本机前台观测历史')
-  // Load contract: cars + snapshot + readiness + pairing + latest drive
-  // (the recent-drive card loads with the dashboard, as in the App).
-  expect(platform.request).toHaveBeenCalledTimes(5)
+  // Load contract: cars + snapshot + readiness + pairing + latest drives
+  // + nearby charging + saved places (both load with the dashboard now).
+  expect(platform.request).toHaveBeenCalledTimes(7)
 })
 
 it('actual scoped local cache proves saved summaries independently of current quality or receipt', async () => {
@@ -785,7 +786,7 @@ it('offline cached cars support only scoped display and selection, never numeric
   expect(platform.request).toHaveBeenCalledTimes(1)
 })
 
-it('clears old vehicle reports immediately and rejects a late response after vehicle switch', async () => {
+it('keeps the cached report during a deferred refresh and rejects its late response after vehicle switch', async () => {
   let defer = false, release!: (value: unknown) => void
   platform.request.mockImplementation(({ url }: { url: string }) => {
     if (defer && url.endsWith('/cars/7/snapshot')) return new Promise(resolve => { release = resolve })
@@ -795,7 +796,7 @@ it('clears old vehicle reports immediately and rejects a late response after veh
   expect(visible()).toContain('-11 kW')
   defer = true
   await act(async () => { platform.show() }); await flush()
-  expect(visible()).not.toContain('-11 kW')
+  expect(visible()).toContain('-11 kW')
   await choose(1)
   expect(visible()).toContain('-22 kW')
   await act(async () => { release(respond(report(-99))) }); await flush()

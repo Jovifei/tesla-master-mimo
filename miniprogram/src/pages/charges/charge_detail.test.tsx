@@ -52,7 +52,7 @@ async function click(label: string) {
   expect(button, label).toBeDefined(); await act(async () => { button!.props.onClick() }); await flush()
 }
 const shown = () => tree!.root.findAllByType('text').map(node => node.children.join('')).join('\n')
-it('warns only when an ambiguous cached charge is actually loaded and keeps it out of the list and totals', async () => {
+it('keeps an ambiguous cached charge out of the list and totals without inline chrome', async () => {
   const warning = '来源身份未确认的历史记录已保留，但未计入当前展示或统计'
   await mount()
   expect(shown()).not.toContain(warning)
@@ -63,7 +63,7 @@ it('warns only when an ambiguous cached charge is actually loaded and keeps it o
   cached.items.push({ ...cached.items[0], id: 'ambiguous', sessionId: 'ambiguous', identityAmbiguous: true, identityAmbiguousReason: 'source_identity_incomplete', energyAddedKwh: 200 })
   offline = true
   await act(async () => { platform.show() }); await flush()
-  expect(shown()).toContain(warning)
+  expect(shown()).not.toContain(warning)
   expect(tree!.root.findAllByProps({ className: 'history-record' })).toHaveLength(1)
   expect(tree!.root.findByProps({ ariaLabel: '充电次数 1 次' })).toBeDefined()
   const storage = { getStorageSync: (name: string) => platform.values.get(name), setStorageSync() {} }
@@ -77,7 +77,7 @@ it('does not call an entirely ambiguous cache a set of short charges', async () 
   cached.items[0].identityAmbiguous = true
   offline = true
   await act(async () => { platform.show() }); await flush()
-  expect(shown()).toContain('来源身份未确认的历史记录已保留，但未计入当前展示或统计')
+  expect(shown()).not.toContain('来源身份未确认的历史记录已保留，但未计入当前展示或统计')
   expect(shown()).not.toContain('当前记录均为短充')
   expect(tree!.root.findAllByProps({ className: 'history-record' })).toHaveLength(0)
 })

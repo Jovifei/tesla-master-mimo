@@ -5,7 +5,7 @@ import { MOCK_FIXTURE_ENABLED } from '../../services/mock_fixture'
 import { Button, Map as TaroMap, Picker, ScrollView, Text, View } from '@tarojs/components'
 import Taro, { useDidHide, useDidShow, usePageScroll, useUnload } from '@tarojs/taro'
 import { useEffect, useRef, useState } from 'react'
-import { historyRowKey, isHistoryIdentityAmbiguous, isHistoryQuarantined, pageCanContinue, sameHistoryIdentity, sortHistoryByStartDate } from '../../domain/history'
+import { historyRowKey, isHistoryQuarantined, pageCanContinue, sameHistoryIdentity, sortHistoryByStartDate } from '../../domain/history'
 import { buildDriveHistoryItems, parkedAddressLabel, verifiedParkedPairs, type DriveHistoryItem } from '../../domain/drive_history'
 import { mapCoordinate } from '../../domain/map_coordinate'
 import { formatParkedAddress, formatRouteAddresses, toChineseDisplayAddress } from '../../domain/address_display'
@@ -28,7 +28,6 @@ import { historyCacheKey, readHistoryCache, writeHistoryCache } from '../../serv
 import LoadingIndicator from '../../components/LoadingIndicator'
 import HistoryIntervalSummary from '../../components/HistoryIntervalSummary'
 import HistoryDateChips from '../../components/HistoryDateChips'
-import { inspectForegroundEvents, observeForegroundEvents, type ForegroundNotice } from '../../services/foreground_events'
 import EvidenceCurve from '../../components/EvidenceCurve'
 import MetricValue, { displayNumber, formatSocRange, peakSpeedKmh } from '../../components/MetricValue'
 import VisualIcon from '../../components/VisualIcon'
@@ -119,9 +118,6 @@ export default function DrivesPage() {
   const [parkingProofEpoch, setParkingProofEpoch] = useState(0)
   const parkingVerifier = useRef<ReturnType<typeof createParkedProofVerifier> | null>(null)
   const parkingSource = useRef<Drive[]>([])
-  const [notices, setNotices] = useState<ForegroundNotice[]>([])
-  const notice = notices[0] ?? null
-  const [noticeLimited, setNoticeLimited] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [query, setQueryState] = useState<HistoryQuery>(defaultDriveHistoryQuery())
   const [filtersExpanded, setFiltersExpanded] = useState(false)
@@ -156,8 +152,6 @@ export default function DrivesPage() {
     setInterval(null)
     setParkingPairs(new Set())
     parkingSource.current = []
-    setNotices([])
-    setNoticeLimited(false)
     setCacheWarning(false)
     queryScopeRef.current = null
     setQuery(defaultDriveHistoryQuery())
@@ -171,8 +165,6 @@ export default function DrivesPage() {
     loadingMoreRef.current = false
     setLoading(false)
     setLoadingMore(false)
-    setNotices([])
-    setNoticeLimited(false)
   }
 
   const restoreCached = (nextCar: Car) => {
@@ -234,8 +226,6 @@ export default function DrivesPage() {
       setInterval(null)
       setParkingPairs(new Set())
       parkingSource.current = []
-      setNotices([])
-      setNoticeLimited(false)
       scopeGate.current.begin('interval')
       loadingMoreRef.current = false
       itemsRef.current = []
@@ -285,10 +275,6 @@ export default function DrivesPage() {
       setMeta({ ...result.meta, hasMore: decision.hasMore })
       setError(null)
       if (!append) {
-        const admittedRows = result.items.map(row => decision.state.items.find(item => sameHistoryIdentity(item, row)) ?? row)
-        const notices = observeForegroundEvents(Taro, { origin: apiOrigin, userId: session.userId, stableId: nextCar.stableId }, 'drives', admittedRows)
-        setNotices(notices)
-        setNoticeLimited(inspectForegroundEvents(Taro, { origin: apiOrigin, userId: session.userId, stableId: nextCar.stableId }, 'drives').limited)
         const intervalTicket = scopeGate.current.begin('interval')
         const canonicalPage = { ...result, items: enrichHistoryInterval(result.items, decision.state.items) }
         const rawItems = [...result.items]
@@ -587,8 +573,8 @@ export default function DrivesPage() {
       {car ? <View className="history-controls">
         <ScrollView scrollX className="history-filter-scroll"><HistoryDateChips kind="drives" query={query} onChange={updateQuery} /></ScrollView>
         <ScrollView scrollX className="history-filter-scroll"><View className="history-distance-chips">
-          {[{ label: '全部', min: 0, max: undefined }, { label: '通勤 (< 50km)', min: 0, max: 50 },
-            { label: '短途 (50–200km)', min: 50, max: 200 }, { label: '长途 (200km+)', min: 200, max: undefined }].map(option =>
+          {[{ label: '全部', min: 0, max: undefined }, { label: '通勤 (< 10km)', min: 0, max: 10 },
+            { label: '日游 (10–100km)', min: 10, max: 100 }, { label: '公路旅行 (100km+)', min: 100, max: undefined }].map(option =>
             <Button key={option.label} className={`history-chip ${query.minDistanceKm === option.min && query.maxDistanceKm === option.max ? 'history-chip-selected' : ''}`} onClick={() => updateQuery({ minDistanceKm: option.min, maxDistanceKm: option.max })}>{option.label}</Button>)}
         </View></ScrollView>
         <Button className="history-chip history-more-toggle" onClick={() => setFiltersExpanded(value => !value)}>{filtersExpanded ? copy('history.collapseFilters') : copy('history.moreFilters')}</Button>
@@ -601,35 +587,7 @@ export default function DrivesPage() {
         </View>
         {offline ? <Text className="muted">{copy('history.localCache')}</Text> : null}
       </View> : null}
-      {items.some(isHistoryIdentityAmbiguous) ? (
-        <View
-          className="history-identity-badge"
-          onClick={() => {
-            void Taro.showModal({
-              title: '历史记录提示',
-              content: '来源身份未确认的历史记录已保留，但未计入当前展示或统计。',
-              showCancel: false,
-              confirmText: '我知道了',
-            })
-          }}
-          ariaLabel="来源身份未确认的历史记录已保留，但未计入当前展示或统计"
-        >
-          <Text className="identity-badge-icon">ℹ</Text>
-          <Text className="history-identity-note">来源身份未确认的历史记录已保留，但未计入当前展示或统计</Text>
-        </View>
-      ) : null}
-      {notice ? <View className="card history-notice">
-        <Text className="muted">前台发现一条新的已完成行程，仅本次打开时检查。</Text>
-        <Button className="button" onClick={() => {
-          const matches = itemsRef.current.filter(item => item.id === notice.id && item.sessionId === notice.sessionId && item.source === notice.source)
-          const row = matches.length === 1 ? matches[0] : null
-          setNotices(current => current.slice(1))
-          if (row) void openDetail(row)
-        }}>查看新行程</Button>
-        <Button className="button" onClick={() => setNotices([])}>关闭提示</Button>
-      </View> : null}
       {car && !loading ? <HistoryIntervalSummary interval={statisticsInterval} query={query} kind="drives" /> : null}
-      {noticeLimited ? <Text className="muted history-notice-limit">本机前台提示记录不可写或已达上限，后续提示暂停；历史仍可查看</Text> : null}
 
       {car && chartRows.length > 0 && !query.startDate && !query.endDate
         ? <AppDriveMonthChart rows={chartRows} partial={!statisticsInterval?.complete} />

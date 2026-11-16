@@ -49,6 +49,15 @@ describe('recentDriveCardModel (App DashboardRecentDriveCard parity)', () => {
     expect(model.capsules.map(c => c.value)).toEqual(['152 Wh/km', '12.3 km', '42 min', '88 km/h'])
   })
 
+  it('marks an estimated energy value instead of presenting it as reported', () => {
+    const model = recentDriveCardModel(drive({
+      efficiencyWhKm: 152.4,
+      energy: { energyKwh: 1.8, efficiencyWhKm: 152.4, source: 'power_samples', quality: 'estimated', reason: null,
+        coverageRatio: 1, coverageSeconds: 600, observedEnergyKwh: null, evidence: null },
+    }))
+    expect(model.capsules[0].value).toBe('≈152 Wh/km')
+  })
+
   it('falls back to energy when efficiency is missing and to -- for absent metrics', () => {
     const model = recentDriveCardModel(drive({ energyConsumedKwh: 2.34 }))
     expect(model.capsules[0].value).toBe('2.3 kWh')

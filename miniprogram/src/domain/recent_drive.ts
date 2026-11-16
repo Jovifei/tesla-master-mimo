@@ -47,11 +47,12 @@ export function recentDriveCardModel(drive: Drive): RecentDriveCardModel {
     drive.durationMinutes != null && drive.durationMinutes >= 0
       ? `${Math.round(drive.durationMinutes)} min`
       : '--'
+  const energyPrefix = drive.energy?.quality === 'estimated' ? '≈' : ''
   const efficiencyText =
     drive.efficiencyWhKm != null
-      ? `${Math.round(drive.efficiencyWhKm)} Wh/km`
+      ? `${energyPrefix}${Math.round(drive.efficiencyWhKm)} Wh/km`
       : drive.energyConsumedKwh != null
-        ? `${drive.energyConsumedKwh.toFixed(1)} kWh`
+        ? `${energyPrefix}${drive.energyConsumedKwh.toFixed(1)} kWh`
         : '--'
   const speedText =
     drive.speedMaxKmh != null && drive.speedMaxKmh >= 0 ? `${Math.round(drive.speedMaxKmh)} km/h` : '--'

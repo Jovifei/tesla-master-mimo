@@ -169,7 +169,7 @@ it('retains a selected date through an empty-cache refresh and clears it when th
   expect(release).toBeDefined()
   await act(async () => { release!(response({ drives: [old], meta: { page: 1, show: 20, total_pages: 1 } })) }); await flush()
   expect(front(view)).toContain(dayKey(localDay(-1)))
-  await clickText(view, '通勤 (< 50km)')
+  await clickText(view, '通勤 (< 10km)')
   expect(front(view)).toContain(dayKey(localDay(0)))
   await clickText(view, '全部')
   expect(front(view)).toContain(dayKey(localDay(0)))
