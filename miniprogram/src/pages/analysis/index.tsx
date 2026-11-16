@@ -67,6 +67,15 @@ export default function AnalysisPage() {
   const [chargeEvidence, setChargeEvidence] = useState<ChargeEvidence | null>(null)
   const [chargeDetail, setChargeDetail] = useState<Charge | null>(null), [detailLoading, setDetailLoading] = useState(false)
   const [sampleIndex, setSampleIndex] = useState(0), [recordCategory, setRecordCategory] = useState<'distance' | 'duration' | 'energy' | 'charge'>('distance')
+  const [curveTab, setCurveTab] = useState<'speed' | 'distance' | 'power' | 'soc' | 'elevation'>('speed')
+  const [chargeCurveTab, setChargeCurveTab] = useState<'soc' | 'power' | 'voltage' | 'current' | 'temperature'>('soc')
+  useEffect(() => {
+    const points = evidence?.points ?? []
+    if (!points.length) return
+    const has = (value: (point: (typeof points)[number]) => number | null | undefined) =>
+      points.some(point => { const current = value(point); return current != null && Number.isFinite(current) })
+    setCurveTab(has(point => point.speedKmh) ? 'speed' : has(point => point.powerKw) ? 'power' : has(point => point.batteryLevel) ? 'soc' : has(point => point.elevationM) ? 'elevation' : 'speed')
+  }, [evidence])
   const [efficiencyShown, setEfficiencyShown] = useState(10)
   const evidenceEpoch = useRef<number | null>(null)
   const requestEpoch = useRef(0), detailEpoch = useRef(0), selectedStable = useRef<string | null>(null), pageVisible = useRef(false)
@@ -425,7 +434,16 @@ export default function AnalysisPage() {
         </View>)}</View>
         <Text className="muted">{sourceLabel(evidence.source)} · {evidence.points.length} 个实际采样 · {evidence.pointsComplete ? '本响应采样完整' : '采样部分覆盖'}</Text>
       </View> : null}
-      {evidence ? <><EvidenceCurve {...curveProps} id="analysis-speed" title="速度曲线" unit="km/h" points={evidence.points} valueOf={point => point.speedKmh} /><EvidenceCurve {...curveProps} id="analysis-distance" title="行程距离曲线 · 预估" unit="km" points={evidence.points} valueOf={point => distanceByPoint.get(point) ?? null} /><View className="analysis-distance-basis"><Text className="muted">距离分布按实际时间间隔积分速度，并以合格总距离归一；属于估算，缺失速度不作均匀分配。</Text></View><EvidenceCurve {...curveProps} id="analysis-power" title="功率曲线" unit="kW" points={evidence.points} valueOf={point => point.powerKw} /><EvidenceCurve {...curveProps} id="analysis-soc" title="电量" unit="%" points={evidence.points} valueOf={point => point.batteryLevel} /><EvidenceCurve {...curveProps} id="analysis-elevation" title="海拔曲线" unit="m" points={evidence.points} valueOf={point => point.elevationM} /></> : params.id && !detailLoading ? <View className="card"><Text className="muted">暂无可验证的行程采样；离线缓存不保存精确位置或轨迹。</Text></View> : null}
+      {evidence ? <>
+        <View className="analysis-curve-tabs history-date-chips">
+          {([['speed', '速度'], ['distance', '距离'], ['power', '功率'], ['soc', '电量'], ['elevation', '海拔']] as const).map(([key, label]) => <Button key={key} className={`history-chip analysis-curve-tab ${curveTab === key ? 'history-chip-selected' : ''}`} onClick={() => setCurveTab(key)}>{label}</Button>)}
+        </View>
+        {curveTab === 'speed' ? <EvidenceCurve {...curveProps} id="analysis-speed" title="速度曲线" unit="km/h" points={evidence.points} valueOf={point => point.speedKmh} /> : null}
+        {curveTab === 'distance' ? <><EvidenceCurve {...curveProps} id="analysis-distance" title="行程距离曲线 · 预估" unit="km" points={evidence.points} valueOf={point => distanceByPoint.get(point) ?? null} /><View className="analysis-distance-basis"><Text className="muted">距离分布按实际时间间隔积分速度，并以合格总距离归一；属于估算，缺失速度不作均匀分配。</Text></View></> : null}
+        {curveTab === 'power' ? <EvidenceCurve {...curveProps} id="analysis-power" title="功率曲线" unit="kW" points={evidence.points} valueOf={point => point.powerKw} /> : null}
+        {curveTab === 'soc' ? <EvidenceCurve {...curveProps} id="analysis-soc" title="电量" unit="%" points={evidence.points} valueOf={point => point.batteryLevel} /> : null}
+        {curveTab === 'elevation' ? <EvidenceCurve {...curveProps} id="analysis-elevation" title="海拔曲线" unit="m" points={evidence.points} valueOf={point => point.elevationM} /> : null}
+      </> : params.id && !detailLoading ? <View className="card"><Text className="muted">暂无可验证的行程采样；离线缓存不保存精确位置或轨迹。</Text></View> : null}
     </> : null}
     {car && kind === 'parked' ? <>
       {!params.olderId || !params.newerId ? <View className="card"><Text className="section-title">选择驻车窗口</Text>{windows.map(window => <View key={`${window.olderId}:${window.newerId}`} className="analysis-record"><Text>{historyDateTime(window.startDate)} → {historyDateTime(window.endDate)}</Text><Button className="button-secondary" onClick={() => navigateParked(window.olderId, window.newerId)}>查看驻车详情</Button></View>)}</View> : null}
@@ -441,11 +459,14 @@ export default function AnalysisPage() {
       {detailLoading ? <LoadingIndicator label="正在读取充电采样…" compact /> : null}
       {chargeEvidence?.charge && displayedCurveCharge ? <View className="card"><SectionHeading icon="energy" title="充电概览" /><Text>开始 {historyDetailDateTime(chargeEvidence.charge.startDate)} · 结束 {historyDetailDateTime(chargeEvidence.charge.endDate)}</Text><Text>{chargeEvidence.charge.address || '地点未知'}</Text><View className="metric-grid"><MetricValue label="电池充入" value={chargeEvidence.charge.energyAddedKwh} unit="kWh" /><MetricValue label="时长" value={chargeEvidence.charge.durationMinutes} unit="分钟" /><MetricValue label="费用" value={costValue(displayedCurveCharge)} unit={displayedCurveCharge.currency || '币种未知'} /><MetricValue label="采样数" value={chargeEvidence.points.length} unit="个" /></View><Text className="muted">{sourceLabel(chargeEvidence.source)} · {costSource(displayedCurveCharge)} · 响应采样部分覆盖；不把功率、电压或电流冒充充入电量。</Text></View> : null}
       {chargeEvidence ? <>
-        <EvidenceCurve {...curveProps} id="charge-soc" provenanceOf={point => chargeCurveProvenance(point, 'batteryLevel')} forceDisconnected={chargeEvidence.hasUnplaceableSamples} title="充电电量变化" unit="%" points={chargeEvidence.points} valueOf={point => point.batteryLevel} />
-        <EvidenceCurve {...curveProps} id="charge-power" provenanceOf={point => chargeCurveProvenance(point, 'powerKw')} forceDisconnected={chargeEvidence.hasUnplaceableSamples} title="充电功率" unit="kW" points={chargeEvidence.points} valueOf={point => point.powerKw} />
-        <EvidenceCurve {...curveProps} id="charge-voltage" provenanceOf={point => chargeCurveProvenance(point, 'voltageV')} forceDisconnected={chargeEvidence.hasUnplaceableSamples} title="充电电压" unit="V" points={chargeEvidence.points} valueOf={point => point.voltageV} />
-        <EvidenceCurve {...curveProps} id="charge-current" provenanceOf={point => chargeCurveProvenance(point, 'currentA')} forceDisconnected={chargeEvidence.hasUnplaceableSamples} title="充电电流" unit="A" points={chargeEvidence.points} valueOf={point => point.currentA} />
-        <EvidenceCurve {...curveProps} id="charge-temperature" provenanceOf={point => chargeCurveProvenance(point, 'temperatureC')} forceDisconnected={chargeEvidence.hasUnplaceableSamples} title="环境温度" unit="°C" points={chargeEvidence.points} valueOf={point => point.temperatureC} />
+        <View className="analysis-curve-tabs history-date-chips">
+          {([['soc', '电量'], ['power', '功率'], ['voltage', '电压'], ['current', '电流'], ['temperature', '温度']] as const).map(([key, label]) => <Button key={key} className={`history-chip analysis-curve-tab ${chargeCurveTab === key ? 'history-chip-selected' : ''}`} onClick={() => setChargeCurveTab(key)}>{label}</Button>)}
+        </View>
+        {chargeCurveTab === 'soc' ? <EvidenceCurve {...curveProps} id="charge-soc" provenanceOf={point => chargeCurveProvenance(point, 'batteryLevel')} forceDisconnected={chargeEvidence.hasUnplaceableSamples} title="充电电量变化" unit="%" points={chargeEvidence.points} valueOf={point => point.batteryLevel} /> : null}
+        {chargeCurveTab === 'power' ? <EvidenceCurve {...curveProps} id="charge-power" provenanceOf={point => chargeCurveProvenance(point, 'powerKw')} forceDisconnected={chargeEvidence.hasUnplaceableSamples} title="充电功率" unit="kW" points={chargeEvidence.points} valueOf={point => point.powerKw} /> : null}
+        {chargeCurveTab === 'voltage' ? <EvidenceCurve {...curveProps} id="charge-voltage" provenanceOf={point => chargeCurveProvenance(point, 'voltageV')} forceDisconnected={chargeEvidence.hasUnplaceableSamples} title="充电电压" unit="V" points={chargeEvidence.points} valueOf={point => point.voltageV} /> : null}
+        {chargeCurveTab === 'current' ? <EvidenceCurve {...curveProps} id="charge-current" provenanceOf={point => chargeCurveProvenance(point, 'currentA')} forceDisconnected={chargeEvidence.hasUnplaceableSamples} title="充电电流" unit="A" points={chargeEvidence.points} valueOf={point => point.currentA} /> : null}
+        {chargeCurveTab === 'temperature' ? <EvidenceCurve {...curveProps} id="charge-temperature" provenanceOf={point => chargeCurveProvenance(point, 'temperatureC')} forceDisconnected={chargeEvidence.hasUnplaceableSamples} title="环境温度" unit="°C" points={chargeEvidence.points} valueOf={point => point.temperatureC} /> : null}
       </> : params.chargeId && !detailLoading ? <View className="card"><Text className="muted">暂无可验证的充电采样；离线缓存不保存充电原始曲线。</Text></View> : null}
     </> : null}
     {displayedChargeDetail ? <View className="card analysis-charge-detail"><Text className="section-title">充电详情</Text><Button className="button-secondary" onClick={() => { detailEpoch.current++; setChargeDetail(null) }}>关闭充电详情</Button><Text>{displayedChargeDetail.address || '地点未知'} · {historyDateTime(displayedChargeDetail.startDate)}</Text><View className="metric-grid"><MetricValue label="电池充入" value={displayedChargeDetail.energyAddedKwh} unit="kWh" /><MetricValue label="输入电量" value={displayedChargeDetail.energyUsedKwh} unit="kWh" /><MetricValue label="费用" value={costValue(displayedChargeDetail)} unit={displayedChargeDetail.currency || '币种未知'} /><MetricValue label="功率" value={displayedChargeDetail.chargerPowerKw} unit="kW" /></View><Text className="muted">{costSource(displayedChargeDetail)} · 原始上游账单 {shown(displayedChargeDetail.reportedCost, displayedChargeDetail.reportedCurrency || '币种未知')}</Text></View> : null}

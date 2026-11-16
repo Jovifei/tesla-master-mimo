@@ -37,6 +37,11 @@ async function click(page: ReactTestRenderer, label: string) {
   expect(button, label).toBeDefined()
   await act(async () => { button!.props.onClick() }); await flush()
 }
+async function curveTab(page: ReactTestRenderer, label: string) {
+  const tab = page.root.findAllByType('button').find(node => String(node.props.className).includes('analysis-curve-tab') && node.children.join('') === label)
+  expect(tab, label).toBeDefined()
+  await act(async () => { tab!.props.onClick() }); await flush()
+}
 beforeEach(() => {
   vi.resetModules(); vi.stubEnv('TARO_APP_API_BASE_URL', 'https://api.example.test')
   platform.values.clear(); platform.request.mockReset(); platform.navigateTo.mockReset()
@@ -246,7 +251,7 @@ describe('advanced App entry pages through actual authenticated consumers', () =
     expect(platform.context.lineTo).toHaveBeenCalledTimes(2) // baseline and cursor only, no source-gap bridge.
   })
 
-  it('renders all five actual nested charging curves with same-response Fahrenheit conversion and no sample persistence', async () => {
+  it('switches five actual nested charging curves with same-response Fahrenheit conversion and no sample persistence', async () => {
     const charge = { charge_id: 4, source: 'teslamate_archive', quality_state: 'observed', start_date: start, end_date: end, charge_energy_added: 3, cost: null,
       charge_details: [
         { date: start, battery_level: 0, outside_temp: 32, charger_details: { charger_power: -2, charger_voltage: 0, charger_actual_current: 0 } },
@@ -260,21 +265,25 @@ describe('advanced App entry pages through actual authenticated consumers', () =
       return respond({ drives: [raw(1)], meta: { page: 1, show: 20, total_pages: 1 } })
     })
     const page = await mount('chargeCurves', { chargeId: '4' })
-    const curves = page.root.findAllByProps({ className: 'card analysis-curve' })
-    expect(curves.map(node => node.findByProps({ className: 'section-title' }).children.join(''))).toEqual(['充电电量变化', '充电功率', '充电电压', '充电电流', '环境温度'])
-    expect(page.root.findAllByType('canvas' as React.ElementType)).toHaveLength(5)
-    expect(curves[1].findByProps({ className: 'analysis-cursor' }).children.join('')).toContain('-2 kW')
-    expect(curves[4].findByProps({ className: 'analysis-cursor' }).children.join('')).toContain('0 °C')
-    await act(async () => { curves[1].findByType('slider' as React.ElementType).props.onChange({ detail: { value: 1 } }) })
-    expect(curves[1].findByProps({ className: 'analysis-cursor' }).children.join('')).toContain('0 kW')
-    expect(curves[2].findByProps({ className: 'analysis-cursor' }).children.join('')).toContain('230 V')
-    expect(curves[3].findByProps({ className: 'analysis-cursor' }).children.join('')).toContain('16 A')
-    expect(curves[4].findByProps({ className: 'analysis-cursor' }).children.join('')).toContain('10 °C')
+    const tabs = page.root.findAllByType('button').filter(node => String(node.props.className).includes('analysis-curve-tab'))
+    expect(tabs.map(node => node.children.join(''))).toEqual(['电量', '功率', '电压', '电流', '温度'])
+    expect(page.root.findAllByType('canvas' as React.ElementType)).toHaveLength(1)
+    const curve = () => page.root.findByProps({ className: 'card analysis-curve' })
+    expect(curve().findByProps({ className: 'section-title' }).children.join('')).toBe('充电电量变化')
+    await curveTab(page, '功率')
+    expect(curve().findByProps({ className: 'analysis-cursor' }).children.join('')).toContain('-2 kW')
+    await act(async () => { curve().findByType('slider' as React.ElementType).props.onChange({ detail: { value: 1 } }) })
+    expect(curve().findByProps({ className: 'analysis-cursor' }).children.join('')).toContain('0 kW')
+    await curveTab(page, '电压')
+    expect(curve().findByProps({ className: 'analysis-cursor' }).children.join('')).toContain('230 V')
+    await curveTab(page, '电流')
+    expect(curve().findByProps({ className: 'analysis-cursor' }).children.join('')).toContain('16 A')
+    await curveTab(page, '温度')
+    expect(curve().findByProps({ className: 'analysis-cursor' }).children.join('')).toContain('10 °C')
     expect(page.root.findByProps({ ariaLabel: '费用 ≈3.42 CNY' })).toBeDefined()
     expect(JSON.stringify(page.toJSON())).toContain('按默认电价估算')
     expect(JSON.stringify([...platform.values.values()])).not.toMatch(/charge_details|charger_actual_current|outside_temp/)
   })
-
   it('keeps missing charging samples unknown and rejects a late hidden charge waveform', async () => {
     let release: ((value: unknown) => void) | null = null
     platform.request.mockImplementation(async ({ url }: { url: string }) => {
@@ -349,17 +358,17 @@ describe('advanced App entry pages through actual authenticated consumers', () =
       return respond({ drives: [raw(1)], meta: { page: 1, show: 20, total_pages: 1 } })
     })
     const page = await mount('curves', { id: '1' })
-    expect(page.root.findAllByType('canvas' as React.ElementType)).toHaveLength(5)
-    expect(platform.context.moveTo.mock.calls.length + platform.context.lineTo.mock.calls.length).toBeLessThanOrEqual(5 * 604)
-    expect(page.root.findAllByProps({ className: 'muted analysis-plot-thinned' })).toHaveLength(5)
-    const power = page.root.findAllByProps({ className: 'card analysis-curve' }).find(node => node.findAllByType('text').some(text => text.children.join('') === '功率曲线'))!
+    expect(page.root.findAllByType('canvas' as React.ElementType)).toHaveLength(1)
+    expect(platform.context.moveTo.mock.calls.length + platform.context.lineTo.mock.calls.length).toBeLessThanOrEqual(604)
+    expect(page.root.findAllByProps({ className: 'muted analysis-plot-thinned' })).toHaveLength(1)
+    await curveTab(page, '功率')
+    const power = page.root.findByProps({ className: 'card analysis-curve' })
     const slider = power.findByType('slider' as React.ElementType)
     expect(slider.props.max).toBe(19999)
     await act(async () => { slider.props.onChange({ detail: { value: 19000 } }) })
     expect(power.findByProps({ className: 'analysis-cursor' }).children.join('')).toContain('0 kW')
     expect(JSON.stringify([...platform.values.values()])).not.toContain('drive_details')
   })
-
   it('draws actual timestamped curve samples with zero and negative power, allows a sample cursor and never persists locations', async () => {
     platform.request.mockImplementation(async ({ url }: { url: string }) => {
       if (url.endsWith('/cars')) return respond({ cars: [car] })
@@ -372,16 +381,17 @@ describe('advanced App entry pages through actual authenticated consumers', () =
       return respond({ drives: [raw(1)], meta: { page: 1, show: 20, total_pages: 1 } })
     })
     const page = await mount('curves', { id: '1' })
-    expect(page.root.findAllByType('canvas' as React.ElementType)).toHaveLength(5)
-    expect(platform.context.draw).toHaveBeenCalledTimes(5)
-    expect(platform.context.lineTo.mock.calls.length).toBeGreaterThanOrEqual(8)
-    expect(page.root.findAllByProps({ className: 'card analysis-curve' }).map(node => node.findByProps({ className: 'section-title' }).children.join('')))
-      .toEqual(['速度曲线', '行程距离曲线 · 预估', '功率曲线', '电量', '海拔曲线'])
+    expect(page.root.findAllByType('canvas' as React.ElementType)).toHaveLength(1)
+    expect(platform.context.draw).toHaveBeenCalledTimes(1)
+    const tabs = page.root.findAllByType('button').filter(node => String(node.props.className).includes('analysis-curve-tab'))
+    expect(tabs.map(node => node.children.join(''))).toEqual(['速度', '距离', '功率', '电量', '海拔'])
+    expect(page.root.findByProps({ className: 'card analysis-curve' }).findByProps({ className: 'section-title' }).children.join('')).toBe('速度曲线')
     expect(page.root.findByProps({ ariaLabel: '距离 10 km' })).toBeDefined()
     expect(page.root.findByProps({ ariaLabel: '最大值 60 km/h' })).toBeDefined()
     expect(page.root.findByProps({ ariaLabel: '已用 1%' })).toBeDefined()
     expect(page.root.findByProps({ ariaLabel: '采样均值 0 kW' })).toBeDefined()
-    const power = page.root.findAllByProps({ className: 'card analysis-curve' }).find(node => node.findAllByType('text').some(text => text.children.join('') === '功率曲线'))!
+    await curveTab(page, '功率')
+    const power = page.root.findByProps({ className: 'card analysis-curve' })
     expect(power.findByProps({ className: 'analysis-cursor' }).children.join('')).toContain('-5 kW')
     await act(async () => { power.findByType('slider' as React.ElementType).props.onChange({ detail: { value: 1 } }) })
     expect(power.findByProps({ className: 'analysis-cursor' }).children.join('')).toContain('0 kW')
@@ -391,10 +401,9 @@ describe('advanced App entry pages through actual authenticated consumers', () =
     await act(async () => { power.findByProps({ className: 'analysis-curve-expand' }).props.onClick() })
     expect(page.root.findAllByProps({ className: 'card analysis-curve analysis-curve-fullscreen' })).toHaveLength(1)
     await act(async () => { page.root.findByProps({ className: 'card analysis-curve analysis-curve-fullscreen' }).findByProps({ className: 'analysis-curve-expand' }).props.onClick() })
-    expect(page.root.findAllByProps({ className: 'card analysis-curve' })).toHaveLength(5)
+    expect(page.root.findAllByProps({ className: 'card analysis-curve' })).toHaveLength(1)
     expect(JSON.stringify([...platform.values.values()])).not.toMatch(/31\.123456|121\.654321|latitude|longitude|drive_details/)
   })
-
   it('does not render quarantined curve evidence or turn a failed empty analysis into zero statistics', async () => {
     platform.request.mockImplementation(async ({ url }: { url: string }) => {
       if (url.endsWith('/cars')) return respond({ cars: [car] })
