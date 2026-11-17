@@ -676,7 +676,8 @@ private fun DrivingHabitsSection(stats: CarStats) {
 
             // Driving days
             qs.totalDrivingDays?.let { days ->
-                HabitRow(stringResource(R.string.annual_report_unique_driving_days), "$days days")
+                HabitRow(stringResource(R.string.annual_report_unique_driving_days),
+                    stringResource(R.string.annual_report_days_value, days))
                 if (qs.totalDrives > 0 && days > 0) {
                     HabitRow(stringResource(R.string.annual_report_drives_per_day), String.format(Locale.getDefault(), "%.1f", qs.totalDrives.toFloat() / days))
                 }
@@ -705,7 +706,8 @@ private fun DrivingHabitsSection(stats: CarStats) {
 
             // Busiest day
             qs.busiestDay?.let {
-                HabitRow(stringResource(R.string.annual_report_busiest_day), "${it.day} (${it.count} drives)")
+                HabitRow(stringResource(R.string.annual_report_busiest_day),
+                    stringResource(R.string.annual_report_busiest_day_value, it.day, it.count))
             }
 
             // Most distance day

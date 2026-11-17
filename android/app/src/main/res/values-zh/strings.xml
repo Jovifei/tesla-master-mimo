@@ -177,6 +177,14 @@
 
     <!-- Dashboard -->
     <string name="dashboard_loading">加载中…</string>
+    <string name="dashboard_soc_trend_title">每日电量趋势</string>
+    <string name="dashboard_soc_trend_7d">近7天</string>
+    <string name="dashboard_soc_trend_30d">近30天</string>
+    <string name="dashboard_soc_trend_no_history">近%1$d天没有已完成行程，暂无每日电量记录。</string>
+    <string name="dashboard_soc_trend_no_samples">窗口内的行程没有携带可验证的起止电量，未生成曲线。</string>
+    <string name="dashboard_soc_trend_summary">最近记录 · 共 %1$d 个记录日</string>
+    <string name="dashboard_soc_trend_change"> · 窗口变化 %1$s%2$d%%</string>
+    <string name="dashboard_soc_trend_note">每点为当日最后一次已完成行程结束时的电量；没有记录的日期不补点。</string>
     <string name="dashboard_status_unavailable_title">车辆已连接，实时状态同步中</string>
     <string name="dashboard_status_unavailable_body">TeslaMate 已检测到你的车辆，但实时状态快照还不可用。等待 TeslaMate 完成首次同步后再刷新。</string>
     <string name="dashboard_error_auth_title">需要重新授权 Tesla</string>
@@ -456,6 +464,7 @@
     <string name="cost_energy_added">已充电量</string>
     <string name="cost_charges_count">%d 次充电</string>
     <string name="cost_monthly_breakdown">月度明细</string>
+    <string name="cost_monthly_estimated_note">当前筛选内没有已记录账单，月度柱状图按合格的分时电价估算口径展示。</string>
     <string name="cost_ac">交流充电</string>
     <string name="cost_dc">直流充电</string>
     <string name="cost_top_locations">热门充电地点</string>
@@ -705,6 +714,8 @@
     <string name="stats_cabin_temperature">车内温度</string>
     <string name="stats_hottest">最热</string>
     <string name="stats_ac_dc_ratio">交流/直流比例</string>
+    <string name="stats_ac_dc_scope">按已同步明细 %1$d/%2$d 次统计 · 交流 %3$d · 直流 %4$d · 未知 %5$d；未同步明细不计入。</string>
+    <string name="stats_ac_dc_percent_scope">百分比仅按已知电能计算。</string>
     <string name="stats_ac_energy">交流电能</string>
     <string name="stats_dc_energy">直流电能</string>
     <string name="charging_ac">交流</string>
@@ -1484,6 +1495,7 @@
     <string name="annual_report_driving_habits">驾驶习惯</string>
     <string name="annual_report_avg_drive_duration">平均行程时长</string>
     <string name="annual_report_unique_driving_days">行驶天数</string>
+    <string name="annual_report_days_value">%1$d 天</string>
     <string name="annual_report_drives_per_day">每日行程数</string>
     <string name="annual_report_excellent">优秀</string>
     <string name="annual_report_good">良好</string>
@@ -1492,6 +1504,7 @@
     <string name="annual_report_efficiency_rating">能耗评级</string>
     <string name="annual_report_top_speed">最高速度</string>
     <string name="annual_report_busiest_day">最忙的一天</string>
+    <string name="annual_report_busiest_day_value">%1$s（%2$d 次行程）</string>
     <string name="annual_report_most_distance_day">单日最远</string>
     <string name="annual_report_na">无数据</string>
     <string name="annual_report_effective_cost">有效费用（含人工总价）</string>

@@ -1022,7 +1022,7 @@ class ChargesViewModel @Inject constructor(
         val costFilter = state.costFilter
         val dcChargeIds = state.dcChargeIds
         val processedChargeIds = state.processedChargeIds
-        val typeOf: (ChargeData) -> ChargeType = { historyChargeType(it, dcChargeIds, processedChargeIds, state.acChargeIds) }
+        val typeOf: (ChargeData) -> ChargeType = { displayChargeType(it, dcChargeIds, processedChargeIds, state.acChargeIds) }
         val granularity = state.chartGranularity
         val proof = activeHistoryProof
         val referenceVerified = proof != null && referenceIdentityDigest != null &&
@@ -1462,6 +1462,29 @@ internal fun historyChargeType(
     "dc" -> ChargeType.DC
     "ac" -> ChargeType.AC
     else -> ChargeType.UNKNOWN
+}
+
+/**
+ * List cards and the AC/DC filter must agree on the same visible evidence.
+ * Legacy rows without a certified mode still show a badge from average power;
+ * the filter previously used the certified value alone and returned zero rows.
+ */
+internal fun displayChargeType(
+    charge: ChargeData,
+    dcIds: Set<Int>,
+    processedIds: Set<Int>,
+    acIds: Set<Int> = emptySet()
+): ChargeType {
+    val certified = historyChargeType(charge, dcIds, processedIds, acIds)
+    if (certified != ChargeType.UNKNOWN) return certified
+    val energy = charge.batteryInputKwh ?: charge.partialBatteryInputKwh
+    val hours = charge.durationMin?.takeIf { it > 0 }?.div(60.0)
+    val averagePowerKw = if (energy != null && hours != null) energy / hours else null
+    return when {
+        averagePowerKw == null -> ChargeType.UNKNOWN
+        averagePowerKw > 22.0 -> ChargeType.DC
+        else -> ChargeType.AC
+    }
 }
 
 internal fun observedChargeEnergy(value: Double?): Double? =

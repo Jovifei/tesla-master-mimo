@@ -22,6 +22,7 @@ import com.matelink.domain.analytics.NoDataReason
 import com.matelink.domain.analytics.findChargeCostOverride
 import com.matelink.domain.analytics.projectEffectiveChargeCost
 import com.matelink.domain.analytics.ChargeCostSource
+import com.matelink.domain.analytics.estimateChargeTariff
 import com.matelink.domain.history.LatestHistoryLoad
 import com.matelink.domain.analytics.calculateCostTotals
 import com.matelink.domain.analytics.selectWindow
@@ -368,8 +369,19 @@ class CostViewModel @Inject constructor(
             return projectEffectiveChargeCost(charge, car,
                 findChargeCostOverride(manualRecords, car, charge, currencyCode), currencyCode).cost
         }
+        fun estimatedCostFor(charge: ChargeData): Double? {
+            val car = historyCarId ?: return null
+            val settings = tariffSettings ?: return null
+            return projectEffectiveChargeCost(charge, car,
+                findChargeCostOverride(manualRecords, car, charge, currencyCode), currencyCode,
+                tariffEstimate = estimateChargeTariff(charge, settings))
+                .takeIf { it.source == ChargeCostSource.ESTIMATE }?.cost
+        }
+        // The monthly chart must not disappear only because no bill was recorded:
+        // the same qualified estimate that explains the total also explains the months.
+        fun monthlyCostFor(charge: ChargeData): Double? = costFor(charge) ?: estimatedCostFor(charge)
 
-        val monthly = buildMonthlyCosts(selected, dcChargeIds, costFor = ::costFor)
+        val monthly = buildMonthlyCosts(selected, dcChargeIds, costFor = ::monthlyCostFor)
         val locations = buildLocationCosts(selected, ::costFor)
         val totals = calculateCostTotals(selected, ::costFor, defaultChargePrice,
             estimateFor = tariffSettings?.let { settings -> { charge ->

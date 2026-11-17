@@ -177,13 +177,21 @@ fun CostScreen(
             SummarySection(uiState, uiState.currencySymbol)
 
             // Monthly AC/DC cost chart
-            if (uiState.monthlyCosts.isNotEmpty() && uiState.costCoverage > 0) {
+            if (uiState.monthlyCosts.isNotEmpty()) {
                 Text(
                     text = stringResource(R.string.cost_monthly_breakdown),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
                 MonthlyCostChart(monthlyCosts = uiState.monthlyCosts)
+
+                if (uiState.costCoverage == 0) {
+                    Text(
+                        text = stringResource(R.string.cost_monthly_estimated_note),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
 
                 // Legend
                 Row(

@@ -245,11 +245,10 @@ class DashboardViewModel @Inject constructor(
             settingsRepository.currentCarId.flatMapLatest { id ->
                 val historyId = resolveLocalHistoryCarId(id)
                 driveSummaryDao.observeAll(historyId).map { drives ->
-                    if (drives.isNotEmpty()) drives.take(120)
-                    else listOfNotNull(driveSummaryDao.getLatestAnyCar())
+                    drives to (if (drives.isEmpty()) driveSummaryDao.getLatestAnyCar() else null)
                 }
-            }.collect { drives ->
-                val latestDrive = drives.firstOrNull()
+            }.collect { (drives, fallback) ->
+                val latestDrive = drives.firstOrNull() ?: fallback
                 _uiState.update { it.copy(recentDrive = latestDrive ?: it.recentDrive, recentDrives = drives) }
             }
         }

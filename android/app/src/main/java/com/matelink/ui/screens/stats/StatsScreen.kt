@@ -519,7 +519,11 @@ private fun StatsContent(
             // AC/DC Ratio (moved here, near charges)
             stats.deepStats?.let { deepStats ->
                 item {
-                    AcDcRatioCard(deepStats = deepStats, palette = palette)
+                    AcDcRatioCard(
+                        deepStats = deepStats,
+                        palette = palette,
+                        totalCharges = stats.quickStats.totalCharges
+                    )
                 }
             }
 
@@ -1864,7 +1868,11 @@ private fun formatEnergy(kwh: Double): String {
 }
 
 @Composable
-private fun AcDcRatioCard(deepStats: DeepStats, palette: CarColorPalette) {
+private fun AcDcRatioCard(
+    deepStats: DeepStats,
+    palette: CarColorPalette,
+    totalCharges: Int
+) {
     val acEnergy = deepStats.qualifiedAcChargeEnergyKwh
     val dcEnergy = deepStats.qualifiedDcChargeEnergyKwh
     val totalEnergy = listOfNotNull(acEnergy, dcEnergy).sum()
@@ -1992,6 +2000,27 @@ private fun AcDcRatioCard(deepStats: DeepStats, palette: CarColorPalette) {
                     color = palette.onSurfaceVariant
                 )
             }
+        }
+
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = stringResource(
+                R.string.stats_ac_dc_scope,
+                deepStats.chargeDetailsProcessed,
+                totalCharges,
+                deepStats.acChargeCount,
+                deepStats.dcChargeCount,
+                unknownCount
+            ),
+            style = MaterialTheme.typography.labelSmall,
+            color = palette.onSurfaceVariant
+        )
+        if (totalEnergy > 0.0) {
+            Text(
+                text = stringResource(R.string.stats_ac_dc_percent_scope),
+                style = MaterialTheme.typography.labelSmall,
+                color = palette.onSurfaceVariant
+            )
         }
     }
 }

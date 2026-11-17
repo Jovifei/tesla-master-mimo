@@ -517,7 +517,7 @@ private fun ChargesContent(
                                 }
                                 ChargeItem(
                                     charge = charge,
-                                    isDcCharge = when (historyChargeType(charge, dcChargeIds, processedChargeIds, acChargeIds)) {
+                                    isDcCharge = when (displayChargeType(charge, dcChargeIds, processedChargeIds, acChargeIds)) {
                                         ChargeType.DC -> true
                                         ChargeType.AC -> false
                                         ChargeType.UNKNOWN -> null
@@ -927,7 +927,7 @@ internal fun ChargeItem(
             else -> null
         }
     } else null
-    val is24Hour = true
+    val is24Hour = android.text.format.DateFormat.is24HourFormat(LocalContext.current)
 
     val resolvedUnitPrice = if (displayCost != null && displayedEnergy != null && displayedEnergy > 0.05) {
         displayCost / displayedEnergy

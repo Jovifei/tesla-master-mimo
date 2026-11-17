@@ -177,6 +177,14 @@
 
     <!-- Dashboard -->
     <string name="dashboard_loading">Loading Dashboard…</string>
+    <string name="dashboard_soc_trend_title">Daily battery trend</string>
+    <string name="dashboard_soc_trend_7d">7 days</string>
+    <string name="dashboard_soc_trend_30d">30 days</string>
+    <string name="dashboard_soc_trend_no_history">No completed drives in the last %1$d days; no daily battery record.</string>
+    <string name="dashboard_soc_trend_no_samples">Drives in this window carry no verifiable start/end battery level, so no curve was drawn.</string>
+    <string name="dashboard_soc_trend_summary">Latest record · %1$d recorded days</string>
+    <string name="dashboard_soc_trend_change"> · window change %1$s%2$d%%</string>
+    <string name="dashboard_soc_trend_note">Each point is the end battery level of the last completed drive that day; days without a record are not filled in.</string>
     <string name="dashboard_status_unavailable_title">Vehicle connected, live status pending</string>
     <string name="dashboard_status_unavailable_body">TeslaMate has detected your vehicle, but the live status snapshot is not available yet. Wait for TeslaMate to finish the first sync, then refresh.</string>
     <string name="dashboard_error_auth_title">Tesla authorization required</string>
@@ -456,6 +464,7 @@
     <string name="cost_energy_added">Energy Added</string>
     <string name="cost_charges_count">%d charges</string>
     <string name="cost_monthly_breakdown">Monthly Breakdown</string>
+    <string name="cost_monthly_estimated_note">No recorded bill is available in this range; monthly bars use the qualified tariff estimate.</string>
     <string name="cost_ac">AC Charging</string>
     <string name="cost_dc">DC Charging</string>
     <string name="cost_top_locations">Top Locations</string>
@@ -705,6 +714,8 @@
     <string name="stats_cabin_temperature">Cabin Temperature</string>
     <string name="stats_hottest">Hottest</string>
     <string name="stats_ac_dc_ratio">AC/DC Ratio</string>
+    <string name="stats_ac_dc_scope">Based on %1$d/%2$d sessions with synced details · AC %3$d · DC %4$d · Unknown %5$d; unsynced sessions are excluded.</string>
+    <string name="stats_ac_dc_percent_scope">Percentages use known energy only.</string>
     <string name="stats_ac_energy">AC Energy</string>
     <string name="stats_dc_energy">DC Energy</string>
     <string name="charging_ac">AC</string>
@@ -1416,6 +1427,7 @@
     <string name="annual_report_driving_habits">Driving Habits</string>
     <string name="annual_report_avg_drive_duration">Average Drive Duration</string>
     <string name="annual_report_unique_driving_days">Unique Driving Days</string>
+    <string name="annual_report_days_value">%1$d days</string>
     <string name="annual_report_drives_per_day">Drives per Day</string>
     <string name="annual_report_excellent">Excellent</string>
     <string name="annual_report_good">Good</string>
@@ -1424,6 +1436,7 @@
     <string name="annual_report_efficiency_rating">Efficiency Rating</string>
     <string name="annual_report_top_speed">Top Speed</string>
     <string name="annual_report_busiest_day">Busiest Day</string>
+    <string name="annual_report_busiest_day_value">%1$s (%2$d drives)</string>
     <string name="annual_report_most_distance_day">Most Distance in a Day</string>
     <string name="annual_report_na">N/A</string>
     <string name="annual_report_effective_cost">Effective cost incl. manual totals</string>

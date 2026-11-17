@@ -132,7 +132,7 @@ fun VampireScreen(
                 modifier = Modifier.fillMaxWidth()
             )
 
-            if (uiState.idlePeriods.any { it.energyKwh == null }) {
+            if (uiState.idlePeriods.isNotEmpty() && uiState.idlePeriods.all { it.energyKwh == null }) {
                 MetricStatusPanel(
                     kind = MetricPanelKind.UNAVAILABLE,
                     title = stringResource(R.string.vampire_soc_only_title),

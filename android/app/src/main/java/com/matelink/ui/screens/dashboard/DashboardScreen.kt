@@ -1169,13 +1169,16 @@ private fun DashboardSocTrendCard(drives: List<com.matelink.data.local.entity.Dr
                         modifier = Modifier.size(18.dp)
                     )
                     Text(
-                        text = "每日电量趋势",
+                        text = stringResource(R.string.dashboard_soc_trend_title),
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold
                     )
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    listOf(7 to "近7天", 30 to "近30天").forEach { (days, label) ->
+                    listOf(
+                        7 to stringResource(R.string.dashboard_soc_trend_7d),
+                        30 to stringResource(R.string.dashboard_soc_trend_30d)
+                    ).forEach { (days, label) ->
                         TextButton(
                             onClick = { windowDays = days },
                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
@@ -1196,8 +1199,8 @@ private fun DashboardSocTrendCard(drives: List<com.matelink.data.local.entity.Dr
                 Text(
                     text = when (trend.unavailableReason) {
                         SocTrendUnavailable.NO_HISTORY_IN_WINDOW ->
-                            "近${windowDays}天没有已完成行程，暂无每日电量记录。"
-                        else -> "窗口内的行程没有携带可验证的起止电量，未生成曲线。"
+                            stringResource(R.string.dashboard_soc_trend_no_history, windowDays)
+                        else -> stringResource(R.string.dashboard_soc_trend_no_samples)
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -1215,12 +1218,13 @@ private fun DashboardSocTrendCard(drives: List<com.matelink.data.local.entity.Dr
                     )
                     Text(
                         text = buildString {
-                            append("最近记录 · 共 ${trend.points.size} 个记录日")
+                            append(stringResource(R.string.dashboard_soc_trend_summary, trend.points.size))
                             trend.change?.let { change ->
-                                append(" · 窗口变化 ")
-                                append(if (change > 0) "+" else "")
-                                append(change)
-                                append("%")
+                                append(stringResource(
+                                    R.string.dashboard_soc_trend_change,
+                                    if (change > 0) "+" else "",
+                                    change
+                                ))
                             }
                         },
                         style = MaterialTheme.typography.bodySmall,
@@ -1234,7 +1238,7 @@ private fun DashboardSocTrendCard(drives: List<com.matelink.data.local.entity.Dr
                         .height(110.dp)
                 )
                 Text(
-                    text = "每点为当日最后一次已完成行程结束时的电量；没有记录的日期不补点。",
+                    text = stringResource(R.string.dashboard_soc_trend_note),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1268,6 +1272,8 @@ private fun SocTrendCanvas(points: List<SocTrendPoint>, modifier: Modifier = Mod
             strokeWidth = 1.dp.toPx()
         )
         for (index in 1 until points.size) {
+            // Never bridge a day without a record: only the dots are omitted, not the gap.
+            if (points[index].day.toEpochDay() - points[index - 1].day.toEpochDay() > 1) continue
             drawLine(
                 color = lineColor,
                 start = Offset(x(points[index - 1].at), y(points[index - 1].soc)),

@@ -29,6 +29,15 @@ class ChargeModeListContractTest {
             dcIds = emptySet(), processedIds = emptySet()))
     }
 
+    @Test fun legacyDisplayTypeFallsBackToObservedAveragePower() {
+        val fast = ChargeData(chargeId = 12, chargeEnergyAdded = 30.0, durationMin = 30)
+        val slow = ChargeData(chargeId = 13, chargeEnergyAdded = 5.0, durationMin = 60)
+        assertEquals(ChargeType.DC, displayChargeType(fast,
+            dcIds = emptySet(), processedIds = emptySet()))
+        assertEquals(ChargeType.AC, displayChargeType(slow,
+            dcIds = emptySet(), processedIds = emptySet()))
+    }
+
     @Test fun legacyTypeRequiresKnownAggregateEvidence() {
         val old = ChargeData(chargeId = 11)
         assertEquals(ChargeType.UNKNOWN, historyChargeType(old,

@@ -22,6 +22,16 @@ class DriveCurvePhysicalEvidenceTest {
         assertEquals(listOf(0f, .1f, 1f), curve.xFractions)
     }
 
+    @Test fun observedGpsFixesKeepDistanceAcrossLongSamplerGaps() {
+        val curve = projectDriveCurves(DriveDetail(7, lengthUnit = "km", positions = listOf(
+            DrivePosition(date = "2026-10-27T00:00:00Z", latitude = 30.0, longitude = 120.0),
+            DrivePosition(date = "2026-10-27T00:05:00Z", latitude = 30.001, longitude = 120.0)))).distance
+        assertEquals(0f, curve.values.first(), 0f)
+        assertTrue("gps-observed distance must survive a five-minute sampler gap",
+            curve.values.last().toDouble() in 0.10..0.13)
+        assertEquals(2, curve.validCount)
+    }
+
     @Test fun reportedDistanceWithoutObservedSpeedCannotManufactureALinearCurve() {
         val curve = projectDriveCurves(detail(positions = listOf(
             DrivePosition(date="2026-10-27T00:00:00Z"), DrivePosition(date="2026-10-27T00:00:10Z")))).distance

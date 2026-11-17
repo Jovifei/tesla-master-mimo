@@ -30,6 +30,8 @@ import com.matelink.domain.analytics.HistoryFreshness
 import com.matelink.domain.analytics.AnalysisWindow
 import com.matelink.ui.components.AnalysisWindowSelector
 import com.matelink.ui.components.CachedHistoryBanner
+import com.matelink.ui.components.drawYAxisLabels
+import com.matelink.ui.components.prepareChartData
 import com.matelink.ui.components.MetricPanelKind
 import com.matelink.ui.components.MetricStatusPanel
 import com.matelink.ui.components.MateLinkLoadingPlaceholder
@@ -486,19 +488,30 @@ private fun EfficiencyTripRow(index: Int, trip: EfficiencyTripPosition) {
 private fun EfficiencyTrendChart(points: List<EfficiencyTrendPoint>) {
     val lineColor = MaterialTheme.colorScheme.primary
     val labelColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val gridColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
     val maxValue = points.maxOfOrNull { it.averageWhKm } ?: return
     val minValue = points.minOfOrNull { it.averageWhKm } ?: return
     val range = (maxValue - minValue).takeIf { it > 0.0 } ?: 1.0
-    Canvas(modifier = Modifier.fillMaxWidth().height(120.dp).padding(top = 8.dp)) {
+    val chartData = remember(points) {
+        prepareChartData(points.map { it.averageWhKm.toFloat() }, null, { it })
+    }
+    Canvas(modifier = Modifier.fillMaxWidth().height(132.dp).padding(top = 8.dp)) {
+        val padY = 10.dp.toPx()
+        val plotHeight = (size.height - padY * 2).coerceAtLeast(1f)
         val step = size.width / (points.size - 1).coerceAtLeast(1)
+        for (index in 0..4) {
+            val y = padY + plotHeight * index / 4f
+            drawLine(gridColor, Offset(0f, y), Offset(size.width, y), strokeWidth = 0.5.dp.toPx())
+        }
+        drawYAxisLabels(labelColor, chartData, "Wh/km", size.height)
         val path = androidx.compose.ui.graphics.Path()
         points.forEachIndexed { index, point ->
             val x = index * step
-            val y = size.height - ((point.averageWhKm - minValue) / range).toFloat() * size.height
+            val y = padY + (1.0 - (point.averageWhKm - minValue) / range).toFloat() * plotHeight
             if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
-            drawCircle(lineColor, 5.dp.toPx(), Offset(x, y))
+            drawCircle(lineColor, 4.dp.toPx(), Offset(x, y))
         }
-        drawPath(path, lineColor, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3.dp.toPx()))
+        drawPath(path, lineColor, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.5.dp.toPx()))
     }
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         points.forEach { point ->

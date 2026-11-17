@@ -2,6 +2,7 @@
     <string name="ui_day_no_returned_records">No records returned for this date. This does not prove there was no activity.</string>
     <string name="ui_day_collapse">Collapse to %1$s</string>
     <string name="ui_curve_gaps_note">Dots are individual observed samples. Gaps are not interpolated; see detailed curves for all series.</string>
+    <string name="ui_curve_peak_source_note">Peak and regen values come from the drive summary; the curve draws observed samples only and never fills gaps. See detailed curves for all series.</string>
     <string name="ui_charge_calendar_limit">Each cell is one day. The calendar shows up to the latest 366 selected days; history and totals are unchanged.</string>
     <string name="ui_diagnostic_overview">This page reports separate evidence, not an overall health score. Not checked means a verifiable response is missing, not that authorization failed. Tap a row for its source, time and next step.</string>
     <string name="ui_not_checked">Not confirmed</string>

@@ -827,7 +827,8 @@ private fun DriveRowItem(
                     accent = palette.accent
                 )
                 Text(
-                    text = formatEditorialDate(drive.startDate, true),
+                    text = formatEditorialDate(drive.startDate,
+                        android.text.format.DateFormat.is24HourFormat(LocalContext.current)),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -940,7 +941,8 @@ private fun ParkedRowItem(
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = formatEditorialDate(item.startDate, true),
+                    text = formatEditorialDate(item.startDate,
+                        android.text.format.DateFormat.is24HourFormat(LocalContext.current)),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

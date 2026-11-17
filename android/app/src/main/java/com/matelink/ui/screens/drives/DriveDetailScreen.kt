@@ -206,7 +206,9 @@ private fun DriveDetailContent(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val is24Hour = true
+    val is24Hour = android.text.format.DateFormat.is24HourFormat(context)
+    val curveNote = stringResource(if (detail.powerMax != null || detail.powerMin != null)
+        R.string.ui_curve_peak_source_note else R.string.ui_curve_gaps_note)
     val scrollState = rememberScrollState()
 
     val positions = detail.positions.orEmpty()
@@ -302,7 +304,7 @@ private fun DriveDetailContent(
                     onXSelected = { speedChartFraction = it },
                     fractionToTimeLabel = { timedDriveCurveLabel(projection.power, it, is24Hour) })
             }
-            Text(stringResource(R.string.ui_curve_gaps_note), style = MaterialTheme.typography.bodySmall,
+            Text(curveNote, style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
 
         }
@@ -319,7 +321,7 @@ private fun DriveDetailContent(
                     onXSelected = { speedChartFraction = it },
                     fractionToTimeLabel = { timedDriveCurveLabel(projection.power, it, is24Hour) })
             }
-            Text(stringResource(R.string.ui_curve_gaps_note), style = MaterialTheme.typography.bodySmall,
+            Text(curveNote, style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
 
@@ -390,7 +392,7 @@ private fun UnifiedTripCard(
     onNavigateToDriveCurves: () -> Unit,
     onShowEnergyDialog: () -> Unit
 ) {
-    val is24Hour = true
+    val is24Hour = android.text.format.DateFormat.is24HourFormat(LocalContext.current)
     val notAvailableLabel = stringResource(R.string.not_available)
     val curvesActionLabel = stringResource(R.string.drive_curves_action)
 

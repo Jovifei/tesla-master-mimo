@@ -290,10 +290,12 @@ internal fun ChargeDetailContent(
         }
 
         // ── Group 2: Interactive Telemetry Curves ──────────────────────────────
-        val hasElectricalData = stats?.let { s ->
-            s.voltageMax != null || s.voltageMin != null || s.voltageAvg != null ||
-            s.currentMax != null || s.currentMin != null || s.currentAvg != null
-        } ?: false
+        // A charger can report a non-zero power while its voltage/current channels
+        // carry placeholder values (for example 2 V and 0 A). Keep those channels
+        // out of curves and statistics instead of drawing a physically impossible line.
+        val voltagePlausible = series.voltage.any { it.second >= 50.0 }
+        val currentPlausible = series.current.any { it.second > 1.0 }
+        val hasElectricalData = voltagePlausible || currentPlausible
 
         val temperatureStats = stats?.let { s ->
             buildList {
@@ -354,7 +356,7 @@ internal fun ChargeDetailContent(
                 }
             }
 
-            if (hasElectricalData) {
+            if (voltagePlausible) {
                 if (series.voltage.size >= 2) {
                     VoltageChartCard(
                         samples = series.voltage,
@@ -404,17 +406,22 @@ internal fun ChargeDetailContent(
             val perKwhLabel = stringResource(R.string.per_kwh)
 
             if (hasElectricalData) {
+                val electricalStats = buildList {
+                    if (voltagePlausible) {
+                        add(StatItem(voltageMaxLabel, s.voltageMax?.let { "$it V" } ?: unavailableLabel))
+                        add(StatItem(voltageMinLabel, s.voltageMin?.let { "$it V" } ?: unavailableLabel))
+                        add(StatItem(voltageAvgLabel, s.voltageAvg?.let { "%.0f V".format(it) } ?: unavailableLabel))
+                    }
+                    if (currentPlausible) {
+                        add(StatItem(currentMaxLabel, s.currentMax?.let { "$it A" } ?: unavailableLabel))
+                        add(StatItem(currentMinLabel, s.currentMin?.let { "$it A" } ?: unavailableLabel))
+                        add(StatItem(currentAvgLabel, s.currentAvg?.let { "%.1f A".format(it) } ?: unavailableLabel))
+                    }
+                }
                 StatsSectionCard(
                     title = chargerLabel,
                     icon = Icons.Default.ElectricalServices,
-                    stats = listOf(
-                        StatItem(voltageMaxLabel, s.voltageMax?.let { "$it V" } ?: unavailableLabel),
-                        StatItem(voltageMinLabel, s.voltageMin?.let { "$it V" } ?: unavailableLabel),
-                        StatItem(voltageAvgLabel, s.voltageAvg?.let { "%.0f V".format(it) } ?: unavailableLabel),
-                        StatItem(currentMaxLabel, s.currentMax?.let { "$it A" } ?: unavailableLabel),
-                        StatItem(currentMinLabel, s.currentMin?.let { "$it A" } ?: unavailableLabel),
-                        StatItem(currentAvgLabel, s.currentAvg?.let { "%.1f A".format(it) } ?: unavailableLabel)
-                    )
+                    stats = electricalStats
                 )
             }
 

@@ -2,6 +2,7 @@
     <string name="ui_day_no_returned_records">本日暂无已返回记录，不代表当天没有行驶或驻车。</string>
     <string name="ui_day_collapse">收回至 %1$s</string>
     <string name="ui_curve_gaps_note">圆点代表已有采样；缺测处不补线。全部曲线请点右上角“详细曲线”。</string>
+    <string name="ui_curve_peak_source_note">峰值与回收值来自行程汇总；曲线只绘制已有采样，缺测处不补线。全部曲线请点右上角“详细曲线”。</string>
     <string name="ui_charge_calendar_limit">每格一天；日格最多展示所选范围最近366天，汇总与历史不变。</string>
     <string name="ui_diagnostic_overview">这里区分已保存历史与实时采集。“尚未确认”表示缺少可验证响应，不等于授权失效或历史丢失。点击项目再看来源、时间和下一步。</string>
     <string name="ui_not_checked">尚未确认</string>
