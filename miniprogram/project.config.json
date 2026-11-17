@@ -4,7 +4,7 @@
   "description": "MateLink WeChat Mini Program development shell",
   "appid": "wxc84899ab6146f1be",
   "setting": {
-    "urlCheck": false,
+    "urlCheck": true,
     "es6": true,
     "enhance": true,
     "postcss": true,
