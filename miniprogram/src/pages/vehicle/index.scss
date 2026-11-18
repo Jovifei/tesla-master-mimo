@@ -12,6 +12,8 @@
   --dashboard-badge-bg: var(--apple-fill-quaternary, #ddf0f1);
   --dashboard-badge-fg: var(--apple-label-secondary, #164e63);
   --dashboard-action-on: #ffffff;
+  --dashboard-charge: var(--apple-charge, #B45309);
+  --dashboard-charge-soft: var(--apple-charge-soft, rgba(180,83,9,.12));
   --dashboard-warning-bg: var(--apple-warning-soft, rgba(255, 149, 0, 0.12));
   color:var(--dashboard-text);
   .dashboard-system-bar-cover {
@@ -293,9 +295,17 @@
   .dashboard-state-chip[data-kind="security"][data-active="true"] .dashboard-chip-label {
     color: var(--dashboard-warning);
   }
-  .dashboard-state-chip[data-kind="bolt"][data-active="true"] .dashboard-chip-label,
+  .dashboard-state-chip[data-kind="bolt"][data-active="true"] {
+    background: var(--dashboard-charge-soft) !important;
+  }
+  .dashboard-state-chip[data-kind="bolt"][data-active="true"] .dashboard-chip-label {
+    color: var(--dashboard-charge);
+  }
   .dashboard-state-chip[data-kind="climate"][data-active="true"] .dashboard-chip-label {
     color: var(--dashboard-primary);
+  }
+  .dashboard-current-charge {
+    border-left: 4rpx solid var(--dashboard-charge);
   }
   .dashboard-chip-label {
     font-size:24rpx;
@@ -847,6 +857,8 @@
     --dashboard-badge-bg:#164e63;
     --dashboard-badge-fg:#cffafe;
     --dashboard-action-on:#111315;
+    --dashboard-charge:#F59E0B;
+    --dashboard-charge-soft:rgba(245,158,11,.16);
   }
   .vehicle-page .dashboard-system-bar-cover,.vehicle-page .dashboard-capsule-cover { background:#111315; }
   .vehicle-page .dashboard-icon-light  {

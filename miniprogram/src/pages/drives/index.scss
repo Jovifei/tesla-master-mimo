@@ -106,15 +106,18 @@
     font-weight: 600;
   }
 
+  .day-stack-body .history-record { border-top: 0; }
   .history-record {
-    padding: 24rpx 28rpx;
-    margin: 16rpx 0;
-    border: 0.5px solid var(--apple-separator, rgba(233, 237, 242, 0.7));
-    border-radius: var(--apple-radius-card, 28rpx);
-    background: var(--apple-surface, #ffffff);
-    box-shadow: var(--apple-shadow-card, 0 2rpx 8rpx rgba(0, 0, 0, 0.03));
+    padding: 22rpx 8rpx;
+    margin: 0;
+    border: 0;
+    border-bottom: 1rpx solid var(--apple-separator);
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
     box-sizing: border-box;
     transition: background-color var(--apple-transition-fast, 180ms ease);
+    &:last-child { border-bottom: 0; }
     &:active {
       background-color: var(--apple-fill-quaternary, rgba(0, 0, 0, 0.02));
     }

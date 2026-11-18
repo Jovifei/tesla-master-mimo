@@ -10,6 +10,8 @@
   --apple-teal: #1d1d1f;
   --apple-teal-soft: rgba(29,29,31,.07);
   --apple-action-on: #fff;
+  --apple-charge: #B45309;
+  --apple-charge-soft: rgba(180,83,9,.12);
   --activity-ink: 29,29,31;
   --apple-shadow-card: 0 2rpx 8rpx rgba(0,0,0,.035);
 }
@@ -72,7 +74,7 @@
   :root, page, .appearance-neutral, .appearance-cream {
     --apple-bg: #111315; --apple-surface: #15181c; --apple-surface-secondary: #242a31; --apple-surface-tertiary: #323840;
     --apple-label-primary: #f5f6f7; --apple-label-secondary: #b7bdc6; --apple-label-tertiary: #aeb5be;
-    --apple-teal: #f5f6f7; --apple-teal-soft: rgba(245,246,247,.10); --apple-action-on: #111315; --activity-ink: 245,246,247;
+    --apple-teal: #f5f6f7; --apple-teal-soft: rgba(245,246,247,.10); --apple-action-on: #111315; --apple-charge: #F59E0B; --apple-charge-soft: rgba(245,158,11,.16); --activity-ink: 245,246,247;
   }
 }
 .appearance-neutral .button, .appearance-cream .button { background: var(--apple-teal); color: var(--apple-action-on); }
@@ -147,4 +149,58 @@
 @media (prefers-color-scheme: dark) {
   .account-hero { background: var(--apple-surface); }
   .consent-card { border-color: var(--apple-separator); }
+}
+
+.detail-notes {
+  margin-top: 20rpx;
+  padding-top: 8rpx;
+  border-top: 1rpx solid var(--apple-separator);
+}
+.detail-notes .readiness-toggle {
+  padding: 10rpx 0;
+  min-height: 72rpx;
+  font-size: 24rpx;
+}
+
+.detail-panel {
+  padding: 20rpx 24rpx 24rpx;
+}
+.detail-tabs {
+  margin: 0 0 12rpx;
+  padding-bottom: 4rpx;
+}
+.detail-tab {
+  flex: none;
+}
+.detail-panel .telemetry-metric-strip {
+  margin-top: 8rpx;
+}
+
+.detail-tabs {
+  display: flex;
+  gap: 12rpx;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+.detail-tabs .history-chip {
+  flex: none;
+  margin: 0;
+  padding: 0 22rpx;
+  min-height: 64rpx;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1rpx solid var(--apple-separator);
+  border-radius: 999rpx;
+  background: var(--apple-surface);
+  color: var(--apple-label-secondary);
+  font-size: 26rpx;
+  line-height: 1.4;
+}
+.detail-tabs .history-chip::after { border: 0; }
+.detail-tabs .history-chip-selected {
+  background: var(--apple-teal-soft);
+  border-color: var(--apple-label-primary);
+  color: var(--apple-label-primary);
+  font-weight: 600;
 }

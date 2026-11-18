@@ -75,6 +75,8 @@ const emptyMeta: HistoryPageMeta = {
 export default function DrivesPage() {
   const appearance = useAppearance()
   const [curveSampleIndex, setCurveSampleIndex] = useState(0)
+  const [detailNotesOpen, setDetailNotesOpen] = useState(false)
+  const [detailTab, setDetailTab] = useState<'speed' | 'power' | 'battery'>('speed')
   const daySelection = useRef<{ owner: string; scope: string; key: string } | null>(null)
   const [cars, setCars] = useState<Car[]>([])
   const [car, setCar] = useState<Car | null>(null)
@@ -746,81 +748,74 @@ export default function DrivesPage() {
           </View>
 
 
-          {/* 4. 分组面板：速度 */}
-          {(() => {
-            const avgDistSpeed = (selected.distanceKm != null && selected.durationMinutes != null && selected.durationMinutes > 0)
-              ? Number((selected.distanceKm / (selected.durationMinutes / 60)).toFixed(0)) : null
-            const speedPoints = selectedEvidence?.points.filter(point => point.speedKmh != null && Number.isFinite(point.speedKmh)) ?? []
-            const hasValues = peakSpeedKmh(selected) != null || selected.speedAvgKmh != null || avgDistSpeed != null || speedPoints.length > 0
-            return <View className="section-card">
-              <View className="section-card-header">
-                <View className="section-card-title"><VisualIcon name="speed" /><Text>速度</Text></View>
-              </View>
-              {hasValues ? <>
-                <View className="telemetry-metric-strip">
-                  <MetricValue label="最高速度" value={peakSpeedKmh(selected)} unit="km/h" digits={0} />
-                  <MetricValue label="报告均速" value={selected.speedAvgKmh} unit="km/h" digits={0} />
-                  <MetricValue label="距离均速" value={avgDistSpeed} unit="km/h" digits={0} />
-                </View>
-                {speedPoints.length > 0 ? <EvidenceCurve id="drive-inline-speed" title="速度曲线" unit="km/h" points={selectedEvidence!.points} valueOf={point => point.speedKmh} selected={curveSampleIndex} onSelect={setCurveSampleIndex} isCurrent={() => pageVisible.current && detailContext.current?.row === selected && detailContext.current?.generation === getApiSessionGeneration()} /> : <Text className="muted detail-empty-line">本次响应未提供逐点速度采样，仅显示行程摘要速度。</Text>}
-              </> : <Text className="muted detail-empty-line">本次行程未提供速度数据。</Text>}
+          {/* 4. 单面板：速度 / 功率 / 电量 */}
+          <View className="card detail-panel">
+            <View className="detail-tabs history-date-chips">
+              {([['speed', '速度'], ['power', '功率'], ['battery', '电量']] as const).map(([key, label]) => <Button key={key} className={`history-chip detail-tab ${detailTab === key ? 'history-chip-selected' : ''}`} onClick={() => setDetailTab(key)}>{label}</Button>)}
             </View>
-          })()}
-
-          {/* 5. 分组面板：功率 */}
-          {(() => {
-            const points = selectedEvidence?.points ?? []
-            const powers = points.map(p => p.powerKw).filter((p): p is number => p != null && Number.isFinite(p))
-            const outputPowers = powers.filter(p => p > 0)
-            const regenPowers = powers.filter(p => p < 0)
-            const maxOutput = outputPowers.length ? Math.max(...outputPowers) : null
-            const maxRegen = regenPowers.length ? Math.abs(Math.min(...regenPowers)) : null
-            const avgPower = powers.length ? Number((powers.reduce((a, b) => a + b, 0) / powers.length).toFixed(1)) : null
-            return <View className="section-card">
-              <View className="section-card-header">
-                <View className="section-card-title"><VisualIcon name="energy" /><Text>功率</Text></View>
-              </View>
-              {powers.length > 0 ? <>
-                <View className="telemetry-metric-strip">
-                  <MetricValue label="峰值输出" value={maxOutput} unit="kW" digits={0} />
-                  <MetricValue label="峰值回收" value={maxRegen} unit="kW" digits={0} />
-                  <MetricValue label="平均功率 (样本)" value={avgPower} unit="kW" digits={1} />
-                </View>
-                <EvidenceCurve id="drive-inline-power" title="功率曲线" unit="kW" points={points} valueOf={point => point.powerKw} selected={curveSampleIndex} onSelect={setCurveSampleIndex} isCurrent={() => pageVisible.current && detailContext.current?.row === selected && detailContext.current?.generation === getApiSessionGeneration()} />
-              </> : <Text className="muted detail-empty-line">本次响应未提供可用的功率采样。</Text>}
+            <View hidden={detailTab !== 'speed'}>
+              {(() => {
+                const avgDistSpeed = (selected.distanceKm != null && selected.durationMinutes != null && selected.durationMinutes > 0)
+                  ? Number((selected.distanceKm / (selected.durationMinutes / 60)).toFixed(0)) : null
+                const speedPoints = selectedEvidence?.points.filter(point => point.speedKmh != null && Number.isFinite(point.speedKmh)) ?? []
+                const hasValues = peakSpeedKmh(selected) != null || selected.speedAvgKmh != null || avgDistSpeed != null || speedPoints.length > 0
+                if (!hasValues) return <Text className="muted detail-empty-line">本次行程未提供速度数据。</Text>
+                return <>
+                  <View className="telemetry-metric-strip">
+                    <MetricValue label="最高速度" value={peakSpeedKmh(selected)} unit="km/h" digits={0} />
+                    <MetricValue label="报告均速" value={selected.speedAvgKmh} unit="km/h" digits={0} />
+                    <MetricValue label="距离均速" value={avgDistSpeed} unit="km/h" digits={0} />
+                  </View>
+                  {speedPoints.length > 0 ? <EvidenceCurve id="drive-inline-speed" title="速度曲线" unit="km/h" points={selectedEvidence!.points} valueOf={point => point.speedKmh} selected={curveSampleIndex} onSelect={setCurveSampleIndex} isCurrent={() => pageVisible.current && detailContext.current?.row === selected && detailContext.current?.generation === getApiSessionGeneration()} /> : <Text className="muted detail-empty-line">本次响应未提供逐点速度采样，仅显示行程摘要速度。</Text>}
+                </>
+              })()}
             </View>
-          })()}
-
-          {/* 6. 分组面板：电量 */}
-          {(() => {
-            const usedSoc = (selected.startBatteryLevel != null && selected.endBatteryLevel != null)
-              ? selected.startBatteryLevel - selected.endBatteryLevel : null
-            const totalEnergy = energyValue(selected)
-            const hasValues = selected.startBatteryLevel != null || selected.endBatteryLevel != null || totalEnergy != null
-            return <View className="section-card">
-              <View className="section-card-header">
-                <View className="section-card-title"><VisualIcon name="battery" /><Text>电量</Text></View>
-              </View>
-              {hasValues ? <>
-                <View className="telemetry-metric-strip">
+            <View hidden={detailTab !== 'power'}>
+              {(() => {
+                const points = selectedEvidence?.points ?? []
+                const powers = points.map(p => p.powerKw).filter((p): p is number => p != null && Number.isFinite(p))
+                const outputPowers = powers.filter(p => p > 0)
+                const regenPowers = powers.filter(p => p < 0)
+                const maxOutput = outputPowers.length ? Math.max(...outputPowers) : null
+                const maxRegen = regenPowers.length ? Math.abs(Math.min(...regenPowers)) : null
+                const avgPower = powers.length ? Number((powers.reduce((a, b) => a + b, 0) / powers.length).toFixed(1)) : null
+                if (powers.length === 0) return <Text className="muted detail-empty-line">本次响应未提供可用的功率采样。</Text>
+                return <>
+                  <View className="telemetry-metric-strip">
+                    <MetricValue label="峰值输出" value={maxOutput} unit="kW" digits={0} />
+                    <MetricValue label="峰值回收" value={maxRegen} unit="kW" digits={0} />
+                    <MetricValue label="平均功率 (样本)" value={avgPower} unit="kW" digits={1} />
+                  </View>
+                  <EvidenceCurve id="drive-inline-power" title="功率曲线" unit="kW" points={points} valueOf={point => point.powerKw} selected={curveSampleIndex} onSelect={setCurveSampleIndex} isCurrent={() => pageVisible.current && detailContext.current?.row === selected && detailContext.current?.generation === getApiSessionGeneration()} />
+                </>
+              })()}
+            </View>
+            <View hidden={detailTab !== 'battery'}>
+              {(() => {
+                const usedSoc = (selected.startBatteryLevel != null && selected.endBatteryLevel != null)
+                  ? selected.startBatteryLevel - selected.endBatteryLevel : null
+                const totalEnergy = energyValue(selected)
+                const hasValues = selected.startBatteryLevel != null || selected.endBatteryLevel != null || totalEnergy != null
+                if (!hasValues) return <Text className="muted detail-empty-line">本次行程未提供电量端点或可用能耗。</Text>
+                return <View className="telemetry-metric-strip">
                   <MetricValue label="起始电量" value={selected.startBatteryLevel} unit="%" digits={0} />
                   <MetricValue label="结束电量" value={selected.endBatteryLevel} unit="%" digits={0} />
                   <MetricValue label="已用电量" value={usedSoc} unit="%" digits={0} />
                   <MetricValue label="总电耗" value={totalEnergy} unit="kWh" negative={(totalEnergy ?? 0) < 0} />
                 </View>
-                {selected.energy?.evidence?.method ? (
-                  <View style={{ marginTop: '16rpx' }}>
-                    <Text className="history-source">计算依据：{energyMethodLabel(selected.energy.evidence.method)}</Text>
-                  </View>
-                ) : selected.energy?.quality === 'estimated' ? (
-                  <View style={{ marginTop: '16rpx' }}>
-                    <Text className="history-source">估算能耗</Text>
-                  </View>
-                ) : null}
-              </> : <Text className="muted detail-empty-line">本次行程未提供电量端点或可用能耗。</Text>}
+              })()}
             </View>
-          })()}
+            <View className="detail-notes">
+              <Button className="readiness-toggle" ariaLabel={detailNotesOpen ? '收起数据说明' : '展开数据说明'} onClick={() => setDetailNotesOpen(value => !value)}>数据说明 {detailNotesOpen ? '−' : '+'}</Button>
+              <View hidden={!detailNotesOpen}>
+                {selected.energy?.evidence?.method ? <Text className="history-source">计算依据：{energyMethodLabel(selected.energy.evidence.method)}</Text> : selected.energy?.quality === 'estimated' ? <Text className="history-source">估算能耗</Text> : null}
+                <Text className="muted">曲线只使用本次响应返回的实际采样；缺失采样不补0，速度与距离按实际时间计算。</Text>
+                <Text className="muted">能耗只采用合格净能量或明确估算方法；未知容量不会被用来补造能耗。</Text>
+              </View>
+            </View>
+          </View>
 
+          {cacheWarning ? <Text className="error">当前详情尚未保存到本机。</Text> : null}
           {cacheWarning ? <Text className="error">当前详情尚未保存到本机。</Text> : null}
           {error ? <Text className="error">{error}</Text> : null}
         </View>

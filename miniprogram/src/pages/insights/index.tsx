@@ -46,6 +46,7 @@ export default function InsightsPage() {
   const [status, setStatus] = useState<CarStatus | null>(null), [currentChargeRaw, setCurrentCharge] = useState<Charge | null>(null)
   const [driveCoverage, setDriveCoverage] = useState<Coverage>(emptyCoverage), [chargeCoverage, setChargeCoverage] = useState<Coverage>(emptyCoverage)
   const [query, setQuery] = useState<HistoryQuery>(emptyHistoryQuery()), [offline, setOffline] = useState(false)
+  const [costTab, setCostTab] = useState<'overview' | 'details'>('overview')
   const [trips, setTrips] = useState<ManualTrip[]>([]), [selectedTripRaw, setSelectedTrip] = useState<ManualTrip | null>(null)
   const [creating, setCreating] = useState(params.mode === 'create'), [name, setName] = useState('')
   const [editTrip, setEditTrip] = useState<ManualTrip | null>(null), [chosen, setChosen] = useState<string[]>([])
@@ -200,6 +201,9 @@ export default function InsightsPage() {
       <Text className="muted">{result.distance.total === 0 ? '暂无里程样本' : `里程覆盖 ${result.distance.known}/${result.distance.total}`} · {result.duration.total === 0 ? '无时长' : `时长覆盖 ${result.duration.known}/${result.duration.total}`}</Text>
       <Text className="muted">{result.driveCount} 段行驶 · {result.chargeCount} 次充电</Text>
       {view.legs.some(leg => leg.kind === 'charge' && 'costProvenance' in leg.charge && leg.charge.costProvenance === 'manual') ? <Text className="muted">包含本机手动费用，原服务端账单保留。</Text> : null}
+      <View className="detail-tabs history-date-chips">
+        {([['overview', '概览'], ['details', '明细']] as const).map(([key, label]) => <Button key={key} className={`history-chip detail-tab ${costTab === key ? 'history-chip-selected' : ''}`} onClick={() => setCostTab(key)}>{label}</Button>)}
+      </View>
       {result.costs.groups.map(group => <MetricValue key={group.currency} label="所选充电费用" value={costAmount(group.cost, view.legs.some(leg => leg.kind === 'charge' && 'costProvenance' in leg.charge && leg.charge.costProvenance === 'estimate' && (leg.charge.currencyCode ?? leg.charge.currency) === group.currency))} unit={group.currency} />)}
       {result.costs.unknownCurrency ? <Text className="muted">{result.costs.unknownCurrency} 条费用币种未知，未并入合计</Text> : null}
     </View>
@@ -294,8 +298,10 @@ export default function InsightsPage() {
         <MetricValue label="配对电池充入量" value={group.energyKwh} unit="kWh" /><MetricValue label="平均每度" value={costAmount(group.perKwh, estimateIn(group.currency))} unit={`${group.currency}/kWh`} /></View>
         <Text className="muted">费用已知 {group.known}/{group.total} 条；单位电量费用只用同次充电的费用与合格电池充入量。</Text>
         {estimateIn(group.currency) ? <Text className="muted">≈ 包含按默认电价估算的费用。</Text> : null}
+        <View hidden={costTab !== 'details'}>
         <Text className="section-title">月度明细</Text>{group.months.map(month => <View className="insight-table-row" key={month.month}><Text>{month.month}</Text><Text>{costAmount(month.cost, estimateIn(group.currency, month.month)) ?? '未知'} {group.currency}</Text><Text className="muted">AC {costAmount(month.ac, estimateIn(group.currency, month.month)) ?? '未知'} / DC {costAmount(month.dc, estimateIn(group.currency, month.month)) ?? '未知'} / 模式未知 {costAmount(month.unknownMode, estimateIn(group.currency, month.month)) ?? '无'} {group.currency}</Text></View>)}
         <Text className="section-title">热门充电地点</Text>{group.locations.length ? group.locations.map(location => <View className="insight-table-row" key={location.address}><Text>{location.address}</Text><Text>{costAmount(location.cost, estimateIn(group.currency, undefined, location.address)) ?? '未知'} {group.currency} · {location.count} 次</Text></View>) : <Text className="muted">未提供地点报告</Text>}
+        </View>
       </View>)}
     </> : null}
       {car && kind === 'cost' && tariff ? <View className="card"><SectionHeading icon="settings" title="自定义费率估算" /><Text className="muted">只估算缺少实际账单的充电；按保存费率时的本机时区（{tariff.timeZone || '未记录'}）与均匀AC输入电量估算，不写回实际费用。</Text>

@@ -77,6 +77,7 @@ export default function AnalysisPage() {
     setCurveTab(has(point => point.speedKmh) ? 'speed' : has(point => point.powerKw) ? 'power' : has(point => point.batteryLevel) ? 'soc' : has(point => point.elevationM) ? 'elevation' : 'speed')
   }, [evidence])
   const [efficiencyShown, setEfficiencyShown] = useState(10)
+  const [efficiencyTab, setEfficiencyTab] = useState<'overview' | 'distribution' | 'records'>('overview')
   const evidenceEpoch = useRef<number | null>(null)
   const requestEpoch = useRef(0), detailEpoch = useRef(0), selectedStable = useRef<string | null>(null), pageVisible = useRef(false)
   const owner = useRef<{ user: string; origin: string; generation: number; epoch: number } | null>(null)
@@ -397,12 +398,21 @@ export default function AnalysisPage() {
       <View className="card analysis-headline"><SectionHeading icon="energy" title="平均能耗" /><MetricValue label="平均能耗" value={efficiencyTotals.efficiency.value} unit="kWh/100km" icon="energy" negative={(efficiencyTotals.efficiency.value ?? 0) < 0} /><Text className="muted">配对覆盖 {efficiencyTotals.efficiency.known}/{efficiencyTotals.efficiency.total} 条，含估算 {efficiencyTotals.efficiency.estimated} 条；按合格净能量/同条正里程加权。</Text></View>
       <View className="card"><View className="subpage-summary-strip metric-grid"><MetricValue label="合格行程" value={driveCount == null ? null : efficiencyTotals.efficiency.known} unit="次" icon="route" /><MetricValue label="已知距离" value={efficiencyTotals.distance.value} unit="km" icon="distance" /></View></View>
       <GroupBars title="能耗趋势" groups={efficiencyMonthly} metric="efficiency" />
+      <View className="detail-tabs history-date-chips">
+        {([['overview', '概览'], ['distribution', '分布'], ['records', '记录']] as const).map(([key, label]) => <Button key={key} className={`history-chip detail-tab ${efficiencyTab === key ? 'history-chip-selected' : ''}`} onClick={() => setEfficiencyTab(key)}>{label}</Button>)}
+      </View>
+      <View hidden={efficiencyTab !== 'overview'}>
       <View className="card"><SectionHeading icon="clock" title="时间窗口" /><View className="metric-grid">{[{ label: '近90天', rows: efficiencyDrives.filter(row => { const at = Date.parse(row.startDate ?? ''), now = Date.now(); return at >= now - 90 * 86400000 && at <= now }) },
         { label: '夏季（6–8月）', rows: efficiencyDrives.filter(row => [6, 7, 8].includes(new Date(row.startDate ?? '').getMonth() + 1)) }, { label: '冬季（12–2月）', rows: efficiencyDrives.filter(row => [12, 1, 2].includes(new Date(row.startDate ?? '').getMonth() + 1)) }].map(window => <MetricValue key={window.label} label={window.label} value={aggregateDriveHistory(window.rows).efficiency.value} unit="kWh/100km" icon="energy" />)}</View></View>
+      </View>
+      <View hidden={efficiencyTab !== 'distribution'}>
       <View className="card"><SectionHeading icon="chart" title="个人历史位置" /><View className="metric-grid"><MetricValue label="最低能耗" value={distribution.min} unit="kWh/100km" /><MetricValue label="中位数" value={distribution.median} unit="kWh/100km" /><MetricValue label="最高能耗" value={distribution.max} unit="kWh/100km" /></View><Text className="muted">合格样本 {distribution.count} 段；仅比较本车当前范围，不代表公开车型排名。</Text></View>
       <View className="card"><SectionHeading icon="speed" title="按行程平均速度" />{efficiencySpeedGroups(efficiencyDrives).map(group => <MetricValue key={group.label} label={`${group.label} · ${group.known}条`} value={group.value} unit="kWh/100km" />)}<Text className="muted">平均速度仅由该条合格距离/有效时长计算，不把峰值当平均速度。</Text></View>
+      </View>
+      <View hidden={efficiencyTab !== 'records'}>
       <View className="card"><SectionHeading icon="route" title="个人行程记录" />{distribution.trips.slice(0, efficiencyShown).map(trip => <View key={historyRowKey(trip.row)}><Text className="muted">P{trip.percentile} · {shown(trip.value, 'kWh/100km')}</Text><View className="analysis-percentile-track"><View style={{ width: `${trip.percentile}%` }} /></View>{driveRows([trip.row])}</View>)}<Text className="muted">百分位来自当前合格行程能耗分布；数值越高表示能耗越高，不能作为车型公开排名。</Text></View>
 {distribution.trips.length > efficiencyShown ? <Button className="button-secondary" onClick={() => setEfficiencyShown(previous => previous + 10)}>查看更多行程（{Math.min(efficiencyShown, distribution.trips.length)}/{distribution.trips.length}）</Button> : null}
+      </View>
     </> : null}
     {car && kind === 'timeline' ? <View className="analysis-timeline"><SectionHeading icon="timeline" title="行程与充电" /><View className="history-date-chips">{[{ key: 'all', label: '全部' }, { key: 'drive', label: '行程' }, { key: 'charge', label: '充电' }, { key: 'parked', label: '驻车窗口' }].map(choice => <Button key={choice.key} className="history-chip" onClick={() => setEventKind(choice.key as typeof eventKind)}>{choice.label}</Button>)}</View>
       {events.map((event, index) => <View key={`${event.kind}:${event.kind === 'parked' ? `${event.row.olderId}:${event.row.newerId}` : event.row.id}`} className="timeline-group">

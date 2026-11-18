@@ -152,6 +152,8 @@ export default function ChargesPage() {
   }
   const [selectedEvidence, setSelectedEvidence] = useState<ChargeEvidence | null>(null)
   const [curveSampleIndex, setCurveSampleIndex] = useState(0)
+  const [detailNotesOpen, setDetailNotesOpen] = useState(false)
+  const [detailTab, setDetailTab] = useState<'battery' | 'power' | 'curves'>('battery')
   const selectedIdRef = useRef<string | null>(null)
   useEffect(() => {
     selectedIdRef.current = selected?.id ?? null
@@ -863,6 +865,11 @@ export default function ChargesPage() {
           {detailCoordinate ? <View className="card charge-detail-map-card"><Text className="section-title">充电地点</Text>
             {mapFailed ? <Text className="muted">地图暂时无法载入</Text> : <TaroMap className="charge-detail-map" latitude={detailCoordinate.latitude} longitude={detailCoordinate.longitude} scale={15} showLocation={false} markers={[{ id: 1, ...detailCoordinate, iconPath: '/assets/tabs/energy-selected.png', width: 24, height: 24 }]} onError={() => setMapFailed(true)} />}
             <Text className="muted">仅展示本次在线详情返回的有效位置。</Text></View> : null}
+          <View className="card detail-panel">
+            <View className="detail-tabs history-date-chips">
+              {([['battery', '电量'], ['power', '功率'], ['curves', '曲线']] as const).map(([key, label]) => <Button key={key} className={`history-chip detail-tab ${detailTab === key ? 'history-chip-selected' : ''}`} onClick={() => setDetailTab(key)}>{label}</Button>)}
+            </View>
+            <View hidden={detailTab !== 'battery'}>
           <Text className="section-title">电量</Text>
           <View className="telemetry-metric-strip metric-grid">
             <MetricValue label="电池充入" value={selected.energyAddedKwh} unit="kWh" icon="battery" />
@@ -874,6 +881,8 @@ export default function ChargesPage() {
             <MetricValue label="起始SOC" value={selected.startBatteryLevel} unit="%" />
             <MetricValue label="结束SOC" value={selected.endBatteryLevel} unit="%" />
           </View> : <Text className="muted detail-empty-line">本次记录未提供起止电量。</Text>}
+            </View>
+            <View hidden={detailTab !== 'power'}>
           <View className="section-header-row">
             <Text className="section-title">功率</Text>
             <Text
@@ -929,7 +938,8 @@ export default function ChargesPage() {
               </View>
             </>
           })()}
-          <Text className="muted detail-empty-line">仅基于本次响应的有效采样：功率 {powerStats.count} / 电压 {voltageStats.count} / 电流 {currentStats.count} / 温度 {temperatureStats.count} 点；缺失不补0，均值为样本均值。</Text>
+            </View>
+            <View hidden={detailTab !== 'curves'}>
           {(() => {
             const points = selectedEvidence?.points ?? []
             const socPoints = points.filter(point => point.batteryLevel != null && Number.isFinite(point.batteryLevel))
@@ -944,7 +954,16 @@ export default function ChargesPage() {
               {temperatureStats.count > 0 ? <EvidenceCurve id="charge-detail-temperature" title="环境温度" unit="°C" points={selectedEvidence.points} valueOf={point => point.temperatureC} provenanceOf={point => chargeCurveProvenance(point, 'temperatureC')} forceDisconnected={selectedEvidence.hasUnplaceableSamples} selected={curveSampleIndex} onSelect={setCurveSampleIndex} isCurrent={() => detailContext.current?.row === selected} /> : null}
             </>
           })()}
-          {selected.qualityState ? <Text className="muted">记录质量：{MOCK_FIXTURE_ENABLED && selected.source === 'mock_fixture' && selected.qualityState === 'observed' ? '合成观测' : qualityLabel(selected.qualityState)}</Text> : null}
+            </View>
+          <View className="detail-notes">
+            <Button className="readiness-toggle" ariaLabel={detailNotesOpen ? '收起数据说明' : '展开数据说明'} onClick={() => setDetailNotesOpen(value => !value)}>数据说明 {detailNotesOpen ? '−' : '+'}</Button>
+            <View hidden={!detailNotesOpen}>
+              <Text className="muted detail-empty-line">仅基于本次响应的有效采样：功率 {powerStats.count} / 电压 {voltageStats.count} / 电流 {currentStats.count} / 温度 {temperatureStats.count} 点；缺失不补0，均值为样本均值。</Text>
+              {selected.qualityState ? <Text className="muted">记录质量：{MOCK_FIXTURE_ENABLED && selected.source === 'mock_fixture' && selected.qualityState === 'observed' ? '合成观测' : qualityLabel(selected.qualityState)}</Text> : null}
+              <Text className="muted">曲线只绘制有有效采样的通道；缺失采样不补0，也不从功率或电压反推充入电量。</Text>
+            </View>
+          </View>
+          </View>
           {cacheWarning ? <Text className="error">当前详情尚未保存到本机。</Text> : null}
           {error ? <Text className="error">{error}</Text> : null}
         </View>
