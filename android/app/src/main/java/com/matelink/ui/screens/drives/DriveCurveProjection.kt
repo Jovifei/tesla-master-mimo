@@ -23,14 +23,19 @@ internal fun projectDriveCurves(detail: DriveDetail): DriveCurveProjection {
     val positions = detail.positions.orEmpty()
     val start = parseIsoInstant(detail.startDate)?.toEpochMilli()
     val end = parseIsoInstant(detail.endDate)?.toEpochMilli()
-    fun series(value: (DrivePosition) -> Double?) = projectTimedChartSeries(positions.mapIndexed { index, point ->
-        TimedChartSample(parseIsoInstant(point.date)?.toEpochMilli(), value(point), index)
-    }, start, end)
-    val speed = series { point -> point.speed?.takeIf { detail.hasKnownLengthUnit && it.isFinite() && it >= 0.0 } }
+    fun series(value: (DrivePosition) -> Double?, maxGapMs: Long = 60_000L) =
+        projectTimedChartSeries(positions.mapIndexed { index, point ->
+            TimedChartSample(parseIsoInstant(point.date)?.toEpochMilli(), value(point), index)
+        }, start, end, maxGapMs)
+    // Speed and power stay a continuous observed line; a long sampler gap is
+    // not a reason to break the visual series. Missing values still break it.
+    val speed = series({ point ->
+        point.speed?.takeIf { detail.hasKnownLengthUnit && it.isFinite() && it >= 0.0 }
+    }, Long.MAX_VALUE / 4)
     return DriveCurveProjection(speed, integratedDistanceCurve(positions, speed, detail.lengthUnit),
-        series { it.power?.takeIf(Double::isFinite) },
-        series { it.batteryLevel?.takeIf { soc -> soc in 0..100 }?.toDouble() },
-        series { it.elevation?.toDouble() })
+        series({ it.power?.takeIf(Double::isFinite) }, Long.MAX_VALUE / 4),
+        series({ it.batteryLevel?.takeIf { soc -> soc in 0..100 }?.toDouble() }),
+        series({ it.elevation?.toDouble() }))
 }
 
 internal fun timedDriveCurveLabel(series: TimedChartSeries, fraction: Float, is24Hour: Boolean): String =

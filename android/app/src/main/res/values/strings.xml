@@ -253,6 +253,7 @@
     <string name="snapshot_source_asleep">Vehicle Asleep</string>
     <string name="status_unknown">Unknown</string>
     <string name="battery_history_navigation_note">View recorded battery history and capacity details</string>
+    <string name="battery_history_expand_note">Tap to show the local hourly battery record</string>
     <string name="vehicle_model_3">Model 3</string>
     <string name="vehicle_model_y">Model Y</string>
     <string name="vehicle_model_s">Model S</string>
@@ -1036,6 +1037,16 @@
     <string name="chart_drives_per_month">Drives/Month</string>
     <string name="chart_drives_per_week">Drives/Week</string>
     <string name="chart_energy_per_day">Daily charging energy</string>
+    <string name="charge_heatmap_title">7-day charging heatmap</string>
+    <string name="charge_heatmap_empty">No charging sessions in the last 7 days.</string>
+    <string name="charge_heatmap_selected">%1$s · %2$.1f kWh</string>
+    <string name="charge_heatmap_info">Each dot is one charging session. Dot color and size show how much energy that session added; tap a dot to see its kWh. Time runs from 00 to 24 vertically. Only returned sessions inside the current filters are shown; a missing record does not prove that no charging happened.</string>
+    <string name="charge_heatmap_older">Older 7 days</string>
+    <string name="charge_heatmap_newer">Newer 7 days</string>
+    <string name="charge_soc_trend_title">7-day battery trend</string>
+    <string name="charge_soc_trend_empty">No hourly battery observations in the last 7 days yet.</string>
+    <string name="charge_soc_trend_selected">%1$s · %2$d%%</string>
+    <string name="charge_soc_trend_info">Hourly points come from the status polls the app already performs, plus start/end battery levels of returned drives and charges. At most one point per hour is kept. Samples are stored only on this device for 30 days. Gaps are connected with a solid line and are never filled with invented samples.</string>
     <string name="chart_energy_per_month">Monthly charging energy</string>
     <string name="chart_energy_per_week">Weekly charging energy</string>
     <string name="chart_speed_per_day">Speed/Day</string>
@@ -1196,6 +1207,9 @@
     <string name="record_top_speed">Top Speed</string>
     <string name="regions_visited_title">Regions Visited</string>
     <string name="route_map">Route Map</string>
+    <string name="drive_point_a">Origin</string>
+    <string name="drive_point_b">Destination</string>
+    <string name="drive_route_partial">Route geometry is incomplete; a dashed start-to-end guide is shown.</string>
     <string name="drive_route_points_insufficient">Only %1$d distinct valid GPS points were received; at least 2 are needed to draw the actual route.</string>
     <string name="search">Search</string>
     <string name="select_all">Select All</string>

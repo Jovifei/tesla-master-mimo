@@ -1,6 +1,9 @@
 package com.matelink.ui.screens.cost
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import com.matelink.ui.components.AnalysisColors
+import com.matelink.ui.components.analysisSurfaceBrush
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -298,10 +301,11 @@ private fun SummaryCard(
     value: String,
     subtitle: String
 ) {
+    val shape = RoundedCornerShape(16.dp)
     Card(
-        modifier = modifier,
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
+        modifier = modifier.background(analysisSurfaceBrush(AnalysisColors.Cost), shape),
+        shape = shape,
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
     ) {
         Column(
             modifier = Modifier.padding(16.dp),

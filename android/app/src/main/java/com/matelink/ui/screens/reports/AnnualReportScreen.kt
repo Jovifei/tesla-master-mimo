@@ -18,7 +18,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.Color
+import com.matelink.ui.components.AnalysisColors
+import com.matelink.ui.components.analysisSurfaceBrush
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -449,7 +453,12 @@ private fun SummaryCard(
     value: String,
     modifier: Modifier = Modifier
 ) {
-    ElevatedCard(modifier = modifier) {
+    val shape = RoundedCornerShape(12.dp)
+    ElevatedCard(
+        modifier = modifier.background(analysisSurfaceBrush(AnalysisColors.Annual), shape),
+        shape = shape,
+        colors = CardDefaults.elevatedCardColors(containerColor = Color.Transparent)
+    ) {
         Column(
             modifier = Modifier.padding(12.dp),
             horizontalAlignment = Alignment.CenterHorizontally

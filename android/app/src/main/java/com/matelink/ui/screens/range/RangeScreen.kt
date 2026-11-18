@@ -252,11 +252,14 @@ private fun PersonalizedRangeCard(uiState: RangeUiState) {
         )
     }
 
+    val shape = RoundedCornerShape(8.dp)
     Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(8.dp),
+        modifier = Modifier.fillMaxWidth().background(
+            com.matelink.ui.components.analysisSurfaceBrush(
+                com.matelink.ui.components.AnalysisColors.Range), shape),
+        shape = shape,
         border = BorderStroke(1.dp, SwissOutline),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -365,11 +368,14 @@ private fun AccuracySummaryCard(uiState: RangeUiState) {
         else -> AccuracyRed
     }
 
+    val shape = RoundedCornerShape(8.dp)
     Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(8.dp),
+        modifier = Modifier.fillMaxWidth().background(
+            com.matelink.ui.components.analysisSurfaceBrush(
+                com.matelink.ui.components.AnalysisColors.Range), shape),
+        shape = shape,
         border = BorderStroke(1.dp, SwissOutline),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
     ) {
         Column(
             modifier = Modifier.padding(16.dp)

@@ -55,7 +55,7 @@ class TpmsCloudSafetyTest {
             TpmsStateRepository(TpmsStateDataStore(HistoryMemoryPreferences()),f.vehicleContexts),f.settings,
             TpmsHistoryRepository(f.db.tpmsPressureSampleDao(),f.vehicleContexts),custom,
             TpmsTrendNotificationManager(f.context),f.vehicleContexts,rules,
-            SettingsRepository(f.context))
+            SettingsRepository(f.context),SocHistoryStore(f.db.socSampleDao()))
     }
 
     @Test fun actualCloudWorkerNeverInvokesProviderFacingHttpEvenWithoutSelfHostedUrl() = runBlocking(Dispatchers.IO) {

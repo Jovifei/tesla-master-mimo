@@ -15,7 +15,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.foundation.background
 import androidx.compose.ui.graphics.Color
+import com.matelink.ui.components.AnalysisColors
+import com.matelink.ui.components.analysisSurfaceBrush
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -395,10 +398,11 @@ private fun StatCard(
     label: String,
     value: String
 ) {
+    val shape = RoundedCornerShape(16.dp)
     Card(
-        modifier = modifier,
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
+        modifier = modifier.background(analysisSurfaceBrush(AnalysisColors.Energy), shape),
+        shape = shape,
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Text(

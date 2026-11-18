@@ -203,7 +203,8 @@ class DashboardViewModel @Inject constructor(
     private val driveSummaryDao: com.matelink.data.local.dao.DriveSummaryDao,
     private val chargeSummaryDao: com.matelink.data.local.dao.ChargeSummaryDao,
     private val clock: Clock,
-    private val tpmsReceiptCollector: DashboardTpmsReceiptCollector
+    private val tpmsReceiptCollector: DashboardTpmsReceiptCollector,
+    private val socHistoryStore: com.matelink.data.local.SocHistoryStore
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(DashboardUiState())
@@ -434,6 +435,16 @@ class DashboardViewModel @Inject constructor(
 
                 val historyCarId = cacheContext?.localHistoryCarId
                     ?: resolveLocalHistoryCarId(effectiveCarId)
+                // Record only an actually observed status, never the synthetic fallback below.
+                liveStatus?.batteryLevel?.let { soc ->
+                    try {
+                        socHistoryStore.record(historyCarId, soc, clock.millis(), "status")
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (_: Exception) {
+                        // Optional local SOC history must not break the dashboard.
+                    }
+                }
 
                 val latestDrive = runCatching {
                     driveSummaryDao.getLatestWithEndAddress(historyCarId)

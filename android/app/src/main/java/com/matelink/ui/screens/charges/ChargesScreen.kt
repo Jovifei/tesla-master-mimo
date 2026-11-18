@@ -422,13 +422,10 @@ private fun ChargesContent(
         }
 
         item(key = "charge_history_window") {
-            Column(Modifier.padding(horizontal = 4.dp, vertical = 4.dp)) {
-                Text(stringResource(R.string.ui_charge_returned_count, charges.size),
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                if (selectedDateFilter == DateFilter.CUSTOM && customEndDate?.isBefore(LocalDate.now()) == true) {
-                    Text(stringResource(R.string.ui_charge_fixed_end, customEndDate.toString()),
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
                 TextButton(onClick = {
                     onChargeTypeFilterSelected(ChargeTypeFilter.ALL)
                     onCostFilterSelected(CostFilter.ALL)
@@ -437,7 +434,7 @@ private fun ChargesContent(
                 }) { Text(stringResource(R.string.ui_charge_view_recent)) }
             }
         }
-        // One daily energy calendar; summaries keep their existing calculations.
+        // The established daily charge heatmap remains the charge-page visual.
         if (chartData.isNotEmpty()) {
             item {
                 ChargesChartsPager(

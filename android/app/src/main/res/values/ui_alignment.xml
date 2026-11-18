@@ -1,3 +1,5 @@
 <resources>
+    <string name="ui_day_items_count">%1$d items</string>
+    <string name="ui_day_no_activity_short">No records</string>
     <string name="ui_day_swipe_horizontal">Swipe the date header left / right · tap an exposed date to raise or collapse it</string>
 </resources>

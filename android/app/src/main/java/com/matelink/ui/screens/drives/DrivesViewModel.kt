@@ -33,8 +33,12 @@ import com.matelink.data.repository.UnifiedHistoryRepository
 import com.matelink.data.repository.VerifiedHistoryReadContext
 import com.matelink.data.repository.canEnrichPower
 import com.matelink.data.repository.driveAddressTargets
-import com.matelink.data.repository.driveSourceReceiptDigest
+import com.matelink.data.repository.driveAddressReceiptDigest
+import com.matelink.data.repository.displayAddressIdentity
 import com.matelink.data.repository.enrichDriveAddressesIncrementally
+import com.matelink.data.repository.needsDriveAddressLabel
+import com.matelink.data.repository.validDriveCoordinates
+import com.matelink.domain.map.driveBoundaryCoordinates
 import com.matelink.data.repository.resetCompletedDriveAddressAttempts
 import com.matelink.data.repository.enrichDriveHistoryEnergy
 import com.matelink.data.repository.matchesHistoryIdentity
@@ -338,6 +342,8 @@ class DrivesViewModel @Inject constructor(
     private val attemptedEnergy = mutableMapOf<DriveEnergyAttemptKey, Any>()
     private val attemptedAddresses = mutableMapOf<DriveAddressKey, Any>()
     private val resolvedAddresses = mutableMapOf<DriveAddressKey, String>()
+    private val endpointCoordinates =
+        mutableMapOf<Triple<Int, String?, String?>, Pair<Pair<Double, Double>?, Pair<Double, Double>?>>()
     private val displayedAddressReceipts = mutableMapOf<Int, String>()
     private val drivePublicationLock = Any()
     @Volatile private var screenActive = true
@@ -346,6 +352,11 @@ class DrivesViewModel @Inject constructor(
         private const val MIN_DURATION_MINUTES = 1
         private const val MIN_ROUTE_DISTANCE_KM = 0.2
         private const val MAX_ENERGY_CANDIDATES = 100
+        // The list endpoint may omit endpoints; the newest few details supply them.
+        private const val MAX_ENDPOINT_DETAIL_LOOKUPS = 8
+        private const val MAX_ENDPOINT_CACHE_LOOKUPS = 12
+        private const val CACHED_DETAIL_TIMEOUT_MS = 2_500L
+        private const val REMOTE_DETAIL_TIMEOUT_MS = 6_000L
 
         // Weak networks can leave the cloud history request hanging for minutes;
         // 20s is slower than any healthy request but earlier than a user gives up.
@@ -396,6 +407,7 @@ class DrivesViewModel @Inject constructor(
                 filterEnrichment?.cancel()
                 resetCompletedDriveAddressAttempts(attemptedAddresses)
                 resolvedAddresses.clear()
+                endpointCoordinates.clear()
                 displayedAddressReceipts.clear()
                 metricsObservation?.cancel()
                 observationGeneration++
@@ -427,6 +439,7 @@ class DrivesViewModel @Inject constructor(
         filterEnrichment?.cancel()
         resetCompletedDriveAddressAttempts(attemptedAddresses)
         resolvedAddresses.clear()
+        endpointCoordinates.clear()
         displayedAddressReceipts.clear()
         metricsObservation?.cancel()
         observationGeneration++
@@ -634,7 +647,7 @@ class DrivesViewModel @Inject constructor(
             }
             synchronized(drivePublicationLock) {
                 displayedAddressReceipts.clear()
-                windowRows.forEach { row -> driveSourceReceiptDigest(row)?.let { displayedAddressReceipts[row.driveId] = it } }
+                windowRows.forEach { row -> driveAddressReceiptDigest(row)?.let { displayedAddressReceipts[row.driveId] = it } }
                 allDrives = windowRows.map { it.toAnalysisDriveData() }
                 _uiState.update { it.copy(
                     chartGranularity = determineGranularity(startDate, endDate),
@@ -755,7 +768,7 @@ class DrivesViewModel @Inject constructor(
                         allDrives = (acceptedRemote + allDrives + acceptedRows.map { it.toAnalysisDriveData() })
                             .distinctBy { it.driveId }
                         displayedAddressReceipts.clear()
-                        acceptedRows.forEach { row -> driveSourceReceiptDigest(row)?.let { displayedAddressReceipts[row.driveId] = it } }
+                        acceptedRows.forEach { row -> driveAddressReceiptDigest(row)?.let { displayedAddressReceipts[row.driveId] = it } }
                         _uiState.update {
                             it.copy(
                                 chartGranularity = granularity,
@@ -835,7 +848,6 @@ class DrivesViewModel @Inject constructor(
                     it.matchesDistanceFilter(state.distanceFilter)
             }.sortedByDescending { parseIsoInstant(it.startDate) }.toList()
         }
-        val targets = driveAddressTargets(candidates, rows, proof.context)
         addressEnrichment = viewModelScope.launch {
             withTimeoutOrNull(250L) { previous?.join() }
             suspend fun checkScope() {
@@ -846,12 +858,41 @@ class DrivesViewModel @Inject constructor(
                     !screenActive || generation != observationGeneration || carId != proof.context.remoteApiCarId)
                     throw CancellationException("Drive history identity changed")
             }
+            // TeslaMate's list receipt can omit start/end coordinates even though the
+            // detail carries them. Backfill the newest missing endpoints from the
+            // cached detail first, then a bounded number of live detail requests.
+            val withCoordinates = backfillEndpointCoordinates(
+                candidates, rows.associateBy { it.driveId }, proof, ::checkScope)
+            if (withCoordinates !== candidates) {
+                synchronized(drivePublicationLock) {
+                    if (screenActive && generation == observationGeneration &&
+                        carId == proof.context.remoteApiCarId) {
+                        val byId = withCoordinates.associateBy { it.driveId }
+                        var changed = false
+                        allDrives = allDrives.map { existing ->
+                            val next = byId[existing.driveId] ?: return@map existing
+                            if (!existing.matchesHistoryIdentity(next)) return@map existing
+                            val updated = existing.copy(
+                                startLatitude = existing.startLatitude ?: next.startLatitude,
+                                startLongitude = existing.startLongitude ?: next.startLongitude,
+                                endLatitude = existing.endLatitude ?: next.endLatitude,
+                                endLongitude = existing.endLongitude ?: next.endLongitude)
+                            if (updated != existing) changed = true
+                            updated
+                        }
+                        if (changed) applyFiltersAndUpdateState()
+                    }
+                }
+            }
+            val targets = driveAddressTargets(withCoordinates, rows, proof.context)
             suspend fun current(target: DriveAddressTarget): Boolean {
                 checkScope()
                 val row = driveSummaryDao.get(proof.context.localHistoryCarId, target.drive.driveId)
                 checkScope()
-                return row != null && row.verifiedDetailIdentity(proof.context)?.identityKey == target.key.identity &&
-                    driveSourceReceiptDigest(row) == target.key.receiptDigest
+                if (row == null || driveAddressReceiptDigest(row) != target.key.receiptDigest) return false
+                val verified = row.verifiedDetailIdentity(proof.context)?.identityKey
+                return verified == target.key.identity ||
+                    (verified == null && displayAddressIdentity(row, proof.context) == target.key.identity)
             }
             val cached = mutableMapOf<String, MutableList<DriveAddressTarget>>()
             for (target in targets) {
@@ -897,6 +938,72 @@ class DrivesViewModel @Inject constructor(
         }
     }
 
+    /**
+     * The list receipt is the authority for addresses, but it does not always carry
+     * endpoint coordinates. Fill only the missing ones, from the same drive's cached
+     * detail first and then from a bounded number of live detail reads. Coordinates
+     * are used for label lookup only; they are never written back as evidence.
+     */
+    private suspend fun backfillEndpointCoordinates(
+        drives: List<DriveData>,
+        rowsById: Map<Int, DriveSummary>,
+        proof: VerifiedHistoryReadContext,
+        ensureCurrent: suspend () -> Unit
+    ): List<DriveData> {
+        val store = historyDetailStore ?: return drives
+        var cacheLookups = MAX_ENDPOINT_CACHE_LOOKUPS
+        var remoteLookups = MAX_ENDPOINT_DETAIL_LOOKUPS
+        var changed = false
+        val result = drives.map { drive ->
+            val needStart = drive.startAddress.needsDriveAddressLabel() &&
+                !validDriveCoordinates(drive.startLatitude, drive.startLongitude)
+            val needEnd = drive.endAddress.needsDriveAddressLabel() &&
+                !validDriveCoordinates(drive.endLatitude, drive.endLongitude)
+            if (!needStart && !needEnd) return@map drive
+            val cacheKey = Triple(drive.driveId, drive.startDate, drive.endDate)
+            val cached = endpointCoordinates[cacheKey]
+            var startCoordinate = if (needStart) cached?.first else null
+            var endCoordinate = if (needEnd) cached?.second else null
+            if ((needStart && startCoordinate == null) || (needEnd && endCoordinate == null)) {
+                ensureCurrent()
+                val identity = rowsById[drive.driveId]?.verifiedDetailIdentity(proof.context)
+                if (identity != null && cacheLookups > 0) {
+                    cacheLookups--
+                    val detail = withTimeoutOrNull(CACHED_DETAIL_TIMEOUT_MS) {
+                        store.readDrive(identity)
+                    }?.detail
+                    if (detail != null) {
+                        startCoordinate = startCoordinate ?: driveBoundaryCoordinates(detail, true)
+                        endCoordinate = endCoordinate ?: driveBoundaryCoordinates(detail, false)
+                    }
+                }
+                if (((needStart && startCoordinate == null) || (needEnd && endCoordinate == null)) &&
+                    remoteLookups > 0 && proof.remoteAuthorized) {
+                    remoteLookups--
+                    val remote = withTimeoutOrNull(REMOTE_DETAIL_TIMEOUT_MS) {
+                        repository.getDriveDetail(proof.context.remoteApiCarId, drive.driveId)
+                    }
+                    val detail = (remote as? ApiResult.Success)?.data
+                    if (detail != null) {
+                        startCoordinate = startCoordinate ?: driveBoundaryCoordinates(detail, true)
+                        endCoordinate = endCoordinate ?: driveBoundaryCoordinates(detail, false)
+                    }
+                }
+                if (startCoordinate != null || endCoordinate != null) {
+                    endpointCoordinates[cacheKey] = startCoordinate to endCoordinate
+                }
+            }
+            val updated = drive.copy(
+                startLatitude = drive.startLatitude ?: startCoordinate?.first,
+                startLongitude = drive.startLongitude ?: startCoordinate?.second,
+                endLatitude = drive.endLatitude ?: endCoordinate?.first,
+                endLongitude = drive.endLongitude ?: endCoordinate?.second)
+            if (updated != drive) changed = true
+            updated
+        }
+        return if (changed) result else drives
+    }
+
     private fun adoptDriveHistoryProof(proof: VerifiedHistoryReadContext, baselines: MutableMap<Int, DriveSummary>) {
         val previous = activeHistoryProof
         val changed = previous != null && (previous.scope != proof.scope ||
@@ -906,6 +1013,7 @@ class DrivesViewModel @Inject constructor(
             metricsObservation?.cancel()
             resetCompletedDriveAddressAttempts(attemptedAddresses)
             resolvedAddresses.clear()
+            endpointCoordinates.clear()
             displayedAddressReceipts.clear()
             allDrives = emptyList()
             baselines.clear()
@@ -928,7 +1036,7 @@ class DrivesViewModel @Inject constructor(
         metricsObservation?.cancel()
         metricsObservation = viewModelScope.launch {
             val observed = synchronized(drivePublicationLock) {
-                baselines.mapNotNull { (id, row) -> driveSourceReceiptDigest(row)?.let { id to it } }.toMap().toMutableMap()
+                baselines.mapNotNull { (id, row) -> driveAddressReceiptDigest(row)?.let { id to it } }.toMap().toMutableMap()
             }
             val energySignals = Channel<List<DriveSummary>>(Channel.CONFLATED)
             var firstEnergySnapshot = initialEnergy
@@ -957,7 +1065,7 @@ class DrivesViewModel @Inject constructor(
                         val compatible = admitLiveDriveRows(rows, proof.context.localHistoryCarId, baselines)
                         val cached = compatible.associateBy { it.driveId }
                         val nextAddressReceipts = compatible.mapNotNull { row ->
-                            driveSourceReceiptDigest(row)?.let { row.driveId to it }
+                            driveAddressReceiptDigest(row)?.let { row.driveId to it }
                         }.toMap()
                         changed = nextAddressReceipts.any { (driveId, digest) -> observed[driveId] != digest }
                         observed.putAll(nextAddressReceipts)

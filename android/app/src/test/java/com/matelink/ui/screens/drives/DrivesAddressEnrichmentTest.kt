@@ -270,4 +270,55 @@ class DrivesAddressEnrichmentTest {
             withTimeout(5_000) { while (active.get() != 0) delay(10) }
         }
     }
+
+    @Test
+    fun sourceLessPositiveDriveStillGetsDisplayAddressTargets() {
+        val drive = DriveData(
+            driveId = 42,
+            startDate = "2026-11-18T12:44:00Z",
+            endDate = "2026-11-18T12:52:00Z",
+            startLatitude = 30.28,
+            startLongitude = 120.05,
+            endLatitude = 30.30,
+            endLongitude = 120.08
+        )
+        val row = com.matelink.data.local.entity.DriveSummary(
+            driveId = 42,
+            carId = 1,
+            startDate = drive.startDate!!,
+            endDate = drive.endDate!!,
+            durationMin = 8,
+            startAddress = "",
+            endAddress = "",
+            distance = 3.6,
+            speedMax = 80,
+            speedAvg = 27,
+            powerMax = 118,
+            powerMin = -68,
+            startBatteryLevel = 41,
+            endBatteryLevel = 39,
+            outsideTempAvg = null,
+            insideTempAvg = null,
+            energyConsumed = null,
+            efficiency = null,
+            apiEvidence = com.matelink.domain.analytics.HistorySummaryEvidenceCodec.encode(drive),
+            qualityState = "complete"
+        )
+        val context = com.matelink.data.local.VehicleContext(
+            remoteApiCarId = 1,
+            stableIdentity = "stable",
+            localHistoryCarId = 1,
+            connectionSource = com.matelink.data.local.HistoryConnectionSource.SELF_HOSTED,
+            serverIdentity = "server"
+        )
+
+        val targets = com.matelink.data.repository.driveAddressTargets(listOf(drive), listOf(row), context)
+
+        // No provider source means no verified detail identity; display labels must
+        // still resolve the real endpoints from the row's own coordinates.
+        assertEquals(2, targets.size)
+        assertTrue(targets.all { it.key.identity.startsWith("display:") })
+        assertEquals(30.28, targets[0].key.latitude, 0.0001)
+        assertEquals(120.08, targets[1].key.longitude, 0.0001)
+    }
 }

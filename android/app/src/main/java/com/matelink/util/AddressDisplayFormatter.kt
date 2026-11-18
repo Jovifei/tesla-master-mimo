@@ -257,13 +257,53 @@ private fun normalizeAdminName(name: String?): String? {
  * - If same province but different cities, hides province only, keeping city & beyond.
  * - If across different provinces, shows full addresses with province.
  */
+/**
+ * A-to-B is a place/area transition, not a street corridor. Prefer a named
+ * neighbourhood/POI (mall, school, community, park, hospital) and only fall
+ * back to the street when no area token exists.
+ */
+fun String?.toAreaDisplayName(): String? {
+    val clean = this?.toChineseDisplayAddress()?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+    // Synthetic/English addresses have no Chinese area vocabulary; keep them intact.
+    if (clean.none { it in '一'..'鿿' }) return null
+    val tokens = Regex("[\\s,，·]+").split(clean).map(String::trim).filter(String::isNotEmpty)
+    if (tokens.isEmpty()) return null
+    val road = Regex("(?:路|街|道|巷|弄|大道|胡同|公路)$")
+    val admin = Regex("(?:省|市|区|县|镇|乡)$")
+    val poi = listOf("广场", "小区", "花园", "学校", "大学", "学院", "医院", "中心", "大厦",
+        "公寓", "园区", "科技园", "商城", "商场", "苑", "府", "里", "社区", "酒店",
+        "便利店", "超市", "公园", "车站", "机场", "体育馆", "图书馆")
+    tokens.firstOrNull { token ->
+        !admin.containsMatchIn(token) && poi.any(token::contains)
+    }?.let { return it }
+    tokens.firstOrNull { token ->
+        !road.containsMatchIn(token) && !admin.containsMatchIn(token) &&
+            token.any { it in '一'..'鿿' }
+    }?.let { return it }
+    return tokens.firstOrNull { !admin.containsMatchIn(it) } ?: clean
+}
+
+/** A bare road name is not a place-to-place endpoint when coordinates can be resolved. */
+fun String?.isStreetOnlyAddress(): Boolean {
+    val clean = this?.toChineseDisplayAddress()?.trim()?.takeIf { it.isNotEmpty() } ?: return false
+    if (clean.contains("未知")) return false
+    val road = Regex("(?:路|街|道|巷|弄|大道|胡同|公路)$")
+    return road.containsMatchIn(clean) && clean.toAreaDisplayName() == clean
+}
+
 fun formatRouteAddresses(
     startAddress: String?,
     endAddress: String?,
     fallback: String = ""
 ): Pair<String, String> {
-    val cleanStart = startAddress?.toChineseDisplayAddress() ?: fallback
-    val cleanEnd = endAddress?.toChineseDisplayAddress() ?: fallback
+    fun String?.routeAddress(): String? = this?.toChineseDisplayAddress()?.takeUnless {
+        it.equals("start", ignoreCase = true) || it.equals("end", ignoreCase = true)
+    }
+    val cleanStart = startAddress.routeAddress() ?: fallback
+    val cleanEnd = endAddress.routeAddress() ?: fallback
+    val areaStart = cleanStart.toAreaDisplayName() ?: cleanStart
+    val areaEnd = cleanEnd.toAreaDisplayName() ?: cleanEnd
+    if (areaStart != cleanStart || areaEnd != cleanEnd) return areaStart to areaEnd
     if (cleanStart.isBlank() || cleanEnd.isBlank()) {
         return cleanStart to cleanEnd
     }

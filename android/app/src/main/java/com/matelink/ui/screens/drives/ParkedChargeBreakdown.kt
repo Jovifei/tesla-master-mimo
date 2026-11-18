@@ -17,10 +17,20 @@ internal data class ParkedSourceProof(val source: String, val sourceInstanceId: 
 /** A numeric car/drive id and a time gap never prove two receipts share a collector. */
 internal fun sharedParkedSource(older: DriveData, newer: DriveData): ParkedSourceProof? {
     if (older.sourceRecordIdentity.conflicted || newer.sourceRecordIdentity.conflicted) return null
-    val source = older.source?.takeIf(String::isNotBlank) ?: return null
-    val instance = older.sourceInstanceId?.takeIf(String::isNotBlank) ?: return null
-    if (newer.source != source || newer.sourceInstanceId != instance) return null
-    return ParkedSourceProof(source, instance)
+    val olderSource = older.source?.takeIf(String::isNotBlank)
+    val olderInstance = older.sourceInstanceId?.takeIf(String::isNotBlank)
+    val newerSource = newer.source?.takeIf(String::isNotBlank)
+    val newerInstance = newer.sourceInstanceId?.takeIf(String::isNotBlank)
+    // Legacy self-hosted receipts can predate source metadata. Both adjacent
+    // rows then have no source/instance; they still share the local history
+    // namespace and remain eligible for a clearly-labelled local parked page.
+    if (olderSource == null && olderInstance == null &&
+        newerSource == null && newerInstance == null) {
+        return ParkedSourceProof("", "")
+    }
+    if (olderSource == null || olderInstance == null) return null
+    if (newerSource != olderSource || newerInstance != olderInstance) return null
+    return ParkedSourceProof(olderSource, olderInstance)
 }
 
 data class ParkedChargeSession(
@@ -59,7 +69,9 @@ internal fun ChargeSummary.toParkedLinkedCharge(proof: ParkedSourceProof): Linke
     val start = parseIsoInstant(startDate) ?: return null
     val end = parseIsoInstant(endDate)?.takeIf { it.isAfter(start) } ?: return null
     if (raw.chargeId != chargeId || raw.sourceRecordIdentity.conflicted ||
-        raw.source != proof.source || raw.sourceInstanceId != proof.sourceInstanceId ||
+        (if (proof.source.isBlank()) raw.source != null else raw.source != proof.source) ||
+            (if (proof.sourceInstanceId.isBlank()) raw.sourceInstanceId != null
+            else raw.sourceInstanceId != proof.sourceInstanceId) ||
         parseIsoInstant(raw.startDate) != start || parseIsoInstant(raw.endDate) != end) return null
     val safe = toAnalysisChargeData()
     return LinkedCharge(

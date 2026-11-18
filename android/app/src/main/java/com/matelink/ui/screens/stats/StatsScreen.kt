@@ -2034,12 +2034,14 @@ private fun StatsCard(
     palette: CarColorPalette,
     content: @Composable () -> Unit
 ) {
+    val shape = MaterialTheme.shapes.large
     Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.large,
+        modifier = Modifier.fillMaxWidth()
+            .background(com.matelink.ui.components.analysisSurfaceBrush(palette.accent), shape),
+        shape = shape,
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
         colors = CardDefaults.cardColors(
-            containerColor = palette.surface
+            containerColor = Color.Transparent
         )
     ) {
         Column(

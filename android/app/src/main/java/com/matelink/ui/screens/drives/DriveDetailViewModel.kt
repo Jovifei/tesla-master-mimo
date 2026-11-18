@@ -19,6 +19,8 @@ import com.matelink.data.repository.HistoryDetailPointSaveRejected
 import com.matelink.data.repository.persistVerifiedDriveDetail
 import com.matelink.data.repository.verifiedDetailIdentity
 import com.matelink.data.repository.historyIdentityUnavailableError
+import com.matelink.util.toAreaDisplayName
+import com.matelink.util.isStreetOnlyAddress
 import com.matelink.data.repository.TeslamateRepository
 import com.matelink.data.repository.WeatherPoint
 import com.matelink.data.repository.WeatherRepository
@@ -242,8 +244,9 @@ class DriveDetailViewModel @Inject constructor(
                     energy.coverageSeconds, energy.coverageRatio, resolvedEnergy.evidence))
                 checkContext()
                 _uiState.update { it.copy(isLoading = false, isRefreshing = false, driveDetail = detail, stats = stats, error = null) }
-                // Optional metadata, units and geocoding cannot delay energy publication.
+                // Optional metadata, units, addresses and weather cannot delay energy publication.
                 loadOptionalMetadata(detail, resolved)
+                loadAddressLabels(detail, resolved)
                 loadWeatherData(detail, resolved)
             } catch (e: CancellationException) {
                 throw e
@@ -290,6 +293,12 @@ class DriveDetailViewModel @Inject constructor(
         val detail = header?.copy(
             startAddress = summary.startAddress?.takeIf(String::isNotBlank) ?: header.startAddress,
             endAddress = summary.endAddress?.takeIf(String::isNotBlank) ?: header.endAddress,
+            // The list receipt still carries real endpoints when a sparse detail
+            // response has no positions; keep them for display and geocoding.
+            startLatitude = header.startLatitude ?: summary.startLatitude,
+            startLongitude = header.startLongitude ?: summary.startLongitude,
+            endLatitude = header.endLatitude ?: summary.endLatitude,
+            endLongitude = header.endLongitude ?: summary.endLongitude,
             durationMin = summary.durationMin ?: header.durationMin,
             durationStr = summary.durationStr ?: header.durationStr,
             odometerDetails = if (sameLength) summary.odometerDetails ?: header.odometerDetails else header.odometerDetails,
@@ -366,13 +375,14 @@ class DriveDetailViewModel @Inject constructor(
                         val refinedStats = calculateDriveDetailStats(currentDetail, presentDriveDetailEnergy(
                             e.energyKwh, e.efficiencyWhKm, e.source.name.lowercase(),
                             e.coverageSeconds, e.coverageRatio, published.evidence))
-                        _uiState.update { it.copy(stats = refinedStats, driveDetail = currentDetail) }
+                        _uiState.update { state -> state.copy(stats = refinedStats,
+                            // Address labels are resolved independently; a later metadata
+                            // refinement must not put A点/B点 back over them.
+                            driveDetail = currentDetail.copy(
+                                startAddress = state.driveDetail?.startAddress ?: currentDetail.startAddress,
+                                endAddress = state.driveDetail?.endAddress ?: currentDetail.endAddress)) }
                     }
                 }
-                val enriched = withTimeoutOrNull(3_000) { enrichAddresses(detail) } ?: return@launch
-                if (!isCurrent()) return@launch
-                _uiState.update { state -> state.copy(driveDetail = state.driveDetail?.copy(
-                    startAddress = enriched.startAddress, endAddress = enriched.endAddress)) }
             } catch (e: CancellationException) { throw e } catch (_: Exception) {
                 if (isCurrent())
                     _uiState.update { it.copy(historySyncWarning = "history_energy_cache_failed") }
@@ -380,18 +390,48 @@ class DriveDetailViewModel @Inject constructor(
         }
     }
 
-    private suspend fun enrichAddresses(detail: DriveDetail): DriveDetail {
-        suspend fun address(latitude: Double?, longitude: Double?, existing: String?): String? {
-            if (!existing.isNullOrBlank()) return existing
-            if (latitude == null || longitude == null) return null
-            return geocodingRepository.reverseGeocode(latitude, longitude)
+    /**
+     * Resolve each endpoint on its own budget and publish it as soon as it
+     * arrives. Addresses run beside optional metadata so they are not delayed
+     * by trip/status/health lookups, and a slow start never discards a valid end.
+     */
+    private fun loadAddressLabels(detail: DriveDetail, proof: VerifiedHistoryReadContext) {
+        viewModelScope.launch {
+            suspend fun isCurrent() = optionalDetailIsCurrent({ historyProof === proof },
+                { historyRepository.isContextCurrent(proof) })
+            try {
+                val first = com.matelink.domain.map.driveBoundaryCoordinates(detail, true)
+                val start = resolveDisplayAddress(first?.first, first?.second, detail.startAddress)
+                if (!isCurrent()) return@launch
+                if (start != null) _uiState.update { state -> state.copy(
+                    driveDetail = state.driveDetail?.copy(startAddress = start)) }
+                val last = com.matelink.domain.map.driveBoundaryCoordinates(detail, false)
+                val end = resolveDisplayAddress(last?.first, last?.second, detail.endAddress)
+                if (!isCurrent()) return@launch
+                if (end != null) _uiState.update { state -> state.copy(
+                    driveDetail = state.driveDetail?.copy(endAddress = end)) }
+            } catch (e: CancellationException) { throw e } catch (_: Exception) { }
         }
-        val first = com.matelink.domain.map.driveBoundaryCoordinates(detail, true)
-        val last = com.matelink.domain.map.driveBoundaryCoordinates(detail, false)
-        return detail.copy(
-            startAddress = address(first?.first, first?.second, detail.startAddress),
-            endAddress = address(last?.first, last?.second, detail.endAddress)
-        )
+    }
+
+    /**
+     * A real place label for one endpoint. A street-only provider string is upgraded
+     * to its AOI/neighbourhood when possible, but is never discarded in favour of
+     * "A点"/"B点" when the lookup is slow or unavailable.
+     */
+    private suspend fun resolveDisplayAddress(
+        latitude: Double?, longitude: Double?, existing: String?
+    ): String? {
+        val shown = existing?.trim()?.takeIf {
+            it.isNotEmpty() && !it.contains("未知") && !it.equals("unknown", ignoreCase = true) &&
+                !it.equals("start", ignoreCase = true) && !it.equals("end", ignoreCase = true)
+        }
+        val precise = shown?.takeIf { !it.isStreetOnlyAddress() }
+        if (precise != null) return precise.toAreaDisplayName() ?: precise
+        val resolved = if (latitude != null && longitude != null) {
+            withTimeoutOrNull(6_000) { geocodingRepository.reverseGeocode(latitude, longitude) }
+        } else null
+        return resolved?.toAreaDisplayName() ?: resolved ?: shown
     }
 
     private fun loadWeatherData(detail: DriveDetail, proof: VerifiedHistoryReadContext) {

@@ -2,6 +2,9 @@ package com.matelink.di
 
 import android.content.Context
 import androidx.room.Room
+import java.io.File
+import java.io.FileInputStream
+import java.nio.ByteBuffer
 import com.matelink.data.local.StatsDatabase
 import com.matelink.data.local.dao.AggregateDao
 import com.matelink.data.local.dao.ChargeCostOverrideDao
@@ -14,6 +17,7 @@ import com.matelink.data.local.dao.GeocodeQueueDao
 import com.matelink.data.local.dao.HistoryDetailDao
 import com.matelink.data.local.dao.SavedTripDao
 import com.matelink.data.local.dao.SentryAlertLogDao
+import com.matelink.data.local.dao.SocSampleDao
 import com.matelink.data.local.dao.SyncStateDao
 import com.matelink.data.local.dao.TripCountryCacheDao
 import com.matelink.data.local.dao.TripRouteCacheDao
@@ -34,6 +38,7 @@ object DatabaseModule {
     fun provideStatsDatabase(
         @ApplicationContext context: Context
     ): StatsDatabase {
+        snapshotBeforeMigration(context)
         return Room.databaseBuilder(
             context,
             StatsDatabase::class.java,
@@ -41,6 +46,52 @@ object DatabaseModule {
         )
             .addMigrations(*StatsDatabase.ALL_MIGRATIONS)
             .build()
+    }
+
+    /**
+     * Copy the existing database before Room runs a schema migration. The
+     * snapshot is app-private, replaces the previous snapshot (one copy), and
+     * is only made when the stored user_version is older than the current
+     * schema. New installations never create an empty backup.
+     */
+    private fun snapshotBeforeMigration(context: Context) {
+        val source = context.getDatabasePath(StatsDatabase.DATABASE_NAME)
+        if (!source.isFile) return
+        val version = readUserVersion(source)
+        if (version !in 1 until StatsDatabase.SCHEMA_VERSION) return
+        runCatching {
+            val dir = File(context.filesDir, "database_backups").apply { mkdirs() }
+            val target = File(dir, "${StatsDatabase.DATABASE_NAME}.pre-migration")
+            target.delete()
+            source.copyTo(target, overwrite = true)
+            listOf("-wal", "-shm").forEach { suffix ->
+                val part = File(source.path + suffix)
+                if (part.isFile) {
+                    File(target.path + suffix).delete()
+                    part.copyTo(File(target.path + suffix), overwrite = true)
+                }
+            }
+        }.onFailure {
+            // A failed best-effort snapshot must not block the normal migration.
+        }
+    }
+
+    private fun readUserVersion(file: File): Int {
+        return try {
+            FileInputStream(file).use { input ->
+                val header = ByteArray(100)
+                if (input.read(header) != header.size) return 0
+                ByteBuffer.wrap(header, 60, 4).int
+            }
+        } catch (_: Exception) {
+            0
+        }
+    }
+
+    @Provides
+    @Singleton
+    fun provideSocSampleDao(database: StatsDatabase): SocSampleDao {
+        return database.socSampleDao()
     }
 
     @Provides

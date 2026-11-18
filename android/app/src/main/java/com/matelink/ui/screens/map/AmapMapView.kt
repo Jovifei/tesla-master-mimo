@@ -37,7 +37,8 @@ private data class AmapMapContent(
     val polylinePoints: List<Pair<Double, Double>>,
     val polylineSegments: List<List<Pair<Double, Double>>>,
     val polylineColor: Int,
-    val zoom: Float
+    val zoom: Float,
+    val polylineDotted: Boolean = false
 )
 
 private class AmapMapHandle {
@@ -85,7 +86,8 @@ fun AmapNativeMapView(
     onLoading: () -> Unit = {},
     onLoaded: () -> Unit = {},
     onFailure: () -> Unit = {},
-    polylineSegments: List<List<Pair<Double, Double>>>? = null
+    polylineSegments: List<List<Pair<Double, Double>>>? = null,
+    polylineDotted: Boolean = false
 ) {
     val context = LocalContext.current
     val savedState = rememberSaveable { Bundle() }
@@ -112,7 +114,8 @@ fun AmapNativeMapView(
         polylinePoints = validPolyline,
         polylineSegments = validSegments,
         polylineColor = polylineColor.toArgb(),
-        zoom = zoom
+        zoom = zoom,
+        polylineDotted = polylineDotted
     )
 
     DisposableEffect(lifecycleOwner) {
@@ -188,6 +191,7 @@ private fun renderMapContent(handle: AmapMapHandle): Boolean {
                     .addAll(segment.map { LatLng(it.first, it.second) })
                     .color(content.polylineColor)
                     .width(18f)
+                    .setDottedLine(content.polylineDotted)
                     .lineJoinType(PolylineOptions.LineJoinType.LineJoinRound)
                     .lineCapType(PolylineOptions.LineCapType.LineCapRound)
             )

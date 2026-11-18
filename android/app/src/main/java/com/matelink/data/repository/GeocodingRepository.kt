@@ -4,6 +4,8 @@ import android.util.Log
 import com.matelink.data.api.NominatimApi
 import com.matelink.data.api.NominatimAddress
 import com.matelink.data.local.ConnectionModeStore
+import com.matelink.util.toAreaDisplayName
+import com.matelink.util.toChineseDisplayAddress
 import com.matelink.data.local.dao.GeocodeCacheDao
 import com.matelink.data.local.dao.GeocodeProgressDao
 import com.matelink.data.local.dao.GeocodeQueueDao
@@ -13,6 +15,7 @@ import com.matelink.data.local.entity.GeocodeQueueItem
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -65,6 +68,9 @@ class GeocodingRepository @Inject constructor(
     // Legacy in-memory caches (kept for backward compatibility with reverseGeocode)
     private val addressCache = ConcurrentHashMap<String, String>()
     private val locationCache = ConcurrentHashMap<String, GeocodedLocation>()
+    // OSM's public reverse endpoint allows one request per second.
+    private val nominatimMutex = kotlinx.coroutines.sync.Mutex()
+    @Volatile private var lastNominatimAt = 0L
 
     /**
      * Convert coordinate to grid cell.
@@ -273,8 +279,37 @@ class GeocodingRepository @Inject constructor(
         addressCache[cacheKey]?.let { return it }
         if (!isExternalAllowed()) return null
 
-        return amapReverseGeocoder.reverse(latitude, longitude)?.address?.also {
-            addressCache[cacheKey] = it
+        val fromAmap = amapReverseGeocoder.reverse(latitude, longitude)?.let { location ->
+            location.areaName ?: location.address.toAreaDisplayName() ?: location.address
+        }
+        val resolved = fromAmap ?: nominatimReverseAddress(latitude, longitude)
+        if (resolved != null) addressCache[cacheKey] = resolved
+        return resolved
+    }
+
+    /**
+     * OSM fallback when AMap is not configured or its SDK is unavailable. It is
+     * only reached in self-hosted mode (Nominatim's policy is enforced by the
+     * API provider); the result is a real place label, never a synthetic A/B.
+     */
+    private suspend fun nominatimReverseAddress(latitude: Double, longitude: Double): String? {
+        return try {
+            nominatimMutex.withLock {
+                val now = android.os.SystemClock.elapsedRealtime()
+                val wait = 1_100L - (now - lastNominatimAt)
+                if (wait > 0) kotlinx.coroutines.delay(wait)
+                lastNominatimAt = android.os.SystemClock.elapsedRealtime()
+                val response = nominatimApi.reverseGeocode(latitude, longitude)
+                if (!response.isSuccessful) return@withLock null
+                val result = response.body() ?: return@withLock null
+                val formatted = formatAddress(result.address)?.toChineseDisplayAddress()
+                val raw = formatted ?: result.displayName?.toChineseDisplayAddress()
+                raw?.toAreaDisplayName() ?: raw
+            }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null
         }
     }
 

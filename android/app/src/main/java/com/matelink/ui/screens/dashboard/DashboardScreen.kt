@@ -27,6 +27,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AcUnit
 import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.runtime.saveable.rememberSaveable
+import com.matelink.data.local.entity.SocSample
+import com.matelink.ui.screens.charges.SocTrendCard
+import com.matelink.ui.theme.CarColorPalette
 import androidx.compose.animation.core.*
 import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.DirectionsCar
@@ -124,7 +130,12 @@ fun DashboardScreen(
     viewModel: DashboardViewModel = hiltViewModel()
 ) {
     val remoteViewModel: VehicleRemoteViewModel = hiltViewModel()
+    val socTrendViewModel: com.matelink.ui.screens.charges.SocTrendViewModel = hiltViewModel()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val socSamples by socTrendViewModel.samples.collectAsStateWithLifecycle()
+    val socCarId = uiState.recentDrives.firstOrNull()?.carId
+    LaunchedEffect(socCarId) { socTrendViewModel.setCarId(socCarId) }
+    val socPalette = com.matelink.ui.theme.telemetryPalette()
     HistoryForegroundRefreshEffect { viewModel.refresh() }
     val context = LocalContext.current
     val refreshRotation = remember { Animatable(0f) }
@@ -839,9 +850,7 @@ fun DashboardScreen(
             }
         }
 
-        // Inline recorded battery history. The App shows the daily SOC curve
-        // here instead of sending the user to the statistics screen.
-        DashboardSocTrendCard(drives = uiState.recentDrives)
+        // The local hourly SOC curve is expanded from the battery-history card below.
 
         // Fleet expansion sections (design 2026-11-05 §5–�?): vehicle
         // controls (hidden until the backend reports command scopes
@@ -987,13 +996,12 @@ fun DashboardScreen(
         NearbyChargingSection(carId = carId, status = status, viewModel = remoteViewModel)
         VehiclePlacesSection(carId = carId, status = status, viewModel = remoteViewModel)
 
-        // Battery history navigation. No chart is drawn until real history is available.
+        // Battery history expands the local hourly curve instead of leaving the page.
+        var socExpanded by rememberSaveable { mutableStateOf(false) }
         TelemetryPanel(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable {
-                    onNavigateToStats(carId, exteriorColor)
-                },
+                .clickable { socExpanded = !socExpanded },
             accent = MaterialTheme.colorScheme.primary
         ) {
             Row(
@@ -1013,12 +1021,20 @@ fun DashboardScreen(
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = stringResource(R.string.battery_history_navigation_note),
+                        text = stringResource(R.string.battery_history_expand_note),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+                Icon(
+                    imageVector = if (socExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
+        }
+        if (socExpanded) {
+            SocTrendCard(samples = socSamples, palette = socPalette)
         }
 
         // Charging card
@@ -1135,161 +1151,6 @@ fun DashboardScreen(
         }
     }
 }
-}
-
-/** Inline daily SOC curve: one honest point per recorded drive day. */
-@Composable
-private fun DashboardSocTrendCard(drives: List<com.matelink.data.local.entity.DriveSummary>) {
-    var windowDays by remember { mutableStateOf(7) }
-    val trend = remember(drives, windowDays) {
-        dailySocTrend(drives, windowDays, Instant.now())
-    }
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-    ) {
-        Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Bolt,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Text(
-                        text = stringResource(R.string.dashboard_soc_trend_title),
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    listOf(
-                        7 to stringResource(R.string.dashboard_soc_trend_7d),
-                        30 to stringResource(R.string.dashboard_soc_trend_30d)
-                    ).forEach { (days, label) ->
-                        TextButton(
-                            onClick = { windowDays = days },
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                        ) {
-                            Text(
-                                text = label,
-                                style = MaterialTheme.typography.labelMedium,
-                                color = if (windowDays == days) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontWeight = if (windowDays == days) FontWeight.SemiBold else FontWeight.Normal
-                            )
-                        }
-                    }
-                }
-            }
-
-            if (trend.points.isEmpty()) {
-                Text(
-                    text = when (trend.unavailableReason) {
-                        SocTrendUnavailable.NO_HISTORY_IN_WINDOW ->
-                            stringResource(R.string.dashboard_soc_trend_no_history, windowDays)
-                        else -> stringResource(R.string.dashboard_soc_trend_no_samples)
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            } else {
-                Row(
-                    verticalAlignment = Alignment.Bottom,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Text(
-                        text = "${trend.latestSoc}%",
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Text(
-                        text = buildString {
-                            append(stringResource(R.string.dashboard_soc_trend_summary, trend.points.size))
-                            trend.change?.let { change ->
-                                append(stringResource(
-                                    R.string.dashboard_soc_trend_change,
-                                    if (change > 0) "+" else "",
-                                    change
-                                ))
-                            }
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                SocTrendCanvas(
-                    points = trend.points,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(110.dp)
-                )
-                Text(
-                    text = stringResource(R.string.dashboard_soc_trend_note),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun SocTrendCanvas(points: List<SocTrendPoint>, modifier: Modifier = Modifier) {
-    val lineColor = MaterialTheme.colorScheme.primary
-    val baselineColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
-    Canvas(modifier = modifier) {
-        val pad = 10.dp.toPx()
-        val low = (points.minOf { it.soc } - 4).coerceAtLeast(0)
-        val high = (points.maxOf { it.soc } + 4).coerceAtMost(100).coerceAtLeast(low + 8)
-        val span = (high - low).coerceAtLeast(1)
-        val first = points.first().at.toEpochMilli()
-        val last = points.last().at.toEpochMilli()
-        val usableWidth = size.width - pad * 2
-        val usableHeight = size.height - pad * 2
-        fun x(at: Instant): Float =
-            pad + if (last == first) usableWidth / 2f
-            else ((at.toEpochMilli() - first).toFloat() / (last - first).toFloat()) * usableWidth
-        fun y(soc: Int): Float = pad + ((high - soc).toFloat() / span.toFloat()) * usableHeight
-
-        drawLine(
-            color = baselineColor,
-            start = Offset(pad, size.height - pad),
-            end = Offset(size.width - pad, size.height - pad),
-            strokeWidth = 1.dp.toPx()
-        )
-        for (index in 1 until points.size) {
-            // Never bridge a day without a record: only the dots are omitted, not the gap.
-            if (points[index].day.toEpochDay() - points[index - 1].day.toEpochDay() > 1) continue
-            drawLine(
-                color = lineColor,
-                start = Offset(x(points[index - 1].at), y(points[index - 1].soc)),
-                end = Offset(x(points[index].at), y(points[index].soc)),
-                strokeWidth = 2.dp.toPx(),
-                cap = StrokeCap.Round
-            )
-        }
-        points.forEach { point ->
-            drawCircle(
-                color = lineColor,
-                radius = 3.dp.toPx(),
-                center = Offset(x(point.at), y(point.soc))
-            )
-        }
-    }
 }
 
 @Composable

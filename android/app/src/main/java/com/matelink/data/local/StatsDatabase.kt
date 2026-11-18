@@ -16,6 +16,7 @@ import com.matelink.data.local.dao.GeocodeQueueDao
 import com.matelink.data.local.dao.HistoryDetailDao
 import com.matelink.data.local.dao.SavedTripDao
 import com.matelink.data.local.dao.SentryAlertLogDao
+import com.matelink.data.local.dao.SocSampleDao
 import com.matelink.data.local.dao.SyncStateDao
 import com.matelink.data.local.dao.TripCountryCacheDao
 import com.matelink.data.local.dao.TripRouteCacheDao
@@ -36,6 +37,7 @@ import com.matelink.data.local.entity.SavedTrip
 import com.matelink.data.local.entity.SavedTripConsumedFingerprint
 import com.matelink.data.local.entity.SavedTripLeg
 import com.matelink.data.local.entity.SentryAlertLog
+import com.matelink.data.local.entity.SocSample
 import com.matelink.data.local.entity.SyncState
 import com.matelink.data.local.entity.TripCountryCache
 import com.matelink.data.local.entity.TripRouteCache
@@ -74,9 +76,10 @@ import com.matelink.data.local.entity.TpmsPressureSample
         LegacyHistoryArchive::class,
         HistoryDetailReceipt::class,
         HistoryDetailChunk::class,
-        BatteryTrendEvidence::class
+        BatteryTrendEvidence::class,
+        SocSample::class
     ],
-    version = 24,
+    version = 25,
     exportSchema = true
 )
 abstract class StatsDatabase : RoomDatabase() {
@@ -97,9 +100,11 @@ abstract class StatsDatabase : RoomDatabase() {
     abstract fun legacyHistoryArchiveDao(): LegacyHistoryArchiveDao
     abstract fun historyDetailDao(): HistoryDetailDao
     abstract fun batteryTrendEvidenceDao(): BatteryTrendEvidenceDao
+    abstract fun socSampleDao(): SocSampleDao
 
     companion object {
         const val DATABASE_NAME = "matelink_stats.db"
+        const val SCHEMA_VERSION = 25
 
         /** Migration from V1 to V2: Add start/end elevation for net climb calculation */
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -544,6 +549,23 @@ abstract class StatsDatabase : RoomDatabase() {
             }
         }
 
+        /** Add the local-only hourly SOC history. Existing rows and user data are untouched. */
+        val MIGRATION_24_25 = object : Migration(24, 25) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS soc_samples (
+                        carId INTEGER NOT NULL,
+                        hourEpochMs INTEGER NOT NULL,
+                        observedAtEpochMs INTEGER NOT NULL,
+                        socPercent INTEGER NOT NULL,
+                        source TEXT NOT NULL,
+                        PRIMARY KEY(carId, hourEpochMs)
+                    )
+                """.trimIndent())
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_soc_samples_carId_hourEpochMs ON soc_samples (carId, hourEpochMs)")
+            }
+        }
+
         /** Add a separate evidence store without modifying history or user-entered data. */
         val MIGRATION_23_24 = object : Migration(23, 24) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -892,7 +914,7 @@ abstract class StatsDatabase : RoomDatabase() {
             MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11,
             MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16,
             MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21,
-            MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24
+            MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25
         )
     }
 }

@@ -2,6 +2,7 @@ package com.matelink.data.repository
 
 import com.matelink.data.api.models.DriveData
 import com.matelink.data.local.VehicleContext
+import com.matelink.util.isStreetOnlyAddress
 import com.matelink.data.local.entity.DriveSummary
 import com.matelink.domain.analytics.toRawAnalysisDriveData
 import kotlinx.coroutines.CancellationException
@@ -87,9 +88,15 @@ private fun releaseDriveAddressAttempt(
     synchronized(attempted) { targets.forEach { if (attempted[it.key] === token) attempted.remove(it.key) } }
 }
 
-private fun validDriveCoordinates(latitude: Double?, longitude: Double?): Boolean =
+internal fun validDriveCoordinates(latitude: Double?, longitude: Double?): Boolean =
     latitude != null && longitude != null && latitude.isFinite() && longitude.isFinite() &&
         latitude in -90.0..90.0 && longitude in -180.0..180.0 && (latitude != 0.0 || longitude != 0.0)
+
+/** TeslaMate can return the literal unknown placeholder; it is not an address. */
+internal fun String?.needsDriveAddressLabel(): Boolean =
+    isNullOrBlank() || contains("未知") || equals("unknown", ignoreCase = true) ||
+        equals("start", ignoreCase = true) || equals("end", ignoreCase = true) ||
+        this.isStreetOnlyAddress()
 
 internal fun driveAddressTargets(drives: List<DriveData>, rows: List<DriveSummary>, context: VehicleContext): List<DriveAddressTarget> {
     val byId = rows.associateBy { it.driveId }
@@ -97,14 +104,19 @@ internal fun driveAddressTargets(drives: List<DriveData>, rows: List<DriveSummar
     drives.forEach { drive ->
         val row = byId[drive.driveId] ?: return@forEach
         if (!drive.matchesHistoryIdentity(row.toRawAnalysisDriveData())) return@forEach
-        val identity = row.verifiedDetailIdentity(context)?.identityKey ?: return@forEach
-        val digest = driveSourceReceiptDigest(row) ?: return@forEach
+        if (row.qualityState == "quarantined") return@forEach
+        // Addresses are display labels, not historical evidence. Rows without a
+        // provider source (TeslaMate self-hosted) still get real place names from
+        // their own coordinates; the key never reaches energy or statistics.
+        val identity = row.verifiedDetailIdentity(context)?.identityKey
+            ?: displayAddressIdentity(row, context)
+        val digest = driveAddressReceiptDigest(row) ?: return@forEach
         fun add(start: Boolean, latitude: Double?, longitude: Double?) {
             if (validDriveCoordinates(latitude, longitude))
                 targets += DriveAddressTarget(drive, DriveAddressKey(identity, digest, start, latitude!!, longitude!!))
         }
-        if (drive.startAddress.isNullOrBlank()) add(true, drive.startLatitude, drive.startLongitude)
-        if (drive.endAddress.isNullOrBlank()) add(false, drive.endLatitude, drive.endLongitude)
+        if (drive.startAddress.needsDriveAddressLabel()) add(true, drive.startLatitude, drive.startLongitude)
+        if (drive.endAddress.needsDriveAddressLabel()) add(false, drive.endLatitude, drive.endLongitude)
     }
     return targets
 }

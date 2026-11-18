@@ -22,7 +22,8 @@ fun AmapRouteView(
     explicitEndpoints: Boolean = false,
     startPoint: Pair<Double, Double>? = null,
     endPoint: Pair<Double, Double>? = null,
-    drawRoutePath: Boolean = true
+    drawRoutePath: Boolean = true,
+    polylineDotted: Boolean = false
 ) {
     val segments = (routeSegments ?: listOf(routePoints.ifEmpty { points })).map { segment ->
         segment.filter { AmapConfiguration.isUsableCoordinate(it.first, it.second) }
@@ -51,6 +52,7 @@ fun AmapRouteView(
             polylineSegments = if (drawRoutePath) segments else emptyList(),
             polylineColor = routeColor,
             zoom = zoom,
+            polylineDotted = polylineDotted,
             onLoading = onLoading,
             onLoaded = onLoaded,
             onFailure = onFailure

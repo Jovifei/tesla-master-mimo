@@ -22,6 +22,7 @@ import androidx.work.WorkerParameters
 import com.matelink.BuildConfig
 import com.matelink.R
 import com.matelink.data.local.SettingsDataStore
+import com.matelink.data.local.SocHistoryStore
 import com.matelink.data.local.HistoryIdentityUnavailableException
 import com.matelink.data.local.TirePosition
 import com.matelink.data.local.TpmsAlertProfile
@@ -72,7 +73,8 @@ class TpmsPressureWorker @AssistedInject constructor(
     private val tpmsTrendNotificationManager: TpmsTrendNotificationManager,
     private val vehicleContextRepository: VehicleContextRepository,
     private val changeRuleStore: com.matelink.data.local.TpmsChangeRuleStore,
-    private val settingsRepository: com.matelink.data.repository.SettingsRepository
+    private val settingsRepository: com.matelink.data.repository.SettingsRepository,
+    private val socHistoryStore: SocHistoryStore
 ) : CoroutineWorker(appContext, workerParams) {
 
     companion object {
@@ -287,7 +289,17 @@ class TpmsPressureWorker @AssistedInject constructor(
             val statusResult=teslamateRepository.getCarStatus(vehicle.remoteApiCarId)
             ensureScope()
             when(statusResult) {
-                is ApiResult.Success -> statusResult.data.status.tpmsDetails
+                is ApiResult.Success -> {
+                    try {
+                        socHistoryStore.record(historyCarId, statusResult.data.status.batteryLevel,
+                            System.currentTimeMillis(), "status")
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (_: Exception) {
+                        // Optional local trend evidence must not break TPMS monitoring.
+                    }
+                    statusResult.data.status.tpmsDetails
+                }
                 is ApiResult.Error -> null
             }
         }

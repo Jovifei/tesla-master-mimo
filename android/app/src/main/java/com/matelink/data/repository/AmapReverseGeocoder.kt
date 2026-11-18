@@ -43,7 +43,9 @@ data class ChineseLocation(
     val countryCode: String?,
     val countryName: String?,
     val regionName: String?,
-    val city: String?
+    val city: String?,
+    /** Named neighbourhood/AOI (community, school, mall, park) when AMap returns one. */
+    val areaName: String? = null
 )
 
 @Singleton
@@ -122,12 +124,23 @@ class AmapReverseGeocoder @Inject constructor(
                         result.province?.trim()?.takeIf { it.isNotEmpty() },
                         result.district?.trim()?.takeIf { it.isNotEmpty() }
                     ).joinToString(" ").takeIf { it.isNotEmpty() }
+                    val road = Regex("(?:路|街|道|巷|弄|大道|胡同|公路)$")
+                    val area = listOfNotNull(
+                        result.neighborhood?.trim()?.takeIf { it.isNotEmpty() },
+                        result.aois?.firstOrNull()?.aoiName?.trim()?.takeIf { it.isNotEmpty() },
+                        result.pois?.firstOrNull { poi ->
+                            poi.title?.trim()?.takeIf { it.isNotEmpty() }?.let { !road.containsMatchIn(it) } == true
+                        }?.title?.trim(),
+                        result.building?.trim()?.takeIf { it.isNotEmpty() },
+                        result.township?.trim()?.takeIf { it.isNotEmpty() && !road.containsMatchIn(it) }
+                    ).firstOrNull { !road.containsMatchIn(it) }
                     return ChineseLocation(
                         address = address,
                         countryCode = result.countryCode?.trim()?.takeIf { it.isNotEmpty() } ?: "CN",
                         countryName = result.country?.trim()?.takeIf { it.isNotEmpty() } ?: "中国",
                         regionName = region,
-                        city = result.city?.trim()?.takeIf { it.isNotEmpty() }
+                        city = result.city?.trim()?.takeIf { it.isNotEmpty() },
+                        areaName = area
                     )
                 }
 

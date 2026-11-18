@@ -378,7 +378,8 @@ internal fun SpeedCurveCard(
     fractionToTimeLabel: (Float) -> String,
     projected: com.matelink.ui.components.TimedChartSeries? = null
 ) {
-    val series = projected ?: projectDriveCurves(DriveDetail(0, positions = positions, lengthUnit = units?.unitOfLength)).speed
+    val series = (projected ?: projectDriveCurves(DriveDetail(0, positions = positions, lengthUnit = units?.unitOfLength)).speed)
+        .finiteDisplaySeries()
     if (series.validCount < 2) return
 
     val validSpeeds = series.values.filter { it.isFinite() && it >= 0f }
@@ -435,7 +436,8 @@ internal fun PowerCurveCard(
     fractionToTimeLabel: (Float) -> String,
     projected: com.matelink.ui.components.TimedChartSeries? = null
 ) {
-    val series = projected ?: projectDriveCurves(DriveDetail(0, positions = positions)).power
+    val series = (projected ?: projectDriveCurves(DriveDetail(0, positions = positions)).power)
+        .finiteDisplaySeries()
     if (series.validCount < 2) return
 
     CurveContainerCard(
@@ -573,6 +575,19 @@ private fun CurveContainerCard(
             )
         }
     }
+}
+
+/** Keep the observed points but omit missing samples so the display is one line. */
+internal fun com.matelink.ui.components.TimedChartSeries.finiteDisplaySeries():
+    com.matelink.ui.components.TimedChartSeries {
+    val keep = values.indices.filter { values[it].isFinite() }
+    return copy(
+        values = keep.map(values::get),
+        timestampsMs = keep.map(timestampsMs::get),
+        xFractions = keep.map(xFractions::get),
+        sourceIndices = keep.map(sourceIndices::get),
+        gaps = emptySet()
+    )
 }
 
 private fun extractTimeLabels(positions: List<DrivePosition>, is24Hour: Boolean? = null): List<String> {

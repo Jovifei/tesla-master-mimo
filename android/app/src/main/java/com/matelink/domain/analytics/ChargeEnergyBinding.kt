@@ -60,7 +60,8 @@ internal fun ChargeSummary.acceptsDetail(detail: ChargeDetail): Boolean {
     val raw = toRawAnalysisChargeData()
     val legacyRaw = apiEvidence?.let(HistorySummaryEvidenceCodec::decodeCharge)
     val sameSource = raw.source != null && raw.source == detail.source
-    val oldTeslaMateReceipt = raw.source == null && detail.source == "teslamate_archive" &&
+    val oldTeslaMateReceipt = raw.source == null &&
+        (detail.source == null || detail.source == "teslamate_archive") &&
         legacyRaw != null && legacyRaw.chargeId == chargeId && legacyRaw.source == null &&
         sameChargeInstant(legacyRaw.startDate, startDate) &&
         sameChargeInstant(legacyRaw.endDate, endDate)

@@ -835,13 +835,15 @@ private fun CapacityCard(stats: BatteryStats, units: com.matelink.data.api.model
         )
     }
 
+    val shape = RoundedCornerShape(16.dp)
     Card(
         modifier = Modifier
             .fillMaxWidth()
+            .background(com.matelink.ui.components.analysisSurfaceBrush(
+                com.matelink.ui.components.AnalysisColors.Battery), shape)
             .clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(
-            containerColor = palette.surface
-        )
+        shape = shape,
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
     ) {
         Column(
             modifier = Modifier.padding(16.dp)

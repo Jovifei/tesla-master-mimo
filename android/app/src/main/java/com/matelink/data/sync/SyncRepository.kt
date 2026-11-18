@@ -99,7 +99,8 @@ class SyncRepository @Inject constructor(
     private val chargeEventStore: com.matelink.data.local.CompletedChargeEventStore,
     private val chargeNotifier: com.matelink.notification.CompletedChargeNotificationManager,
     private val statsDatabase: StatsDatabase,
-    private val historyDetailStore: HistoryDetailRepository
+    private val historyDetailStore: HistoryDetailRepository,
+    private val socHistoryStore: com.matelink.data.local.SocHistoryStore? = null
 ) {
     companion object { private const val TAG = "SyncRepository" }
     private val chargeDeliveryMutex = Mutex()
@@ -140,12 +141,10 @@ class SyncRepository @Inject constructor(
         val context = vehicleContextRepository.resolve(car, scope)
         val historyCarId = context.localHistoryCarId
         syncManager.claimCar(run, historyCarId)
-        // Existing cloud archive path; no new historical repair/backfill.
-        if (connectionModeStore.current() == com.matelink.data.local.ConnectionMode.TESLA_CLOUD) {
-            try { uploadLocalHistory(context.remoteApiCarId, historyCarId) }
-            catch (e: CancellationException) { throw e }
-            catch (_: Exception) { Log.w(TAG, "event=history_upload_failed") }
-        }
+        // Local-first boundary: syncing must never upload the owner's history,
+// locations or samples to the MateLink cloud. Authentication and vehicle
+// identity remain server-backed; personal history stays in Room.
+        // uploadLocalHistory(...) is intentionally not called here.
         syncManager.updateSummaryProgress(historyCarId, run = run)
         val drivesSynced = syncDriveSummaries(context.remoteApiCarId, historyCarId, scope)
         val chargesSynced = syncChargeSummaries(context.remoteApiCarId, historyCarId, scope)
@@ -219,6 +218,9 @@ class SyncRepository @Inject constructor(
     }
     private suspend fun notifyCompletedDriveUpdates(carId: Int, remoteCarId: Int, summaries: List<DriveSummary>, scope: HistoryReadScope) {
         requireIdentity(scope, carId, remoteCarId)
+        recordSummarySocPoints(carId, "drive", summaries.map {
+            Triple(it.startDate, it.endDate, it.startBatteryLevel to it.endBatteryLevel)
+        })
         val now = java.time.Instant.now()
         val key = completionScopeKey(scope, carId, remoteCarId)
         chargeEventStore.record(carId, remoteCarId,
@@ -235,6 +237,33 @@ class SyncRepository @Inject constructor(
             )
         }
     }
+    /** Backfills honest start/end boundary observations; hourly status samples refine them later. */
+    private suspend fun recordSummarySocPoints(
+        carId: Int,
+        sourcePrefix: String,
+        windows: List<Triple<String?, String?, Pair<Int?, Int?>>>
+    ) {
+        val store = socHistoryStore ?: return
+        val cutoff = System.currentTimeMillis() - 30L * 86_400_000L
+        windows.forEach { (start, end, levels) ->
+            val (startSoc, endSoc) = levels
+            parseIsoInstant(start)?.toEpochMilli()?.takeIf { it >= cutoff }?.let { at ->
+                startSoc?.let {
+                    try { store.record(carId, it, at, "${sourcePrefix}_start") }
+                    catch (e: CancellationException) { throw e }
+                    catch (_: Exception) { }
+                }
+            }
+            parseIsoInstant(end)?.toEpochMilli()?.takeIf { it >= cutoff }?.let { at ->
+                endSoc?.let {
+                    try { store.record(carId, it, at, "${sourcePrefix}_end") }
+                    catch (e: CancellationException) { throw e }
+                    catch (_: Exception) { }
+                }
+            }
+        }
+    }
+
     private suspend fun syncChargeSummaries(remoteApiCarId: Int, historyCarId: Int, scope: HistoryReadScope): Boolean {
         return try {
             var page = 1
@@ -264,6 +293,9 @@ class SyncRepository @Inject constructor(
                 }
             }
             requireIdentity(scope, historyCarId, remoteApiCarId)
+            recordSummarySocPoints(historyCarId, "charge", completed.map {
+                Triple(it.startDate, it.endDate, it.startBatteryLevel to it.endBatteryLevel)
+            })
             val now = java.time.Instant.now()
             val key = completionScopeKey(scope, historyCarId, remoteApiCarId)
             chargeEventStore.record(historyCarId, remoteApiCarId,
@@ -301,7 +333,7 @@ class SyncRepository @Inject constructor(
                 val before = driveSummaryDao.get(historyCarId, detail.driveId)
                 val rawSource = before?.toRawAnalysisDriveData()?.source
                 val legacyWindow = before != null && rawSource == null &&
-                    detail.source == "teslamate_archive" &&
+                    (detail.source == null || detail.source == "teslamate_archive") &&
                     parseIsoInstant(before.startDate) == parseIsoInstant(detail.startDate) &&
                     parseIsoInstant(before.endDate) == parseIsoInstant(detail.endDate)
                 val saved = if (legacyWindow) {
@@ -355,7 +387,8 @@ class SyncRepository @Inject constructor(
                         kind = com.matelink.data.repository.ApiErrorKind.INVALID_RESPONSE)
                     val detail = result.data.withQualifiedEnergy()
                     val rawSource = summary.toRawAnalysisChargeData().source
-                    val legacyWindow = rawSource == null && result.data.source == "teslamate_archive" &&
+                    val legacyWindow = rawSource == null &&
+                        (result.data.source == null || result.data.source == "teslamate_archive") &&
                         parseIsoInstant(summary.startDate) == parseIsoInstant(result.data.startDate) &&
                         parseIsoInstant(summary.endDate) == parseIsoInstant(result.data.endDate)
                     val saved = try {

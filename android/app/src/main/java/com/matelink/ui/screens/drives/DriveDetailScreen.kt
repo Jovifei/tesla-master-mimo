@@ -235,7 +235,14 @@ private fun DriveDetailContent(
         HistoryReadNotices(localArchiveLinkPending, historySyncWarning)
 
         // Map showing the route
-        DriveMapCard(positions = detail.positions.orEmpty(), routeColor = routeColor, startDate = detail.startDate, endDate = detail.endDate)
+        DriveMapCard(
+            positions = detail.positions.orEmpty(),
+            routeColor = routeColor,
+            startDate = detail.startDate,
+            endDate = detail.endDate,
+            startPoint = detail.startLatitude?.let { lat -> detail.startLongitude?.let { lon -> lat to lon } },
+            endPoint = detail.endLatitude?.let { lat -> detail.endLongitude?.let { lon -> lat to lon } }
+        )
 
         // Unified trip card with Route, Times, Metrics, and "详细曲线 ->" button
         UnifiedTripCard(
@@ -453,7 +460,9 @@ private fun UnifiedTripCard(
             }
 
             val unknownLocation = stringResource(R.string.unknown_location)
-            val (defaultStart, defaultEnd) = formatRouteAddresses(detail.startAddress, detail.endAddress, unknownLocation)
+            val (rawStart, rawEnd) = formatRouteAddresses(detail.startAddress, detail.endAddress, unknownLocation)
+            val defaultStart = rawStart.takeUnless { it == unknownLocation } ?: stringResource(R.string.drive_point_a)
+            val defaultEnd = rawEnd.takeUnless { it == unknownLocation } ?: stringResource(R.string.drive_point_b)
             RouteIndicator(
                 start = defaultStart,
                 end = defaultEnd,
@@ -579,17 +588,22 @@ private fun DetailTimeValue(
 }
 
 @Composable
-private fun DriveMapCard(positions: List<DrivePosition>, routeColor: Color, startDate: String? = null, endDate: String? = null) {
+private fun DriveMapCard(
+    positions: List<DrivePosition>,
+    routeColor: Color,
+    startDate: String? = null,
+    endDate: String? = null,
+    startPoint: Pair<Double, Double>? = null,
+    endPoint: Pair<Double, Double>? = null
+) {
     val startLabel = stringResource(R.string.start)
     val endLabel = stringResource(R.string.end)
-    val segments = remember(positions, startDate, endDate) {
-        val observed = com.matelink.domain.map.observedDriveRouteSegments(positions, startDate, endDate)
-        if (observed.any { it.size >= 2 }) observed else {
-            val usable = usableDriveRoutePoints(positions)
-            if (usable.size >= 2) listOf(usable) else observed
-        }
-    }
+    val usable = remember(positions) { usableDriveRoutePoints(positions) }
+    val observedWholeRoute = usable.takeIf { it.size >= 2 }?.let { listOf(it) }.orEmpty()
+    val endpointLine = if (startPoint != null && endPoint != null) listOf(listOf(startPoint, endPoint)) else emptyList()
+    val segments = if (observedWholeRoute.isNotEmpty()) observedWholeRoute else endpointLine
     val routePoints = segments.flatten()
+    val dotted = observedWholeRoute.isEmpty() && endpointLine.isNotEmpty()
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -620,8 +634,26 @@ private fun DriveMapCard(positions: List<DrivePosition>, routeColor: Color, star
             } else {
                 Box(modifier = Modifier.fillMaxWidth().height(250.dp)
                     .clip(RoundedCornerShape(8.dp))) {
-                    AmapRouteView(modifier = Modifier.fillMaxSize(), routePoints = routePoints, routeSegments = segments,
-                        startTitle = startLabel, endTitle = endLabel, routeColor = routeColor, drawRoutePath = true)
+                    AmapRouteView(
+                        modifier = Modifier.fillMaxSize(),
+                        routePoints = routePoints,
+                        routeSegments = segments,
+                        startTitle = startLabel,
+                        endTitle = endLabel,
+                        routeColor = routeColor,
+                        drawRoutePath = true,
+                        polylineDotted = dotted,
+                        explicitEndpoints = dotted,
+                        startPoint = startPoint,
+                        endPoint = endPoint
+                    )
+                }
+                if (dotted) {
+                    Text(
+                        text = stringResource(R.string.drive_route_partial),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         }

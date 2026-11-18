@@ -1031,10 +1031,13 @@ private fun SummaryRow(
         )
     }
 
+    val shape = RoundedCornerShape(16.dp)
+    val summaryBrush = com.matelink.ui.components.analysisSurfaceBrush(
+        com.matelink.ui.components.AnalysisColors.Mileage)
     Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = containerColor),
+        modifier = Modifier.fillMaxWidth().background(summaryBrush, shape),
+        shape = shape,
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Row(

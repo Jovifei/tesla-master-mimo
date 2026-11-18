@@ -253,6 +253,7 @@
     <string name="snapshot_source_asleep">车辆休眠</string>
     <string name="status_unknown">未知</string>
     <string name="battery_history_navigation_note">查看已记录的电池历史与容量详情</string>
+    <string name="battery_history_expand_note">点开查看本机小时级电量记录</string>
     <string name="vehicle_model_3">Model 3</string>
     <string name="vehicle_model_y">Model Y</string>
     <string name="vehicle_model_s">Model S</string>
@@ -1031,6 +1032,16 @@
     <string name="chart_drives_per_month">行程数/月</string>
     <string name="chart_drives_per_week">行程数/周</string>
     <string name="chart_energy_per_day">按日充电量</string>
+    <string name="charge_heatmap_title">近7天充电热力图</string>
+    <string name="charge_heatmap_empty">近7天暂无充电记录。</string>
+    <string name="charge_heatmap_selected">%1$s · %2$.1f 度</string>
+    <string name="charge_heatmap_info">每个点代表一次充电。点的颜色深浅和大小表示本次充入电量，点一下查看本次 kWh；纵向是 00–24 时。只显示当前筛选内已返回的充电记录；缺少记录不代表没有充电。</string>
+    <string name="charge_heatmap_older">更早7天</string>
+    <string name="charge_heatmap_newer">较新7天</string>
+    <string name="charge_soc_trend_title">近7天电量趋势</string>
+    <string name="charge_soc_trend_empty">近7天暂无小时级电量记录。</string>
+    <string name="charge_soc_trend_selected">%1$s · %2$d%%</string>
+    <string name="charge_soc_trend_info">小时点来自 App 已有的状态轮询，以及已返回行程/充电的起止电量；每小时最多保留 1 点。只保存在本机，保留 30 天。空档用实线连接，但不补造采样值。</string>
     <string name="chart_energy_per_month">按月充电量</string>
     <string name="chart_energy_per_week">按周充电量</string>
     <string name="chart_speed_per_day">速度/天</string>
@@ -1187,6 +1198,9 @@
     <string name="record_top_speed">最高速度</string>
     <string name="regions_visited_title">已到访地区</string>
     <string name="route_map">路线地图</string>
+    <string name="drive_point_a">出发地</string>
+    <string name="drive_point_b">目的地</string>
+    <string name="drive_route_partial">轨迹未完整采集，当前仅显示起终点虚线示意。</string>
     <string name="drive_route_points_insufficient">本次只收到 %1$d 个不同的有效定位点；至少需要 2 个才能绘制实际路线。</string>
     <string name="search">搜索</string>
     <string name="select_all">全选</string>

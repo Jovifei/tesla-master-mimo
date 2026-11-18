@@ -1,3 +1,5 @@
 <resources>
+    <string name="ui_day_items_count">%1$d 条</string>
+    <string name="ui_day_no_activity_short">无记录</string>
     <string name="ui_day_swipe_horizontal">日期抬头左右滑动 · 点击后层日期展开或收回</string>
 </resources>

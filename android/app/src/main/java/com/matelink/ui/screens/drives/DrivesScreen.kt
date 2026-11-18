@@ -495,18 +495,19 @@ internal sealed interface DriveHistoryItem {
 
 /** A short, hidden, unknown-distance, or quarantined drive still breaks adjacency. */
 internal fun verifiedParkedPairs(fullHistory: List<DriveData>): Set<Pair<Int, Int>> {
-    // Without ordered timestamps, absence of an intervening drive cannot be proved.
-    if (fullHistory.any { parseIsoInstant(it.startDate) == null || parseIsoInstant(it.endDate) == null })
-        return emptySet()
-    val sorted = fullHistory.sortedWith(compareByDescending<DriveData> { parseIsoInstant(it.startDate) }
+    // One malformed row must not erase every verified parking segment. Rows
+    // without ordered timestamps are skipped locally; the remaining adjacent
+    // pairs are still proven by their own windows and shared source.
+    val sorted = fullHistory.filter {
+        parseIsoInstant(it.startDate) != null && parseIsoInstant(it.endDate) != null
+    }.sortedWith(compareByDescending<DriveData> { parseIsoInstant(it.startDate) }
         .thenByDescending { it.driveId })
     return sorted.zipWithNext().mapNotNull { (newer, older) ->
         val bothRoutes = listOf(newer, older).all { drive ->
             drive.distanceKm?.let { it.isFinite() && it >= 0.5 } == true &&
-                drive.qualityState != "quarantined"
+                drive.qualityState !in setOf("quarantined", "unknown")
         }
-        if (bothRoutes && createParkedSegment(older, newer) != null)
-            older.driveId to newer.driveId else null
+        if (bothRoutes) createParkedSegment(older, newer)?.let { older.driveId to newer.driveId } else null
     }.toSet()
 }
 
@@ -555,7 +556,7 @@ private fun createParkedSegment(
     val start = parseOffsetDateTime(startDate) ?: return null
     val end = parseOffsetDateTime(endDate) ?: return null
     val durationMin = Duration.between(start, end).toMinutes()
-    if (durationMin <= 0) return null
+    if (durationMin < MIN_PARKED_SEGMENT_MINUTES) return null
     return DriveHistoryItem.Parked(
         olderDrive = olderDrive,
         newerDrive = newerDrive,
@@ -565,6 +566,8 @@ private fun createParkedSegment(
         location = parkedAddressLabel(olderDrive.endAddress, newerDrive.startAddress)
     )
 }
+
+private const val MIN_PARKED_SEGMENT_MINUTES = 30L
 
 private fun parseOffsetDateTime(value: String): OffsetDateTime? =
     runCatching { OffsetDateTime.parse(value) }.getOrNull()
@@ -736,7 +739,9 @@ private fun DriveRowItem(
 ) {
     val receiptUnits = drivePresentationUnits(drive.lengthUnit, units)
     val unknown = stringResource(R.string.unknown)
-    val (startCity, endCity) = formatRouteAddresses(drive.startAddress, drive.endAddress, unknown)
+    val (rawStart, rawEnd) = formatRouteAddresses(drive.startAddress, drive.endAddress, unknown)
+    val startCity = rawStart.takeUnless { it == unknown } ?: stringResource(R.string.drive_point_a)
+    val endCity = rawEnd.takeUnless { it == unknown } ?: stringResource(R.string.drive_point_b)
 
     val energyPres = drive.historyEnergy(metrics)
     val unavailable = stringResource(R.string.not_available)

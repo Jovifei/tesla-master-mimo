@@ -13,7 +13,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.foundation.background
 import androidx.compose.ui.graphics.Color
+import com.matelink.ui.components.AnalysisColors
+import com.matelink.ui.components.analysisSurfaceBrush
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -340,11 +343,12 @@ private fun VampireStatCard(
     label: String,
     value: String
 ) {
+    val shape = RoundedCornerShape(8.dp)
     Card(
-        modifier = modifier,
-        shape = RoundedCornerShape(8.dp),
+        modifier = modifier.background(analysisSurfaceBrush(AnalysisColors.Standby), shape),
+        shape = shape,
         border = BorderStroke(1.dp, SwissOutline),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Text(
