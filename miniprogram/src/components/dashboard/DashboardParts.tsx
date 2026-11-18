@@ -19,7 +19,7 @@ export function DashboardInfoCard({ label, value, icon, onClick, warning = false
 
 export function DashboardStatusChip({ icon, value, yes, no }: { icon: DashboardIconName; value: boolean | null; yes: string; no: string }) {
   const label = value == null ? '状态未知' : value ? yes : no
-  return <View className="dashboard-state-chip" style={{ backgroundColor: value === true ? 'var(--dashboard-primary-container)' : value === false ? 'var(--dashboard-neutral-soft)' : 'var(--dashboard-neutral-unknown)' }} ariaLabel={label}>
+  return <View className="dashboard-state-chip" data-kind={icon} data-active={value === true ? 'true' : value === false ? 'false' : 'unknown'} style={{ backgroundColor: value === true ? 'var(--dashboard-primary-container)' : value === false ? 'var(--dashboard-neutral-soft)' : 'var(--dashboard-neutral-unknown)' }} ariaLabel={label}>
     <DashboardIcon name={icon} tone={value === true ? 'primary' : 'muted'} /><Text className="dashboard-chip-label">{label}</Text>
   </View>
 }
@@ -150,24 +150,14 @@ export function DashboardTpms({ snapshot, report, warnings, readiness, onOpen }:
 
 export function DashboardRecentDrive({ drive, onOpen }: { drive: Drive; onOpen: () => void }) {
   const model = recentDriveCardModel(drive)
-  return <View className="dashboard-recent-drive" onClick={onOpen}>
-    <View className="recent-drive-header">
-      <View className="recent-drive-title"><DashboardIcon name="car" /><Text className="dashboard-section-title">最近行程</Text></View>
-      <Text className="recent-drive-time">{model.endTimeText ? `${model.endTimeText} ›` : '›'}</Text>
+  const meta = [model.endTimeText, model.distanceText, model.socRangeText, model.capsules[0]?.value !== '--' ? `能耗 ${model.capsules[0]!.value}` : null]
+    .filter((value): value is string => Boolean(value)).join(' · ')
+  return <View className="dashboard-recent-drive" onClick={onOpen} ariaLabel={`最近行程 ${model.routeText}`}>
+    <View className="recent-drive-main">
+      <View className="recent-drive-title"><DashboardIcon name="car" /><Text className="recent-drive-route">{model.routeText}</Text></View>
+      <Text className="recent-drive-meta">{meta}</Text>
     </View>
-    <View className="recent-drive-route-row">
-      <Text className="recent-drive-route">{model.routeText}</Text>
-      <View className="recent-drive-dist">
-        <Text className="recent-drive-distance">{model.distanceText}</Text>
-        {model.socRangeText ? <Text className="recent-drive-soc">{model.socRangeText}</Text> : null}
-      </View>
-    </View>
-    <View className="recent-drive-capsules">
-      {model.capsules.map(capsule => <View className="recent-drive-capsule" key={capsule.label}>
-        <Text className="recent-drive-capsule-label">{capsule.label}</Text>
-        <Text className="recent-drive-capsule-value">{capsule.value}</Text>
-      </View>)}
-    </View>
+    <Text className="recent-drive-chevron">›</Text>
   </View>
 }
 

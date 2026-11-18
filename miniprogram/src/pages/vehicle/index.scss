@@ -112,6 +112,31 @@
     border-radius: var(--apple-radius-card, 28rpx);
     transition: background-color var(--apple-transition-fast, 180ms ease);
   }
+  .dashboard-instrument {
+    margin-bottom: 32rpx;
+    overflow: hidden;
+    background: var(--dashboard-surface);
+    border: 0.5px solid var(--dashboard-border);
+    border-radius: var(--apple-radius-card, 28rpx);
+    box-shadow: var(--apple-shadow-card, 0 2rpx 8rpx rgba(0, 0, 0, 0.03));
+  }
+  .dashboard-instrument .dashboard-hero {
+    padding: 26rpx 32rpx 8rpx;
+    margin-bottom: 0;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    background: transparent;
+  }
+  .dashboard-instrument .dashboard-soc-trend {
+    margin: 0;
+    padding: 18rpx 32rpx 24rpx;
+    border: 0;
+    border-top: 1rpx solid var(--dashboard-border);
+    border-radius: 0;
+    box-shadow: none;
+    background: transparent;
+  }
   .dashboard-hero {
     padding:26rpx 32rpx;
     margin-bottom:32rpx
@@ -226,7 +251,7 @@
   .dashboard-range>text:first-child {
     color:var(--dashboard-primary);
     font-family:"JetBrains Mono",Consolas,Menlo,monospace;
-    font-size:44rpx;
+    font-size:52rpx;
     font-weight:600
   }
   .dashboard-battery-track {
@@ -261,6 +286,16 @@
     gap:8rpx;
     padding:17rpx 4rpx;
     border-radius:24rpx
+  }
+  .dashboard-state-chip[data-kind="security"][data-active="true"] {
+    background: var(--dashboard-warning-bg) !important;
+  }
+  .dashboard-state-chip[data-kind="security"][data-active="true"] .dashboard-chip-label {
+    color: var(--dashboard-warning);
+  }
+  .dashboard-state-chip[data-kind="bolt"][data-active="true"] .dashboard-chip-label,
+  .dashboard-state-chip[data-kind="climate"][data-active="true"] .dashboard-chip-label {
+    color: var(--dashboard-primary);
   }
   .dashboard-chip-label {
     font-size:24rpx;
@@ -385,15 +420,66 @@
   .dashboard-tpms {
     margin-bottom:32rpx
   }
+  .dashboard-readout-panel {
+    margin-bottom: 32rpx;
+    padding: 8rpx 16rpx;
+    background: var(--dashboard-surface);
+    border: 0.5px solid var(--dashboard-border);
+    border-radius: var(--apple-radius-card, 28rpx);
+    box-shadow: var(--apple-shadow-card, 0 2rpx 8rpx rgba(0, 0, 0, 0.03));
+  }
+  .dashboard-readout-panel .dashboard-location-row,
+  .dashboard-readout-panel .dashboard-temperature-row {
+    margin-bottom: 0;
+    gap: 0;
+  }
+  .dashboard-readout-panel .dashboard-temperature-row {
+    border-top: 1rpx solid var(--dashboard-border);
+  }
+  .dashboard-readout-panel .dashboard-info-card {
+    padding: 18rpx 12rpx;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
   .dashboard-recent-drive {
     display:flex;
+    align-items:center;
+    gap:16rpx;
+    padding:18rpx 4rpx;
+    margin-bottom:24rpx;
+    background:transparent;
+    border:0;
+    border-bottom:1rpx solid var(--dashboard-border);
+    border-radius:0
+  }
+  .recent-drive-main {
+    flex:1;
+    min-width:0;
+    display:flex;
     flex-direction:column;
-    gap:20rpx;
-    padding:28rpx;
-    margin-bottom:32rpx;
-    border-radius:28rpx;
-    background: var(--dashboard-neutral-soft);
-    border: 1rpx solid rgba(233, 237, 242, 0.6)
+    gap:6rpx
+  }
+  .recent-drive-route {
+    font-size:28rpx;
+    font-weight:600;
+    color:var(--dashboard-text);
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis
+  }
+  .recent-drive-meta {
+    font-size:22rpx;
+    color:var(--dashboard-muted);
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis
+  }
+  .recent-drive-chevron {
+    flex:none;
+    font-size:34rpx;
+    color:var(--dashboard-muted)
   }
   .recent-drive-header {
     display:flex;
@@ -465,8 +551,15 @@
     white-space:nowrap
   }
   .dashboard-tpms-row {
-    display:flex;
-    gap:24rpx
+    display:grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap:12rpx
+  }
+  .dashboard-tpms .dashboard-info-card {
+    padding:16rpx 18rpx;
+    background: var(--dashboard-neutral-soft);
+    border: 0.5px solid var(--dashboard-border);
+    box-shadow: none;
   }
   .dashboard-history-entry {
     display:flex;

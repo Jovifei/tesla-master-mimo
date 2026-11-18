@@ -106,7 +106,9 @@ it('keeps the App location card concise and leaves raw coordinates to the map pa
   const location = renderer!.root.findAllByProps({ className: 'dashboard-info-card' })
     .find(card => card.findByProps({ className: 'dashboard-info-label' }).children.join('') === '位置')!
   expect(location.findByProps({ className: 'dashboard-info-value' }).children.join('')).toBe('已获取位置 · 点击查看地图')
-  expect(renderer!.root.findByType('map' as React.ElementType)).toBeDefined()
+  expect(renderer!.root.findAllByType('map' as React.ElementType)).toHaveLength(0)
+  await act(async () => { location.props.onClick() })
+  expect(platform.navigateTo).toHaveBeenCalledWith({ url: '/pages/tools/index?kind=location' })
 })
 const snapshotBadge = () => renderer!.root.findAll(node => node.type === 'text' && String(node.props.className ?? '').split(' ').includes('dashboard-snapshot-badge'))[0]
 const snapshots = () => platform.request.mock.calls.filter(([request]) => request.url.endsWith('/snapshot'))
@@ -613,14 +615,11 @@ it('matches the actual Dashboard hierarchy, App InfoCard ordering, four state ch
   const info = page.root.findAllByProps({ className: 'dashboard-info-card' })
   expect(info.slice(0, 4).map(node => node.findByProps({ className: 'dashboard-info-label' }).children.join(''))).toEqual(['里程', '位置', '车内', '车外'])
   for (const card of info) expect(card.children.map(child => typeof child === 'string' ? '' : child.props.className).slice(0, 2)).toEqual(['dashboard-info-heading', 'dashboard-info-value'])
-  const map = page.root.findByType('map' as React.ElementType)
-  expect(map.props.showLocation).toBe(false)
-  expect(map.props.latitude).not.toBe(31.2)
+  expect(page.root.findAllByType('map' as React.ElementType)).toHaveLength(0)
   const sections = page.root.findByProps({ className: 'page vehicle-page appearance-neutral' }).findAllByType('view').map(node => node.props.className)
   expect(sections.indexOf('dashboard-soc-trend')).toBeLessThan(sections.indexOf('dashboard-location-row'))
   expect(sections.indexOf('dashboard-location-row')).toBeLessThan(sections.indexOf('dashboard-temperature-row'))
   expect(sections.indexOf('dashboard-temperature-row')).toBeLessThan(sections.indexOf('dashboard-tpms'))
-  expect(sections.indexOf('dashboard-tpms')).toBeLessThan(sections.indexOf('dashboard-map-card'))
   expect(snapshotBadge().children.join('')).toContain('实时')
 })
 
@@ -905,20 +904,21 @@ it('status failure uses the App partial dashboard and real car configuration, wi
  expect(visible()).not.toContain('待接入')
 })
 
-it('map render failure preserves location evidence and offers an actual retry without phone GPS', async () => {
+it('keeps the dashboard map-free and opens the dedicated location page', async () => {
  platform.request.mockImplementation(async ({ url }: { url: string }) => {
   if (url.endsWith('/cars')) return respond({ cars })
   if (url.endsWith('/snapshot')) return respond({ status: { car_geodata: { latitude: 31.2, longitude: 121.5 } } })
   return url.endsWith('/data-readiness') ? respond({ items: [] }) : respond({})
  })
  const page = await mount(false)
- await act(async () => { page.root.findByType('map' as React.ElementType).props.onError() })
  expect(page.root.findAllByType('map' as React.ElementType)).toHaveLength(0)
-  expect(page.root.findAllByProps({ className: 'dashboard-info-value' }).some(node => node.children.join('') === '已获取位置 · 点击查看地图')).toBe(true)
- await act(async () => { page.root.findAllByType('button').find(node => node.children.join('') === '重试地图')!.props.onClick() })
- expect(page.root.findByType('map' as React.ElementType).props.showLocation).toBe(false)
+ const location = page.root.findAllByProps({ className: 'dashboard-info-card' })
+   .find(card => card.findByProps({ className: 'dashboard-info-label' }).children.join('') === '位置')!
+ expect(location.findByProps({ className: 'dashboard-info-value' }).children.join('')).toBe('已获取位置 · 点击查看地图')
+ await act(async () => { location.props.onClick() })
+ expect(platform.navigateTo).toHaveBeenCalledWith({ url: '/pages/tools/index?kind=location' })
+ expect(page.root.findAllByType('button').some(node => node.children.join('') === '重试地图')).toBe(false)
 })
-
 it('does not invent P or put a driving strip on an online status from speed alone', async () => {
  platform.request.mockImplementation(async ({url}: {url:string}) => {
   if(url.endsWith('/cars')) return respond({cars})
