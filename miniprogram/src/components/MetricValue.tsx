@@ -11,7 +11,8 @@ type Props = {
   icon?: VisualIconName
   negative?: boolean
   digits?: number
-  presentation?: 'telemetry'
+  presentation?: 'telemetry' | 'strip'
+  ariaLabel?: string
 }
 
 export function displayNumber(value: number, digits = 2): string {
@@ -40,12 +41,37 @@ export function formatSocRangeMetric(start: number | null | undefined, end: numb
   return { value: `${first ?? '—'}→${last ?? '—'}`, unit: '%' }
 }
 
-export default function MetricValue({ label, value, source, unit, icon, negative = false, digits = 2 }: Props) {
+export default function MetricValue({ label, value, source, unit, icon, negative = false, digits = 2, presentation, ariaLabel }: Props) {
   const valid = value != null && value !== '' && (typeof value !== 'number' || Number.isFinite(value))
   const shown = valid ? (typeof value === 'number' ? displayNumber(value, digits) : value) : '暂无数据'
   const shownUnit = valid ? unit : undefined
+  const labelNode = ariaLabel ?? `${label} ${shown}${shownUnit ? `${shownUnit === '%' ? '' : ' '}${shownUnit}` : ''}`
+  if (presentation === 'strip') {
+    return (
+      <View className="metric" data-presentation="strip" ariaLabel={labelNode}>
+        {icon ? <View className="metric-strip-icon" data-icon={icon}><VisualIcon name={icon} /></View> : null}
+        <View className="metric-strip-reading">
+          <Text className={`metric-value ${negative && valid ? 'history-energy-negative' : ''}`}>{shown}</Text>
+          {shownUnit ? <Text className="metric-strip-unit">{shownUnit}</Text> : null}
+        </View>
+        <Text className="metric-label">{label}</Text>
+      </View>
+    )
+  }
+  if (presentation === 'telemetry') {
+    return (
+      <View className="metric" data-presentation="telemetry" ariaLabel={labelNode}>
+        <View className="metric-heading">
+          {icon ? <VisualIcon name={icon} /> : null}
+          <Text className="metric-label">{label}</Text>
+        </View>
+        <Text className={`metric-value ${negative && valid ? 'history-energy-negative' : ''}`}>{shown}</Text>
+        {shownUnit ? <Text className="metric-unit">{shownUnit}</Text> : null}
+      </View>
+    )
+  }
   return (
-    <View className="metric" ariaLabel={`${label} ${shown}${shownUnit ? `${shownUnit === '%' ? '' : ' '}${shownUnit}` : ''}`}>
+    <View className="metric" ariaLabel={labelNode}>
       <View className="metric-heading">{icon ? <VisualIcon name={icon} /> : null}</View>
       <View className={`metric-reading ${negative && valid ? 'history-energy-negative' : ''}`}>
         <Text className="metric-value">{shown}</Text>

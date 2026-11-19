@@ -88,8 +88,8 @@ it('matches the App telemetry cell hierarchy: icon, number/unit, then label', ()
   const tree = renderer.create(<MetricValue label="距离" value={10} unit="km" icon="distance" presentation="telemetry" />)
   const root = tree.root.findByProps({ className: 'metric' })
   expect(root.children.filter(child => typeof child !== 'string').map(child => child.props.className)).toEqual([
-    'metric-heading', 'metric-reading ', 'metric-label',
+    'metric-heading', 'metric-value ', 'metric-unit',
   ])
-  expect(tree.root.findByProps({ className: 'metric-heading' }).findAllByProps({ className: 'metric-label' })).toHaveLength(0)
+  expect(tree.root.findByProps({ className: 'metric-heading' }).findAllByProps({ className: 'metric-label' })).toHaveLength(1)
   tree.unmount()
 })

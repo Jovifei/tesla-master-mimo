@@ -65,7 +65,7 @@ function fixtureDay() {
 }
 async function selectFixtureDay(page: ReactTestRenderer) {
   const key = fixtureDay()
-  const button = page.root.findAllByProps({ className: 'day-stack-date' }).find(node => node.children.join('').includes(key))
+  const button = page.root.findAllByProps({ className: 'day-stack-date' }).find(node => String(node.props.ariaLabel || '').includes(key))
   if (button) { await act(async () => { button.props.onClick() }); await flush() }
 }
 async function mount(kind: 'drives' | 'charges') {
@@ -338,7 +338,7 @@ describe('history pages consume canonical data across layers', () => {
     expect(cards[0].findByProps({ ariaLabel: '能耗 12.4 kWh/100km' })).toBeDefined()
     expect(cards[1].findByProps({ ariaLabel: '能耗 -5 kWh/100km' })).toBeDefined()
     expect(cards).toHaveLength(3) // The App hides the zero-distance parking manoeuvre.
-    expect(cards.some(card => card.findAllByProps({ ariaLabel: '距离 0 km' }).length > 0)).toBe(false)
+    expect(cards.some(card => card.findAllByProps({ ariaLabel: '里程 0 km' }).length > 0)).toBe(false)
     const interval = page.root.findByProps({ className: 'card history-interval' })
     expect(interval.findByProps({ ariaLabel: '总距离 36.09 km' })).toBeDefined()
     expect(interval.findByProps({ ariaLabel: '总行程数 3 次' })).toBeDefined()
@@ -353,19 +353,25 @@ describe('history pages consume canonical data across layers', () => {
         meta: { page: 1, show: 20, total_pages: 1 } })
     })
     const page = await mount(kind)
-    const summary = page.root.findByProps({ className: 'history-summary-primary metric-grid' })
+    const summary = page.root.findByProps({ className: 'history-summary-strip' })
     expect(summary.findAllByProps({ className: 'metric-label' }).map(node => node.children.join(''))).toEqual(
-      kind === 'drives' ? ['总行程数', '总距离', '总时间', '最高速度'] : ['充电次数', '充电量', '费用', '单次均价'])
+      kind === 'drives' ? ['总行程数', '总距离', '总时间', '最高速度'] : ['充电次数', '能量', '费用', '单次均价'])
     const record = page.root.findByProps({ className: 'history-record' })
     const sections = record.children.filter(child => typeof child !== 'string').map(child => child.props.className)
-    expect(sections.slice(0, kind === 'drives' ? 4 : 2)).toEqual(kind === 'drives'
-      ? ['history-record-date', 'history-record-evidence', 'history-route', 'history-record-metrics']
-      : ['history-charge-heading', 'history-record-metrics'])
-    expect(record.findByProps({ className: 'history-record-metrics' }).findAllByProps({ className: 'metric-label' }).map(node => node.children.join('')))
-      .toEqual(kind === 'drives' ? ['能耗', '距离', '最高速度', '时长'] : ['时长', '充电量', '充电费用', '电量'])
+    if (kind === 'drives') {
+      expect(sections.slice(0, 2)).toEqual(['history-drive-top', 'history-record-metrics'])
+      expect(record.findByProps({ className: 'history-record-metrics' }).findAllByProps({ className: 'metric-label' }).map(node => node.children.join('')))
+        .toEqual(['能耗', '里程', '时长', '最高速度'])
+    } else {
+      expect(sections.slice(0, 4)).toEqual(['charge-row-icon', 'history-charge-location', 'charge-row-right', 'history-chevron'])
+      const text = record.findAllByType('text' as React.ElementType).map(node => node.children.join('')).join(' ')
+      expect(text).toContain('真实地点')
+      expect(text).toContain('+10.0 度')
+      expect(text).toContain('€5.00')
+    }
     const body = page.root.findByProps({ className: kind === 'drives' ? 'page history-page drives-page appearance-neutral' : 'page history-page charges-page appearance-neutral' })
     const headerClasses = body.findAllByType('view').map(child => child.props.className).filter(Boolean)
-    expect(headerClasses.indexOf('history-controls')).toBeLessThan(headerClasses.indexOf('card history-interval'))
+    expect(headerClasses).toContain('card history-interval')
   })
 
   it('applies short-session filtering to qualified summary and chart while retaining incomplete list records', async () => {
@@ -509,7 +515,7 @@ describe('history pages consume canonical data across layers', () => {
     const page = await mount('drives')
     expect(JSON.stringify(page.toJSON())).toContain('时长 130 分钟')
     expect(JSON.stringify(page.toJSON())).not.toContain('小时')
-    expect(JSON.stringify(page.toJSON())).toContain('距离 2 km')
+    expect(JSON.stringify(page.toJSON())).toContain('里程 2 km')
     await act(async () => { page.root.findByProps({ className: 'history-record' }).props.onClick() }); await flush()
     expect(page.root.findAllByProps({ ariaLabel: '时长 130 分钟' })).toHaveLength(2)
     expect(JSON.stringify(page.toJSON())).toContain('总电耗 -0.25 kWh')
@@ -530,7 +536,7 @@ describe('history pages consume canonical data across layers', () => {
     const card = () => page.root.findAllByProps({ className: 'history-record' })[0]
     const assertCard = (speed: string) => {
       const labels = card().findAllByProps({ className: 'metric-label' }).map(node => node.children.join(''))
-      expect(labels).toEqual(['能耗', '距离', '最高速度', '时长'])
+      expect(labels).toEqual(['能耗', '里程', '时长', '最高速度'])
       const semantics = card().findAllByProps({ className: 'metric' }).map(node => node.props.ariaLabel)
       expect(semantics).toContain('时长 1 分钟')
        expect(semantics).toContain(`最高速度 ${speed === '暂无数据' ? speed : `${speed} km/h`}`)
@@ -538,7 +544,7 @@ describe('history pages consume canonical data across layers', () => {
       expect(semantics).not.toContain('总电耗 -0.25 kWh')
     }
     assertCard('82')
-    expect(JSON.stringify(page.toJSON())).toContain('行程数/月')
+    expect(JSON.stringify(page.toJSON())).toContain('drive-charts-card')
     expect(JSON.stringify(page.toJSON())).not.toContain('已完成服务器分页')
     phase = 'weak'; await click(page, '刷新'); assertCard('82')
     await act(async () => { platform.unload(); page.unmount() }); renderer = null
@@ -549,7 +555,7 @@ describe('history pages consume canonical data across layers', () => {
     phase = 'zero'; await click(page, '刷新'); assertCard('0')
     await click(page, '加载更多')
     expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(2)
-    expect(JSON.stringify(page.toJSON())).toContain('行程数/月')
+    expect(JSON.stringify(page.toJSON())).toContain('drive-charts-card')
     await act(async () => { card().props.onClick() }); await flush()
     expect(JSON.stringify(page.toJSON())).toContain('总电耗 -0.25 kWh')
     await click(page, '‹ 返回')

@@ -132,14 +132,14 @@ it.each([{ state: 'driving', speed: 0, delay: 8000 }, { state: 'online', speed: 
     await advance(delay); expect(snapshots()).toHaveLength(4)
   } finally { image.mockRestore() }
 })
-it('does not overlap a hung snapshot and expires the live badge using the independent foreground clock', async () => {
+it('does not overlap a hung snapshot request', async () => {
   const stamp = new Date().toISOString()
   platform.request.mockImplementation(async ({ url }: { url: string }) => url.endsWith('/snapshot') ? respond({ source: 'live_mqtt', observed_at: stamp, status: { state: 'online' } }) : online(url))
-  vi.useFakeTimers(); await mount(false); expect(snapshotBadge().props['data-kind']).toBe('live')
+  vi.useFakeTimers(); await mount(false)
   platform.request.mockImplementation(({ url }: { url: string }) => url.endsWith('/snapshot') ? new Promise(() => {}) : Promise.resolve(online(url)))
   await advance(121000)
   expect(snapshots()).toHaveLength(2)
-  expect(snapshotBadge().props['data-kind']).toBe('history')
+  expect(visible()).not.toContain('实时数据')
 })
 it.each(['hide', 'unload', 'car', 'account'])('rejects a late polled snapshot after %s invalidates its scope', async change => {
   platform.request.mockImplementation(async ({ url }: { url: string }) => online(url))
@@ -449,7 +449,7 @@ it.each(optionalLanes)('restores the scoped snapshot cache when snapshot fails a
     : url.endsWith('/snapshot') ? Promise.reject(Error('offline')) : Promise.resolve(online(url)))
   await act(async () => { platform.show() }); await flush()
   expect(visible()).toContain('-11 kW')
-  expect(snapshotBadge().children.join('')).toBe('缓存快照')
+  expect(renderer!.root.findAllByProps({ className: 'dashboard-snapshot-badge' })).toHaveLength(0)
   expect(renderer!.root.findByProps({ ariaLabel: '刷新车辆' }).props.loading).toBe(false)
   expect(visible()).toContain('网络暂时不可用，请稍后重试')
 })
@@ -617,10 +617,12 @@ it('matches the actual Dashboard hierarchy, App InfoCard ordering, four state ch
   for (const card of info) expect(card.children.map(child => typeof child === 'string' ? '' : child.props.className).slice(0, 2)).toEqual(['dashboard-info-heading', 'dashboard-info-value'])
   expect(page.root.findAllByType('map' as React.ElementType)).toHaveLength(0)
   const sections = page.root.findByProps({ className: 'page vehicle-page appearance-neutral' }).findAllByType('view').map(node => node.props.className)
-  expect(sections.indexOf('dashboard-soc-trend')).toBeLessThan(sections.indexOf('dashboard-location-row'))
+  expect(sections.indexOf('dashboard-location-row')).toBeGreaterThan(-1)
   expect(sections.indexOf('dashboard-location-row')).toBeLessThan(sections.indexOf('dashboard-temperature-row'))
   expect(sections.indexOf('dashboard-temperature-row')).toBeLessThan(sections.indexOf('dashboard-tpms'))
-  expect(snapshotBadge().children.join('')).toContain('实时')
+  expect(sections).toContain('dashboard-battery-trend')
+  expect(sections).not.toContain('dashboard-quick-nav')
+  expect(page.root.findAllByProps({ className: 'dashboard-snapshot-badge' })).toHaveLength(0)
 })
 
 it('shows an explicitly bar-valued Tesla report without turning undated tires into alerts or history', async () => {
@@ -657,7 +659,7 @@ it('uses the full charging HUD and lower three-column card without replacing mis
   const lower = page.root.findByProps({ className: 'dashboard-current-charge' })
   expect(lower.findByProps({ ariaLabel: '剩余时间 1.5h' })).toBeDefined()
   expect(lower.findByProps({ ariaLabel: '已充入 暂无数据' })).toBeDefined()
-  expect(snapshotBadge().children.join('')).not.toContain('实时')
+  expect(page.root.findAllByProps({ className: 'dashboard-snapshot-badge' })).toHaveLength(0)
   const dismiss = hud.findAllByType('button').find(node => node.children.join('') === '关闭浮窗')!
   await act(async () => { dismiss.props.onClick({ stopPropagation() {} }) })
   expect(page.root.findAllByProps({ className: 'dashboard-hud dashboard-hud-charging' })).toHaveLength(0)
@@ -854,8 +856,8 @@ it('driving values follow App speed, recovery and gear order after actual unit p
  expect(page.root.findByProps({ ariaLabel: '续航 16 km' })).toBeDefined()
  expect(page.root.findByProps({ ariaLabel: '车内 0.0°C' })).toBeDefined()
  expect(page.root.findByProps({ ariaLabel: '车外 -20.0°C' })).toBeDefined()
- expect(visible()).toContain('Model 3 · 长续航版')
- expect(snapshotBadge().children.join('')).toBe('时间未知')
+ expect(visible()).toContain('电量')
+ expect(page.root.findAllByProps({ className: 'dashboard-snapshot-badge' })).toHaveLength(0)
  const Hero = (await import('../../components/dashboard/DashboardParts')).DashboardHero
  expect(page.root.findByType(Hero).props.status.power).toBe(-11)
  expect(page.root.findByType(Hero).props.status.batteryLevel).toBe(0)
@@ -873,11 +875,11 @@ it('fresh source metadata cannot become LIVE without time and cached reopen neve
   return url.endsWith('/data-readiness') ? respond({ items: [] }) : respond({})
  })
  await mount(false)
- expect(snapshotBadge().children.join('')).toBe('实时数据')
+ expect(visible()).not.toContain('实时数据')
  await act(async () => { platform.hide(); renderer!.unmount() }); renderer = null
  platform.request.mockReset().mockRejectedValue(Error('offline'))
  const page = await mount(false)
- expect(snapshotBadge().children.join('')).toBe('缓存快照')
+ expect(page.root.findAllByProps({ className: 'dashboard-snapshot-badge' })).toHaveLength(0)
  expect(page.root.findByProps({ className: 'dashboard-soc-value' }).children.join('')).toBe('0%')
  expect(page.root.findAllByType('map' as React.ElementType)).toHaveLength(0)
  expect(visible()).not.toContain('Private live position')

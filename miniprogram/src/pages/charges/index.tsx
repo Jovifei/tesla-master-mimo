@@ -21,7 +21,7 @@ import { historyCacheKey, readHistoryCache, writeHistoryCache } from '../../serv
 import LoadingIndicator from '../../components/LoadingIndicator'
 import EvidenceCurve, { chargeCurveProvenance } from '../../components/EvidenceCurve'
 import HistoryIntervalSummary from '../../components/HistoryIntervalSummary'
-import HistoryDateChips from '../../components/HistoryDateChips'
+import { HistoryRangePicker } from '../../components/HistoryDateChips'
 import MetricValue, { formatSocRange, formatSocRangeMetric } from '../../components/MetricValue'
 import VisualIcon from '../../components/VisualIcon'
 import { availabilityLabel, qualityLabel, sourceLabel } from '../../domain/data_labels'
@@ -697,6 +697,34 @@ export default function ChargesPage() {
       average: values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null, count: values.length }
   }
   const powerStats = sampleStats('powerKw'), voltageStats = sampleStats('voltageV'), currentStats = sampleStats('currentA'), temperatureStats = sampleStats('temperatureC')
+  const currencySymbolFor = (code: string | null | undefined) => code === 'CNY' || !code ? '¥' : code === 'EUR' ? '€' : code === 'USD' ? '$' : code === 'GBP' ? '£' : code
+  const chargeDuration = (minutes: number | null | undefined) => {
+    if (minutes == null || !Number.isFinite(minutes) || minutes < 0) return null
+    const whole = Math.round(minutes), pad = (n: number) => String(n).padStart(2, '0')
+    return `${pad(Math.floor(whole / 60))}:${pad(whole % 60)}`
+  }
+  const groupHeader = (key: string) => {
+    if (key === 'unknown') return '日期待确认'
+    const date = new Date(`${key}T12:00:00`)
+    if (Number.isNaN(date.getTime())) return '日期待确认'
+    const today = new Date(), pad = (n: number) => String(n).padStart(2, '0')
+    const todayKey = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`
+    const yesterday = new Date(today); yesterday.setDate(yesterday.getDate() - 1)
+    const yesterdayKey = `${yesterday.getFullYear()}-${pad(yesterday.getMonth() + 1)}-${pad(yesterday.getDate())}`
+    if (key === todayKey) return '今天'
+    if (key === yesterdayKey) return '昨天'
+    const weekday = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][date.getDay()]
+    const monthDay = date.getFullYear() === today.getFullYear() ? `${date.getMonth() + 1}月${date.getDate()}日` : `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`
+    return `${monthDay} · ${weekday}`
+  }
+  const chargeGroups = (() => {
+    const map = new Map<string, Charge[]>()
+    for (const item of visibleItems) {
+      const key = civilDay(item.startDate) ?? 'unknown'
+      map.set(key, [...(map.get(key) ?? []), item])
+    }
+    return [...map.entries()].sort((a, b) => a[0] === 'unknown' ? 1 : b[0] === 'unknown' ? -1 : b[0].localeCompare(a[0]))
+  })()
   const navGeo = getAppNavGeometry()
   return (
     <View className={`page history-page charges-page ${appearance.className}`}>
@@ -712,49 +740,44 @@ export default function ChargesPage() {
       </View>
 
       {MOCK_FIXTURE_ENABLED ? <View className="card fixture-data-notice" style={{ backgroundColor: '#fff7ed', borderColor: '#c2410c' }}><Text className="section-title" style={{ color: '#9a3412', marginBottom: 0 }}>合成测试数据，未连接真实车辆</Text></View> : null}
-      {car ? <View className="history-controls">
-        <ScrollView scrollX className="history-filter-scroll"><HistoryDateChips kind="charges" query={query} onChange={updateQuery} /></ScrollView>
-        <View className="history-charge-filter-row">
-          <Picker mode="selector" range={['全部', 'AC', 'DC']} value={chargeTypeFilter === 'all' ? 0 : chargeTypeFilter === 'ac' ? 1 : 2} onChange={event => setChargeTypeFilter((['all', 'ac', 'dc'] as const)[Number(event.detail.value)] || 'all')}>
-            <Button className="history-filter-button"><VisualIcon name="energy" />{chargeTypeFilter === 'all' ? '全部' : chargeTypeFilter.toUpperCase()}</Button>
-          </Picker>
-          <Picker mode="selector" range={['全部', '有费用', '无费用']} value={costFilter === 'all' ? 0 : costFilter === 'has' ? 1 : 2} onChange={event => setCostFilter((['all', 'has', 'none'] as const)[Number(event.detail.value)] || 'all')}>
-            <Button className="history-filter-button"><VisualIcon name="money" />{costFilter === 'all' ? '全部' : costFilter === 'has' ? '有费用' : '无费用'}</Button>
-          </Picker>
-          <Picker mode="selector" range={locationOptions} value={Math.max(0, locationOptions.indexOf(selectedLocation || '位置'))} onChange={event => setSelectedLocation(Number(event.detail.value) === 0 ? null : locationOptions[Number(event.detail.value)] || null)}>
-            <Button className="history-filter-button"><VisualIcon name="map" />{selectedLocation || '位置'}</Button>
-          </Picker>
-        </View>
+      {car && !loading ? <HistoryIntervalSummary interval={intervalView} query={query} kind="charges" headerAction={<HistoryRangePicker query={query} onChange={updateQuery} />} /> : null}
+      {car ? <View className="history-charge-filter-row">
+        <Picker mode="selector" range={['充电类型', 'AC', 'DC']} value={chargeTypeFilter === 'all' ? 0 : chargeTypeFilter === 'ac' ? 1 : 2} onChange={event => setChargeTypeFilter((['all', 'ac', 'dc'] as const)[Number(event.detail.value)] || 'all')}>
+          <View className="history-filter-dropdown">{chargeTypeFilter === 'all' ? '充电类型' : chargeTypeFilter.toUpperCase()} <Text className="history-range-chevron">▼</Text></View>
+        </Picker>
+        <Picker mode="selector" range={['费用', '有费用', '无费用']} value={costFilter === 'all' ? 0 : costFilter === 'has' ? 1 : 2} onChange={event => setCostFilter((['all', 'has', 'none'] as const)[Number(event.detail.value)] || 'all')}>
+          <View className="history-filter-dropdown">{costFilter === 'all' ? '费用' : costFilter === 'has' ? '有费用' : '无费用'} <Text className="history-range-chevron">▼</Text></View>
+        </Picker>
+        <Picker mode="selector" range={locationOptions} value={Math.max(0, locationOptions.indexOf(selectedLocation || '位置'))} onChange={event => setSelectedLocation(Number(event.detail.value) === 0 ? null : locationOptions[Number(event.detail.value)] || null)}>
+          <View className="history-filter-dropdown">{selectedLocation || '全部地点'} <Text className="history-range-chevron">▼</Text></View>
+        </Picker>
+      </View> : null}
+      {car ? <View className="charge-view-recent-row"><Button className="history-view-recent" onClick={() => {
+        setChargeTypeFilter('all'); setCostFilter('all'); setSelectedLocation(null)
+        const start = new Date(); start.setDate(start.getDate() - 29)
+        updateQuery({ startDate: `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-${String(start.getDate()).padStart(2, '0')}`, endDate: new Date().toISOString().slice(0, 10), relativeDays: 30 })
+      }}>查看最近30天 · 全部类型与地点</Button></View> : null}
+      {car ? <View className="history-controls charge-secondary-controls">
         <Button className="button-secondary charge-short-toggle" onClick={() => setShowShortCharges(value => !value)}>{showShortCharges ? copy('charges.hideShort') : copy('charges.showShort')}</Button>
         <Button className="history-chip history-more-toggle" onClick={() => setFiltersExpanded(value => !value)}>{filtersExpanded ? copy('history.collapseFilters') : copy('history.moreFilters')}</Button>
         <View className={`history-actions${filtersExpanded ? '' : ' history-actions-hidden'}`}>
-          <Picker mode="date" value={query.startDate} onChange={event => updateQuery(selectHistoryDate(queryRef.current, 'startDate', event.detail.value))}><View>开始日期：{query.startDate || copy('common.unlimited')}</View></Picker>
+          <Picker mode="date" value={query.startDate} onChange={event => updateQuery(selectHistoryDate({ ...queryRef.current, endDate: queryRef.current.endDate || event.detail.value }, 'startDate', event.detail.value))}><View>开始日期：{query.startDate || copy('common.unlimited')}</View></Picker>
           <Picker mode="date" value={query.endDate} onChange={event => updateQuery(selectHistoryDate(queryRef.current, 'endDate', event.detail.value))}><View>结束日期：{query.endDate || copy('common.unlimited')}</View></Picker>
           <Button className="button" onClick={() => updateQuery(emptyHistoryQuery())}>{copy('common.clearFilters')}</Button>
           <Button className="button" loading={loading} onClick={() => { void load() }}>{copy('common.refresh')}</Button>
         </View>
         {offline ? <Text className="muted">{copy('history.localCache')}</Text> : null}
       </View> : null}
-      {car && !loading ? <HistoryIntervalSummary interval={intervalView} query={query} kind="charges" /> : null}
       {car && dailyCells.length ? <View className="card charge-month-chart">
         <View className="charge-heatmap-heading">
           <View className="visual-heading">
-            <VisualIcon name="energy" />
-            <Text className="section-title">充电日历热力图</Text>
+            <VisualIcon name="battery" />
+            <Text className="section-title">按日充电量</Text>
           </View>
-          <Text
-            className="info-dot-trigger"
-            onClick={() => {
-              void Taro.showModal({
-                title: '充电日历热力图',
-                content: '一格代表一天，颜色越深代表当日充入电量越多；点击小格可查看对应日期的充入电量与已知记录覆盖。',
-                showCancel: false,
-                confirmText: '我知道了',
-              })
-            }}
-          >ℹ</Text>
         </View>
+        <Text className="charge-heatmap-unit">单位：度</Text>
         <ChargeActivityGrid unit="kWh" cells={dailyCells} />
+        <Text className="charge-heatmap-note">每格一天；日格最多展示所选范围最近366天，汇总与历史不变。</Text>
       </View> : null}
       {car && !loading && unknownDates > 0 ? (
         <View className="history-coverage-note">
@@ -790,50 +813,48 @@ export default function ChargesPage() {
           <Text className="section-title charge-history-heading">充电历史</Text>
           {loading ? <LoadingIndicator label="正在读取充电记录…" compact /> : null}
           {visibleItems.length === 0 && trustedItems.length > 0 ? <Text className="muted">{copy('history.noMatchedCharges')}</Text> : null}
-          {visibleItems.map(item => (
-            <View key={historyRowKey(item)} className="history-record" onClick={() => { void openDetail(item) }}>
-              <View className="history-charge-heading">
-                <View className="history-charge-location-box">
-                  <View className="location-circle"><VisualIcon name="distance" /></View>
+          {chargeGroups.map(([key, rows]) => <View key={key} className="charge-group">
+            <Text className="charge-group-header">{groupHeader(key)}</Text>
+            <View className="charge-group-card">
+              {rows.map((item, index) => {
+                const mode = modeLabel(item)
+                const dc = mode === copy('charges.dc')
+                const energy = item.energyAddedKwh
+                const energyText = energy != null && Number.isFinite(energy) && energy >= 0
+                  ? `${item.energy?.quality === 'reported' ? '+' : '≈'}${energy.toFixed(1)} 度` : null
+                const cost = costLabel(item as CostedCharge)
+                const estimateText = estimateBasis(item as CostedCharge)
+                const inputText = inputNumber(item) != null ? `${inputLabel(item)}：${inputNumber(item)} kWh` : null
+                const unitCost = item.cost != null && energy != null && energy > 0.05 ? item.cost / energy : null
+                const symbol = currencySymbolFor(item.currencyCode || item.currency)
+                const costText = typeof cost.value === 'string' ? cost.value
+                  : cost.value != null && Number.isFinite(cost.value) ? `${symbol}${cost.value.toFixed(2)}` : null
+                const costAria = typeof cost.value === 'string' ? `充电费用 ${cost.value}${cost.unit ? ` ${cost.unit}` : ''}`
+                  : cost.value != null ? `充电费用 ${cost.value} ${cost.unit || ''}`.trim() : '充电费用 暂无数据'
+                const duration = chargeDuration(item.durationMinutes)
+                return <View key={historyRowKey(item)} className="history-record" onClick={() => { void openDetail(item) }}>
+                  {index > 0 ? <View className="charge-row-divider" /> : null}
+                  <View className={`charge-row-icon${dc ? ' is-dc' : ''}`}><VisualIcon name={dc ? 'chargeDc' : 'metricChargeCount'} /></View>
                   <View className="history-charge-location">
-                    <Text className="location-name">{displayAddress(item.address)}</Text>
-                    <Text className="location-date">{historyEditorialDate(item.startDate, false)}</Text>
+                    <Text className="charge-row-address">{displayAddress(item.address)}</Text>
+                    <Text className="charge-row-meta">{historyEditorialDate(item.startDate, false)}{duration ? ` · ${duration}` : ''}</Text>
+                    <View className="charge-row-mode-line">
+                      <Text className={`history-charge-mode${mode === copy('charges.modeUnknown') ? ' history-charge-mode-unknown' : dc ? ' history-charge-mode-dc' : ' history-charge-mode-ac'}`}>{mode}</Text>
+                      {unitCost != null ? <Text className="charge-row-unitprice"> · {symbol}{unitCost.toFixed(2)}/度</Text> : null}
+                    </View>
+                    {estimateText ? <Text style={{ display: 'none' }}>{estimateText}</Text> : null}
+                    {inputText ? <Text style={{ display: 'none' }}>{inputText}</Text> : null}
                   </View>
+                  <View className="charge-row-right">
+                    {energyText ? <View className="charge-row-energy-wrap" ariaLabel={energy != null ? `充电量 ${energy.toFixed(1)} kWh` : '充电量 暂无数据'}><Text className="charge-row-energy">{energyText}</Text></View> : null}
+                    <View className="charge-row-soc-wrap" ariaLabel={`电量 ${formatSocRangeMetric(item.startBatteryLevel, item.endBatteryLevel).value} %`}><Text className="charge-row-soc">{formatSocRange(item.startBatteryLevel, item.endBatteryLevel)}</Text></View>
+                    <View className="charge-row-cost-wrap" ariaLabel={costAria}>{costText ? <Text className="charge-row-cost">{costText}</Text> : null}</View>
+                  </View>
+                  <Text className="history-chevron">›</Text>
                 </View>
-                <Text className={`history-charge-mode${modeLabel(item) === copy('charges.modeUnknown') ? ' history-charge-mode-unknown' : modeLabel(item) === copy('charges.dc') ? ' history-charge-mode-dc' : ' history-charge-mode-ac'}`}>{modeLabel(item)}</Text>
-              </View>
-              <View className="history-record-metrics">
-                <MetricValue label={copy('history.duration')} value={item.durationMinutes != null && Number.isFinite(item.durationMinutes) && item.durationMinutes >= 0 ? item.durationMinutes : null} unit="m" icon="clock" digits={Number.isInteger(item.durationMinutes) ? 0 : 1} />
-                <MetricValue label={copy('charges.energyAdded')} value={oneDecimal(item.energyAddedKwh)} unit="kWh" icon="energy" />
-                <MetricValue label={copy('charges.cost')} {...costLabel(item)} icon="account" />
-                <MetricValue label={copy('history.soc')} {...formatSocRangeMetric(item.startBatteryLevel, item.endBatteryLevel)} icon="battery" />
-              </View>
-              {(() => {
-                const durationHours = (item.durationMinutes ?? 0) / 60
-                const avgPowerKw = durationHours > 0.05 && item.energyAddedKwh != null && item.energyAddedKwh > 0
-                  ? item.energyAddedKwh / durationHours
-                  : null
-                const unitCost = item.cost != null && item.energyAddedKwh != null && item.energyAddedKwh > 0.05
-                  ? item.cost / item.energyAddedKwh
-                  : null
-                const currency = item.currencyCode || item.currency || '¥'
-                const submetrics = [
-                  unitCost != null ? `单价 ≈ ${currency === 'CNY' ? '¥' : currency}${unitCost.toFixed(2)}/kWh` : null,
-                  avgPowerKw != null ? `均功 ≈ ${avgPowerKw.toFixed(1)} kW` : null,
-                ].filter(Boolean)
-                if (submetrics.length === 0) return null
-                return <Text className="history-charge-submetrics">{submetrics.join(' · ')}</Text>
-              })()}
-              {(item.costProvenance === 'estimate' || inputNumber(item) != null) ? (
-                <Text className="history-source">
-                  {item.costProvenance === 'estimate' ? estimateBasis(item) : ''}
-                  {item.costProvenance === 'estimate' && inputNumber(item) != null ? ' · ' : ''}
-                  {inputNumber(item) != null ? `${inputLabel(item)}：${inputNumber(item)} kWh` : ''}
-                </Text>
-              ) : null}
-              {'costProvenance' in item && item.costProvenance === 'manual' ? <Text className="metric-source">本机手动费用</Text> : null}
+              })}
             </View>
-          ))}
+          </View>)}
           {!offline && meta?.hasMore ? <Button className="button" loading={loadingMore} onClick={loadMore}>{copy('common.loadMore')}</Button> : null}
         </View>
       )}

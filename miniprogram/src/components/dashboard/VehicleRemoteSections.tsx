@@ -59,6 +59,9 @@ export type VehicleRemoteSectionsProps = {
   onCreatePlace: (name: string, radiusM: number) => Promise<void>
   onSaveFrequentPlace?: (place: FrequentPlace) => Promise<void>
   onDeletePlace: (id: number) => Promise<void>
+  /** The App dashboard puts the four status chips inside the vehicle card and
+   * has no separate control card; keep the section available for other hosts. */
+  showControlCard?: boolean
 }
 
 export default function VehicleRemoteSections({
@@ -84,6 +87,7 @@ export default function VehicleRemoteSections({
   onCreatePlace,
   onSaveFrequentPlace,
   onDeletePlace,
+  showControlCard = true,
 }: VehicleRemoteSectionsProps) {
   const [unlockConfirmOpen, setUnlockConfirmOpen] = useState(false)
   const [climateModalOpen, setClimateModalOpen] = useState(false)
@@ -117,7 +121,7 @@ export default function VehicleRemoteSections({
   return (
     <View className="vehicle-remote-sections">
       {/* 1. Vehicle Controls Section */}
-      {reauthNeeded ? (
+      {!showControlCard ? null : reauthNeeded ? (
         <View className="card vehicle-reauth-panel">
           <View className="reauth-heading">
             <DashboardIcon name="lock" tone="warning" />

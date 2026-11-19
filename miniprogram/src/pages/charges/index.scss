@@ -546,3 +546,31 @@
   padding-top: 8rpx;
   border-top: 1rpx solid rgba(233, 237, 242, 0.4);
 }
+
+/* App 2.1.91 grouped charge history: date header + one rounded card per day. */
+.charge-view-recent-row { display: flex; justify-content: flex-end; margin: 0 0 12rpx; }
+.history-view-recent { margin: 0; padding: 0; background: transparent; color: var(--apple-label-secondary); font-size: 24rpx; }
+.history-view-recent::after { border: 0; }
+.charge-group { margin-bottom: 18rpx; }
+.charge-group-header { display: block; padding: 20rpx 16rpx 8rpx; font-size: 26rpx; font-weight: 600; color: var(--apple-label-secondary); }
+.charge-group-card { background: var(--apple-surface); border: 0.5px solid var(--apple-separator); border-radius: 28rpx; overflow: hidden; }
+.charge-group-card .history-record { position: relative; display: flex; align-items: center; gap: 16rpx; padding: 22rpx 24rpx; margin: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.charge-group-card .history-record:active { background: rgba(0, 0, 0, .02); }
+.charge-row-divider { position: absolute; left: 88rpx; right: 24rpx; top: 0; height: 0.5px; background: var(--apple-separator); }
+.charge-row-icon { flex: none; width: 52rpx; height: 52rpx; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: rgba(14, 116, 144, .12); }
+.charge-row-icon.is-dc { background: rgba(180, 83, 9, .12); }
+.charge-row-icon .visual-icon { width: 30rpx; height: 30rpx; background: transparent; }
+.history-charge-location { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4rpx; }
+.charge-row-address { font-size: 28rpx; font-weight: 600; color: var(--apple-label-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.charge-row-meta { font-size: 22rpx; color: var(--apple-label-secondary); }
+.history-charge-mode { font-size: 20rpx; color: var(--apple-label-secondary); }
+.history-charge-mode.history-charge-mode-dc { color: #B45309; }
+.charge-row-right { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 4rpx; }
+.charge-row-energy { font-size: 30rpx; font-weight: 700; color: var(--apple-label-primary); }
+.charge-row-soc { font-size: 20rpx; color: var(--apple-label-secondary); }
+.charge-row-soc { color: var(--apple-label-secondary); }
+.charge-row-cost { font-size: 20rpx; font-weight: 600; color: #15803d; background: rgba(34, 197, 94, .12); border-radius: 8rpx; padding: 2rpx 8rpx; }
+
+.charge-row-mode-line { display: flex; align-items: center; }
+.charge-row-unitprice { font-size: 20rpx; color: var(--apple-label-secondary); }
+.charge-row-energy-wrap, .charge-row-soc-wrap, .charge-row-cost-wrap { display: flex; justify-content: flex-end; }

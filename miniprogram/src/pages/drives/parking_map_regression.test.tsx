@@ -69,8 +69,8 @@ it('keeps retained ambiguous legacy history out of display, totals and inline ch
   expect(view.root.findAllByProps({ className: 'history-record' })).toHaveLength(1)
   expect(view.root.findByProps({ ariaLabel: '总行程数 1 次' })).toBeDefined()
   expect(readHistoryCache<{ identityAmbiguous?: boolean }>(storage, key).some(row => row.identityAmbiguous === true)).toBe(true)
-  const longTrips = view.root.findAllByType('button').find(item => item.children.join('') === '公路旅行 (100km+)')!
-  await act(async () => { longTrips.props.onClick() }); await flush()
+  const distancePicker = view.root.findAllByType('picker' as React.ElementType).find(node => node.props.mode === 'selector' && node.props.range?.length === 7)!
+  await act(async () => { distancePicker.props.onChange({ detail: { value: 3 } }) }); await flush()
   expect(JSON.stringify(view.toJSON())).not.toContain('来源身份未确认的历史记录已保留，但未计入当前展示或统计')
 })
 
@@ -100,15 +100,15 @@ it('reuses a confirmed proof after filtering the candidate out and back into vie
     return response({ drives: records, meta: { page: 1, show: 20, total_pages: 1 } })
   })
   const view = await mount()
-  const click = async (label: string) => {
-    const button = view.root.findAllByType('button').find(item => item.children.join('') === label)
-    expect(button).toBeDefined()
-    await act(async () => { button!.props.onClick() }); await flush()
+  const chooseDistance = async (value: number) => {
+    const picker = view.root.findAllByType('picker' as React.ElementType).find(node => node.props.mode === 'selector' && node.props.range?.length === 7)
+    expect(picker).toBeDefined()
+    await act(async () => { picker!.props.onChange({ detail: { value } }) }); await flush()
   }
   expect(view.root.findAllByProps({ className: 'history-record history-parked' })).toHaveLength(1)
-  await click('公路旅行 (100km+)')
+  await chooseDistance(3)
   expect(view.root.findAllByProps({ className: 'history-record history-parked' })).toHaveLength(0)
-  await click('通勤 (< 10km)')
+  await chooseDistance(1)
   expect(view.root.findAllByProps({ className: 'history-record history-parked' })).toHaveLength(1)
   expect(platform.request.mock.calls.filter(([request]) => request.url.endsWith('/parked/1/3'))).toHaveLength(1)
 })
@@ -150,7 +150,7 @@ it('does not replace missing verified parked SOC with old list values', async ()
   const view = await mount()
   const card = view.root.findByProps({ className: 'history-record history-parked' })
   expect(card.findAllByProps({ className: 'parked-soc' })).toHaveLength(0)
-  expect(card.findByProps({ className: 'parked-title' }).children.join('')).toBe('驻车于 未知位置')
+  expect(card.findByProps({ className: 'parked-title' }).children.join('')).toBe('驻车于 未知')
   await act(async () => { card.props.onClick() }); await flush()
   const detail = view.root.findByProps({ ariaLabel: '驻车详情' })
   expect(detail.findByProps({ ariaLabel: '起始电量 暂无数据' })).toBeDefined()

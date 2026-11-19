@@ -2,6 +2,9 @@ import { vehicleAssetPackages } from '../vehicle-assets.config'
 
 export default defineAppConfig({
   darkmode: true,
+  // WeChat requires themeLocation whenever darkmode is true; without it the
+  // client can fail to start the page and leave a blank/black shell.
+  themeLocation: 'theme.json',
   pages: [
     'pages/vehicle/index',
     'pages/drives/index',
@@ -16,10 +19,10 @@ export default defineAppConfig({
   subpackages: vehicleAssetPackages,
   window: {
     navigationBarTitleText: 'MateLink',
-    navigationBarBackgroundColor: '#f5f5f7',
-    navigationBarTextStyle: 'black',
-    backgroundColor: '#f5f5f7',
-    backgroundTextStyle: 'light',
+    navigationBarBackgroundColor: '@navBgColor',
+    navigationBarTextStyle: '@navTextStyle',
+    backgroundColor: '@bgColor',
+    backgroundTextStyle: '@bgTextStyle',
   },
   tabBar: {
     color: '#737373',

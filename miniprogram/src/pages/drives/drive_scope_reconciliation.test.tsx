@@ -49,6 +49,13 @@ async function clickText(view: ReactTestRenderer, text: string) {
   expect(button).toBeDefined()
   await act(async () => { button!.props.onClick() }); await flush()
 }
+async function chooseSelector(view: ReactTestRenderer, rangeLength: number, value: number) {
+  const picker = view.root.findAllByType('picker' as React.ElementType).find(node => node.props.mode === 'selector' && node.props.range?.length === rangeLength)
+  expect(picker).toBeDefined()
+  await act(async () => { picker!.props.onChange({ detail: { value } }) }); await flush(); await flush()
+}
+const chooseRange = (view: ReactTestRenderer, value: number) => chooseSelector(view, 6, value)
+const chooseDistance = (view: ReactTestRenderer, value: number) => chooseSelector(view, 7, value)
 const front = (view: ReactTestRenderer) => view.root.findByProps({ className: 'day-stack-heading-row' }).findByProps({ className: 'section-title' }).children.join('')
 beforeEach(() => { vi.resetModules(); vi.stubEnv('TARO_APP_API_BASE_URL', origin); vi.stubEnv('TARO_APP_MOCK_FIXTURE', 'false'); platform.values.clear(); platform.request.mockReset() })
 afterEach(async () => { if (page) await act(async () => { platform.unload(); page!.unmount() }); page = null; vi.unstubAllEnvs() })
@@ -134,7 +141,7 @@ it('starts all-time history on today while keeping future, older and unknown rec
   platform.request.mockImplementation(async ({ url }: { url: string }) => url.endsWith('/cars') ? response({ cars: [car] }) :
     response({ drives: [future, old, unknown], meta: { page: 1, show: 20, total_pages: 1 } }))
   const view = await mount()
-  await clickText(view, '全部时间')
+  await chooseRange(view, 4)
   expect(front(view)).toContain(dayKey(localDay(0)))
   expect(view.root.findAllByProps({ className: 'history-record' })).toHaveLength(0)
   expect(view.root.findByProps({ className: 'day-stack-body' }).props.onTouchEnd).toBeUndefined()
@@ -157,7 +164,7 @@ it('retains a selected date through an empty-cache refresh and clears it when th
     return Promise.resolve(response({ drives: [old], meta: { page: 1, show: 20, total_pages: 1 } }))
   })
   const view = await mount()
-  await clickText(view, '全部时间')
+  await chooseRange(view, 4)
   const before = [...platform.values.entries()]
   await act(async () => { view.root.findByProps({ ariaLabel: '较旧日期' }).props.onClick() }); await flush()
   expect(front(view)).toContain(dayKey(localDay(-1)))
@@ -169,9 +176,9 @@ it('retains a selected date through an empty-cache refresh and clears it when th
   expect(release).toBeDefined()
   await act(async () => { release!(response({ drives: [old], meta: { page: 1, show: 20, total_pages: 1 } })) }); await flush()
   expect(front(view)).toContain(dayKey(localDay(-1)))
-  await clickText(view, '通勤 (< 10km)')
+  await chooseDistance(view, 1)
   expect(front(view)).toContain(dayKey(localDay(0)))
-  await clickText(view, '全部')
+  await chooseDistance(view, 0)
   expect(front(view)).toContain(dayKey(localDay(0)))
 })
 
@@ -180,7 +187,7 @@ it('does not restore a selected date after switching vehicle and back', async ()
   platform.request.mockImplementation(async ({ url }: { url: string }) => url.endsWith('/cars') ? response({ cars: [car, other] }) :
     response({ drives: [old], meta: { page: 1, show: 20, total_pages: 1 } }))
   const view = await mount()
-  await clickText(view, '全部时间')
+  await chooseRange(view, 4)
   await act(async () => { view.root.findByProps({ ariaLabel: '较旧日期' }).props.onClick() }); await flush()
   expect(front(view)).toContain(dayKey(localDay(-1)))
   const picker = () => view.root.findAllByType('picker' as React.ElementType).find(node => node.props.mode === 'selector' && node.props.range?.length === 2)!
@@ -195,7 +202,7 @@ it('does not reuse a selected date when the account changes and later changes ba
   platform.request.mockImplementation(async ({ url }: { url: string }) => url.endsWith('/cars') ? response({ cars: [car] }) :
     response({ drives: [old], meta: { page: 1, show: 20, total_pages: 1 } }))
   const view = await mount()
-  await clickText(view, '全部时间')
+  await chooseRange(view, 4)
   await act(async () => { view.root.findByProps({ ariaLabel: '较旧日期' }).props.onClick() }); await flush()
   expect(front(view)).toContain(dayKey(localDay(-1)))
   const { writeAppSession } = await import('../../services/session')
@@ -212,7 +219,7 @@ it('does not reuse a selected date after the session generation changes', async 
   platform.request.mockImplementation(async ({ url }: { url: string }) => url.endsWith('/cars') ? response({ cars: [car] }) :
     response({ drives: [old], meta: { page: 1, show: 20, total_pages: 1 } }))
   const view = await mount()
-  await clickText(view, '全部时间')
+  await chooseRange(view, 4)
   await act(async () => { view.root.findByProps({ ariaLabel: '较旧日期' }).props.onClick() }); await flush()
   expect(front(view)).toContain(dayKey(localDay(-1)))
   const { matelinkApi } = await import('../../services/api')

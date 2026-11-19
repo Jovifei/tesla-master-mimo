@@ -1,4 +1,4 @@
-import { Button, Switch, Text, View } from '@tarojs/components'
+import { Button, ScrollView, Switch, Text, View } from '@tarojs/components'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { chargeCellPaint, activityLevel, civilDay, dayCaption, daySwipeTarget, type DayGroup } from '../domain/ui_presentation'
 import { useAppearance, writeAppearance } from '../services/appearance'
@@ -72,8 +72,41 @@ function DayStackState<T>({ groups, initialKey, rememberedKey, loading, onSelect
       if (target < index && newer || target > index && older) selectIndex(target)
     }
   }
+  const todayKey = civilDay(new Date().toISOString())
+  const dayBefore = new Date(); dayBefore.setDate(dayBefore.getDate() - 2)
+  const dayBeforeKey = civilDay(dayBefore.toISOString())
+  const cardMeta = (group: DayGroup<T>) => {
+    const key = group.key
+    const date = key.length === 10 ? new Date(`${key}T12:00:00`) : null
+    const valid = date && !Number.isNaN(date.getTime())
+    const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1)
+    const yesterdayKey = civilDay(yesterday.toISOString())
+    const weekday = valid ? ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][date.getDay()] : '日期待确认'
+    const title = key === 'unknown' ? '日期待确认' : key === todayKey ? '今天' : key === yesterdayKey ? '昨天' : key === dayBeforeKey ? '前天' : weekday
+    return {
+      title,
+      count: group.items.length ? `${group.items.length} 条` : '无记录',
+      day: valid ? String(date.getDate()) : '—',
+      month: valid ? `${date.getMonth() + 1}月` : '',
+    }
+  }
+  const horizontal = appearance.dayAxis === 'horizontal'
   return <View className={`day-stack axis-${appearance.dayAxis}${appearance.reducedMotion ? ' reduce-motion' : ''}`}>
-    {rear.map(({ group, target, depth }, order) => <View key={group.key} className={`day-stack-rear depth-${depth}`}
+    {horizontal ? <ScrollView scrollX className="day-stack-fan-scroll" scrollLeft={Math.max(0, index * 110 - 320)}>
+      <View className="day-stack-fan">
+        {groups.map((group, order) => {
+          const meta = cardMeta(group)
+          return <View key={group.key} className={`day-stack-rear day-stack-fan-card${order === index ? ' is-selected' : ''}`}
+            style={{ transform: `rotate(${((order % 7) - 3) * 2.6}deg) scale(${order === index ? 1.03 : 1})`, zIndex: order === index ? 20 : order }}>
+            <Button className="day-stack-date" ariaLabel={`查看 ${dayCaption(group.key)}`} onClick={() => selectIndex(order)}>
+              <Text style={{ display: 'none' }}>{dayCaption(group.key)}</Text>
+              <View className="day-stack-card-top"><Text className="day-stack-card-title">{meta.title}</Text><Text className="day-stack-card-count">{meta.count}</Text></View>
+              <View className="day-stack-card-bottom"><Text className="day-stack-day">{meta.day}</Text>{meta.month ? <Text className="day-stack-month">{meta.month}</Text> : null}</View>
+            </Button>
+          </View>
+        })}
+      </View>
+    </ScrollView> : rear.map(({ group, target, depth }, order) => <View key={group.key} className={`day-stack-rear depth-${depth}`}
       style={{ marginLeft: `${depth * 6}rpx`, marginRight: `${depth * 6}rpx`, zIndex: order + 1 }}>
       <Button className="day-stack-date" ariaLabel={`查看 ${dayCaption(group.key)}`} onClick={() => selectIndex(target)}>{dayCaption(group.key)}</Button>
     </View>)}
@@ -82,11 +115,10 @@ function DayStackState<T>({ groups, initialKey, rememberedKey, loading, onSelect
         <View className="day-stack-heading-row">
           <Text className="section-title">{dayCaption(active.key)}</Text>
           <View className="day-stack-arrows">
-            <Button disabled={!newer} onClick={() => selectIndex(index - 1)} ariaLabel="较新日期">{appearance.dayAxis === 'horizontal' ? '‹' : '↑'}</Button>
-            <Button disabled={!older} onClick={() => selectIndex(index + 1)} ariaLabel="较旧日期">{appearance.dayAxis === 'horizontal' ? '›' : '↓'}</Button>
+            <Button disabled={!newer} onClick={() => selectIndex(index - 1)} ariaLabel="较新日期">{horizontal ? '‹' : '↑'}</Button>
+            <Button disabled={!older} onClick={() => selectIndex(index + 1)} ariaLabel="较旧日期">{horizontal ? '›' : '↓'}</Button>
           </View>
         </View>
-        <Text className="muted">{appearance.dayAxis === 'horizontal' ? '左右' : '上下'}切换日期</Text>
       </View>
       <View key={active.key} className="day-stack-body">{active.items.length ? children(active) : <Text className="day-stack-empty">当天无记录</Text>}</View>
       {unknownIndex >= 0 && active.key !== 'unknown' ? <Button className="button-secondary" onClick={() => selectIndex(unknownIndex)}>查看日期待确认</Button> : null}
@@ -106,7 +138,7 @@ export function ChargeActivityGrid({ cells, unit }: { cells: ActivityCell[]; uni
 }
 function ChargeGridState({ cells, unit }: { cells: ActivityCell[]; unit: string }) {
   const appearance = useAppearance()
-  const pageSize = 28
+  const pageSize = 30
   const [page, setPage] = useState(Math.max(0, Math.ceil(cells.length / pageSize) - 1))
   const [selected, setSelected] = useState<string | null>(null)
   const maxPage = Math.max(0, Math.ceil(cells.length / pageSize) - 1)
@@ -117,16 +149,7 @@ function ChargeGridState({ cells, unit }: { cells: ActivityCell[]; unit: string 
   const chosen = cells.find(cell => cell.key === selected)
   return <View className="charge-activity">
     <View className="charge-activity-top-bar">
-      <Text className="charge-activity-caption">{daily ? '日历热力分布' : '已记录日期'} · {unit}</Text>
-      <View className="charge-heatmap-scale">
-        <Text className="scale-label">0</Text>
-        <View className="scale-dot level-0" />
-        <View className="scale-dot level-1" />
-        <View className="scale-dot level-2" />
-        <View className="scale-dot level-3" />
-        <View className="scale-dot level-4" />
-        <Text className="scale-label">{daily ? '60+' : '高'}</Text>
-      </View>
+      <Text className="charge-activity-caption">{daily ? '每日充入 kWh · 0 / 20 / 40 / 60+ · — 为未报告' : `已记录日期 · ${unit}`}</Text>
     </View>
     {daily ? <View className="charge-activity-weekdays">{['一','二','三','四','五','六','日'].map(day => <Text key={day}>{day}</Text>)}</View> : null}
     <View className="charge-activity-grid">
@@ -139,9 +162,9 @@ function ChargeGridState({ cells, unit }: { cells: ActivityCell[]; unit: string 
       </Button>)}
     </View>
     <View className={`charge-activity-selection-box ${chosen ? 'has-selection' : ''}`}>
-      <Text className="charge-activity-selection">{chosen ? `${chosen.key} · ${chosen.display}` : ''}</Text>
+      <Text className="charge-activity-selection">{chosen ? `${chosen.key} · ${chosen.display}` : '点击格子查看具体数值和单位'}</Text>
     </View>
-    {maxPage > 0 ? <View className="day-stack-navigation"><Button disabled={page === 0} onClick={() => setPage(page - 1)}>较早日期</Button>
-      <Text>{page + 1} / {maxPage + 1}</Text><Button disabled={page === maxPage} onClick={() => setPage(page + 1)}>较近日期</Button></View> : null}
+    {maxPage > 0 ? <View className="day-stack-navigation"><Button disabled={page === 0} onClick={() => setPage(page - 1)}>较旧日期</Button>
+      <Text>{page + 1} / {maxPage + 1}</Text><Button disabled={page === maxPage} onClick={() => setPage(page + 1)}>较新日期</Button></View> : null}
   </View>
 }

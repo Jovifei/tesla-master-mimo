@@ -7,7 +7,7 @@ import ReadinessChecklist from '../../components/ReadinessChecklist'
 import MetricValue from '../../components/MetricValue'
 import { DashboardVehicleArt, DashboardHero, DashboardHud, DashboardInfoCard, DashboardTpms, DashboardCurrentCharge, DashboardRecentDrive } from '../../components/dashboard/DashboardParts'
 import DashboardIcon from '../../components/dashboard/DashboardIcon'
-import { dashboardMetric, dashboardSource, dashboardSnapshot, dashboardReportTime, dashboardVehicleSubtitle, dashboardTemperature } from '../../components/dashboard/presentation'
+import { dashboardMetric, dashboardSource, dashboardTemperature, dashboardVehicleSubtitle } from '../../components/dashboard/presentation'
 import { mapCoordinate } from '../../domain/map_coordinate'
 import { mergeVehicleVisualConfig, resolveVehicleVisual } from '../../domain/vehicle_visual'
 import { ensureVehicleAsset } from '../../services/vehicle_assets'
@@ -32,6 +32,7 @@ import { readVehicleCache, writeVehicleCache } from '../../services/vehicle_cach
 import { historyCacheKey, inspectHistoryCache, readHistoryCache, type HistoryCacheEvidence } from '../../services/history_cache'
 import { readTpmsProfile } from '../../services/tpms_profile'
 import { evaluateTpmsAlerts } from '../../domain/tpms_alerts'
+import { commandErrorMessage, commandLabel, needsCommandReauthorization, offeredCommands } from '../../domain/vehicle_commands'
 import { vehicleSnapshotDelay } from '../../domain/vehicle_polling'
 import { socDailyTrend } from '../../domain/soc_daily_trend'
 import { frequentPlaces, type FrequentPlace } from '../../domain/frequent_places'
@@ -77,8 +78,7 @@ export default function VehiclePage() {
   const [loading, setLoading] = useState(false)
   const [cached, setCached] = useState(false)
   const [visible, setVisible] = useState(false)
-  const [foregroundNow, setForegroundNow] = useState(Date.now)
-  const foreground = useRef(false)
+    const foreground = useRef(false)
   const statusRef = useRef(status)
   statusRef.current = status
   const statusCarRef = useRef<string | null>(null)
@@ -108,6 +108,7 @@ export default function VehiclePage() {
   const [socDrives, setSocDrives] = useState<Drive[]>([])
   const [socWindow, setSocWindow] = useState<7 | 30>(7)
   const [socLoading, setSocLoading] = useState(false)
+  const [socExpanded, setSocExpanded] = useState(false)
   const [newTrip, setNewTrip] = useState<ForegroundNotice | null>(null)
   const secondaryLoadedFor = useRef<string | null>(null)
   const [places, setPlaces] = useState<VehiclePlace[] | null>(null)
@@ -158,6 +159,31 @@ export default function VehiclePage() {
       if (current()) setBusyCommand(null)
     }
     if (refresh && current()) void load()
+  }
+
+  // The App puts the four control chips inside the vehicle card; a tap opens
+  // the same confirmation dialog before any remote command is sent.
+  const handleHeroCommand = async (command: string) => {
+    if (!status || busyCommand) return
+    const copyByCommand: Record<string, { title: string; content: string }> = {
+      unlock: { title: '确认解锁车辆？', content: '解锁是高敏感操作。请确认车辆处于安全环境后再执行。' },
+      lock: { title: '确认锁闭车辆', content: '确定要锁闭车辆门锁吗？' },
+      charge_port_open: { title: '打开充电口', content: '确定要开启车辆充电接口吗？' },
+      charge_port_close: { title: '关闭充电口', content: '确定要关闭车辆充电接口吗？' },
+      climate_on: { title: '开启空调', content: `将以 ${status.driverTempSetting ?? 22}°C 开启空调。` },
+      climate_off: { title: '关闭空调', content: '确定要关闭车辆空调吗？' },
+      sentry_on: { title: '开启哨兵模式', content: '确定要开启哨兵防盗监控模式吗？' },
+      sentry_off: { title: '关闭哨兵模式', content: '确定要关闭哨兵模式吗？' },
+    }
+    const dialog = copyByCommand[command]
+    if (dialog) {
+      try {
+        const answer = await Taro.showModal({ ...dialog, confirmText: '确认执行', cancelText: '取消' })
+        if (!answer.confirm) return
+      } catch { return }
+    }
+    const params = command === 'climate_on' ? { driver_temp: status.driverTempSetting ?? 22 } : undefined
+    void handleExecuteCommand(command, params, true)
   }
 
   const handleLoadNearby = async (selected: Car | null = car, currentStatus: CarStatus | null = status) => {
@@ -514,7 +540,7 @@ export default function VehiclePage() {
 
   useSessionRecoveryReload(() => { if (foreground.current) void load(true) })
   useDidShow(() => {
-    foreground.current = true; setVisible(true); setForegroundNow(Date.now())
+    foreground.current = true; setVisible(true)
     void load(true)
   })
   useEffect(() => {
@@ -526,11 +552,11 @@ export default function VehiclePage() {
   useDidHide(leavePage)
   useUnload(leavePage)
 
-  // This clock is independent of network completion, so a hung request cannot keep a live badge fresh.
+  // This clock is independent of network completion, so a changed session or
+  // API origin still invalidates the visible page even when a request hangs.
   useEffect(() => {
     if (!visible) return
     const timer = setInterval(() => {
-      setForegroundNow(Date.now())
       let originChanged = false
       try { originChanged = Boolean(pageOrigin.current && pageOrigin.current !== getApiOrigin()) } catch { originChanged = true }
       if (pageOwner.current && (originChanged || pageOwner.current !== `${readAppSession(Taro)?.userId ?? ''}:${getApiSessionGeneration()}`)) {
@@ -716,8 +742,8 @@ export default function VehiclePage() {
   const model = car?.model?.toUpperCase().replace(/^MODEL\s*/, '')
   const activeDriving = status?.state?.toLowerCase() === 'driving' || (status?.speed ?? 0) > 0
   const activeCharging = status?.chargingState?.toLowerCase() === 'charging'
-  const snapshot = dashboardSnapshot(status, cached, foregroundNow)
-  const map = !cached && status?.location ? mapCoordinate(status.location.latitude, status.location.longitude) : null
+  const heroCommandsReady = Boolean(status) && !needsCommandReauthorization(status) && offeredCommands(status).length > 0
+    const map = !cached && status?.location ? mapCoordinate(status.location.latitude, status.location.longitude) : null
   const navigate = (url: string) => { void Taro.navigateTo({ url }) }
   const settings = () => navigate('/pages/tools/index?kind=settings')
   const openBattery = () => navigate('/pages/insights/index?kind=battery')
@@ -732,22 +758,27 @@ export default function VehiclePage() {
       {coverSystemBar ? <View className="dashboard-system-bar-cover" style={{ height: `${headerGeometry.coverHeight}px` }} /> : null}
       {coverSystemBar && headerGeometry.capsuleCover ? <View className="dashboard-capsule-cover" style={{ top: `${headerGeometry.capsuleCover.top}px`, left: `${headerGeometry.capsuleCover.left}px`, height: `${headerGeometry.capsuleCover.height}px` }} /> : null}
       <View className="dashboard-toolbar">
-        <View className="dashboard-title"><Text>{car?.displayName || car?.name || '车辆'}</Text><Text>{dashboardVehicleSubtitle(car?.model, car?.trim) || '车型待识别'}</Text></View>
-        <View className="dashboard-toolbar-right" style={{ paddingTop: `${headerGeometry.toolbarOffset}px` }}><View className="dashboard-toolbar-actions"><Text className={`dashboard-snapshot-badge dashboard-snapshot-${snapshot.kind}`} data-kind={snapshot.kind}>{snapshot.label}</Text><Button className="dashboard-icon-button" ariaLabel="刷新车辆" loading={loading} onClick={() => { void load() }}><DashboardIcon name="refresh" tone="muted" /></Button><Button className="dashboard-icon-button" ariaLabel="设置" onClick={settings}><DashboardIcon name="settings" tone="muted" /></Button></View><Text className="dashboard-report-time">{dashboardReportTime(status?.observedAt)}</Text></View>
+        <View className="dashboard-title"><Text>{car?.displayName || car?.name || 'My Tesla'}</Text></View>
+        <View className="dashboard-toolbar-right" style={{ paddingTop: `${headerGeometry.toolbarOffset}px` }}><View className="dashboard-toolbar-actions"><Button className="dashboard-icon-button" ariaLabel="刷新车辆" loading={loading} onClick={() => { void load() }}><DashboardIcon name="refresh" tone="muted" /></Button><Button className="dashboard-icon-button" ariaLabel="设置" onClick={settings}><DashboardIcon name="settings" tone="muted" /></Button></View></View>
       </View>
       {cars.length > 1 ? <Picker mode="selector" range={cars.map(item => item.displayName || item.name || '车辆')} value={Math.max(0, cars.findIndex(item => item.stableId === car?.stableId))} onChange={selectCar}><View className="vehicle-selector"><Text>当前车辆 · {car?.displayName || car?.name || '请选择车辆'}</Text><Text>切换⌄</Text></View></Picker> : null}
       {car && status ? <>
         <DashboardHud status={status} dismissed={hudDismissed} onDismiss={() => setHudDismissed(true)} onExpand={() => setHudDismissed(false)} onOpen={() => { void Taro.switchTab({ url: activeDriving ? '/pages/drives/index' : '/pages/charges/index' }) }} />
         <View className="dashboard-instrument">
-          <DashboardHero car={car} status={status} imageSrc={imageSrc} imageLoading={imageLoading} imageError={imageError} onRetryImage={() => setImageRetry(value => value + 1)} onOpenBattery={openBattery} onManagePhoto={appearanceScope ? openAppearance : undefined} appearanceLabel={appearanceLabel} />
-          <DailySocTrend trend={socTrend} windowDays={socWindow} loading={socLoading} onWindowChange={setSocWindow} />
+          <DashboardHero car={car} status={status} imageSrc={imageSrc} imageLoading={imageLoading} imageError={imageError} onRetryImage={() => setImageRetry(value => value + 1)} onOpenBattery={openBattery} onManagePhoto={appearanceScope ? openAppearance : undefined} appearanceLabel={appearanceLabel} onCommand={handleHeroCommand} commandBusy={busyCommand} commandReady={heroCommandsReady} />
         </View>
         {loading ? <LoadingIndicator label="正在读取最新数据…" compact /> : null}
-        <View className="dashboard-quick-nav">
-          <Button className="dashboard-quick-link" onClick={() => { void Taro.pageScrollTo({ selector: '.vehicle-remote-card', duration: 250 }).catch(() => {}) }}>车辆控制</Button>
-          <Button className="dashboard-quick-link" onClick={() => { void Taro.pageScrollTo({ selector: '.nearby-charging-card', duration: 250 }).catch(() => {}) }}>附近充电</Button>
-          <Button className="dashboard-quick-link" onClick={() => { void Taro.pageScrollTo({ selector: '.vehicle-places-card', duration: 250 }).catch(() => {}) }}>我的地点</Button>
-        </View>
+        {commandOutcome ? <View className={`command-outcome-pill outcome-${commandOutcome.status}`}>
+          <Text className="outcome-text">
+            {commandOutcome.status === 'accepted'
+              ? `${commandLabel(commandOutcome.command)}：${commandOutcome.verified ? '已执行并确认。' : '车辆已接受指令，但状态回读未确认，请以车辆实际状态为准。'}`
+              : commandOutcome.status === 'unconfirmed'
+                ? `${commandLabel(commandOutcome.command)}：指令结果未确认，请以车辆实际状态为准。`
+                : `${commandLabel(commandOutcome.command)}：${commandErrorMessage(commandOutcome.errorClass)}`}
+          </Text>
+          <Button className="outcome-dismiss" onClick={() => setCommandOutcome(null)}>✕</Button>
+        </View> : null}
+        <View className="dashboard-location-row"><DashboardInfoCard label="里程" value={dashboardMetric(status.odometer, 'km', 0)} icon="speed" onClick={() => navigate('/pages/analysis/index?kind=mileage')} /><DashboardInfoCard label="位置" value={location} icon="location" onClick={() => { if (map) navigate('/pages/tools/index?kind=location'); else { focusDiagnostics.current = true; setShowDiagnostics(true) } }} /></View>
         {recentDrive ? <DashboardRecentDrive drive={recentDrive} onOpen={() => { void Taro.switchTab({ url: '/pages/drives/index' }) }} /> : null}
         {newTrip ? <View className="dashboard-new-trip">
           <View className="dashboard-new-trip-main">
@@ -765,10 +796,7 @@ export default function VehiclePage() {
             <Button className="button button-secondary" onClick={() => setNewTrip(null)}>关闭</Button>
           </View>
         </View> : null}
-        <View className="dashboard-readout-panel">
-          <View className="dashboard-location-row"><DashboardInfoCard label="里程" value={dashboardMetric(status.odometer, 'km', 0)} icon="speed" onClick={() => navigate('/pages/analysis/index?kind=mileage')} /><DashboardInfoCard label="位置" value={location} icon="location" onClick={() => { if (map) navigate('/pages/tools/index?kind=location'); else { focusDiagnostics.current = true; setShowDiagnostics(true) } }} /></View>
-          <View className="dashboard-temperature-row"><DashboardInfoCard label="车内" value={dashboardTemperature(status.insideTemp)} icon="thermostat" onClick={() => navigate('/pages/tools/index?kind=temperature')} /><DashboardInfoCard label="车外" value={dashboardTemperature(status.outsideTemp)} icon="thermostat" onClick={() => navigate('/pages/tools/index?kind=temperature')} /></View>
-        </View>
+        <View className="dashboard-temperature-row"><DashboardInfoCard label="车内" value={dashboardTemperature(status.insideTemp)} icon="thermostat" onClick={() => navigate('/pages/tools/index?kind=temperature')} /><DashboardInfoCard label="车外" value={dashboardTemperature(status.outsideTemp)} icon="thermostat" onClick={() => navigate('/pages/tools/index?kind=temperature')} /></View>
         <DashboardTpms snapshot={status.tpms} report={status.tpmsReport} warnings={tpmsAlerts} readiness={tpmsReadiness} onOpen={() => navigate('/pages/tools/index?kind=tpms')} />
         {activeCharging ? <DashboardCurrentCharge status={status} onOpen={() => navigate('/pages/insights/index?kind=currentCharge')} /> : null}
         <VehicleRemoteSections
@@ -794,10 +822,22 @@ export default function VehiclePage() {
           onCreatePlace={handleCreatePlace}
           onSaveFrequentPlace={handleSaveFrequentPlace}
           onDeletePlace={handleDeletePlace}
+          showControlCard={false}
         />
+        <View className="dashboard-battery-trend" onClick={() => setSocExpanded(value => !value)}>
+          <View className="dashboard-battery-trend-main">
+            <DashboardIcon name="bolt" tone="primary" />
+            <View>
+              <Text className="dashboard-battery-trend-title">7天电量趋势</Text>
+              <Text className="dashboard-battery-trend-note">点开查看本机小时级电量记录</Text>
+            </View>
+          </View>
+          <Text className="dashboard-battery-trend-arrow">{socExpanded ? '⌃' : '⌄'}</Text>
+        </View>
+        {socExpanded ? <DailySocTrend trend={socTrend} windowDays={socWindow} loading={socLoading} onWindowChange={setSocWindow} /> : null}
       </> : car ? <View className="dashboard-partial">
         <View className="dashboard-partial-hero"><DashboardVehicleArt car={car} imageSrc={imageSrc} imageLoading={imageLoading} imageError={imageError} onRetryImage={() => setImageRetry(value => value + 1)} onManagePhoto={appearanceScope ? openAppearance : undefined} appearanceLabel={appearanceLabel} /><Text className="dashboard-section-title">车辆状态暂不可用</Text><Text>当前仅显示已确认的车辆资料，状态数据尚未返回。</Text></View>
-        <View className="dashboard-location-row"><DashboardInfoCard label="车型" value={car.model ? `Model ${model}` : '暂无数据'} icon="car" /><DashboardInfoCard label="外观" value={car.exteriorColor || '暂无数据'} /></View>
+        <View className="dashboard-location-row"><DashboardInfoCard label="车型" value={car.model ? `Model ${model}${dashboardVehicleSubtitle(null, car.trim) ? ` · ${dashboardVehicleSubtitle(null, car.trim)}` : ''}` : '暂无数据'} icon="car" /><DashboardInfoCard label="外观" value={car.exteriorColor || '暂无数据'} /></View>
         <DashboardInfoCard label="数据来源" value={cached ? '缓存车辆资料' : '已关联车辆资料'} />
         <View className="dashboard-partial-actions"><Button className="button" onClick={() => { void load() }}>刷新车辆</Button><Button className="button button-secondary" onClick={settings}>设置</Button></View>
       </View> : loading ? <View className="card"><LoadingIndicator label="正在恢复会话并读取车辆…" /></View> : <View className="card empty-state"><Text className="section-title">车辆外观预览</Text><DashboardVehicleArt car={{ model: appearance.model ?? null }} imageSrc={imageSrc} imageLoading={imageLoading} imageError={imageError} onRetryImage={() => setImageRetry(value => value + 1)} onManagePhoto={appearanceScope ? openAppearance : undefined} appearanceLabel={appearanceLabel} /><Text className="section-title">尚未绑定车辆</Text><Text className="muted">请先登录特斯拉账号并完成 Tesla 官方授权。外观预览不代表已绑定车辆，没有真实响应时不显示车辆数据。</Text><Button className="button" onClick={() => Taro.switchTab({ url: '/pages/me/index' })}>去完成登录与授权</Button></View>}

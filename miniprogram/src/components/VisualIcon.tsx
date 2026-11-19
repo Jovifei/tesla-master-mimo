@@ -15,6 +15,17 @@ import speed from './icons/material/speed.png'
 import timeline from './icons/material/timeline.png'
 import update from './icons/material/update.png'
 import verifiedUser from './icons/material/verified_user.png'
+import metricEnergy from './icons/material/metric-energy.png'
+import metricDistance from './icons/material/metric-distance.png'
+import metricTime from './icons/material/metric-time.png'
+import metricSpeed from './icons/material/metric-speed.png'
+import metricCount from './icons/material/metric-count.png'
+import metricDistanceSummary from './icons/material/metric-distance-summary.png'
+import metricChargeCount from './icons/material/metric-charge-count.png'
+import metricChargeEnergy from './icons/material/metric-charge-energy.png'
+import metricCost from './icons/material/metric-cost.png'
+import metricAvgCost from './icons/material/metric-avg-cost.png'
+import chargeDc from './icons/material/charge-dc.png'
 
 // Filled Material Icons, matching the App's MoreScreen.kt icon choices.
 // Source: https://github.com/google/material-design-icons (Apache-2.0; see icons/material/LICENSE).
@@ -37,10 +48,22 @@ const icons = {
   timeline,
   update,
   vehicle: directionsCar,
+  metricEnergy,
+  metricDistance,
+  metricTime,
+  metricSpeed,
+  metricCount,
+  metricDistanceSummary,
+  metricChargeCount,
+  metricChargeEnergy,
+  metricCost,
+  metricAvgCost,
+  chargeDc,
 }
 export type VisualIconName = keyof typeof icons
 
 /** Local bitmap assets render at a fixed 24dp shape without platform font glyph differences. */
 export default function VisualIcon({ name }: { name: VisualIconName }) {
-  return <View className={`visual-icon visual-icon-${name}`}><Image src={icons[name]} mode="aspectFit" style={{ width: '100%', height: '100%' }} /></View>
+  const metric = name.startsWith('metric')
+  return <View className={`visual-icon visual-icon-${name}${metric ? ' visual-icon-metric' : ''}`}><Image src={icons[name]} mode="aspectFit" style={{ width: '100%', height: '100%' }} /></View>
 }

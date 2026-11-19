@@ -41,6 +41,7 @@ export default defineConfig({
     patterns: [
       ...vehicleAssetPackages.map(packageInfo => ({ from: resolve(__dirname, '../vehicle-assets', packageInfo.root), to: resolve(__dirname, '../dist', packageInfo.root) })),
       { from: resolve(__dirname, '../vehicle-assets/native'), to: resolve(__dirname, '../dist/native') },
+      { from: resolve(__dirname, '../src/theme.json'), to: resolve(__dirname, '../dist/theme.json') },
     ],
     options: {},
   },

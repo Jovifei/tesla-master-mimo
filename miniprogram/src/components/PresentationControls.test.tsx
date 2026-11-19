@@ -4,7 +4,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { chargeCellPaint, activityLevel, calendarHistoryGroups, daySwipeTarget, civilDay, historyDayGroups, normalizeAppearance, verticalDayTarget } from '../domain/ui_presentation'
 
 const storage = vi.hoisted(() => ({ values: new Map<string, unknown>(), writes: [] as string[], fail: false }))
-vi.mock('@tarojs/components', () => ({ View: 'view', Text: 'text', Button: 'button', Switch: 'switch' }))
+vi.mock('@tarojs/components', () => ({ View: 'view', Text: 'text', Button: 'button', Switch: 'switch', ScrollView: 'scroll-view' }))
 vi.mock('@tarojs/taro', () => ({ default: {
   getStorageSync: (key: string) => storage.values.get(key),
   setStorageSync: (key: string, value: unknown) => { if (storage.fail) throw new Error('quota'); storage.writes.push(key); storage.values.set(key, value) },
@@ -42,7 +42,7 @@ it('renders only current-day content, exposes only two older rear dates, switche
   const body = () => tree!.root.findByType('span').children.join('')
   expect(body()).toBe('d0,p0')
   const rear = () => tree!.root.findAllByProps({ className: 'day-stack-date' })
-  expect(rear()).toHaveLength(2)
+  expect(rear()).toHaveLength(4)
   expect(rear().map(node => node.children.join('')).join('')).not.toContain('d1')
   const gesture = () => tree!.root.findByProps({ className: 'day-stack-header' })
   await act(async () => {
@@ -55,7 +55,7 @@ it('renders only current-day content, exposes only two older rear dates, switche
     gesture().props.onTouchEnd({ changedTouches: [{ pageX: 100, pageY: 32 }] })
   })
   expect(body()).toBe('d0,p0')
-  await act(async () => rear()[0].props.onClick())
+  await act(async () => rear()[2].props.onClick())
   expect(body()).toBe('d2')
   await act(async () => tree!.update(render('B')))
   expect(body()).toBe('d0,p0')
@@ -82,13 +82,13 @@ it('stores only presentation preferences and reports write failure without clear
   expect(readAppearance().reducedMotion).toBe(true)
 })
 it('charge cells retain zero, unknown and full-date identity with bounded paging', async () => {
-  const cells = Array.from({ length: 32 }, (_, i) => ({ key: `2026-10-${String(i + 1).padStart(2, '0')}`, label: String(i), value: i === 30 ? null : i === 29 ? 0 : i, display: i === 30 ? '未知' : `${i === 29 ? 0 : i} kWh` }))
+  const cells = Array.from({ length: 34 }, (_, i) => ({ key: `2026-10-${String(i + 1).padStart(2, '0')}`, label: String(i), value: i === 33 ? null : i === 32 ? 0 : i, display: i === 33 ? '未知' : `${i === 32 ? 0 : i} kWh` }))
   await act(async () => { tree = TestRenderer.create(<ChargeActivityGrid cells={cells} unit="kWh" />) })
   const buttons = () => tree!.root.findAllByType('button').filter(node => node.props.className?.includes('charge-activity-cell'))
   expect(buttons()).toHaveLength(4)
   const zero = buttons().find(node => node.props.ariaLabel.endsWith('，0 kWh'))!
   await act(async () => zero.props.onClick())
-  expect(tree!.root.findByProps({ className: 'charge-activity-selection' }).children.join('')).toBe('2026-10-30 · 0 kWh')
+  expect(tree!.root.findByProps({ className: 'charge-activity-selection' }).children.join('')).toBe('2026-10-33 · 0 kWh')
   await act(async () => buttons().find(node => node.props.ariaLabel.endsWith('，未知'))!.props.onClick())
   expect(tree!.root.findByProps({ className: 'charge-activity-selection' }).children.join('')).toContain('未知')
 })
@@ -130,11 +130,10 @@ it('renders the full selected week including empty dates without manufacturing h
   expect(week).toHaveLength(7)
   expect(week.flatMap(group => group.items)).toHaveLength(6)
   await act(async () => { tree = TestRenderer.create(<VerticalDayStack groups={week} scopeKey="week">{group => <span>{group.items.map(row => row.key).join(',')}</span>}</VerticalDayStack>) })
-  expect(tree!.root.findAllByProps({ className: 'day-stack-date' })).toHaveLength(2)
-  const yesterday = () => tree!.root.findAllByProps({ className: 'day-stack-date' }).find(node => node.children.join('').includes('2026-11-09'))!
+  expect(tree!.root.findAllByProps({ className: 'day-stack-date' })).toHaveLength(7)
+  const yesterday = () => tree!.root.findAllByProps({ className: 'day-stack-date' }).find(node => String(node.props.ariaLabel || '').includes('2026-11-09'))!
   await act(async () => yesterday().props.onClick())
   expect(tree!.root.findByType('span').children.join('')).toBe('d1,p1')
-  expect(tree!.root.findAllByProps({ className: 'day-stack-date' }).map(node => node.children.join('')).join('')).not.toContain('2026-11-09')
   await act(async () => tree!.root.findByProps({ className: 'day-stack-close' }).props.onClick())
   expect(tree!.root.findByType('span').children.join('')).toBe('d0,p0')
   for (let step = 0; step < 4; step += 1) {

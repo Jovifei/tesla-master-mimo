@@ -121,12 +121,32 @@ button {
 }
 
 .metric { min-width: 0; }
+.metric[data-presentation="strip"] { display: flex; flex-direction: column; align-items: center; gap: 2rpx; text-align: center; }
+.metric-strip-icon { width: 52rpx; height: 52rpx; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: rgba(2, 132, 199, .12); }
+.metric-strip-icon .visual-icon.visual-icon-metric { width: 30rpx; height: 30rpx; background: transparent; }
+.metric-strip-icon[data-icon="metricTime"], .metric-strip-icon[data-icon="metricAvgCost"] { background: rgba(217, 119, 6, .12); }
+.metric-strip-icon[data-icon="metricDistanceSummary"], .metric-strip-icon[data-icon="metricCost"] { background: rgba(5, 150, 105, .12); }
+.metric-strip-icon[data-icon="metricSpeed"] { background: rgba(99, 102, 241, .12); }
+.metric-strip-icon[data-icon="metricChargeCount"], .metric-strip-icon[data-icon="metricChargeEnergy"] { background: rgba(14, 116, 144, .12); }
+.metric-strip-reading { display: flex; align-items: baseline; justify-content: center; gap: 4rpx; min-width: 0; }
+.metric[data-presentation="strip"] .metric-value { font-size: 34rpx; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.metric[data-presentation="strip"] .metric-strip-reading { max-width: 100%; }
+.metric-strip-unit { font-size: 20rpx; color: var(--apple-label-secondary); white-space: nowrap; }
+.metric[data-presentation="strip"] .metric-label { font-size: 20rpx; color: var(--apple-label-secondary); line-height: 1.3; }
+.metric[data-presentation="telemetry"] { display: flex; flex-direction: column; align-items: center; gap: 2rpx; text-align: center; }
+.metric[data-presentation="telemetry"] .metric-heading { justify-content: center; gap: 4rpx; }
+.metric[data-presentation="telemetry"] .metric-label { font-size: 22rpx; color: #6b7280; line-height: 1.3; }
+.metric[data-presentation="telemetry"] .metric-value { font-size: 34rpx; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.25; }
+.metric[data-presentation="telemetry"] .metric-unit { font-size: 20rpx; color: #6b7280; line-height: 1.3; }
 .metric-reading { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; }
 .metric-unit { display: block; color: #6b7280; font-size: 22rpx; line-height: 1.5; white-space: normal; overflow-wrap: anywhere; }
 .metric-heading, .visual-heading { display: flex; gap: 12rpx; align-items: center; min-width: 0; }
 .visual-heading .title, .visual-heading .section-title { margin-bottom: 0; }
 .visual-heading { margin-bottom: 12rpx; }
 .metric-heading .visual-icon { width: 36rpx; height: 36rpx; font-size: 30rpx; background: transparent; }
+.visual-icon.visual-icon-metric { width: 34rpx; height: 34rpx; border-radius: 0; background: transparent; }
+.metric-heading .visual-icon.visual-icon-metric { width: 26rpx; height: 26rpx; }
+.recent-drive-capsule .visual-icon.visual-icon-metric { width: 22rpx; height: 22rpx; }
 .metric-heading .metric-label { line-height: 1.4; }
 .visual-icon { flex: none; display: flex; align-items: center; justify-content: center; width: 64rpx; height: 64rpx; border-radius: 18rpx; color: #157a86; background: #e6f3f4; font-size: 40rpx; }
 .empty-state { display: flex; align-items: center; flex-direction: column; gap: 16rpx; text-align: center; padding: 48rpx 32rpx; }
@@ -720,6 +740,11 @@ button {
 .tpms-evidence { padding: 20rpx 0; font-size: 24rpx; }
 @media (prefers-color-scheme: dark) {
   page { background: #111315; color: #f5f6f7; }
+  /* Fixed-colour Material bitmaps: dark glyphs on a dark surface disappear.
+     Invert only the neutral icons; metric icons carry their App tint. */
+  .visual-icon { background: #20252b; }
+  .visual-icon:not(.visual-icon-metric) img { filter: invert(1) brightness(1.55); }
+  .visual-icon.visual-icon-metric, .metric .visual-icon, .history-drive-icon .visual-icon { background: transparent; }
   .card, .tpms-wheel-card { background: #191d22; border-color: #323840; }
   .metric, .vehicle-state-chips text { background: #242a31; }
   .metric-value, .status-value, .title, .section-title { color: #f5f6f7; }

@@ -6,7 +6,8 @@ import { recentDriveCardModel } from '../../domain/recent_drive'
 import { restoreTpmsSnapshot, TPMS_WHEELS, type TpmsReport, type TpmsSnapshot } from '../../domain/tpms'
 import type { TpmsAlert } from '../../domain/tpms_alerts'
 import DashboardIcon, { type DashboardIconName } from './DashboardIcon'
-import { climateTargets, mediaPlayback, scheduledEvents, softwareUpdateUi, vehicleModes } from '../../domain/extended_status'
+import VisualIcon from '../VisualIcon'
+import { climateTargets, mediaPlayback, softwareUpdateUi, vehicleModes } from '../../domain/extended_status'
 import { dashboardMetric, dashboardNumber, dashboardPower, dashboardRange, dashboardShift, dashboardState, dashboardTpmsPlaceholder, hudRemaining, rawChargeHours } from './presentation'
 
 export function DashboardInfoCard({ label, value, icon, onClick, warning = false, hint }: { label: string; value: string; icon?: DashboardIconName; onClick?: () => void; warning?: boolean; hint?: string | null }) {
@@ -17,10 +18,10 @@ export function DashboardInfoCard({ label, value, icon, onClick, warning = false
   </View>
 }
 
-export function DashboardStatusChip({ icon, value, yes, no }: { icon: DashboardIconName; value: boolean | null; yes: string; no: string }) {
-  const label = value == null ? '状态未知' : value ? yes : no
-  return <View className="dashboard-state-chip" data-kind={icon} data-active={value === true ? 'true' : value === false ? 'false' : 'unknown'} style={{ backgroundColor: value === true ? 'var(--dashboard-primary-container)' : value === false ? 'var(--dashboard-neutral-soft)' : 'var(--dashboard-neutral-unknown)' }} ariaLabel={label}>
-    <DashboardIcon name={icon} tone={value === true ? 'primary' : 'muted'} /><Text className="dashboard-chip-label">{label}</Text>
+export function DashboardStatusChip({ icon, value, yes, no, onClick, disabled = false, busy = false }: { icon: DashboardIconName; value: boolean | null; yes: string; no: string; onClick?: () => void; disabled?: boolean; busy?: boolean }) {
+  const label = value == null ? '未知' : value ? yes : no
+  return <View className={`dashboard-state-chip${onClick && !disabled ? ' is-action' : ''}`} data-kind={icon} data-active={value === true ? 'true' : value === false ? 'false' : 'unknown'} style={{ backgroundColor: value === true ? 'var(--dashboard-primary-container)' : value === false ? 'var(--dashboard-neutral-soft)' : 'var(--dashboard-neutral-unknown)' }} ariaLabel={label} onClick={onClick && !disabled ? (event: { stopPropagation?: () => void }) => { event?.stopPropagation?.(); onClick() } : undefined}>
+    <DashboardIcon name={icon} tone={busy ? 'warning' : value === true ? 'primary' : 'muted'} /><Text className="dashboard-chip-label">{busy ? '执行中…' : label}</Text>
   </View>
 }
 
@@ -63,14 +64,14 @@ export function DashboardVehicleArt({ car, imageSrc, imageLoading, imageError, o
     </View>
 }
 
-export function DashboardHero({ car, status, imageSrc, imageLoading, imageError, onRetryImage, onOpenBattery, onManagePhoto, appearanceLabel }: {
+export function DashboardHero({ car, status, imageSrc, imageLoading, imageError, onRetryImage, onOpenBattery, onManagePhoto, appearanceLabel, onCommand, commandBusy, commandReady = true }: {
   car: Car; status: CarStatus; imageSrc: string | null; imageLoading: boolean; imageError: boolean; onRetryImage: () => void; onOpenBattery: () => void; onManagePhoto?: () => void; appearanceLabel?: string | null
+  onCommand?: (command: string) => void; commandBusy?: string | null; commandReady?: boolean
 }) {
   const power = dashboardPower(status.power), shift = dashboardShift(status.shiftState), driving = status.state?.toLowerCase() === 'driving'
   const openings = [{ value: status.doorsOpen, text: '车门未关' }, { value: status.windowsOpen, text: '车窗未关' }, { value: status.frunkOpen, text: '前备箱未关' }, { value: status.trunkOpen, text: '后备箱未关' }].filter(item => item.value === true)
   const media = mediaPlayback(status)
   const update = softwareUpdateUi(status)
-  const scheduled = scheduledEvents(status)
   const modes = vehicleModes(status)
   const targets = climateTargets(status)
   const climateTargetText = targets
@@ -89,7 +90,7 @@ export function DashboardHero({ car, status, imageSrc, imageLoading, imageError,
     </View>
     {status.batteryLevel != null ? <View className="dashboard-battery-track"><View style={{ width: `${Math.max(0, Math.min(100, status.batteryLevel))}%` }} /></View> : null}
     {status.chargeLimitSoc != null ? <Text className="dashboard-charge-target">{status.batteryLevel != null ? `当前 ${dashboardNumber(status.batteryLevel, 0)}% · 充电目标 ${dashboardNumber(status.chargeLimitSoc, 0)}%` : `限制: ${dashboardNumber(status.chargeLimitSoc, 0)}%`}</Text> : null}
-    <View className="dashboard-state-row"><DashboardStatusChip icon={status.locked === false ? 'unlock' : 'lock'} value={status.locked} yes="已锁" no="未锁" /><DashboardStatusChip icon="bolt" value={status.pluggedIn} yes="已插枪" no="未插枪" /><DashboardStatusChip icon="climate" value={status.isClimateOn} yes="空调开启" no="空调关闭" /><DashboardStatusChip icon="security" value={status.sentryMode} yes="哨兵已开启" no="哨兵关闭" /></View>
+    <View className="dashboard-state-row"><DashboardStatusChip icon={status.locked === false ? 'unlock' : 'lock'} value={status.locked} yes="已锁" no="未锁" disabled={!commandReady} busy={commandBusy === 'lock' || commandBusy === 'unlock'} onClick={onCommand ? () => onCommand(status.locked === true ? 'unlock' : 'lock') : undefined} /><DashboardStatusChip icon="bolt" value={status.pluggedIn} yes="已插枪" no="未插枪" disabled={!commandReady} busy={commandBusy === 'charge_port_open' || commandBusy === 'charge_port_close'} onClick={onCommand ? () => onCommand(status.chargePortDoorOpen === true ? 'charge_port_close' : 'charge_port_open') : undefined} /><DashboardStatusChip icon="climate" value={status.isClimateOn} yes="空调开启" no="空调关闭" disabled={!commandReady} busy={commandBusy === 'climate_on' || commandBusy === 'climate_off'} onClick={onCommand ? () => onCommand(status.isClimateOn === true ? 'climate_off' : 'climate_on') : undefined} /><DashboardStatusChip icon="security" value={status.sentryMode} yes="哨兵已开启" no="哨兵关闭" disabled={!commandReady} busy={commandBusy === 'sentry_on' || commandBusy === 'sentry_off'} onClick={onCommand ? () => onCommand(status.sentryMode === true ? 'sentry_off' : 'sentry_on') : undefined} /></View>
     {openings.length ? <View className="dashboard-opening-alert"><View><DashboardIcon name="warning" tone="warning" /><Text>车门与开口提醒</Text></View><View className="dashboard-opening-grid">{openings.map(opening => <View key={opening.text}><DashboardIcon name="warning" tone="warning" /><Text>{opening.text}</Text></View>)}</View></View> : null}
     {media ? <View className="dashboard-extended-row"><DashboardIcon name="speed" /><Text className="dashboard-extended-text">正在播放：{media.displayText}</Text></View> : null}
     {update ? (
@@ -108,12 +109,6 @@ export function DashboardHero({ car, status, imageSrc, imageLoading, imageError,
         ) : null}
       </View>
     ) : null}
-    {scheduled.map(ev => (
-      <View key={ev.kind} className="dashboard-extended-row">
-        <DashboardIcon name={ev.kind === 'charging_start' ? 'bolt' : 'speed'} />
-        <Text className="dashboard-extended-text">{ev.kind === 'charging_start' ? `预约充电：${ev.timeText}` : `预约出发：${ev.timeText}`}</Text>
-      </View>
-    ))}
     {modes?.valetOn ? (
       <View className="dashboard-extended-row">
         <DashboardIcon name="lock" />
@@ -148,16 +143,27 @@ export function DashboardTpms({ snapshot, report, warnings, readiness, onOpen }:
   })}</View></View>
 }
 
+const RECENT_DRIVE_ICONS = ['metricEnergy', 'metricDistance', 'metricTime', 'metricSpeed'] as const
+
 export function DashboardRecentDrive({ drive, onOpen }: { drive: Drive; onOpen: () => void }) {
   const model = recentDriveCardModel(drive)
-  const meta = [model.endTimeText, model.distanceText, model.socRangeText, model.capsules[0]?.value !== '--' ? `能耗 ${model.capsules[0]!.value}` : null]
-    .filter((value): value is string => Boolean(value)).join(' · ')
   return <View className="dashboard-recent-drive" onClick={onOpen} ariaLabel={`最近行程 ${model.routeText}`}>
-    <View className="recent-drive-main">
-      <View className="recent-drive-title"><DashboardIcon name="car" /><Text className="recent-drive-route">{model.routeText}</Text></View>
-      <Text className="recent-drive-meta">{meta}</Text>
+    <View className="recent-drive-header">
+      <View className="recent-drive-title"><DashboardIcon name="car" /><Text>最近行程</Text></View>
+      <View className="recent-drive-time-row"><Text className="recent-drive-time">{model.endTimeText}</Text><Text className="recent-drive-chevron">›</Text></View>
     </View>
-    <Text className="recent-drive-chevron">›</Text>
+    <View className="recent-drive-route-row">
+      <Text className="recent-drive-route">{model.routeText}</Text>
+      <View className="recent-drive-dist">
+        <Text className="recent-drive-distance">{model.distanceText}</Text>
+        {model.socRangeText ? <Text className="recent-drive-soc">{model.socRangeText}</Text> : null}
+      </View>
+    </View>
+    <View className="recent-drive-capsules">{model.capsules.map((capsule, index) =>
+      <View key={capsule.label} className="recent-drive-capsule">
+        <View className="recent-drive-capsule-heading"><VisualIcon name={RECENT_DRIVE_ICONS[index]!} /><Text className="recent-drive-capsule-label">{capsule.label}</Text></View>
+        <Text className="recent-drive-capsule-value">{capsule.value}</Text>
+      </View>)}</View>
   </View>
 }
 
