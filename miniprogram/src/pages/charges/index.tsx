@@ -774,7 +774,7 @@ export default function ChargesPage() {
         updateQuery({ startDate: `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-${String(start.getDate()).padStart(2, '0')}`, endDate: new Date().toISOString().slice(0, 10), relativeDays: 30 })
       }}>查看最近30天 · 全部类型与地点</Button></View> : null}
       {car ? <View className="history-controls charge-secondary-controls">
-        <Button className="history-more-toggle" onClick={() => setFiltersExpanded(value => !value)}>{filtersExpanded ? copy('history.collapseFilters') : copy('history.moreFilters')}</Button>
+        <Button className="history-more-toggle" onClick={() => setFiltersExpanded(value => !value)}>{filtersExpanded ? '收起筛选' : '筛选'}</Button>
         <View className={`history-actions${filtersExpanded ? '' : ' history-actions-hidden'}`}>
           <Button className="button-secondary charge-short-toggle" onClick={() => setShowShortCharges(value => !value)}>{showShortCharges ? copy('charges.hideShort') : copy('charges.showShort')}</Button>
           <Picker mode="date" value={query.startDate} onChange={event => updateQuery(selectHistoryDate({ ...queryRef.current, endDate: queryRef.current.endDate || event.detail.value }, 'startDate', event.detail.value))}><View>开始日期：{query.startDate || copy('common.unlimited')}</View></Picker>
@@ -877,8 +877,8 @@ export default function ChargesPage() {
         <View className="history-detail-surface">
           <View className="history-detail-heading" style={{ paddingTop: `${navGeo.navBarTop}px`, paddingRight: `${navGeo.capsuleRightPadding}px`, minHeight: `${navGeo.headerTotalHeight}px` }}><Button className="detail-back" onClick={closeDetail}>‹ 返回</Button><Text className="section-title">充电详情</Text></View>
           {MOCK_FIXTURE_ENABLED ? <View className="card fixture-data-notice" style={{ backgroundColor: '#fff7ed', borderColor: '#c2410c' }}><Text className="section-title" style={{ color: '#9a3412', marginBottom: 0 }}>合成测试数据，未连接真实车辆</Text></View> : null}
-          <View className="card charge-detail-intro"><Text className="section-title">位置与费用</Text><Text className="charge-detail-address">{displayAddress(selected.address)}</Text>
-            <Text className="muted">开始 {historyDetailDateTime(selected.startDate)} · 结束 {historyDetailDateTime(selected.endDate)} · {modeLabel(selected)}</Text>
+          <View className="card charge-detail-intro"><View className="charge-detail-intro-heading"><Text className="section-title">位置与费用</Text><Text className={`charge-detail-mode-badge${modeLabel(selected) === copy('charges.modeUnknown') ? ' is-unknown' : modeLabel(selected) === copy('charges.dc') ? ' is-dc' : ' is-ac'}`}>{modeLabel(selected)}</Text></View><Text className="charge-detail-address">{displayAddress(selected.address)}</Text>
+            <Text className="muted">开始 {historyDetailDateTime(selected.startDate)} · 结束 {historyDetailDateTime(selected.endDate)}</Text>
             {(() => {
               const socDelta = selected.startBatteryLevel != null && selected.endBatteryLevel != null
                 ? selected.endBatteryLevel - selected.startBatteryLevel : null

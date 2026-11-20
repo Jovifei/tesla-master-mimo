@@ -131,13 +131,13 @@ button {
 .metric-strip-reading { display: flex; align-items: baseline; justify-content: center; gap: 4rpx; min-width: 0; }
 .metric[data-presentation="strip"] .metric-value { font-size: 30rpx; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 .metric[data-presentation="strip"] .metric-strip-reading { max-width: 100%; }
-.metric-strip-unit { font-size: 22rpx; color: var(--apple-label-secondary); white-space: nowrap; }
-.metric[data-presentation="strip"] .metric-label { font-size: 22rpx; color: var(--apple-label-secondary); line-height: 1.3; }
+.metric-strip-unit { font-size: var(--type-caption); color: var(--apple-label-secondary); white-space: nowrap; }
+.metric[data-presentation="strip"] .metric-label { font-size: var(--type-caption); color: var(--apple-label-secondary); line-height: 1.3; }
 .metric[data-presentation="telemetry"] { display: flex; flex-direction: column; align-items: center; gap: 2rpx; text-align: center; }
 .metric[data-presentation="telemetry"] .metric-heading { justify-content: center; gap: 4rpx; }
-.metric[data-presentation="telemetry"] .metric-label { font-size: 24rpx; color: #6b7280; line-height: 1.3; }
+.metric[data-presentation="telemetry"] .metric-label { font-size: var(--type-caption); color: #6b7280; line-height: 1.3; }
 .metric[data-presentation="telemetry"] .metric-value { font-size: 34rpx; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.25; }
-.metric[data-presentation="telemetry"] .metric-unit { font-size: 22rpx; color: #6b7280; line-height: 1.3; }
+.metric[data-presentation="telemetry"] .metric-unit { font-size: var(--type-caption); color: #6b7280; line-height: 1.3; }
 .metric-reading { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; }
 .metric-unit { display: block; color: #6b7280; font-size: 22rpx; line-height: 1.5; white-space: normal; overflow-wrap: anywhere; }
 .metric-heading, .visual-heading { display: flex; gap: 12rpx; align-items: center; min-width: 0; }

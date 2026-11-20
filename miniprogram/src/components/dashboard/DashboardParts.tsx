@@ -69,6 +69,9 @@ export function DashboardHero({ car, status, imageSrc, imageLoading, imageError,
   onCommand?: (command: string) => void; commandBusy?: string | null; commandReady?: boolean
 }) {
   const power = dashboardPower(status.power), shift = dashboardShift(status.shiftState), driving = status.state?.toLowerCase() === 'driving'
+  const updatedAt = status.observedAt ? new Date(status.observedAt) : null
+  const updatedText = updatedAt && !Number.isNaN(updatedAt.getTime())
+    ? `更新 ${String(updatedAt.getHours()).padStart(2, '0')}:${String(updatedAt.getMinutes()).padStart(2, '0')}` : null
   const openings = [{ value: status.doorsOpen, text: '车门未关' }, { value: status.windowsOpen, text: '车窗未关' }, { value: status.frunkOpen, text: '前备箱未关' }, { value: status.trunkOpen, text: '后备箱未关' }].filter(item => item.value === true)
   const media = mediaPlayback(status)
   const update = softwareUpdateUi(status)
@@ -78,7 +81,7 @@ export function DashboardHero({ car, status, imageSrc, imageLoading, imageError,
     ? [targets.driver, targets.passenger].filter(v => v != null).map(v => Number.isInteger(v) ? String(v) : (v as number).toFixed(1)).join(' / ')
     : null
   return <View className="dashboard-hero" onClick={onOpenBattery}>
-    <View className="dashboard-hero-heading"><View><DashboardIcon name="car" /><Text>车辆</Text></View><Text className="dashboard-vehicle-state">{dashboardState(status.state)}</Text></View>
+    <View className="dashboard-hero-heading"><View><DashboardIcon name="car" /><Text>车辆</Text></View><View className="dashboard-hero-meta">{updatedText ? <Text className="dashboard-update-time">{updatedText}</Text> : null}<Text className="dashboard-vehicle-state">{dashboardState(status.state)}</Text></View></View>
     <DashboardVehicleArt car={car} imageSrc={imageSrc} imageLoading={imageLoading} imageError={imageError} onRetryImage={onRetryImage} onManagePhoto={onManagePhoto} appearanceLabel={appearanceLabel} />
     {driving ? <View className="dashboard-driving-strip">
       {status.speed != null ? <View ariaLabel={`速度 ${dashboardMetric(status.speed, 'km/h', 0)}`}><DashboardIcon name="speed" /><Text>{dashboardMetric(status.speed, 'km/h', 0)}</Text><Text>速度</Text></View> : null}

@@ -591,7 +591,7 @@ export default function DrivesPage() {
             else if (choice === 6) updateQuery({ minDistanceKm: 10, maxDistanceKm: undefined })
             else updateQuery({ minDistanceKm: 0, maxDistanceKm: undefined })
           }}><View className="history-filter-dropdown">{distanceLabels[distanceChoice]} <Text className="history-range-chevron">▼</Text></View></Picker>
-          <Button className="history-more-toggle" onClick={() => setFiltersExpanded(value => !value)}>{filtersExpanded ? copy('history.collapseFilters') : copy('history.moreFilters')}</Button>
+          <Button className="history-more-toggle" onClick={() => setFiltersExpanded(value => !value)}>{filtersExpanded ? '收起筛选' : '筛选'}</Button>
         </View>}
       /> : null}
       {car ? <View className={`history-actions${filtersExpanded ? '' : ' history-actions-hidden'}`}>

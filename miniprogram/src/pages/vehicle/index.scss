@@ -1499,3 +1499,11 @@
     }
   }
 }
+
+/* P1: compress the vehicle card and surface the last report time. */
+.dashboard-hero-meta { display: flex; align-items: center; gap: 10rpx; flex: none; }
+.dashboard-update-time { font-size: 20rpx; color: var(--dashboard-muted); white-space: nowrap; }
+.dashboard-instrument .dashboard-hero { padding: 18rpx 28rpx 4rpx; }
+.dashboard-state-row { margin-top: 10rpx; }
+.dashboard-state-chip { padding: 12rpx 4rpx; gap: 6rpx; }
+.dashboard-battery-row { margin-top: 4rpx; }

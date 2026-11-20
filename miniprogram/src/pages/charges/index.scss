@@ -562,8 +562,8 @@
 .charge-row-icon .visual-icon { width: 30rpx; height: 30rpx; background: transparent; }
 .history-charge-location { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4rpx; }
 .charge-row-address { font-size: 30rpx; font-weight: 600; color: var(--apple-label-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.charge-row-meta { font-size: 24rpx; color: var(--apple-label-secondary); }
-.history-charge-mode { font-size: 22rpx; color: var(--apple-label-secondary); }
+.charge-row-meta { font-size: var(--type-caption, 24rpx); color: var(--apple-label-secondary); }
+.history-charge-mode { font-size: var(--type-caption, 24rpx); color: var(--apple-label-secondary); }
 .history-charge-mode.history-charge-mode-dc { color: #B45309; }
 .charge-row-right { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 4rpx; }
 .charge-row-energy { font-size: 32rpx; font-weight: 700; color: var(--apple-label-primary); }
@@ -572,7 +572,7 @@
 .charge-row-cost { font-size: 22rpx; font-weight: 600; color: #15803d; background: rgba(34, 197, 94, .12); border-radius: 8rpx; padding: 2rpx 8rpx; }
 
 .charge-row-mode-line { display: flex; align-items: center; }
-.charge-row-unitprice { font-size: 22rpx; color: var(--apple-label-secondary); }
+.charge-row-unitprice { font-size: var(--type-caption, 24rpx); color: var(--apple-label-secondary); }
 .charge-row-energy-wrap, .charge-row-soc-wrap, .charge-row-cost-wrap { display: flex; justify-content: flex-end; }
 
 @media (prefers-color-scheme: dark) {
@@ -606,3 +606,16 @@
   .charge-heatmap-dot.level-2 { background: rgba(140, 204, 210, .34); }
   .charge-heatmap-dot.level-3 { background: rgba(140, 204, 210, .7); }
 }
+
+/* P1: explicit DC/AC/unknown badge on the charge detail header. */
+.charge-detail-intro-heading { display: flex; align-items: center; justify-content: space-between; gap: 12rpx; }
+.charge-detail-mode-badge { flex: none; font-size: 22rpx; font-weight: 600; line-height: 1.4; padding: 4rpx 14rpx; border-radius: 999rpx; background: #edf0f2; color: #56646b; }
+.charge-detail-mode-badge.is-ac { background: #e6f7ec; color: #166534; }
+.charge-detail-mode-badge.is-dc { background: #fef3c7; color: #92400e; }
+@media (prefers-color-scheme: dark) {
+  .charge-detail-mode-badge { background: #242a31; color: #b7bdc6; }
+  .charge-detail-mode-badge.is-ac { background: #153a26; color: #7fe0a4; }
+  .charge-detail-mode-badge.is-dc { background: #3a2a10; color: #fbbf24; }
+}
+/* P1: time + duration stay on one physical line; seconds never split. */
+.charge-row-meta { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
