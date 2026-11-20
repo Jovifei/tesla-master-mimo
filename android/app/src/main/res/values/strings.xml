@@ -251,6 +251,9 @@
     <string name="snapshot_source_mixed">Mixed</string>
     <string name="snapshot_source_unavailable">Unavailable</string>
     <string name="snapshot_source_asleep">Vehicle Asleep</string>
+    <string name="datasource_offline_title">Data source offline · showing last known state</string>
+    <string name="datasource_offline_last_sync">Last sync: %1$s</string>
+    <string name="datasource_offline_no_sync">No successful sync yet; connect the data source to refresh</string>
     <string name="status_unknown">Unknown</string>
     <string name="battery_history_navigation_note">View recorded battery history and capacity details</string>
     <string name="battery_history_expand_note">Tap to show the local hourly battery record</string>

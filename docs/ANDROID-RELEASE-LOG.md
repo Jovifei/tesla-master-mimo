@@ -1,5 +1,14 @@
 # MateLink Android 版本发布台账
 
+## [2.1.92 / build 112] — 2026-11-20 数据源加固（已覆盖安装）
+
+- **背景**：2026-11-20 部署事故——自建 reader（192.168.0.104:18080）停机期间 App 停留旧缓存且无任何提示，Jovi 打开 App 误判"数据丢失"。数据本身无损失（自建历史在手机本地 Room，云端历史在云端库，两套作用域）。事故复盘与铁律已写入项目记忆：任何停/切数据源操作必须先说明影响、事后验证回执。
+- **加固**：主页新增「数据源离线 · 当前显示最后已知状态」横幅（`DashboardScreen.DataSourceOfflineBanner`）：snapshotFreshness 为 HISTORY/UNAVAILABLE 时显示，附最后同步时间（无成功同步时显示"尚无成功同步"）；数据源正常时不渲染，不阻塞既有缓存内容。
+- **服务**：自建 reader 栈 7 容器已重新拉起，18080 手机侧可达（401 鉴权正常）。
+- **测试**：SettingsExperienceContractTest（版本契约 112/2.1.92）、DriveHistoryAutoEnergyConsumerTest、DrivesAddressEnrichmentTest 通过；R8 `assembleRelease` PASS。
+- **正式包**：`com.matelink` 112 / 2.1.92，APK SHA-256 `EE4C0FDB328031E3759843AF03A513D569513556A1D8FA68F820F4A8FB9FD211`，归档 `E:\Claude_allow\Download\MateLink-2.1.92-build112-dirty.apk`。覆盖安装成功，`lastUpdateTime=2026-11-20 23:04:03`。真机验证：云端车辆在线 99%/380km，最近行程 11-20 21:40，crash buffer 无记录。
+- **当前改动尚未提交。**
+
 ## [2.1.91 / build 111] — 2026-11-19 行程真实地点与日期卡紧凑化（已覆盖安装）
 
 - **需求**：行程卡不得再显示字母 A/B，必须显示真实物理地点；行程页日期扇形卡由竖向四行（相对日期/星期/日/条数）压缩为两行，首行“周六 + 9 条”、第二行大号“14 + 11月”。
@@ -11,7 +20,7 @@
   - 兜底文案：确无任何坐标/地址时显示“出发地/目的地”（英文 Origin/Destination），不再显示“A点/B点”。
 - **日期卡**：两行布局，首行相对日期或星期 + 当日条数，第二行大号日号 + 小号月份；7 个日历日、左右滑动、点选与右侧卡片让位逻辑不变。
 - **测试**：`DrivesAddressEnrichmentTest`（新增 source 为空、正 driveId 仍生成地址目标的用例）、`AddressDisplayFormatterTest`、`GeocodingExternalBoundaryTest`、`SettingsExperienceContractTest` 通过；`:app:compileDebugKotlin` 与 R8 `:app:assembleRelease` PASS。
-- **真机复验**：08:37 行程显示“钱腾云都 → 龙泉路杭州精诚电力设备有限公司”，同段驻车显示真实地点；07:28 行程在列表与详情均无坐标可用时显示“出发地/目的地”；日期卡显示“昨天 6 条 / 18 11月”“周六 9 条 / 14 11月”等两行。首装时间未变，crash buffer 无 com.matelink 记录。
+- **真机复验**：自建 reader 服务运行时，11/18 四段行程全部显示真实地点：08:44“业成街万通中心 → 钱腾云都”、07:28“精诚电力设备 → 业成街万通中心”、08:37“钱腾云都 → 精诚电力设备有限公司”，07:36/08:42 驻车分别显示“业成街万通中心”“精诚电力设备”；日期卡显示“昨天 6 条 / 18 11月”“周六 9 条 / 14 11月”等两行。首装时间未变，crash buffer 无 com.matelink 记录。
 - **正式包**：`com.matelink` 111 / 2.1.91，`debuggable=false`，证书 SHA-256 `9ab144e824abf26a5941819abb06831288c36a8bfe622657e3dc9d88281fc774`；APK SHA-256 `66C5B8DB110F0301750CF3B70DC7251DAD98D7D56BE5DB4D0B0C465546EAAE40`；归档 `E:\Claude_allow\Download\MateLink-2.1.91-build111-dirty.apk`。覆盖安装成功，`firstInstallTime=2026-08-31 22:36:47` 未变，`lastUpdateTime=2026-11-19 00:38:49`。
 - **已知边界**：若自建 reader 服务不可达且该行程详情从未缓存，则起止坐标仍无从取得，卡片显示“出发地/目的地”而非真实地点；服务恢复后列表会自动补详情并解析。驻车地点同理，缺端点时保留“未知”。当前改动尚未提交。
 

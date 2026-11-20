@@ -27,6 +27,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AcUnit
 import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -418,6 +419,10 @@ fun DashboardScreen(
         }
 
         // Active Driving or Charging Dynamic HUD
+        DataSourceOfflineBanner(
+            freshness = uiState.snapshotFreshness,
+            observedAt = uiState.observedAt
+        )
         val isDrivingActive = (status.state.equals("driving", ignoreCase = true) || (status.speed ?: 0.0) > 0.0)
         val isChargingActive = (status.isCharging || status.chargingState.equals("charging", ignoreCase = true))
 
@@ -1453,6 +1458,64 @@ internal fun dashboardSnapshotLabelRes(freshness: SnapshotFreshness, isAsleep: B
         SnapshotFreshness.RECENT -> R.string.snapshot_source_recent
         SnapshotFreshness.UNAVAILABLE -> R.string.snapshot_source_unavailable
     }
+
+/**
+ * Datasource-offline banner (2026-11-20 deployment incident hardening).
+ * When live status is unavailable but stale local data is still shown, the app
+ * must say so plainly: which lines are old, and when they were last observed.
+ * Never blocks the cached content beneath it.
+ */
+@Composable
+private fun DataSourceOfflineBanner(
+    freshness: SnapshotFreshness,
+    observedAt: String?,
+    modifier: Modifier = Modifier
+) {
+    val stale = freshness == SnapshotFreshness.HISTORY || freshness == SnapshotFreshness.UNAVAILABLE
+    if (!stale) return
+    val observed = remember(observedAt) {
+        observedAt?.let { raw ->
+            runCatching {
+                val instant = java.time.Instant.parse(raw)
+                android.text.format.DateFormat.getDateFormat(null).format(java.util.Date.from(instant)) + " " +
+                    android.text.format.DateFormat.getTimeFormat(null).format(java.util.Date.from(instant))
+            }.getOrNull() ?: raw
+        }
+    }
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+        color = StatusWarning.copy(alpha = 0.14f),
+        border = androidx.compose.foundation.BorderStroke(1.dp, StatusWarning.copy(alpha = 0.5f))
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.CloudOff,
+                contentDescription = null,
+                tint = StatusWarning,
+                modifier = Modifier.size(18.dp)
+            )
+            Column {
+                Text(
+                    text = stringResource(R.string.datasource_offline_title),
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = if (observed != null) stringResource(R.string.datasource_offline_last_sync, observed)
+                    else stringResource(R.string.datasource_offline_no_sync),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
 
 @Composable
 private fun SnapshotBadge(freshness: SnapshotFreshness, mixedSources: Boolean, source: String?, isAsleep: Boolean = false) {

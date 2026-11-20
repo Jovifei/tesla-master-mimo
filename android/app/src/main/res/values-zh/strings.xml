@@ -251,6 +251,9 @@
     <string name="snapshot_source_mixed">混合来源</string>
     <string name="snapshot_source_unavailable">数据不可用</string>
     <string name="snapshot_source_asleep">车辆休眠</string>
+    <string name="datasource_offline_title">数据源离线 · 当前显示最后已知状态</string>
+    <string name="datasource_offline_last_sync">最后同步：%1$s</string>
+    <string name="datasource_offline_no_sync">尚无成功同步；接通数据源后自动刷新</string>
     <string name="status_unknown">未知</string>
     <string name="battery_history_navigation_note">查看已记录的电池历史与容量详情</string>
     <string name="battery_history_expand_note">点开查看本机小时级电量记录</string>
