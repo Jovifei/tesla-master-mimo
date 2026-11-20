@@ -322,6 +322,12 @@ class DrivesViewModel @Inject constructor(
     private val statsDatabase: StatsDatabase? = null,
     private val historyDetailStore: HistoryDetailRepository? = null
 ) : ViewModel() {
+    /**
+     * Display-only address backfill must not be counted against the automatic
+     * energy snapshot's request budget. Energy tests turn this off; production
+     * keeps it on.
+     */
+    internal var displayAddressBackfillEnabled: Boolean = true
 
     private val _uiState = MutableStateFlow(restoreInitialState(savedStateHandle))
     val uiState: StateFlow<DrivesUiState> = _uiState.asStateFlow()
@@ -950,6 +956,7 @@ class DrivesViewModel @Inject constructor(
         proof: VerifiedHistoryReadContext,
         ensureCurrent: suspend () -> Unit
     ): List<DriveData> {
+        if (!displayAddressBackfillEnabled) return drives
         val store = historyDetailStore ?: return drives
         var cacheLookups = MAX_ENDPOINT_CACHE_LOOKUPS
         var remoteLookups = MAX_ENDPOINT_DETAIL_LOOKUPS

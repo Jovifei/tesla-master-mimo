@@ -93,7 +93,11 @@ class DriveHistoryAutoEnergyConsumerTest {
         UnifiedHistoryRepository(f.apiRepo, f.vehicleContexts, f.db.driveSummaryDao(), f.db.chargeSummaryDao()),
         f.geocodingRepository, f.settings, f.db.driveSummaryDao(), f.vehicleContexts,
         Clock.fixed(Instant.parse("2026-11-01T01:00:00Z"), ZoneId.of("Asia/Shanghai")), SavedStateHandle(),
-        f.db, HistoryDetailRepository(f.db.historyDetailDao()))
+        f.db, HistoryDetailRepository(f.db.historyDetailDao())).also {
+        // These tests count the automatic energy snapshot's request budget; display
+        // address backfill is a separate, bounded feature and must not run here.
+        it.displayAddressBackfillEnabled = false
+    }
 
     private suspend fun awaitLatestHistoryLoad(page: DrivesViewModel) {
         withTimeout(20_000) {
