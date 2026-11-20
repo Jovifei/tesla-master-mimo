@@ -42,7 +42,7 @@ it('preserves an ambiguous old archive when the real Insights consumer writes on
   expect(cached).toHaveLength(2)
   expect(cached.some(row => isHistoryIdentityAmbiguous(row))).toBe(true)
   expect(aggregateDriveHistory(cached).distance.value).toBe(10)
-  expect(tree!.root.findByProps({ className: 'insight-coverage' }).children.join('')).toContain('行驶 1 条')
+  expect(tree!.root.findByProps({ className: 'insight-coverage' }).children.join('')).toBe('数据读取完成')
   const warning = '来源身份未确认的历史记录已保留，但未计入当前展示或统计'
   const shown = () => tree!.root.findAllByType('text').map(node => node.children.join('')).join('\n')
   // The current online result has no ambiguity; only the preserved archive does.
@@ -51,6 +51,6 @@ it('preserves an ambiguous old archive when the real Insights consumer writes on
   platform.request.mockRejectedValue(new Error('offline'))
   await act(async () => { platform.show(); await new Promise(resolve => setTimeout(resolve, 0)) })
   expect(shown()).toContain(warning)
-  expect(tree!.root.findByProps({ className: 'insight-coverage' }).children.join('')).toContain('行驶 1 条')
+  expect(tree!.root.findByProps({ className: 'insight-coverage' }).children.join('')).toBe('本机缓存')
   expect(readHistoryCache<ReturnType<typeof normalizeDrive>>(storage, key)).toHaveLength(2)
 })

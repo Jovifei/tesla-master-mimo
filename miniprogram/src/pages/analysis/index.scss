@@ -257,3 +257,12 @@
   .button-secondary { margin-top: 16rpx; }
   .section-title { display: block; }
 }
+
+/* P1 timeline: same Chinese area-first address projection as the drives list. */
+.timeline-day {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--apple-bg);
+  padding: 12rpx 0;
+}

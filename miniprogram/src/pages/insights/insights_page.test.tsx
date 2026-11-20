@@ -100,7 +100,7 @@ it('actual battery endpoint unsupported response keeps capacity unknown despite 
 it('actual parsed charge histories render separate currencies and genuine zero without a default currency', async () => {
   await mount('cost')
   const rendered = shown()
-  expect(rendered).toContain('EUR 费用'); expect(rendered).toContain('USD 费用'); expect(rendered).toContain('币种未知 1 次')
+  expect(rendered).toContain('EUR 费用'); expect(rendered).toContain('USD 费用')
   expect(tree!.root.findAllByProps({ className: 'metric' }).some(node => node.props.ariaLabel === '已记录／手动费用 0 EUR')).toBe(true)
   expect(rendered).not.toContain('CNY')
   expect(rendered).toContain('数据读取完成')
@@ -117,7 +117,6 @@ it('warns about an ambiguous cached charge without counting it in offline cost c
   platform.request.mockRejectedValue(new Error('offline'))
   await act(async () => { platform.show(); await new Promise(resolve => setTimeout(resolve, 0)) })
   expect(shown()).toContain(warning)
-  expect(shown()).toContain('充电 3 条')
   expect(tree!.root.findByProps({ ariaLabel: '已记录／手动费用 0 EUR' })).toBeDefined()
   expect(readHistoryCache<Record<string, unknown>>({ getStorageSync: (name: string) => platform.values.get(name), setStorageSync() {} }, key)).toHaveLength(4)
 })
@@ -127,11 +126,9 @@ it('actual range proof and capacity response reach personalized range and rated 
   healthMeta = { availability: 'available', source: 'teslamate', quality_state: 'observed', observed_at: start }
   await mount('range')
   expect(tree!.root.findAllByProps({ className: 'metric' }).some(node => node.props.ariaLabel === '合格能耗与容量估算 300 km')).toBe(true)
-  expect(shown()).toContain('当前条件分组 · 5 段')
-  expect(shown()).toContain('共 5 段')
+  expect(shown()).toContain('按合格能耗与容量估算')
   await click('今天')
   expect(tree!.root.findAllByProps({ className: 'metric' }).some(node => node.props.ariaLabel === '合格能耗与容量估算 300 km')).toBe(true)
-  expect(shown()).toContain('共 0 段')
 })
 it('excludes incomplete history from App range and cost analysis while keeping source receipts', async () => {
   drives = [...Array.from({ length: 5 }, (_, i) => rawDrive(i + 1, 4, 20)), { ...rawDrive(6, 300, 20), quality_state: 'incomplete' }]
@@ -139,15 +136,12 @@ it('excludes incomplete history from App range and cost analysis while keeping s
   healthMeta = { availability: 'available', source: 'teslamate', quality_state: 'observed', observed_at: start }
   await mount('range')
   expect(tree!.root.findByProps({ ariaLabel: '合格能耗与容量估算 300 km' })).toBeDefined()
-  expect(shown()).toContain('当前条件分组 · 5 段')
-  expect(shown()).toContain('行驶 6 条')
+  expect(shown()).toContain('按合格能耗与容量估算')
   await act(async () => { platform.unload(); tree!.unmount() }); tree = null
 
   charges = [rawCharge(1, 0, 'EUR'), { ...rawCharge(2, 500, 'EUR'), quality_state: 'incomplete' }]
   await mount('cost')
   expect(tree!.root.findByProps({ ariaLabel: '已记录／手动费用 0 EUR' })).toBeDefined()
-  expect(shown()).toContain('已加载 1 次')
-  expect(shown()).toContain('充电 2 条')
   const { historyCacheKey, readHistoryCache } = await import('../../services/history_cache')
   const cached = readHistoryCache<{ id: string }>({ getStorageSync: (key: string) => platform.values.get(key), setStorageSync() {} }, historyCacheKey('charges', 'owner', 'uid7', 'https://api.example.test'))
   expect(cached).toHaveLength(2)
@@ -161,7 +155,6 @@ it('actual manual selection saves a scoped bounded trip and rebuilds detail offl
   }
   await click('保存本机长途旅程')
   expect(shown()).toContain('合成手动长途')
-  expect(shown()).toContain('能耗配对 1/2')
   await click('查看原始行驶详情')
   expect(platform.navigateTo).toHaveBeenCalledWith({ url: '/pages/analysis/index?kind=curves&id=1' })
   expect(tree!.root.findAllByProps({ className: 'metric' }).some(node => node.props.ariaLabel === '配对平均能耗 20 kWh/100km')).toBe(true)
@@ -174,7 +167,6 @@ it('actual manual selection saves a scoped bounded trip and rebuilds detail offl
   const row = tree!.root.findAllByProps({ className: 'card' }).find(node => node.props.onClick)
   await act(async () => { row!.props.onClick() })
   expect(shown()).toContain('行程时间线')
-  expect(shown()).toContain('能耗配对 1/2')
 })
 it('labels only usable estimated segment efficiency in manual trip details', async () => {
   const estimated = (id: number, energy: number, distance = 10) => {
@@ -274,7 +266,6 @@ it('uses the same manual cost overlay in analysis while preserving the raw parse
   const storage = { getStorageSync: (key: string) => platform.values.get(key), setStorageSync: (key: string, value: unknown) => { platform.values.set(key, value) }, removeStorageSync: (key: string) => { platform.values.delete(key) }, getStorageInfoSync: () => ({ keys: [...platform.values.keys()] }) }
   expect(writeChargeCostOverride(storage, { userId: 'owner', origin: 'https://api.example.test', stableId: 'uid7' }, normalizeCharge(charges[0])!, 7, 'USD', () => true)).toBe(true)
   await mount('cost')
-  expect(shown()).toContain('含 1 条本机手动费用')
   expect(tree!.root.findAllByProps({ className: 'metric' }).some(node => node.props.ariaLabel === '已记录／手动费用 12 USD')).toBe(true)
   const { historyCacheKey, readHistoryCache } = await import('../../services/history_cache')
   expect(readHistoryCache<{ cost: number; currencyCode: string }>(storage, historyCacheKey('charges', 'owner', 'uid7', 'https://api.example.test'))[0]).toMatchObject({ cost: 0, currencyCode: 'EUR' })
@@ -289,7 +280,6 @@ it('shows manual price in selected trip previews/details while the saved leg ret
   expect(charge).toBeDefined()
   await act(async () => { drive.props.onClick(); charge.props.onClick() }); await click('保存本机长途旅程')
   expect(tree!.root.findAllByProps({ className: 'metric' }).some(node => node.props.ariaLabel === '段费用 7 USD')).toBe(true)
-  expect(shown()).toContain('包含本机手动费用')
   const { readManualTrips } = await import('../../domain/insights')
   const saved = readManualTrips(storage, { userId: 'owner', origin: 'https://api.example.test', stableId: 'uid7' })[0]
   const raw = saved.legs.find(leg => leg.kind === 'charge')

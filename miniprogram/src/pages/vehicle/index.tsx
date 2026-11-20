@@ -784,8 +784,7 @@ export default function VehiclePage() {
           <View className="dashboard-new-trip-main">
             <DashboardIcon name="car" tone="primary" />
             <View>
-              <Text className="dashboard-new-trip-title">发现一条新的已完成行程</Text>
-              <Text className="dashboard-new-trip-note">仅在首页提示一次，行程页保持为摘要与时间筛选。</Text>
+              <Text className="dashboard-new-trip-title">新行程已完成</Text>
             </View>
           </View>
           <View className="dashboard-new-trip-actions">

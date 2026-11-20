@@ -497,7 +497,7 @@ describe('history pages consume canonical data across layers', () => {
     const page = await mount('drives')
     const interval = page.root.findByProps({ className: 'card history-interval' })
     expect(interval.findByProps({ ariaLabel: '总距离 暂无数据' })).toBeDefined()
-    expect(interval.findAllByType('text').some(node => node.children.join('').includes('数据覆盖'))).toBe(true)
+    expect(interval.findAllByType('text').some(node => node.children.join('').includes('数据覆盖'))).toBe(false)
     const fetched = platform.request.mock.calls.map(([request]) => request.url).filter(url => /\/drives\?/.test(url))
     expect(fetched).toHaveLength(25)
     expect(page.root.findAllByProps({ className: 'history-record' })).toHaveLength(1)

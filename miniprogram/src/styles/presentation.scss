@@ -207,17 +207,17 @@
 
 /* Shared App 2.1.90 history summary + filter geometry (drives & charges). */
 .history-summary-header { display: flex; align-items: center; justify-content: space-between; gap: 12rpx; margin-bottom: 12rpx; }
-.history-summary-title { font-size: 34rpx; font-weight: 700; color: var(--apple-label-primary); }
-.history-range-picker { display: inline-flex; align-items: center; gap: 8rpx; color: var(--apple-label-secondary); font-size: 26rpx; min-height: 56rpx; padding: 0 8rpx; }
+.history-summary-title { font-size: 36rpx; font-weight: 700; color: var(--apple-label-primary); }
+.history-range-picker { display: inline-flex; align-items: center; gap: 8rpx; color: var(--apple-label-secondary); font-size: 28rpx; min-height: 56rpx; padding: 0 8rpx; }
 .history-range-chevron { font-size: 18rpx; color: var(--apple-label-tertiary); }
-.history-summary-strip { display: flex; align-items: stretch; padding: 14rpx 4rpx; background: var(--apple-surface-secondary); border-radius: 18rpx; }
+.history-summary-strip { display: flex; align-items: stretch; padding: 18rpx 4rpx; background: var(--apple-surface-secondary); border-radius: 18rpx; }
 .history-summary-strip .metric { flex: 1 1 0; min-width: 0; }
 .history-summary-filter-row { display: flex; align-items: center; justify-content: space-between; gap: 12rpx; margin-top: 14rpx; }
-.history-filter-dropdown { display: inline-flex; align-items: center; gap: 6rpx; font-size: 26rpx; color: var(--apple-label-secondary); min-height: 56rpx; }
+.history-filter-dropdown { display: inline-flex; align-items: center; gap: 6rpx; font-size: 28rpx; color: var(--apple-label-secondary); min-height: 56rpx; }
 .history-more-toggle { margin: 0; padding: 0 8rpx; background: transparent; color: var(--apple-label-secondary); font-size: 24rpx; }
 .history-more-toggle::after { border: 0; }
 .history-summary-averages { display: flex; flex-wrap: wrap; gap: 12rpx 28rpx; margin-top: 12rpx; }
-.history-summary-avg { display: flex; align-items: center; gap: 8rpx; font-size: 24rpx; color: var(--apple-label-secondary); }
+.history-summary-avg { display: flex; align-items: center; gap: 8rpx; font-size: 26rpx; color: var(--apple-label-secondary); }
 .history-summary-avg .visual-icon.visual-icon-metric { width: 26rpx; height: 26rpx; }
 .history-advanced-filters { margin: 8rpx 0 16rpx; }
 .history-view-recent { margin: 0 0 0 auto; padding: 0; background: transparent; color: var(--apple-label-secondary); font-size: 24rpx; }
@@ -234,12 +234,12 @@
 .day-stack-fan-card.is-selected { background: var(--apple-surface); border: 2px solid var(--apple-label-primary); box-shadow: 0 8rpx 24rpx rgba(0, 0, 0, .14); }
 .day-stack-fan-card .day-stack-date { width: 100%; height: 100%; min-height: 0; padding: 16rpx 18rpx; background: transparent; border-radius: 28rpx; display: flex; flex-direction: column; justify-content: space-between; text-align: left; }
 .day-stack-fan-card .day-stack-date::after { border: 0; }
-.day-stack-card-top { display: flex; align-items: center; justify-content: space-between; gap: 4rpx; font-size: 20rpx; color: var(--apple-label-secondary); }
+.day-stack-card-top { display: flex; align-items: center; justify-content: space-between; gap: 4rpx; font-size: 22rpx; color: var(--apple-label-secondary); }
 .day-stack-card-title { font-weight: 600; color: var(--apple-label-primary); }
 .day-stack-card-count { color: var(--apple-label-secondary); }
 .day-stack-card-bottom { display: flex; align-items: flex-end; gap: 4rpx; }
-.day-stack-day { font-size: 40rpx; font-weight: 700; line-height: 1; color: var(--apple-label-primary); }
-.day-stack-month { font-size: 18rpx; color: var(--apple-label-secondary); margin-bottom: 4rpx; }
+.day-stack-day { font-size: 46rpx; font-weight: 700; line-height: 1; color: var(--apple-label-primary); }
+.day-stack-month { font-size: 20rpx; color: var(--apple-label-secondary); margin-bottom: 4rpx; }
 .axis-horizontal .day-stack-front { margin-top: 2rpx; }
 @media (prefers-color-scheme: dark) {
   .day-stack-fan-card { background: #191d22; border-color: #323840; }

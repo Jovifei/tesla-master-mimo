@@ -372,7 +372,7 @@
   }
   .dashboard-info-label {
     color:var(--dashboard-muted);
-    font-size:22rpx
+    font-size:24rpx
   }
   .dashboard-info-value {
     display:block;
@@ -397,7 +397,7 @@
     align-items:center;
     gap:4rpx;
     margin-top:8rpx;
-    font-size:20rpx;
+    font-size:22rpx;
     color:var(--dashboard-muted)
   }
   .dashboard-info-hint-warning { color:var(--dashboard-warning) }
@@ -483,7 +483,7 @@
     text-overflow:ellipsis
   }
   .recent-drive-meta {
-    font-size:22rpx;
+    font-size:24rpx;
     color:var(--dashboard-muted);
     white-space:nowrap;
     overflow:hidden;
@@ -516,7 +516,7 @@
     gap:12rpx
   }
   .recent-drive-time {
-    font-size:22rpx;
+    font-size:24rpx;
     color: var(--dashboard-muted)
   }
   .recent-drive-route-row {
@@ -547,7 +547,7 @@
     color: var(--dashboard-primary)
   }
   .recent-drive-soc {
-    font-size:22rpx;
+    font-size:24rpx;
     color: var(--dashboard-muted)
   }
   .recent-drive-capsules {
@@ -608,7 +608,7 @@
   .dashboard-battery-trend-note {
     display:block;
     margin-top:4rpx;
-    font-size:22rpx;
+    font-size:24rpx;
     color:var(--dashboard-muted)
   }
   .dashboard-battery-trend-arrow {

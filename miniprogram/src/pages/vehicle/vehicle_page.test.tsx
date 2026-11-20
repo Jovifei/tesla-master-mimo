@@ -638,7 +638,7 @@ it('shows an explicitly bar-valued Tesla report without turning undated tires in
   const tires = page.root.findByProps({ className: 'dashboard-tpms' })
   const cards = tires.findAllByProps({ className: 'dashboard-info-card' })
   expect(cards.map(card => card.findByProps({ className: 'dashboard-info-value' }).children.join(''))).toEqual(['2.6 bar', '2.7 bar', '2.8 bar', '2.9 bar'])
-  expect(cards.map(card => card.findByProps({ className: 'dashboard-info-hint' }).findByType('text').children.join(''))).toEqual(Array(4).fill('观测未核验'))
+  expect(tires.findAllByProps({ className: 'dashboard-info-hint' })).toHaveLength(0)
   const { readTpmsCache } = await import('../../services/tpms_cache')
   expect(readTpmsCache({ getStorageSync: (key: string) => platform.values.get(key) }, 'a', 'https://api.example.test', 'uid7').points).toEqual([])
 })

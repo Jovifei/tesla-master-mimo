@@ -85,7 +85,6 @@ function DayStackState<T>({ groups, initialKey, rememberedKey, loading, onSelect
     const title = key === 'unknown' ? '日期待确认' : key === todayKey ? '今天' : key === yesterdayKey ? '昨天' : key === dayBeforeKey ? '前天' : weekday
     return {
       title,
-      count: group.items.length ? `${group.items.length} 条` : '无记录',
       day: valid ? String(date.getDate()) : '—',
       month: valid ? `${date.getMonth() + 1}月` : '',
     }
@@ -100,7 +99,7 @@ function DayStackState<T>({ groups, initialKey, rememberedKey, loading, onSelect
             style={{ transform: `rotate(${((order % 7) - 3) * 2.6}deg) scale(${order === index ? 1.03 : 1})`, zIndex: order === index ? 20 : order }}>
             <Button className="day-stack-date" ariaLabel={`查看 ${dayCaption(group.key)}`} onClick={() => selectIndex(order)}>
               <Text style={{ display: 'none' }}>{dayCaption(group.key)}</Text>
-              <View className="day-stack-card-top"><Text className="day-stack-card-title">{meta.title}</Text><Text className="day-stack-card-count">{meta.count}</Text></View>
+              <View className="day-stack-card-top"><Text className="day-stack-card-title">{meta.title}</Text></View>
               <View className="day-stack-card-bottom"><Text className="day-stack-day">{meta.day}</Text>{meta.month ? <Text className="day-stack-month">{meta.month}</Text> : null}</View>
             </Button>
           </View>
@@ -133,6 +132,42 @@ export function activityNumber(cell: ActivityCell, unit: string): string {
   const precision = Number.isInteger(cell.precision) ? Math.max(0, Math.min(2, cell.precision!)) : unit === '次' ? 0 : 1
   return `${cell.approximate ? '≈' : ''}${cell.value.toFixed(precision)}`
 }
+/** Compact 3-month calendar heatmap: months side by side, 10–12dp cells, no paging. */
+export function CompactChargeHeatmap({ cells }: { cells: ActivityCell[] }) {
+  const appearance = useAppearance()
+  const [selected, setSelected] = useState<string | null>(null)
+  const months = [...new Set(cells.map(cell => cell.key.slice(0, 7)))].sort().slice(-6)
+  const chosen = cells.find(cell => cell.key === selected)
+  if (!months.length) return null
+  return <View className="compact-heatmap">
+    <ScrollView scrollX className="compact-heatmap-scroll" scrollLeft={99999}><View className="compact-heatmap-months">
+      {months.map(month => {
+        const monthCells = cells.filter(cell => cell.key.startsWith(`${month}-`)).sort((a, b) => a.key.localeCompare(b.key))
+        const first = monthCells[0]
+        const leading = first ? (new Date(`${first.key}T12:00:00`).getDay() + 6) % 7 : 0
+        return <View className="compact-heatmap-month" key={month}>
+          <Text className="compact-heatmap-month-label">{Number(month.slice(5))}月</Text>
+          <View className="compact-heatmap-grid">
+            {Array.from({ length: leading }, (_, index) => <View key={`pad-${index}`} className="compact-heatmap-pad" />)}
+            {monthCells.map(cell => {
+              const paint = chargeCellPaint(cell.value, appearance.palette, false)
+              const dark = chargeCellPaint(cell.value, appearance.palette, true)
+              return <Button key={cell.key}
+                className={`charge-activity-cell compact-heatmap-cell${selected === cell.key ? ' is-selected' : ''}`}
+                style={`--charge-cell-bg:${paint.background};--charge-cell-ink:${paint.foreground};--charge-cell-bg-dark:${dark.background};--charge-cell-ink-dark:${dark.foreground}`}
+                ariaLabel={`${cell.key}，${cell.display}`}
+                onClick={() => setSelected(selected === cell.key ? null : cell.key)}>
+                <Text>{Number(cell.key.slice(8))}</Text>
+              </Button>
+            })}
+          </View>
+        </View>
+      })}
+    </View></ScrollView>
+    <Text className="charge-activity-selection">{chosen ? `${chosen.key} · ${chosen.display}` : '点格查看数值'}</Text>
+  </View>
+}
+
 export function ChargeActivityGrid({ cells, unit }: { cells: ActivityCell[]; unit: string }) {
   return <ChargeGridState key={JSON.stringify(cells.map(cell => cell.key)) + unit} cells={cells} unit={unit} />
 }
@@ -149,7 +184,7 @@ function ChargeGridState({ cells, unit }: { cells: ActivityCell[]; unit: string 
   const chosen = cells.find(cell => cell.key === selected)
   return <View className="charge-activity">
     <View className="charge-activity-top-bar">
-      <Text className="charge-activity-caption">{daily ? '每日充入 kWh · 0 / 20 / 40 / 60+ · — 为未报告' : `已记录日期 · ${unit}`}</Text>
+      <Text className="charge-activity-caption">{daily ? '0 / 20 / 40 / 60+ 度' : `已记录日期 · ${unit}`}</Text>
     </View>
     {daily ? <View className="charge-activity-weekdays">{['一','二','三','四','五','六','日'].map(day => <Text key={day}>{day}</Text>)}</View> : null}
     <View className="charge-activity-grid">
@@ -162,7 +197,7 @@ function ChargeGridState({ cells, unit }: { cells: ActivityCell[]; unit: string 
       </Button>)}
     </View>
     <View className={`charge-activity-selection-box ${chosen ? 'has-selection' : ''}`}>
-      <Text className="charge-activity-selection">{chosen ? `${chosen.key} · ${chosen.display}` : '点击格子查看具体数值和单位'}</Text>
+      <Text className="charge-activity-selection">{chosen ? `${chosen.key} · ${chosen.display}` : '点格查看数值'}</Text>
     </View>
     {maxPage > 0 ? <View className="day-stack-navigation"><Button disabled={page === 0} onClick={() => setPage(page - 1)}>较旧日期</Button>
       <Text>{page + 1} / {maxPage + 1}</Text><Button disabled={page === maxPage} onClick={() => setPage(page + 1)}>较新日期</Button></View> : null}

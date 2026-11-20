@@ -1,4 +1,4 @@
-import { ChargeActivityGrid } from '../../components/PresentationControls'
+import { CompactChargeHeatmap } from '../../components/PresentationControls'
 import { calendarHistoryGroups, civilDay } from '../../domain/ui_presentation'
 import { useAppearance } from '../../services/appearance'
 import { Button, Map as TaroMap, Picker, ScrollView, Text, View } from '@tarojs/components'
@@ -668,28 +668,44 @@ export default function ChargesPage() {
   const visibleItems = filterHistory(trustedItems.filter(matchesSecondaryFilters), query)
   const chartCandidates = (intervalView?.items ?? statisticsRows(items)).filter(matchesSecondaryFilters)
   const chartItems = filterHistory(chartCandidates, query)
-  const unknownDates = chartCandidates.filter(row => civilDay(row.startDate) == null).length
-  const locationOptions = ['位置', ...new Set(items.map(item => displayAddress(item.address)).filter(value => value !== '位置未知'))]
-  const dayTotals = new Map<string, { energy: number; energyKnown: number; count: number }>()
-  for (const row of chartItems) {
-    const key = civilDay(row.startDate)
-    if (key == null) continue
-    const day = dayTotals.get(key) ?? { energy: 0, energyKnown: 0, count: 0 }
-    day.count++
-    if (row.energyAddedKwh != null && Number.isFinite(row.energyAddedKwh) && row.energyAddedKwh >= 0) {
-      day.energy += row.energyAddedKwh
-      day.energyKnown++
+    const locationOptions = ['位置', ...new Set(items.map(item => displayAddress(item.address)).filter(value => value !== '位置未知'))]
+  const heatmapCells = (() => {
+    const totals = new Map<string, { energy: number; known: number; count: number }>()
+    for (const row of chartCandidates) {
+      const key = civilDay(row.startDate)
+      if (!key) continue
+      const day = totals.get(key) ?? { energy: 0, known: 0, count: 0 }
+      day.count++
+      if (row.energyAddedKwh != null && Number.isFinite(row.energyAddedKwh) && row.energyAddedKwh >= 0) {
+        day.energy += row.energyAddedKwh
+        day.known++
+      }
+      totals.set(key, day)
     }
-    dayTotals.set(key, day)
-  }
-  const groups = [...dayTotals].map(([key, day]) => ({ key, label: key, items: [day] }))
-  const dailyCells = calendarHistoryGroups(groups, query.startDate, query.endDate)
-    .sort((a, b) => a.key.localeCompare(b.key)).map(group => {
-      const day = group.items[0]
-      return { key: group.key, label: group.key.slice(8), value: day?.energyKnown ? day.energy : null,
-        approximate: Boolean(day && day.energyKnown < day.count),
-        display: day ? `${day.energyKnown ? `${day.energy.toFixed(2)} kWh` : '电量待确认'} · 已知 ${day.energyKnown} / ${day.count} 条` : '尚未读到该日记录，不代表未充电' }
-    })
+    const today = new Date()
+    const monthKeys = [...new Set([...totals.keys()].map(key => key.slice(0, 7)))]
+    const currentMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`
+    if (!monthKeys.includes(currentMonth)) monthKeys.push(currentMonth)
+    monthKeys.sort()
+    const cells: { key: string; label: string; value: number | null; approximate: boolean; display: string }[] = []
+    for (const month of monthKeys.slice(-6)) {
+      const [year, monthNumber] = month.split('-').map(Number)
+      const monthEnd = new Date(year!, monthNumber!, 0)
+      const end = month === currentMonth ? today : monthEnd
+      for (const cursor = new Date(year!, monthNumber! - 1, 1); cursor <= end; cursor.setDate(cursor.getDate() + 1)) {
+        const key = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}-${String(cursor.getDate()).padStart(2, '0')}`
+        const day = totals.get(key)
+        cells.push({
+          key,
+          label: String(cursor.getDate()),
+          value: day && day.known > 0 ? day.energy : null,
+          approximate: Boolean(day && day.known < day.count),
+          display: day ? `${day.known ? `${day.energy.toFixed(2)} kWh` : '电量待确认'} · 已知 ${day.known} / ${day.count} 条` : '无记录',
+        })
+      }
+    }
+    return cells
+  })()
   const detailCoordinate = selectedEvidence?.charge ? mapCoordinate(selectedEvidence.charge.latitude, selectedEvidence.charge.longitude) : null
   const sampleStats = (key: 'powerKw' | 'voltageV' | 'currentA' | 'temperatureC') => {
     const values = (selectedEvidence?.points ?? []).map(point => point[key]).filter((value): value is number => value != null && Number.isFinite(value))
@@ -758,9 +774,9 @@ export default function ChargesPage() {
         updateQuery({ startDate: `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-${String(start.getDate()).padStart(2, '0')}`, endDate: new Date().toISOString().slice(0, 10), relativeDays: 30 })
       }}>查看最近30天 · 全部类型与地点</Button></View> : null}
       {car ? <View className="history-controls charge-secondary-controls">
-        <Button className="button-secondary charge-short-toggle" onClick={() => setShowShortCharges(value => !value)}>{showShortCharges ? copy('charges.hideShort') : copy('charges.showShort')}</Button>
-        <Button className="history-chip history-more-toggle" onClick={() => setFiltersExpanded(value => !value)}>{filtersExpanded ? copy('history.collapseFilters') : copy('history.moreFilters')}</Button>
+        <Button className="history-more-toggle" onClick={() => setFiltersExpanded(value => !value)}>{filtersExpanded ? copy('history.collapseFilters') : copy('history.moreFilters')}</Button>
         <View className={`history-actions${filtersExpanded ? '' : ' history-actions-hidden'}`}>
+          <Button className="button-secondary charge-short-toggle" onClick={() => setShowShortCharges(value => !value)}>{showShortCharges ? copy('charges.hideShort') : copy('charges.showShort')}</Button>
           <Picker mode="date" value={query.startDate} onChange={event => updateQuery(selectHistoryDate({ ...queryRef.current, endDate: queryRef.current.endDate || event.detail.value }, 'startDate', event.detail.value))}><View>开始日期：{query.startDate || copy('common.unlimited')}</View></Picker>
           <Picker mode="date" value={query.endDate} onChange={event => updateQuery(selectHistoryDate(queryRef.current, 'endDate', event.detail.value))}><View>结束日期：{query.endDate || copy('common.unlimited')}</View></Picker>
           <Button className="button" onClick={() => updateQuery(emptyHistoryQuery())}>{copy('common.clearFilters')}</Button>
@@ -768,23 +784,20 @@ export default function ChargesPage() {
         </View>
         {offline ? <Text className="muted">{copy('history.localCache')}</Text> : null}
       </View> : null}
-      {car && dailyCells.length ? <View className="card charge-month-chart">
+      {car && heatmapCells.length ? <View className="card charge-month-chart">
         <View className="charge-heatmap-heading">
           <View className="visual-heading">
             <VisualIcon name="battery" />
             <Text className="section-title">按日充电量</Text>
           </View>
+          <View className="charge-heatmap-legend">
+            <Text>0</Text><View className="charge-heatmap-dot level-1" /><View className="charge-heatmap-dot level-2" /><View className="charge-heatmap-dot level-3" /><Text>60+</Text>
+          </View>
         </View>
-        <Text className="charge-heatmap-unit">单位：度</Text>
-        <ChargeActivityGrid unit="kWh" cells={dailyCells} />
-        <Text className="charge-heatmap-note">每格一天；日格最多展示所选范围最近366天，汇总与历史不变。</Text>
+        <Text className="charge-heatmap-unit">单位：度 · 近3个月</Text>
+        <CompactChargeHeatmap cells={heatmapCells} />
       </View> : null}
-      {car && !loading && unknownDates > 0 ? (
-        <View className="history-coverage-note">
-          <Text className="muted">{unknownDates} 条记录的日期无法确认，未纳入日格。</Text>
-        </View>
-      ) : null}
-      {chargeStarting && !current ? (
+            {chargeStarting && !current ? (
         <View className="history-list">
           <View className="visual-heading"><VisualIcon name="energy" /><Text className="section-title">充电即将开始</Text></View>
           <Text className="muted">车辆已报告充电，充电会话尚未在历史接口中生成；正在以 4 秒间隔确认。</Text>

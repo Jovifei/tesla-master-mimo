@@ -197,18 +197,14 @@ export default function InsightsPage() {
       <MetricValue label="行驶时长" value={result.duration.value} unit="分钟" />
       <MetricValue label="合格净能量" value={result.energy.value} unit="kWh" negative={(result.energy.value ?? 0) < 0} />
       <MetricValue label="配对平均能耗" value={result.efficiency.value} unit="kWh/100km" negative={(result.efficiency.value ?? 0) < 0} />
-      <Text className="muted">{result.energy.total === 0 ? '暂无能耗样本' : `能量覆盖 ${result.energy.known}/${result.energy.total}`} · {result.efficiency.total === 0 ? '无配对' : `能耗配对 ${result.efficiency.known}/${result.efficiency.total}`} · 含估算 {result.estimatedEnergy} 段</Text>
-      <Text className="muted">{result.distance.total === 0 ? '暂无里程样本' : `里程覆盖 ${result.distance.known}/${result.distance.total}`} · {result.duration.total === 0 ? '无时长' : `时长覆盖 ${result.duration.known}/${result.duration.total}`}</Text>
-      <Text className="muted">{result.driveCount} 段行驶 · {result.chargeCount} 次充电</Text>
-      {view.legs.some(leg => leg.kind === 'charge' && 'costProvenance' in leg.charge && leg.charge.costProvenance === 'manual') ? <Text className="muted">包含本机手动费用，原服务端账单保留。</Text> : null}
-      <View className="detail-tabs history-date-chips">
+            <View className="detail-tabs history-date-chips">
         {([['overview', '概览'], ['details', '明细']] as const).map(([key, label]) => <Button key={key} className={`history-chip detail-tab ${costTab === key ? 'history-chip-selected' : ''}`} onClick={() => setCostTab(key)}>{label}</Button>)}
       </View>
       {result.costs.groups.map(group => <MetricValue key={group.currency} label="所选充电费用" value={costAmount(group.cost, view.legs.some(leg => leg.kind === 'charge' && 'costProvenance' in leg.charge && leg.charge.costProvenance === 'estimate' && (leg.charge.currencyCode ?? leg.charge.currency) === group.currency))} unit={group.currency} />)}
       {result.costs.unknownCurrency ? <Text className="muted">{result.costs.unknownCurrency} 条费用币种未知，未并入合计</Text> : null}
     </View>
   }
-  const coverage = (value: Coverage, noun: string, rows: number) => <Text className="insight-coverage">{offline ? '本机缓存' : value.complete ? '数据读取完成' : '部分覆盖'} · {noun} {rows} 条</Text>
+  const coverage = (value: Coverage) => <Text className="insight-coverage">{offline ? '本机缓存' : value.complete ? '数据读取完成' : '缓存数据'}</Text>
 
   return <View className={`page insights-page subpage-page ${appearance.className}`}>
     <SubpageHeader title={titles[kind]} subtitle={carName(car)} />
@@ -239,7 +235,7 @@ export default function InsightsPage() {
     {car && (kind === 'range' || kind === 'cost' || kind === 'longTrips') ? <View className="insight-filters">
       <HistoryDateChips kind={kind === 'cost' ? 'charges' : 'drives'} query={query} onChange={patch => { setQuery({ ...query, ...patch }); setLegPage(0) }} />
       <View className="history-filter-row"><Picker mode="date" value={query.startDate} onChange={event => setQuery(selectHistoryDate(query, 'startDate', event.detail.value))}><View>开始：{query.startDate || '不限'}</View></Picker><Picker mode="date" value={query.endDate} onChange={event => setQuery(selectHistoryDate(query, 'endDate', event.detail.value))}><View>结束：{query.endDate || '不限'}</View></Picker></View>
-      {kind !== 'cost' ? coverage(driveCoverage, '行驶', drives.filter(row => !isHistoryIdentityAmbiguous(row)).length) : null}{kind !== 'range' ? coverage(chargeCoverage, '充电', charges.filter(row => !isHistoryIdentityAmbiguous(row)).length) : null}
+      {kind !== 'cost' ? coverage(driveCoverage) : null}{kind !== 'range' ? coverage(chargeCoverage) : null}
     </View> : null}
 
     {car && kind === 'battery' ? <>
@@ -260,20 +256,19 @@ export default function InsightsPage() {
           <MetricValue label="容量衰减" value={health?.healthPercentage != null ? 100 - health.healthPercentage : null} unit="%" />
           <MetricValue label="额定能耗" value={health?.ratedEfficiencyWhKm != null ? health.ratedEfficiencyWhKm / 10 : null} unit="kWh/100km" />
         </View>
-        <Text className="muted">当前车辆续航读数与电池健康证据分别展示，缺失健康不会被SOC替代。</Text>
-        <Text className="muted">当前接口未提供连续容量趋势样本，不生成示例曲线；车辆服务模式检测请在车辆内进行。</Text>
+        <Text className="muted">电池健康仅来自服务端报告，缺失时不猜测。</Text>
       </View>
     </> : null}
     {car && kind === 'range' ? <>
       <View className="card"><SectionHeading icon="route" title="个性化续航" /><MetricValue label="合格能耗与容量估算" value={range.rangeKm} unit="km" />
-        <Text className="muted">{range.source === 'unavailable' ? `样本不足：可用候选 ${range.candidateCount} 段` : `${range.source === 'grouped' ? '当前条件分组' : '全部条件'} · ${range.sampleCount} 段 / ${range.distanceKm.toFixed(1)} km · 含估算 ${range.estimated} 段`}</Text>
+        <Text className="muted">{range.source === 'unavailable' ? '样本不足，暂无法估算' : '按合格能耗与容量估算'}</Text>
         {range.capacityKwh == null ? <Text className="muted">缺少带来源与报告时间的可用容量，个性化续航保持未知。</Text> : null}
         <View className="metric-grid"><MetricValue label="配对平均能耗" value={range.efficiencyKwh100Km} unit="kWh/100km" /><MetricValue label="车辆额定续航读数" value={status?.ratedRange ?? null} unit="km" /></View>
       </View>
-      <View className="card"><SectionHeading icon="speed" title="额定续航消耗偏差" /><MetricValue label="有效记录平均偏差" value={averageDeviation} unit="%" /><Text className="muted">共 {comparisons.length} 段</Text></View>
+      <View className="card"><SectionHeading icon="speed" title="额定续航消耗偏差" /><MetricValue label="有效记录平均偏差" value={averageDeviation} unit="%" /></View>
       <View className="card"><SectionHeading icon="cloud" title="偏差影响因素" /><View className="metric-grid"><MetricValue label="夏季偏差（6–8月）" value={influences.summer} unit="%" /><MetricValue label="冬季偏差（12–2月）" value={influences.winter} unit="%" /><MetricValue label="低速偏差（≤40km/h）" value={influences.lowSpeed} unit="%" /><MetricValue label="高速偏差（>40km/h）" value={influences.highSpeed} unit="%" /></View></View>
       {comparisons.slice(0, rangeShown).map(item => <View className="card" key={historyRowKey(item.drive)}><Text>{historyDateTime(item.drive.startDate)}</Text><View className="metric-grid"><MetricValue label="额定续航下降" value={item.ratedDropKm} unit="km" /><MetricValue label="实际里程" value={item.distanceKm} unit="km" /><MetricValue label="偏差" value={item.deviationPercent} unit="%" /></View></View>)}
-      {comparisons.length > rangeShown ? <Button className="button-secondary" onClick={() => setRangeShown(rangeShown + 20)}>查看更多续航记录（{rangeShown}/{comparisons.length}）</Button> : null}
+      {comparisons.length > rangeShown ? <Button className="button-secondary" onClick={() => setRangeShown(rangeShown + 20)}>查看更多续航记录</Button> : null}
       {!comparisons.length ? <Text className="muted">已加载记录尚缺额定续航起止端点，不能从SOC或当前续航补算历史偏差。</Text> : null}
     </> : null}
     {car && kind === 'cost' ? <>
@@ -282,25 +277,24 @@ export default function InsightsPage() {
         {fullEstimates.groups.map(group => <View key={`full-estimate-${group.currency}`}>
           <Text className="section-title">完整记录估算</Text>
           <MetricValue label="完整记录估算" value={group.cost == null ? null : `≈${displayNumber(group.cost, 2)}`} unit={group.currency} />
-          <Text className="muted">{group.known} 次无账单充电的电价估算；不计入已确认账单或账单均价。</Text>
+          <Text className="muted">无账单充电的电价估算，不计入已确认账单。</Text>
         </View>)}
         {partialEstimates.groups.map(group => <View key={`partial-estimate-${group.currency}`}>
           <Text className="section-title">已采集部分估算</Text>
           <MetricValue label="已采集部分估算" value={group.cost == null ? null : `≈${displayNumber(group.cost, 2)}`} unit={group.currency} />
-          <Text className="muted">{group.known} 次充电的已采集部分；不是整次账单，不计入完整电量或账单均价。</Text>
+          <Text className="muted">已采集部分估算，不是整次账单。</Text>
         </View>)}
       </View> : null}
       {!costs.groups.length && !fullEstimates.groups.length && !partialEstimates.groups.length ? <View className="card"><Text className="section-title">暂无可合计的费用</Text><Text className="muted">费用与币种同时明确才参与合计；真实0会保留。</Text></View> : null}
-      <Text className="muted">已加载 {costs.total} 次；缺费用 {costs.missingCost} 次；币种未知 {costs.unknownCurrency} 次。不同币种分别统计。</Text>
-      {manualCostCount ? <Text className="muted">含 {manualCostCount} 条本机手动费用；这是本机展示金额，服务端原账单保留。</Text> : null}
+      <Text className="muted">不同币种分别统计。</Text>
       {costs.groups.map(group => <View className="card" key={group.currency}><SectionHeading icon="money" title={`${group.currency} 费用`} /><View className="metric-grid">
         <MetricValue label="已记录／手动费用" value={costAmount(group.cost, estimateIn(group.currency))} unit={group.currency} /><MetricValue label="平均每次" value={costAmount(group.average, estimateIn(group.currency))} unit={group.currency} />
         <MetricValue label="配对电池充入量" value={group.energyKwh} unit="kWh" /><MetricValue label="平均每度" value={costAmount(group.perKwh, estimateIn(group.currency))} unit={`${group.currency}/kWh`} /></View>
-        <Text className="muted">费用已知 {group.known}/{group.total} 条；单位电量费用只用同次充电的费用与合格电池充入量。</Text>
+        <Text className="muted">单位电量费用只用同次充电的费用与合格电池充入量。</Text>
         {estimateIn(group.currency) ? <Text className="muted">≈ 包含按默认电价估算的费用。</Text> : null}
         <View hidden={costTab !== 'details'}>
         <Text className="section-title">月度明细</Text>{group.months.map(month => <View className="insight-table-row" key={month.month}><Text>{month.month}</Text><Text>{costAmount(month.cost, estimateIn(group.currency, month.month)) ?? '未知'} {group.currency}</Text><Text className="muted">AC {costAmount(month.ac, estimateIn(group.currency, month.month)) ?? '未知'} / DC {costAmount(month.dc, estimateIn(group.currency, month.month)) ?? '未知'} / 模式未知 {costAmount(month.unknownMode, estimateIn(group.currency, month.month)) ?? '无'} {group.currency}</Text></View>)}
-        <Text className="section-title">热门充电地点</Text>{group.locations.length ? group.locations.map(location => <View className="insight-table-row" key={location.address}><Text>{location.address}</Text><Text>{costAmount(location.cost, estimateIn(group.currency, undefined, location.address)) ?? '未知'} {group.currency} · {location.count} 次</Text></View>) : <Text className="muted">未提供地点报告</Text>}
+        <Text className="section-title">热门充电地点</Text>{group.locations.length ? group.locations.map(location => <View className="insight-table-row" key={location.address}><Text>{location.address}</Text><Text>{costAmount(location.cost, estimateIn(group.currency, undefined, location.address)) ?? '未知'} {group.currency}</Text></View>) : <Text className="muted">未提供地点报告</Text>}
         </View>
       </View>)}
     </> : null}

@@ -38,9 +38,6 @@ export default function HistoryIntervalSummary({ interval, query, kind, headerAc
   const currencySymbol = currency === 'CNY' ? '¥' : currency === 'EUR' ? '€' : currency === 'USD' ? '$' : currency === 'GBP' ? '£' : currency
   const cost = coveredTotal(charges, row => kind === 'charges' && currencies.length === 1 && (row.currencyCode ?? row.currency) === currency ? chargeCost(row) : null)
   const hasEstimateInTotal = cost.value != null && estimateCount > 0 && currencies.length === 1
-  const status = interval.complete ? null : drives
-    ? `数据覆盖 · 距离 ${drives.distance.known}/${drives.distance.total} · 时长 ${drives.duration.known}/${drives.duration.total}`
-    : `数据覆盖 · 费用 ${cost.known}/${charges.length} · 电量 ${battery!.known}/${battery!.total}`
   return (
     <View className="card history-interval">
       <View className="history-summary-header">
@@ -78,7 +75,6 @@ export default function HistoryIntervalSummary({ interval, query, kind, headerAc
         </View>
       })()}
       {footerAction}
-      {status ? <Text className="muted history-statistics-coverage">{status}</Text> : null}
     </View>
   )
 }

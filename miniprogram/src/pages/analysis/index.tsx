@@ -36,6 +36,7 @@ const parkedDelta = (detail: ParkedDetail | null | undefined) => detail?.startBa
   ? detail.endBatteryLevel - detail.startBatteryLevel : detail?.batteryDelta ?? null
 const costSource = (row: CostedCharge) => row.costProvenance === 'manual' ? '本机手动金额' : row.costProvenance === 'actual' ? '上游实际金额' : row.costProvenance === 'estimate' ? '按默认电价估算' : '费用未知'
 const costValue = (row: CostedCharge) => row.costProvenance === 'estimate' && row.cost != null ? `≈${row.cost.toFixed(2)}` : row.cost
+const displayPlace = (value: string | null | undefined) => (value ? toChineseDisplayAddress(value) : null) || '区域未识别'
 
 function GroupBars({ title, groups, metric = 'distance' }: { title: string; groups: ReturnType<typeof analysisGroups>; metric?: 'distance' | 'efficiency' }) {
   const shownGroups = groups.slice(-31), unit = metric === 'distance' ? 'km' : 'kWh/100km'
@@ -323,7 +324,7 @@ export default function AnalysisPage() {
     return { ...group, ...aggregateDriveHistory(rows).efficiency }
   })
   const driveRows = (rows: readonly Drive[]) => rows.map(row => <View className="analysis-record" key={historyRowKey(row)}>
-    <Text>{historyDateTime(row.startDate)}</Text><Text className="muted">{toChineseDisplayAddress(row.startAddress) || '起点未知'} → {toChineseDisplayAddress(row.endAddress) || '终点未知'}</Text>
+    <Text>{historyDateTime(row.startDate)}</Text><Text className="muted">{displayPlace(row.startAddress)} → {displayPlace(row.endAddress)}</Text>
     <Text className="muted">{shown(row.distanceKm, 'km')} · {shown(row.energy?.energyKwh, 'kWh')} · {sourceLabel(row.source)}{row.energy?.quality === 'estimated' ? ' · 估算' : ''}</Text>
     <Button className="button-secondary" onClick={() => navigateDrive(row)}>查看行程 {row.id}</Button>
   </View>)
@@ -337,7 +338,7 @@ export default function AnalysisPage() {
       <Button className="button-secondary" loading={loading} onClick={() => { void load() }}>刷新</Button>
     </View></View> : null}
     {loading ? <LoadingIndicator label="正在读取当前车辆分析…" compact /> : null}
-    {car ? <View className="analysis-coverage"><Text>{status.offline ? '本机缓存' : status.cached ? '在线验证 · 缓存部分覆盖' : status.drivesComplete && status.chargesComplete ? '数据读取完成' : status.reason === 'request_failed' ? '部分数据读取失败' : '数据正在补全'} · 行程 {drives.length} 条 · 充电 {charges.length} 条</Text></View> : null}
+    {car ? <View className="analysis-coverage"><Text>{status.offline ? '本机缓存' : status.cached ? '缓存数据' : status.drivesComplete && status.chargesComplete ? '数据读取完成' : status.reason === 'request_failed' ? '部分数据读取失败' : '数据正在补全'}</Text></View> : null}
     {[...drives, ...charges].some(isHistoryIdentityAmbiguous) ? (
       <View
         className="history-identity-badge"
@@ -364,7 +365,7 @@ export default function AnalysisPage() {
       <View className="card"><SectionHeading icon="chart" title="综合分析" /><View className="subpage-summary-strip metric-grid">
         <MetricValue label="总距离" value={totals.distance.value} unit="km" icon="distance" /><MetricValue label="平均能耗" value={totals.efficiency.value} unit="kWh/100km" icon="energy" />
         <MetricValue label="合格净能量" value={totals.energy.value} unit="kWh" icon="battery" /><MetricValue label="电池充入" value={chargeEnergy.value} unit="kWh" icon="battery" />
-      </View><Text className="muted">配对平均 {totals.efficiency.known}/{totals.efficiency.total} 条，含估算 {totals.efficiency.estimated} 条；距离 {totals.distance.known}/{totals.distance.total}，净能量 {totals.energy.known}/{totals.energy.total}。</Text></View>
+      </View></View>
       <View className="card"><SectionHeading icon="clock" title="记录" /><Text className="muted">{MOCK_FIXTURE_ENABLED ? '当前范围的合成记录，可进入对应行程。' : '当前范围的真实记录，可进入对应行程。'}</Text>
         <View className="history-date-chips">{[{ key: 'distance', label: '最长距离' }, { key: 'duration', label: '最长时间' }, { key: 'energy', label: '最多净能量' }, { key: 'charge', label: '最多充电量' }].map(choice => <Button className="history-chip" key={choice.key} onClick={() => setRecordCategory(choice.key as typeof recordCategory)}>{choice.label}</Button>)}</View>
         {recordCategory === 'charge' ? recordCharge ? <View className="analysis-record"><Text>{historyDateTime(recordCharge.startDate)} · {shown(recordCharge.energyAddedKwh, 'kWh')}</Text><Button className="button-secondary" onClick={() => { void openCharge(recordCharge) }}>查看充电 {recordCharge.id}</Button></View> : <Text className="muted">暂无合格充电量记录。</Text>
@@ -372,20 +373,19 @@ export default function AnalysisPage() {
       </View>
       <View className="card"><SectionHeading icon="route" title="行程概览" /><View className="metric-grid"><MetricValue label="行程次数" value={driveCount} unit="次" icon="route" /><MetricValue label="总时间" value={totals.duration.value} unit="分钟" icon="clock" /><MetricValue label="平均行程距离" value={totals.distance.value != null && totals.distance.known ? totals.distance.value / totals.distance.known : null} unit="km" icon="distance" /></View></View>
       <View className="card"><SectionHeading icon="energy" title="充电概览" /><View className="metric-grid"><MetricValue label="充电次数" value={chargeCount} unit="次" icon="energy" /><MetricValue label="电池充入" value={chargeEnergy.value} unit="kWh" icon="battery" /></View>
-        {moneyCurrencies.map(currency => { const total = coveredTotal(visibleCharges, row => row.currency === currency ? row.cost : null), estimated = visibleCharges.some(row => row.currency === currency && row.costProvenance === 'estimate'); return <MetricValue key={currency} label={visibleCharges.length === 0 ? `已知费用 · ${currency}` : `已知费用 ${total.known}/${visibleCharges.length} 条`} value={estimated && total.value != null ? `≈${total.value.toFixed(2)}` : total.value} unit={currency} icon="account" /> })}
+        {moneyCurrencies.map(currency => { const total = coveredTotal(visibleCharges, row => row.currency === currency ? row.cost : null), estimated = visibleCharges.some(row => row.currency === currency && row.costProvenance === 'estimate'); return <MetricValue key={currency} label="已知费用" value={estimated && total.value != null ? `≈${total.value.toFixed(2)}` : total.value} unit={currency} icon="account" /> })}
         <Text className="muted">未知币种不折合人民币；多币种分别显示，不自动换汇。</Text>
-        <Text className="muted">费用来源：本机手动 {visibleCharges.filter(row => row.costProvenance === 'manual').length} 条 · 上游实际 {visibleCharges.filter(row => row.costProvenance === 'actual').length} 条 · 估算 {visibleCharges.filter(row => row.costProvenance === 'estimate').length} 条 · 未知 {visibleCharges.filter(row => row.costProvenance === 'unknown').length} 条。</Text>
-      </View>
+              </View>
       <View className="card"><SectionHeading icon="battery" title="AC / DC 充电" /><View className="metric-grid">{(['ac', 'dc', 'unknown'] as const).map(mode => {
         const rows = visibleCharges.filter(row => (row.chargeModeConflict != null && row.chargeModeConflict !== false ? 'unknown' : row.energy?.chargeMode ?? row.chargeMode ?? 'unknown') === mode)
         const energy = coveredTotal(rows, row => row.energyAddedKwh)
-        return <View key={mode}><MetricValue label={mode === 'unknown' ? '模式未知' : mode.toUpperCase()} value={chargeCount == null ? null : rows.length} unit="次" icon="energy" /><Text className="muted">{shown(energy.value, 'kWh')} · {rows.length === 0 ? '暂无可计算样本' : `电量覆盖 ${energy.known}/${rows.length} 条`}</Text></View>
+        return <View key={mode}><MetricValue label={mode === 'unknown' ? '模式未知' : mode.toUpperCase()} value={chargeCount == null ? null : rows.length} unit="次" icon="energy" /><Text className="muted">{shown(energy.value, 'kWh')}</Text></View>
       })}</View><Text className="muted">按合格合同或上游报告的充电模式统计；其他记录单列未知。</Text></View>
-      <View className="card"><SectionHeading icon="cloud" title="温度与能耗" /><View className="metric-grid">{temperatureGroups.map(group => <MetricValue key={group.label} label={group.total === 0 ? group.label : `${group.label} · 配对${group.known}/${group.total}`} value={group.value} unit="kWh/100km" />)}</View><Text className="muted">按实际行程外温字段分组，使用同条合格能量与里程；未知外温不分配到温度组。</Text></View>
+      <View className="card"><SectionHeading icon="cloud" title="温度与能耗" /><View className="metric-grid">{temperatureGroups.map(group => <MetricValue key={group.label} label={group.label} value={group.value} unit="kWh/100km" />)}</View></View>
       <GroupBars title="里程趋势" groups={monthly} />
     </> : null}
     {car && kind === 'mileage' ? <>
-      <View className="card"><SectionHeading icon="distance" title="年度里程" /><View className="subpage-summary-strip metric-grid"><MetricValue label="已知总里程" value={totals.distance.value} unit="km" icon="distance" /><MetricValue label="年均里程" value={averageAnnualDistance} unit="km" icon="distance" /><MetricValue label="行程次数" value={driveCount} unit="次" icon="route" /><MetricValue label="合格净能量" value={totals.energy.value} unit="kWh" icon="battery" /></View><Text className="muted">{totals.distance.total === 0 ? '暂无记录' : `覆盖 ${totals.distance.known}/${totals.distance.total} 条`}；年均仅含日期可确认的记录，不等于车辆终身里程表。费用需实际关联证据，未按默认电价推算。</Text></View>
+      <View className="card"><SectionHeading icon="distance" title="年度里程" /><View className="subpage-summary-strip metric-grid"><MetricValue label="已知总里程" value={totals.distance.value} unit="km" icon="distance" /><MetricValue label="年均里程" value={averageAnnualDistance} unit="km" icon="distance" /><MetricValue label="行程次数" value={driveCount} unit="次" icon="route" /><MetricValue label="合格净能量" value={totals.energy.value} unit="kWh" icon="battery" /></View><Text className="muted">年均仅含日期可确认的记录，不等于车辆终身里程表。</Text></View>
       {!year ? <><GroupBars title="年度对比" groups={yearly} />{[...yearly].reverse().map(group => <View className="card" key={group.key}><Button className="button-secondary" onClick={() => setYear(group.key)}>{group.key} 年</Button><Text>{shown(group.distance.value, 'km')} · {group.count} 次</Text></View>)}</> : null}
       {year && !month ? <View className="card"><Button className="button-secondary" onClick={() => setYear(null)}>返回年度</Button><Text className="section-title">{year} 月度里程</Text>{monthly.filter(group => group.key.startsWith(year)).map(group => <View key={group.key} className="analysis-record"><Button className="button-secondary" onClick={() => setMonth(group.key)}>{group.key}</Button><Text>{shown(group.distance.value, 'km')} · {group.count} 次</Text></View>)}</View> : null}
       {month && !day ? <View className="card"><View className="analysis-date-range"><Button className="button-secondary" onClick={() => setMonth(null)}>返回月份</Button><Picker mode="date" fields="month" value={month} onChange={event => setMonth(event.detail.value.slice(0, 7))}><View>{month} ▾</View></Picker></View>
@@ -395,7 +395,7 @@ export default function AnalysisPage() {
       {day ? <View className="card"><Button className="button-secondary" onClick={() => setDay(null)}>返回日历</Button><Text className="section-title">{day} 行程</Text>{driveRows(visibleDrives.filter(row => analysisDay(row.startDate) === day))}{visibleDrives.every(row => analysisDay(row.startDate) !== day) ? <Text className="muted">当日暂无已加载行程，不代表车辆未行驶。</Text> : null}</View> : null}
     </> : null}
     {car && kind === 'efficiency' ? <>
-      <View className="card analysis-headline"><SectionHeading icon="energy" title="平均能耗" /><MetricValue label="平均能耗" value={efficiencyTotals.efficiency.value} unit="kWh/100km" icon="energy" negative={(efficiencyTotals.efficiency.value ?? 0) < 0} /><Text className="muted">配对覆盖 {efficiencyTotals.efficiency.known}/{efficiencyTotals.efficiency.total} 条，含估算 {efficiencyTotals.efficiency.estimated} 条；按合格净能量/同条正里程加权。</Text></View>
+      <View className="card analysis-headline"><SectionHeading icon="energy" title="平均能耗" /><MetricValue label="平均能耗" value={efficiencyTotals.efficiency.value} unit="kWh/100km" icon="energy" negative={(efficiencyTotals.efficiency.value ?? 0) < 0} /></View>
       <View className="card"><View className="subpage-summary-strip metric-grid"><MetricValue label="合格行程" value={driveCount == null ? null : efficiencyTotals.efficiency.known} unit="次" icon="route" /><MetricValue label="已知距离" value={efficiencyTotals.distance.value} unit="km" icon="distance" /></View></View>
       <GroupBars title="能耗趋势" groups={efficiencyMonthly} metric="efficiency" />
       <View className="detail-tabs history-date-chips">
@@ -406,19 +406,19 @@ export default function AnalysisPage() {
         { label: '夏季（6–8月）', rows: efficiencyDrives.filter(row => [6, 7, 8].includes(new Date(row.startDate ?? '').getMonth() + 1)) }, { label: '冬季（12–2月）', rows: efficiencyDrives.filter(row => [12, 1, 2].includes(new Date(row.startDate ?? '').getMonth() + 1)) }].map(window => <MetricValue key={window.label} label={window.label} value={aggregateDriveHistory(window.rows).efficiency.value} unit="kWh/100km" icon="energy" />)}</View></View>
       </View>
       <View hidden={efficiencyTab !== 'distribution'}>
-      <View className="card"><SectionHeading icon="chart" title="个人历史位置" /><View className="metric-grid"><MetricValue label="最低能耗" value={distribution.min} unit="kWh/100km" /><MetricValue label="中位数" value={distribution.median} unit="kWh/100km" /><MetricValue label="最高能耗" value={distribution.max} unit="kWh/100km" /></View><Text className="muted">合格样本 {distribution.count} 段；仅比较本车当前范围，不代表公开车型排名。</Text></View>
-      <View className="card"><SectionHeading icon="speed" title="按行程平均速度" />{efficiencySpeedGroups(efficiencyDrives).map(group => <MetricValue key={group.label} label={`${group.label} · ${group.known}条`} value={group.value} unit="kWh/100km" />)}<Text className="muted">平均速度仅由该条合格距离/有效时长计算，不把峰值当平均速度。</Text></View>
+      <View className="card"><SectionHeading icon="chart" title="个人历史位置" /><View className="metric-grid"><MetricValue label="最低能耗" value={distribution.min} unit="kWh/100km" /><MetricValue label="中位数" value={distribution.median} unit="kWh/100km" /><MetricValue label="最高能耗" value={distribution.max} unit="kWh/100km" /></View></View>
+      <View className="card"><SectionHeading icon="speed" title="按行程平均速度" />{efficiencySpeedGroups(efficiencyDrives).map(group => <MetricValue key={group.label} label={group.label} value={group.value} unit="kWh/100km" />)}</View>
       </View>
       <View hidden={efficiencyTab !== 'records'}>
-      <View className="card"><SectionHeading icon="route" title="个人行程记录" />{distribution.trips.slice(0, efficiencyShown).map(trip => <View key={historyRowKey(trip.row)}><Text className="muted">P{trip.percentile} · {shown(trip.value, 'kWh/100km')}</Text><View className="analysis-percentile-track"><View style={{ width: `${trip.percentile}%` }} /></View>{driveRows([trip.row])}</View>)}<Text className="muted">百分位来自当前合格行程能耗分布；数值越高表示能耗越高，不能作为车型公开排名。</Text></View>
-{distribution.trips.length > efficiencyShown ? <Button className="button-secondary" onClick={() => setEfficiencyShown(previous => previous + 10)}>查看更多行程（{Math.min(efficiencyShown, distribution.trips.length)}/{distribution.trips.length}）</Button> : null}
+      <View className="card"><SectionHeading icon="route" title="个人行程记录" />{distribution.trips.slice(0, efficiencyShown).map(trip => <View key={historyRowKey(trip.row)}><Text className="muted">P{trip.percentile} · {shown(trip.value, 'kWh/100km')}</Text><View className="analysis-percentile-track"><View style={{ width: `${trip.percentile}%` }} /></View>{driveRows([trip.row])}</View>)}</View>
+{distribution.trips.length > efficiencyShown ? <Button className="button-secondary" onClick={() => setEfficiencyShown(previous => previous + 10)}>查看更多行程</Button> : null}
       </View>
     </> : null}
     {car && kind === 'timeline' ? <View className="analysis-timeline"><SectionHeading icon="timeline" title="行程与充电" /><View className="history-date-chips">{[{ key: 'all', label: '全部' }, { key: 'drive', label: '行程' }, { key: 'charge', label: '充电' }, { key: 'parked', label: '驻车窗口' }].map(choice => <Button key={choice.key} className="history-chip" onClick={() => setEventKind(choice.key as typeof eventKind)}>{choice.label}</Button>)}</View>
       {events.map((event, index) => <View key={`${event.kind}:${event.kind === 'parked' ? `${event.row.olderId}:${event.row.newerId}` : event.row.id}`} className="timeline-group">
         {index === 0 || analysisDay(event.startDate) !== analysisDay(events[index - 1].startDate) ? <View className="timeline-day"><Text>{analysisDay(event.startDate) ?? '日期未知'}</Text>{analysisDay(event.startDate) ? <Button className="button-secondary" onClick={() => { void Taro.navigateTo({ url: `/pages/analysis/index?kind=mileage&day=${analysisDay(event.startDate)}` }) }}>查看当日里程</Button> : null}</View> : null}
         <View className="card timeline-event"><Text className="timeline-date">{historyDateTime(event.startDate)}</Text>
-        {event.kind === 'drive' ? <><Text className="section-title">行程</Text><Text>{event.row.startAddress || '起点未知'} → {event.row.endAddress || '终点未知'}</Text><Text>{shown(event.row.distanceKm, 'km')} · {sourceLabel(event.row.source)}</Text><Button className="button-secondary" onClick={() => navigateDrive(event.row)}>查看行程 {event.row.id}</Button></>
+        {event.kind === 'drive' ? <><Text className="section-title">行程</Text><Text>{displayPlace(event.row.startAddress)} → {displayPlace(event.row.endAddress)}</Text><Text>{shown(event.row.distanceKm, 'km')} · {sourceLabel(event.row.source)}</Text><Button className="button-secondary" onClick={() => navigateDrive(event.row)}>查看行程 {event.row.id}</Button></>
           : event.kind === 'charge' ? <><Text className="section-title">充电</Text><Text>{event.row.address || '地点未知'}</Text><Text>{shown(event.row.energyAddedKwh, 'kWh')} · {event.row.costProvenance === 'estimate' ? '≈' : ''}{shown(event.row.cost, event.row.currency || '币种未知')}</Text><Text className="muted">{costSource(event.row)}</Text><Button className="button-secondary" onClick={() => { void openCharge(event.row) }}>查看充电 {event.row.id}</Button></>
             : <><Text className="section-title">{event.row.chargeOverlap ? '含充电的驻车窗口' : '驻车窗口'}</Text><Text>{shown(event.row.minutes, '分钟')} · SOC变化 {shown(event.row.socDelta, '%')}</Text><Button className="button-secondary" onClick={() => navigateParked(event.row.olderId, event.row.newerId)}>查看驻车详情</Button></>}
       </View></View>)}{events.length === 0 ? <View className="card"><Text className="muted">当前读取范围没有对应事件；未生成示例记录。</Text></View> : null}
@@ -442,7 +442,7 @@ export default function AnalysisPage() {
         <View className="analysis-curve-kpis">{curveKpis.map(item => <View className="analysis-curve-kpi" key={item.label} ariaLabel={`${item.label} ${item.value == null ? '暂无数据' : `${displayNumber(item.value, 1)}${item.unit ? `${item.unit === '%' ? '' : ' '}${item.unit}` : ''}`}`}>
           <Text className="analysis-curve-kpi-label">{item.label}</Text><Text className="analysis-curve-kpi-value">{item.value == null ? '暂无数据' : displayNumber(item.value, 1)}{item.value != null && item.unit ? <Text className="analysis-curve-kpi-unit">{`${item.unit === '%' ? '' : ' '}${item.unit}`}</Text> : null}</Text>
         </View>)}</View>
-        <Text className="muted">{sourceLabel(evidence.source)} · {evidence.points.length} 个实际采样 · {evidence.pointsComplete ? '本响应采样完整' : '采样部分覆盖'}</Text>
+        <Text className="muted">{sourceLabel(evidence.source)}</Text>
       </View> : null}
       {evidence ? <>
         <View className="analysis-curve-tabs history-date-chips">

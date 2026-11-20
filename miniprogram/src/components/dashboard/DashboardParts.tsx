@@ -135,7 +135,7 @@ export function DashboardTpms({ snapshot, report, warnings, readiness, onOpen }:
   return <View className="dashboard-tpms"><Text className="dashboard-section-title">胎压</Text><View className="dashboard-tpms-row">{TPMS_WHEELS.map(wheel => {
     const row = current.wheels[wheel], warning = warnings.find(item => item.wheel === wheel)
     const pressure = row.pressureBar ?? report?.[wheel] ?? null
-    const hint = warning ? '本机规则提示' : row.state === 'stale' ? '旧观测' : row.pressureBar == null && pressure != null ? '观测未核验' : null
+    const hint = warning ? '请检查胎压' : row.state === 'stale' ? '旧观测' : null
     // An available readiness with no per-wheel value stays "暂无数据"; any other
     // readiness shows the accurate status wording — never a fabricated reason.
     const missing = readiness && readiness.status !== 'available' ? dashboardTpmsPlaceholder(readiness) : '暂无数据'

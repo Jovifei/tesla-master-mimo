@@ -105,7 +105,7 @@ describe('advanced App entry pages through actual authenticated consumers', () =
     const page = await mount('stats')
     expect(page.root.findByProps({ ariaLabel: '模式未知 1 次' })).toBeDefined()
     expect(page.root.findByProps({ ariaLabel: 'AC 0 次' })).toBeDefined()
-    expect(page.root.findByProps({ ariaLabel: '已知费用 1/1 条 12 CNY' })).toBeDefined()
+    expect(page.root.findByProps({ ariaLabel: '已知费用 12 CNY' })).toBeDefined()
   })
   it('does not present a parked interval when the server detects a hidden intervening drive', async () => {
     const source = { source: 'teslamate_archive', source_instance_id: 'archive-a', source_vehicle_id: 'vehicle-a' }
@@ -337,7 +337,7 @@ describe('advanced App entry pages through actual authenticated consumers', () =
     const original = readHistoryCache<import('../../services/types').Charge>(storage, key)[0]
     expect(writeChargeCostOverride(storage, { userId: 'analysis-user', origin: 'https://api.example.test', stableId: 'analysis-car' }, original, 7, 'CNY', () => true)).toBe(true)
     await click(page, '刷新')
-    expect(page.root.findByProps({ ariaLabel: '已知费用 1/1 条 7 CNY' })).toBeDefined()
+    expect(page.root.findByProps({ ariaLabel: '已知费用 7 CNY' })).toBeDefined()
     expect(readHistoryCache<import('../../services/types').Charge>(storage, key)[0]).toMatchObject({ cost: 0, currency: 'EUR' })
     await act(async () => { platform.unload(); renderer!.unmount() }); renderer = null
     page = await mount('timeline')
@@ -483,7 +483,7 @@ describe('advanced App entry pages through actual authenticated consumers', () =
     const page = await mount('efficiency')
     expect(page.root.findByProps({ ariaLabel: '平均能耗 -5 kWh/100km' })).toBeDefined()
     expect(page.root.findByProps({ ariaLabel: '合格行程 1 次' })).toBeDefined()
-    expect(page.root.findByProps({ className: 'analysis-coverage' }).findAllByType('text').map(node => node.children.join('')).join(' ')).toContain('行程 2 条')
+    expect(page.root.findByProps({ className: 'analysis-coverage' }).findAllByType('text').map(node => node.children.join('')).join(' ')).toBe('数据读取完成')
     const { historyCacheKey, readHistoryCache } = await import('../../services/history_cache')
     const cached = readHistoryCache<{ id: string }>({ getStorageSync: (key: string) => platform.values.get(key), setStorageSync() {} }, historyCacheKey('drives', 'analysis-user', 'analysis-car', 'https://api.example.test'))
     expect(cached).toHaveLength(2)

@@ -552,25 +552,57 @@
 .history-view-recent { margin: 0; padding: 0; background: transparent; color: var(--apple-label-secondary); font-size: 24rpx; }
 .history-view-recent::after { border: 0; }
 .charge-group { margin-bottom: 18rpx; }
-.charge-group-header { display: block; padding: 20rpx 16rpx 8rpx; font-size: 26rpx; font-weight: 600; color: var(--apple-label-secondary); }
+.charge-group-header { display: block; padding: 22rpx 16rpx 10rpx; font-size: 28rpx; font-weight: 600; color: var(--apple-label-secondary); }
 .charge-group-card { background: var(--apple-surface); border: 0.5px solid var(--apple-separator); border-radius: 28rpx; overflow: hidden; }
-.charge-group-card .history-record { position: relative; display: flex; align-items: center; gap: 16rpx; padding: 22rpx 24rpx; margin: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.charge-group-card .history-record { position: relative; display: flex; align-items: center; gap: 18rpx; padding: 26rpx 24rpx; margin: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
 .charge-group-card .history-record:active { background: rgba(0, 0, 0, .02); }
 .charge-row-divider { position: absolute; left: 88rpx; right: 24rpx; top: 0; height: 0.5px; background: var(--apple-separator); }
 .charge-row-icon { flex: none; width: 52rpx; height: 52rpx; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: rgba(14, 116, 144, .12); }
 .charge-row-icon.is-dc { background: rgba(180, 83, 9, .12); }
 .charge-row-icon .visual-icon { width: 30rpx; height: 30rpx; background: transparent; }
 .history-charge-location { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4rpx; }
-.charge-row-address { font-size: 28rpx; font-weight: 600; color: var(--apple-label-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.charge-row-meta { font-size: 22rpx; color: var(--apple-label-secondary); }
-.history-charge-mode { font-size: 20rpx; color: var(--apple-label-secondary); }
+.charge-row-address { font-size: 30rpx; font-weight: 600; color: var(--apple-label-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.charge-row-meta { font-size: 24rpx; color: var(--apple-label-secondary); }
+.history-charge-mode { font-size: 22rpx; color: var(--apple-label-secondary); }
 .history-charge-mode.history-charge-mode-dc { color: #B45309; }
 .charge-row-right { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 4rpx; }
-.charge-row-energy { font-size: 30rpx; font-weight: 700; color: var(--apple-label-primary); }
-.charge-row-soc { font-size: 20rpx; color: var(--apple-label-secondary); }
+.charge-row-energy { font-size: 32rpx; font-weight: 700; color: var(--apple-label-primary); }
+.charge-row-soc { font-size: 22rpx; color: var(--apple-label-secondary); }
 .charge-row-soc { color: var(--apple-label-secondary); }
-.charge-row-cost { font-size: 20rpx; font-weight: 600; color: #15803d; background: rgba(34, 197, 94, .12); border-radius: 8rpx; padding: 2rpx 8rpx; }
+.charge-row-cost { font-size: 22rpx; font-weight: 600; color: #15803d; background: rgba(34, 197, 94, .12); border-radius: 8rpx; padding: 2rpx 8rpx; }
 
 .charge-row-mode-line { display: flex; align-items: center; }
-.charge-row-unitprice { font-size: 20rpx; color: var(--apple-label-secondary); }
+.charge-row-unitprice { font-size: 22rpx; color: var(--apple-label-secondary); }
 .charge-row-energy-wrap, .charge-row-soc-wrap, .charge-row-cost-wrap { display: flex; justify-content: flex-end; }
+
+@media (prefers-color-scheme: dark) {
+  .history-page .history-detail-overlay, .history-page .history-detail-surface { background: #111315 !important; }
+  .history-page .history-detail-surface .history-detail-heading { background: #15181c !important; border-color: #323840 !important; }
+  .history-page .history-detail-surface .history-detail-heading .section-title { color: #f5f6f7 !important; }
+  .history-page .history-page-header { background: #111315 !important; border-color: #323840 !important; }
+  .history-page .history-page-header .title { color: #f5f6f7 !important; }
+  .history-page .location-name { color: #f5f6f7; }
+  .history-page .location-date, .history-page .history-record-date, .history-page .history-charge-submetrics { color: #b7bdc6; }
+}
+
+/* Compact multi-month charge heatmap (App P1: 3–6 months side by side). */
+.charge-heatmap-legend { display: flex; align-items: center; gap: 4rpx; font-size: 20rpx; color: var(--apple-label-secondary); }
+.charge-heatmap-dot { width: 18rpx; height: 18rpx; border-radius: 6rpx; background: rgba(14, 116, 144, .12); }
+.charge-heatmap-dot.level-2 { background: rgba(14, 116, 144, .32); }
+.charge-heatmap-dot.level-3 { background: rgba(14, 116, 144, .68); }
+.compact-heatmap { margin-top: 14rpx; }
+.compact-heatmap-scroll { width: 100%; white-space: nowrap; }
+.compact-heatmap-months { display: flex; gap: 16rpx; min-width: max-content; padding-bottom: 4rpx; }
+.compact-heatmap-month { flex: none; width: 190rpx; }
+.compact-heatmap-month-label { display: block; margin-bottom: 8rpx; text-align: center; font-size: 20rpx; color: var(--apple-label-secondary); }
+.compact-heatmap-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6rpx; }
+.compact-heatmap-pad { aspect-ratio: 1; }
+.compact-heatmap-cell { width: 100%; aspect-ratio: 1; min-height: 0; height: auto; padding: 0; margin: 0; border-radius: 8rpx; border: 1rpx solid var(--apple-separator); display: flex; align-items: center; justify-content: center; font-size: 16rpx; line-height: 1; background: var(--charge-cell-bg); color: var(--charge-cell-ink); }
+.compact-heatmap-cell::after { border: 0; }
+.compact-heatmap-cell.is-selected { border: 2px solid var(--apple-label-primary); }
+@media (prefers-color-scheme: dark) {
+  .compact-heatmap-cell[style] { background: var(--charge-cell-bg-dark); color: var(--charge-cell-ink-dark); }
+  .charge-heatmap-dot { background: rgba(140, 204, 210, .14); }
+  .charge-heatmap-dot.level-2 { background: rgba(140, 204, 210, .34); }
+  .charge-heatmap-dot.level-3 { background: rgba(140, 204, 210, .7); }
+}
