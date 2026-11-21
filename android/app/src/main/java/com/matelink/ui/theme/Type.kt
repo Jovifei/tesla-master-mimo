@@ -24,109 +24,109 @@ val Typography = Typography(
     displayLarge = TextStyle(
         fontFamily = MetricMono,
         fontWeight = FontWeight.SemiBold,
-        fontSize = 57.sp,
-        lineHeight = 64.sp,
+        fontSize = 44.sp,
+        lineHeight = 50.sp,
         letterSpacing = 0.sp,
         fontFeatureSettings = "tnum"
     ),
     displayMedium = TextStyle(
         fontFamily = MetricMono,
         fontWeight = FontWeight.SemiBold,
-        fontSize = 45.sp,
-        lineHeight = 52.sp,
+        fontSize = 36.sp,
+        lineHeight = 42.sp,
         letterSpacing = 0.sp,
         fontFeatureSettings = "tnum"
     ),
     displaySmall = TextStyle(
         fontFamily = MetricMono,
         fontWeight = FontWeight.Medium,
-        fontSize = 36.sp,
-        lineHeight = 44.sp,
+        fontSize = 30.sp,
+        lineHeight = 36.sp,
         letterSpacing = 0.sp,
         fontFeatureSettings = "tnum"
     ),
     headlineLarge = TextStyle(
         fontFamily = SwissSans,
         fontWeight = FontWeight.SemiBold,
-        fontSize = 32.sp,
-        lineHeight = 40.sp,
+        fontSize = 24.sp,
+        lineHeight = 30.sp,
         letterSpacing = 0.sp
     ),
     headlineMedium = TextStyle(
         fontFamily = SwissSans,
         fontWeight = FontWeight.SemiBold,
-        fontSize = 28.sp,
-        lineHeight = 36.sp,
+        fontSize = 19.sp,
+        lineHeight = 25.sp,
         letterSpacing = 0.sp
     ),
     headlineSmall = TextStyle(
         fontFamily = SwissSans,
         fontWeight = FontWeight.Medium,
-        fontSize = 24.sp,
-        lineHeight = 32.sp,
+        fontSize = 18.sp,
+        lineHeight = 24.sp,
         letterSpacing = 0.sp
     ),
     titleLarge = TextStyle(
         fontFamily = SwissSans,
         fontWeight = FontWeight.Medium,
-        fontSize = 22.sp,
-        lineHeight = 28.sp,
+        fontSize = 18.sp,
+        lineHeight = 24.sp,
         letterSpacing = 0.sp
     ),
     titleMedium = TextStyle(
         fontFamily = SwissSans,
         fontWeight = FontWeight.Medium,
-        fontSize = 16.sp,
+        fontSize = 18.sp,
         lineHeight = 24.sp,
         letterSpacing = 0.sp
     ),
     titleSmall = TextStyle(
         fontFamily = SwissSans,
         fontWeight = FontWeight.Medium,
-        fontSize = 14.sp,
-        lineHeight = 20.sp,
+        fontSize = 18.sp,
+        lineHeight = 24.sp,
         letterSpacing = 0.sp
     ),
     bodyLarge = TextStyle(
         fontFamily = SwissSans,
         fontWeight = FontWeight.Normal,
-        fontSize = 16.sp,
+        fontSize = 18.sp,
         lineHeight = 24.sp,
         letterSpacing = 0.sp
     ),
     bodyMedium = TextStyle(
         fontFamily = SwissSans,
         fontWeight = FontWeight.Normal,
-        fontSize = 14.sp,
-        lineHeight = 20.sp,
+        fontSize = 18.sp,
+        lineHeight = 24.sp,
         letterSpacing = 0.sp
     ),
     bodySmall = TextStyle(
         fontFamily = SwissSans,
         fontWeight = FontWeight.Normal,
-        fontSize = 12.sp,
-        lineHeight = 16.sp,
+        fontSize = 18.sp,
+        lineHeight = 24.sp,
         letterSpacing = 0.sp
     ),
     labelLarge = TextStyle(
         fontFamily = SwissSans,
         fontWeight = FontWeight.Medium,
-        fontSize = 14.sp,
-        lineHeight = 20.sp,
+        fontSize = 18.sp,
+        lineHeight = 24.sp,
         letterSpacing = 0.sp
     ),
     labelMedium = TextStyle(
         fontFamily = SwissSans,
         fontWeight = FontWeight.Medium,
-        fontSize = 12.sp,
-        lineHeight = 16.sp,
+        fontSize = 18.sp,
+        lineHeight = 24.sp,
         letterSpacing = 0.sp
     ),
     labelSmall = TextStyle(
         fontFamily = SwissSans,
         fontWeight = FontWeight.Medium,
-        fontSize = 11.sp,
-        lineHeight = 16.sp,
+        fontSize = 18.sp,
+        lineHeight = 24.sp,
         letterSpacing = 0.sp
     )
 )

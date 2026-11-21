@@ -683,22 +683,6 @@ fun DashboardScreen(
                         strokeCap = androidx.compose.ui.graphics.StrokeCap.Round
                     )
                 }
-                val chargePresentation = classifyBatteryCharge(status.batteryLevel, status.chargeLimitSoc)
-                if (chargePresentation.summary != null) {
-                    val summary = chargePresentation.summary
-                    Text(
-                        stringResource(R.string.battery_charge_summary, summary.currentLevel, summary.targetLevel),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                } else if (status.chargeLimitSoc != null) {
-                    Text(
-                        stringResource(R.string.charge_limit, "${status.chargeLimitSoc}%"),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-
                 val remoteUiState by remoteViewModel.uiState.collectAsStateWithLifecycle()
                 val busyCmd = remoteUiState.busyCommand
                 val canExecute = status.commandAuthorization?.ready ?: (status.commandAuthorization == null)
@@ -809,19 +793,33 @@ fun DashboardScreen(
                         )
                     }
                 }
-                scheduledEvents(status).forEach { event ->
-                    Text(
-                        stringResource(
+                val footerLines = buildList {
+                    scheduledEvents(status).forEach { event ->
+                        add(stringResource(
                             if (event.kind == ScheduledKind.CHARGING_START) {
                                 R.string.scheduled_charging_start
                             } else {
                                 R.string.scheduled_departure
                             },
                             event.timeText
-                        ),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                        ))
+                    }
+                    climateTargets(status)?.let { targets ->
+                        val targetText = listOfNotNull(targets.driver, targets.passenger)
+                            .joinToString(" / ") { value ->
+                                if (value % 1.0 == 0.0) value.toInt().toString() else value.toString()
+                            }
+                        if (targetText.isNotEmpty()) add(stringResource(R.string.climate_target, targetText))
+                    }
+                }
+                if (footerLines.isNotEmpty()) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        footerLines.forEach { line ->
+                            Text(line, style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1,
+                                overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                        }
+                    }
                 }
                 vehicleModes(status)?.let { modes ->
                     if (modes.valetOn) {
@@ -839,19 +837,6 @@ fun DashboardScreen(
                         )
                     }
                 }
-                climateTargets(status)?.let { targets ->
-                    val targetText = listOfNotNull(targets.driver, targets.passenger)
-                        .joinToString(" / ") { value ->
-                            if (value % 1.0 == 0.0) value.toInt().toString() else value.toString()
-                        }
-                    if (targetText.isNotEmpty()) {
-                        Text(
-                            stringResource(R.string.climate_target, targetText),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
             }
         }
 
@@ -862,6 +847,15 @@ fun DashboardScreen(
         // ready), nearby charging (loaded on demand to save Fleet API
         // quota) and named places.
 
+
+        // Recent drive card (Apple HIG style)
+        uiState.recentDrive?.let { recent ->
+            DashboardRecentDriveCard(
+                drive = recent,
+                units = uiState.units,
+                onClick = { onNavigateToDriveDetail(carId, recent.driveId) }
+            )
+        }
 
         // Info cards row
         Row(
@@ -905,15 +899,6 @@ fun DashboardScreen(
                     .fillMaxHeight(),
                 icon = Icons.Default.LocationOn,
                 onClick = onLocationClick
-            )
-        }
-
-        // Recent drive card (Apple HIG style)
-        uiState.recentDrive?.let { recent ->
-            DashboardRecentDriveCard(
-                drive = recent,
-                units = uiState.units,
-                onClick = { onNavigateToDriveDetail(carId, recent.driveId) }
             )
         }
 
@@ -2054,7 +2039,7 @@ private fun DashboardRecentDriveCard(
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 val capsuleModifier = Modifier.weight(1f)
-                DashboardMetricCapsule(
+                if (effText != "--") DashboardMetricCapsule(
                     icon = Icons.Default.Eco,
                     label = "能耗",
                     value = effText,

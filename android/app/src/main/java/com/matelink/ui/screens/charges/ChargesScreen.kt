@@ -322,10 +322,9 @@ private fun ChargesContent(
 
     // Summary, secondary filters, optional notices/chart, then history heading.
     val showFreeHint = freeSupercharging && selectedCostFilter == CostFilter.NO_COST
-    val headerCount = 3 +
+    val headerCount = 2 +
         (if (historySyncWarning != null || localArchiveLinkPending) 1 else 0) +
-        (if (showFreeHint) 1 else 0) +
-        (if (chartData.isNotEmpty()) 1 else 0) + 1
+        (if (showFreeHint) 1 else 0)
 
     val groupedCharges = remember(charges) {
         val groups = mutableListOf<HistoryDateGroup<ChargeData>>()
@@ -419,40 +418,6 @@ private fun ChargesContent(
                     modifier = Modifier.padding(horizontal = 4.dp)
                 )
             }
-        }
-
-        item(key = "charge_history_window") {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End
-            ) {
-                TextButton(onClick = {
-                    onChargeTypeFilterSelected(ChargeTypeFilter.ALL)
-                    onCostFilterSelected(CostFilter.ALL)
-                    onLocationFilterCleared()
-                    onDateFilterSelected(DateFilter.LAST_30_DAYS)
-                }) { Text(stringResource(R.string.ui_charge_view_recent)) }
-            }
-        }
-        // The established daily charge heatmap remains the charge-page visual.
-        if (chartData.isNotEmpty()) {
-            item {
-                ChargesChartsPager(
-                    chartData = chartData,
-                    granularity = chartGranularity,
-                    currencySymbol = currencySymbol,
-                    palette = palette
-                )
-            }
-        }
-
-        item {
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = stringResource(R.string.charge_history),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
         }
 
         if (charges.isEmpty()) {
@@ -578,6 +543,19 @@ private fun ChargesContent(
                 }
             }
         }
+
+        // The established daily charge heatmap remains the charge-page visual.
+        if (chartData.isNotEmpty()) {
+            item {
+                ChargesChartsPager(
+                    chartData = chartData,
+                    granularity = chartGranularity,
+                    currencySymbol = currencySymbol,
+                    palette = palette
+                )
+            }
+        }
+
     }
 
     MonthScrollIndicator(
@@ -730,13 +708,6 @@ internal fun SummaryCard(
     selectedDateFilter: DateFilter, customStartDate: LocalDate?, customEndDate: LocalDate?,
     onDateFilterSelected: (DateFilter) -> Unit, onCustomRangeSelected: (LocalDate, LocalDate) -> Unit
 ) {
-    val avgPricePerKwh = if (summary.totalCost != null && summary.totalEnergyAdded != null && summary.totalEnergyAdded > 0.05) {
-        summary.totalCost / summary.totalEnergyAdded
-    } else null
-    val avgEnergyPerCharge = if (summary.totalEnergyAdded != null && summary.totalCharges > 0) {
-        summary.totalEnergyAdded / summary.totalCharges
-    } else null
-
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -819,54 +790,6 @@ internal fun SummaryCard(
                         maxColumns = 4
                     )
 
-                    HorizontalDivider(
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f),
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                    )
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 2.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.PriceCheck,
-                                contentDescription = null,
-                                tint = Color(0xFF22C55E),
-                                modifier = Modifier.size(15.dp)
-                            )
-                            Text(
-                                text = "${stringResource(R.string.charge_unit_price)}: " +
-                                    (avgPricePerKwh?.let { "$currencySymbol%.2f / 度".format(it) } ?: stringResource(R.string.not_available)),
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Speed,
-                                contentDescription = null,
-                                tint = palette.accent,
-                                modifier = Modifier.size(15.dp)
-                            )
-                            Text(
-                                text = "${stringResource(R.string.charge_avg_energy)}: " +
-                                    (avgEnergyPerCharge?.let { "%.1f 度 / 次".format(it) } ?: stringResource(R.string.not_available)),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
                 }
             }
         }
@@ -1148,10 +1071,8 @@ private fun ChargesChartsPager(
     palette: CarColorPalette
 ) {
     Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = palette.surface)) {
-        Column(Modifier.padding(16.dp)) {
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
             ChargesChartPage(chartData, granularity, ChargesChartType.ENERGY, currencySymbol, palette)
-            Text(stringResource(R.string.ui_charge_calendar_limit), style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

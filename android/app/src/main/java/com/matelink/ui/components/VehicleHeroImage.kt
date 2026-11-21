@@ -86,7 +86,7 @@ fun VehicleHeroImage(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(170.dp),
+            .height(110.dp),
         contentAlignment = Alignment.Center
     ) {
         Crossfade(

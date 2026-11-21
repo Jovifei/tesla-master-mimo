@@ -330,7 +330,6 @@ private fun DrivesContent(
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
 
-
         item {
             SummaryCard(
                 summary = summary, units = units, palette = palette,
@@ -343,26 +342,6 @@ private fun DrivesContent(
             )
         }
 
-        // Drives charts (daily/weekly/monthly based on date range) - swipeable
-        if (chartData.isNotEmpty()) {
-            item {
-                DrivesChartsPager(
-                    chartData = chartData,
-                    granularity = chartGranularity,
-                    units = units,
-                    palette = palette
-                )
-            }
-        }
-
-        item {
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = stringResource(R.string.drive_history),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-        }
 
         if (drives.isEmpty()) {
             item {
@@ -427,6 +406,20 @@ private fun DrivesContent(
                 }
             }
         }
+
+
+        // Drives charts (daily/weekly/monthly based on date range) - swipeable
+        if (chartData.isNotEmpty()) {
+            item {
+                DrivesChartsPager(
+                    chartData = chartData,
+                    granularity = chartGranularity,
+                    units = units,
+                    palette = palette
+                )
+            }
+        }
+
 
         if (isLoadingMore) {
             item(key = "loading_more_indicator") {

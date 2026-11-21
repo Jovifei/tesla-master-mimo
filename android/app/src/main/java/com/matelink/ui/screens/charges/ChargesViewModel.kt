@@ -261,7 +261,7 @@ data class ChargesUiState(
     val historyNoticeLocalCarId: Int? = null,
     val startDate: LocalDate? = null,
     val endDate: LocalDate? = null,
-    val selectedFilter: DateFilter = DateFilter.LAST_30_DAYS,  // Default to 30 days
+    val selectedFilter: DateFilter = DateFilter.LAST_90_DAYS,  // Heatmap wants several months
     val chargeTypeFilter: ChargeTypeFilter = ChargeTypeFilter.ALL,
     val costFilter: CostFilter = CostFilter.ALL,
     val customStartDate: LocalDate? = null,
@@ -386,7 +386,7 @@ class ChargesViewModel @Inject constructor(
         private fun restoreInitialState(handle: SavedStateHandle): ChargesUiState {
             val dateFilter = handle.get<String>(KEY_DATE_FILTER)
                 ?.let { runCatching { DateFilter.valueOf(it) }.getOrNull() }
-                ?: DateFilter.LAST_30_DAYS
+                ?: DateFilter.LAST_90_DAYS
             val chargeTypeFilter = handle.get<String>(KEY_CHARGE_TYPE_FILTER)
                 ?.let { runCatching { ChargeTypeFilter.valueOf(it) }.getOrNull() }
                 ?: ChargeTypeFilter.ALL

@@ -58,14 +58,14 @@ class HistoryRefreshClockConsumerTest {
             drivePage.setCarId(1); chargePage.setCarId(1)
             assertEquals(LocalDate.of(2026, 9, 27), drivePage.uiState.value.startDate)
             assertEquals(LocalDate.of(2026, 10, 3), drivePage.uiState.value.endDate)
-            assertEquals(LocalDate.of(2026, 9, 4), chargePage.uiState.value.startDate)
+            assertEquals(LocalDate.of(2026, 7, 6), chargePage.uiState.value.startDate)
             assertEquals(LocalDate.of(2026, 10, 3), chargePage.uiState.value.endDate)
 
             now = Instant.parse("2026-10-03T16:10:00Z")
             drivePage.refresh(); chargePage.refresh()
             assertEquals(LocalDate.of(2026, 9, 28), drivePage.uiState.value.startDate)
             assertEquals(LocalDate.of(2026, 10, 4), drivePage.uiState.value.endDate)
-            assertEquals(LocalDate.of(2026, 9, 5), chargePage.uiState.value.startDate)
+            assertEquals(LocalDate.of(2026, 7, 7), chargePage.uiState.value.startDate)
             assertEquals(LocalDate.of(2026, 10, 4), chargePage.uiState.value.endDate)
         } finally {
             drives?.viewModelScope?.cancel(); charges?.viewModelScope?.cancel()

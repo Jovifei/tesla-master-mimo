@@ -280,6 +280,9 @@ class ChargesRoomCostConsumerTest {
         f.status = { 503 }
         val vm = viewModel(f)
         try {
+            // The heatmap defaults to 90 days now; this contract explicitly covers
+            // the 30-day recent window before switching to a custom old day.
+            vm.setDateFilter(DateFilter.LAST_30_DAYS)
             vm.setCarId(1)
             awaitCharges(vm, listOf(71))
             assertEquals(listOf(71), vm.uiState.value.charges.map { it.chargeId })
