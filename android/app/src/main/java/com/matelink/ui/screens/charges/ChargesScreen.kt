@@ -742,7 +742,7 @@ internal fun SummaryCard(
                                     if (summary.totalCharges == 1) R.string.charge_session_unit
                                     else R.string.charge_sessions_unit
                                 ),
-                                valueFontSize = 18.sp
+                                valueFontSize = 16.sp
                             ),
                             TelemetryMetricSpec(
                                 Icons.Default.BatteryChargingFull,
@@ -757,7 +757,7 @@ internal fun SummaryCard(
                                 } ?: stringResource(R.string.not_available),
                                 palette.acColor,
                                 unit = if (summary.totalEnergyAdded != null && summary.totalEnergyAdded > 999) "MWh" else "度",
-                                valueFontSize = 18.sp
+                                valueFontSize = 16.sp
                             ),
                             TelemetryMetricSpec(
                                 Icons.Default.Paid,
@@ -772,7 +772,7 @@ internal fun SummaryCard(
                                 } ?: stringResource(R.string.not_available),
                                 Color(0xFF22C55E),
                                 unit = if (summary.totalCost != null) currencySymbol else null,
-                                valueFontSize = 18.sp
+                                valueFontSize = 16.sp
                             ),
                             TelemetryMetricSpec(
                                 Icons.Default.ReceiptLong,
@@ -783,7 +783,7 @@ internal fun SummaryCard(
                                 } ?: stringResource(R.string.not_available),
                                 palette.dcColor,
                                 unit = if (summary.avgCostPerCharge != null) currencySymbol else null,
-                                valueFontSize = 18.sp
+                                valueFontSize = 16.sp
                             )
                         ),
                         adaptive = false,

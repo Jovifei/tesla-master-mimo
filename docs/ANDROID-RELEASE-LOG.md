@@ -1,5 +1,20 @@
 # MateLink Android 版本发布台账
 
+## [2.1.95 / build 115] — 2026-11-23 字号回退修复（已覆盖安装）
+
+- **问题**：2.1.94 被反馈“所有字体都变大、变粗”。根因是 2.1.94 前批量改 Type.kt 时正则错误，把 title/body/label 共 9 个样式全部覆盖成 18sp/24sp，正文与标签被放大。
+- **修复**：逐个样式重写 Typography：display 40/32/28，headline 22/18/16，title 16/14/12，body 14/13/11，label 12/11/10；摘要数值 18→16sp；日期条与行程行沿用 10–11sp。
+- **验证**：真机 2.1.95 行程页字号明显回落，摘要/日期条/行程行不再整体加粗；全量 Debug 1980 项 0 失败。
+- **正式包**：`com.matelink` 115 / 2.1.95，APK SHA-256 `34B78C19461A10CD70884A3D7F10BD4975A5E5F3ECD92E3D37D6F51D36F72690`，`lastUpdateTime=2026-11-23 00:27:58`。**未提交**。
+- **附带发现**：行程页当前出现两条同路线、同 22:58 的记录（一条无能耗、一条有能耗），疑似同车同趟被两个来源各落一条；已记录，下一轮做去重与来源合并。
+
+## [2.1.94 / build 114] — 2026-11-21 行程密度收尾（已覆盖安装）
+
+- **需求**：完成 #115 剩余三项——行程时间只留 `11:44`；日期扇形改横向日期条；每条行程指标压成一行、空能耗不占格；长地址截到地点名。
+- **修改**：`HorizontalDayStrip` 替代 `VerticalDayStack`，7 个 56dp 日期 chip 横向滚动，选中日期下方直接展开当日行程；`DriveRowItem` 时间固定 `HH:mm`，指标合并为 `0.7 km · 3 min · 54 km/h`（无能耗值不显示），起终点相同只写一次，超过 12 字的地点名用 `parseChineseAddress().detailOnly` 压缩。
+- **验证**：`Drives*`、`HistoryRefreshClockConsumerTest`、`SettingsExperienceContractTest` 通过；真机 2.1.94 首屏：摘要置顶、横向日期条完整不裁切、时间 `11:44`、单行指标、长地址截断；全量 Debug 1980 项 0 失败。
+- **正式包**：`com.matelink` 114 / 2.1.94，APK SHA-256 `F7AEE5CD46947B91A53A5E9C00D0503B19F0E4DB7EFDAAE33C3EDDAA25EEDD8E`，归档 `E:\Claude_allow\Download\MateLink-2.1.94-build114-final.apk`，`lastUpdateTime=2026-11-21 11:54`。**未提交**。
+
 ## [2.1.93 / build 113] — 2026-11-21 信息密度改造（已覆盖安装）
 
 - **问题（Jovi 实测）**：字体偏大、废话多；充电热力图变成一行/大格子，看不到几个月；行程首屏被摘要+柱图+日期卡占满，看不到行程；仪表盘大车图占首屏；充电首屏被摘要占满。

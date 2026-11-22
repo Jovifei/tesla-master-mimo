@@ -81,7 +81,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.HorizontalDivider
-import com.matelink.ui.components.VerticalDayStack
+import com.matelink.ui.components.HorizontalDayStrip
 import com.matelink.ui.components.AppleDateGroupHeader
 import com.matelink.ui.components.HistoryDateGroup
 import com.matelink.ui.components.calendarHistoryGroups
@@ -377,7 +377,7 @@ private fun DrivesContent(
             }
         } else {
             item(key = "history_day_stack") {
-                VerticalDayStack(groups = calendarHistoryGroups(groupedDriveHistory,
+                HorizontalDayStrip(groups = calendarHistoryGroups(groupedDriveHistory,
                         if (selectedDateFilter == DriveDateFilter.CUSTOM) customStartDate
                         else selectedDateFilter.days?.let { java.time.LocalDate.now().minusDays((it - 1).coerceAtLeast(0)) },
                         if (selectedDateFilter == DriveDateFilter.CUSTOM) customEndDate
@@ -680,7 +680,7 @@ internal fun SummaryCard(
                             if (hasSummary) "%,d".format(summary.totalDrives) else unavailable,
                             Color(0xFF0284C7),
                             unit = stringResource(R.string.visual_trip_count_unit),
-                            valueFontSize = 18.sp
+                            valueFontSize = 16.sp
                         ),
                         TelemetryMetricSpec(
                             CustomIcons.SteeringWheel,
@@ -691,7 +691,7 @@ internal fun SummaryCard(
                             } ?: unavailable,
                             Color(0xFF059669),
                             unit = UnitFormatter.getDistanceUnit(units),
-                            valueFontSize = 18.sp
+                            valueFontSize = 16.sp
                         ),
                         TelemetryMetricSpec(
                             Icons.Default.Timer,
@@ -701,7 +701,7 @@ internal fun SummaryCard(
                             } ?: unavailable,
                             Color(0xFFD97706),
                             unit = stringResource(R.string.visual_trip_duration_unit),
-                            valueFontSize = 18.sp
+                            valueFontSize = 16.sp
                         ),
                         TelemetryMetricSpec(
                             Icons.Default.Speed,
@@ -709,7 +709,7 @@ internal fun SummaryCard(
                             summary.maxSpeedKmh?.takeIf { it >= 0 }?.let { visualTripNumber(UnitFormatter.speedKmhDisplayValue(it.toDouble(), units), 0) } ?: unavailable,
                             Color(0xFF6366F1),
                             unit = UnitFormatter.getSpeedUnit(units),
-                            valueFontSize = 18.sp
+                            valueFontSize = 16.sp
                         )
                     ),
                     modifier = Modifier.padding(vertical = 4.dp),
@@ -720,6 +720,14 @@ internal fun SummaryCard(
             DistanceFilterDropdown(selectedDistanceFilter, units, palette, onDistanceFilterSelected)
         }
     }
+}
+
+/** Keep list rows to a place name, not a full province/city/street sentence. */
+private fun compactPlaceName(value: String): String {
+    if (value.length <= 12) return value
+    return runCatching {
+        com.matelink.util.parseChineseAddress(value).detailOnly.ifBlank { value }
+    }.getOrDefault(value)
 }
 
 @Composable
@@ -733,8 +741,8 @@ private fun DriveRowItem(
     val receiptUnits = drivePresentationUnits(drive.lengthUnit, units)
     val unknown = stringResource(R.string.unknown)
     val (rawStart, rawEnd) = formatRouteAddresses(drive.startAddress, drive.endAddress, unknown)
-    val startCity = rawStart.takeUnless { it == unknown } ?: stringResource(R.string.drive_point_a)
-    val endCity = rawEnd.takeUnless { it == unknown } ?: stringResource(R.string.drive_point_b)
+    val startCity = compactPlaceName(rawStart.takeUnless { it == unknown } ?: stringResource(R.string.drive_point_a))
+    val endCity = compactPlaceName(rawEnd.takeUnless { it == unknown } ?: stringResource(R.string.drive_point_b))
 
     val energyPres = drive.historyEnergy(metrics)
     val unavailable = stringResource(R.string.not_available)
@@ -750,41 +758,6 @@ private fun DriveRowItem(
     val startSoc = drive.startBatteryLevel
     val endSoc = drive.endBatteryLevel
     val socRange = UnitFormatter.formatSocRange(startSoc, endSoc, "")
-
-    val stripMetrics = listOf(
-        TelemetryMetricSpec(
-            icon = Icons.Default.Eco,
-            label = "能耗",
-            value = effText,
-            tint = Color(0xFF10B981),
-            unit = if (effText != unavailable) "kWh/100km" else null,
-            valueFontSize = 18.sp
-        ),
-        TelemetryMetricSpec(
-            icon = CustomIcons.SteeringWheel,
-            label = "里程",
-            value = distText,
-            tint = Color(0xFF0284C7),
-            unit = if (distText != unavailable) UnitFormatter.getDistanceUnit(receiptUnits) else null,
-            valueFontSize = 18.sp
-        ),
-        TelemetryMetricSpec(
-            icon = Icons.Default.Timer,
-            label = "时长",
-            value = durText,
-            tint = Color(0xFFD97706),
-            unit = if (durText != unavailable) "min" else null,
-            valueFontSize = 18.sp
-        ),
-        TelemetryMetricSpec(
-            icon = Icons.Default.Speed,
-            label = stringResource(R.string.max_speed),
-            value = speedText,
-            tint = Color(0xFF6366F1),
-            unit = if (speedText != unavailable) UnitFormatter.getSpeedUnit(receiptUnits) else null,
-            valueFontSize = 18.sp
-        )
-    )
 
     Column(
         modifier = Modifier
@@ -819,14 +792,26 @@ private fun DriveRowItem(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
-                RouteIndicator(
-                    start = startCity,
-                    end = endCity,
-                    accent = palette.accent
-                )
+                if (startCity == endCity) {
+                    Text(
+                        startCity,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                } else {
+                    RouteIndicator(
+                        start = startCity,
+                        end = endCity,
+                        accent = palette.accent
+                    )
+                }
                 Text(
-                    text = formatEditorialDate(drive.startDate,
-                        android.text.format.DateFormat.is24HourFormat(LocalContext.current)),
+                    text = parseIsoInstant(drive.startDate)?.let {
+                        java.time.format.DateTimeFormatter.ofPattern("HH:mm")
+                            .format(it.atZone(java.time.ZoneId.systemDefault()))
+                    } ?: drive.startDate?.take(16).orEmpty(),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -862,11 +847,22 @@ private fun DriveRowItem(
             )
         }
 
-        // ── Bottom row: 4 key metrics in one compact, neat Apple-style row ────
-        CompactHistoryMetricStrip(
-            metrics = stripMetrics,
-            numberFontSize = 18.sp
-        )
+        // One compact metrics line; unavailable energy takes no space.
+        val metricParts = buildList {
+            if (effText != unavailable) add("$effText kWh/100km")
+            if (distText != unavailable) add("$distText ${UnitFormatter.getDistanceUnit(receiptUnits)}")
+            if (durText != unavailable) add("$durText min")
+            if (speedText != unavailable) add("$speedText ${UnitFormatter.getSpeedUnit(receiptUnits)}")
+        }
+        if (metricParts.isNotEmpty()) {
+            Text(
+                text = metricParts.joinToString(" · "),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
     }
 }
 
